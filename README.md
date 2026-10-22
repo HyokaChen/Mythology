@@ -193,9 +193,10 @@ export MYTHOLOGY_CLOUD_URL="https://cloud.mythology.example"
 │                    存储架构总览                           │
 ├─────────────┬──────────────────┬────────────────────────┤
 │   创作资产   │    运行时会话     │      语义索引          │
-│  (项目目录)  │  (~/.mythology)  │    (vectors.db)       │
+│ (novels/ 项目│ (~/.mythology/)   │  (~/.mythology/       │
+│  目录，可多个)│                  │   vectors.db)         │
 │             │                  │                        │
-│ YAML/MD 文件 │  JSONL 文件      │ SQLite vec0 + FTS5    │
+│ YAML/MD 文件 │  JSONL 分片文件   │ SQLite vec0 + FTS5    │
 │ 人可读写     │  追加写入         │ 检索派生数据           │
 │ Git 版本控制 │  按项目/时间组织   │   可从文件重建         │
 └─────────────┴──────────────────┴────────────────────────┘
@@ -234,48 +235,63 @@ export MYTHOLOGY_CLOUD_URL="https://cloud.mythology.example"
 
 ### 1. 创作资产 — 项目本地文件
 
-一部小说 = 一个文件夹，**可以 Git 管理**：
+一部小说 = 一个文件夹，**可以 Git 管理**。项目根目录（`novels/`）位置由启动链解析：`--novels` 参数 > 环境变量 `MYTHOLOGY_NOVELS_PATH` > 配置 `Novels:Path` > `~/.mythology/workspaces.json` 里上次在 UI 指定的活动目录 > `cwd/novels` > `~/.mythology/novels`；候选目录「存在且有内容」优先，空壳不遮蔽真实数据。读取范围 = 已登记项目目录并集（TUI / Desktop 共用同一份清单）。
 
 ```
 novels/
-└── 神话纪元/
-    ├── novel.yaml                # 小说元数据
+└── 神话纪元/                        # 目录名 = 小说标题（新建时；同名冲突加 _{id} 后缀）
+    ├── novel.yaml                   # 小说元数据（id/title/genre/writing-style/completion-status）
     ├── characters/
-    │   ├── 李明.yaml             # 角色设定（YAML，手工可编辑）
-    │   └── 王芳.yaml
-    ├── factions/
-    │   └── 天机阁.yaml
-    ├── locations/
-    │   └── 长安城.yaml
-    ├── items/
-    │   └── 碧血剑.yaml
-    ├── plotlines/
-    │   ├── 主线-复仇.yaml
-    │   └── 伏笔-身世之谜.yaml
-    ├── relationships.yaml        # 角色关系网（集中管理）
-    ├── scenes/
-    │   ├── ch01.yaml             # 场景编排
-    │   └── ch02.yaml
-    └── chapters/
-        ├── ch01.md               # Markdown + YAML front matter
-        └── ch02.md               # 任何编辑器可直接预览
+    │   ├── 李明-a1b2c3d4e5f6.yaml   # 角色设定（YAML，手工可编辑）
+    │   └── 王芳-f6e5d4c3b2a1.yaml
+    ├── factions/                    # 组织/派系：{Name}-{Id}.yaml
+    ├── locations/                   # 地点：{Name}-{Id}.yaml
+    ├── items/                       # 道具：{Name}-{Id}.yaml
+    ├── plotlines/                   # 情节线：{Name}-{Id}.yaml
+    ├── volumes/                     # 分卷（卷纲）：{Name}-{Id}.yaml
+    ├── scenes/                      # 场景编排：{Title}-{Id}.yaml（chapter-id 归属章节）
+    ├── notes/                       # 作者随手记：{Title}-{Id}.yaml（仅本机）
+    ├── relationships.yaml           # 角色关系网（集中管理）
+    ├── faction-relationships.yaml   # 组织间关系（集中管理）
+    ├── world-rules.yaml             # 世界规则（集中管理）
+    ├── timeline.yaml                # 时间线事件（集中管理）
+    ├── chapters/
+    │   ├── ch001.md                 # Markdown + YAML front matter，文件名 = ch{Order:D3}
+    │   └── ch002.md                 # 任何编辑器可直接预览
+    ├── appearances/                 # 实体出场记录，按章分片 ch{Order:D3}.yaml
+    ├── evolution/                   # 状态变化，按章分片 ch{Order:D3}.yaml + manual.yaml（无章节归属）
+    ├── changesets/{chapterId}/      # 发布/撤回事务（Before/After 快照）
+    └── ontology/                    # 本体动作日志 + digest 游标
 ```
 
-**角色 YAML 示例**：
+实体文件名统一 `{名称}-{id}.yaml`（kebab-case 分隔，008 迁移把旧 `_{id}` 下划线风格改名对齐）；改名时旧文件删除，不留同 id 两份。集合文件（relationships / faction-relationships / world-rules / timeline）在小说根目录集中管理，不按 id 拆文件。
+
+`notes/`（作者随手记）、`ontology/`、`changesets/` 属于本机私有数据，云端同步（`SyncDocumentEnumerator.IsIgnored`）按目录名跳过，不进同步清单；Git 管理时如需一并纳入可自行决定。
+
+**角色 YAML 示例**（字段键 kebab-case；`EnumToYaml` 输出枚举小写形式，存盘值与 JSON 线协议同形）：
 
 ```yaml
 id: a1b2c3d4e5f6
+novel-id: 2c2410d54e08
 name: 李明
-gender: 男
+gender: Male                # Male / Female / Other（线协议值，展示层转中文）
 age: 少年
-role: protagonist        # protagonist / supporting / minor / antagonist
+role: protagonist           # protagonist / supporting / minor / antagonist
 personality: 内向敏感、外冷内热
 appearance: 黑发碧眼、身材高挑
 background: 孤儿出身，自幼在天机阁长大
 motivation: 寻找身世之谜
 tags: [主角, 天机阁]
 abilities: 剑术精湛、灵觉敏锐
-status: active           # active / deceased / missing / transformed
+weakness: ""
+habits: ""
+notes: ""
+status: active              # active / deceased / missing / transformed
+faction-id: 3f2a1b0c9d8e    # 所属组织（可空）
+current-location-id: 7c4d2e1f0a9b   # 当前所在地点（可空，随章节发布/设定变更更新）
+metrics: {}                 # 结构化数值指标（速度/境界等，供规则求值器使用）
+created-at: "2026-07-02T12:50:11.7779200+08:00"
+updated-at: "2026-10-09T04:43:40.7777040Z"
 ```
 
 **角色定位枚举 (`CharacterRole`)**：
@@ -284,17 +300,24 @@ status: active           # active / deceased / missing / transformed
 |---|---|---|
 | `protagonist` | 主角 | 核心视角角色 |
 | `supporting` | 配角 | 默认值，大多数角色的定位 |
-| `minor` | 小角色 | 一次性出场或工具人 |
+| `minor` | 龙套/路人 | 一次性出场或工具人 |
 | `antagonist` | 反派 | 与主角对立的角色 |
 
-**章节 Markdown 示例**：
+**章节 Markdown 示例**（文件名 `ch{Order:D3}.md`，改序即换文件名；front matter 键全部 kebab-case）：
 
 ```markdown
 ---
 id: x1y2z3a4b5c6
 order: 1
 title: 序幕
-status: draft
+status: draft              # draft / published（章节状态仅这两态）
+volume-id:                 # 所属分卷（空 = 未分卷）
+summary: 本章梗概
+plotline-ids:              # 计划推进的情节线 id（逗号分隔）
+character-ids:             # 计划出场角色 id（逗号分隔）
+notes: 节奏/伏笔提示
+created-at: "2026-08-04T09:52:34.7015760+08:00"
+updated-at: "2026-10-09T09:09:42.7321180Z"
 ---
 
 长安城的黄昏，残阳如血...
@@ -314,33 +337,40 @@ status: draft
 ```
 ~/.mythology/
 ├── sessions/
-│   └── --novels-神话纪元--/
+│   └── --novels-神话纪元--/          # 按小说名（SanitizeFileName 编码）分目录
 │       ├── 2026-07-01T08-30-00-123Z_abc123def456/  ← 带时间戳的会话目录
-│       │   ├── MANIFEST.json       ← 元数据 + 分片索引
-│       │   ├── 000000.jsonl        ← 第 0 代（原始消息，只读）
-│       │   ├── 000001.jsonl        ← 第 1 代（compact 后只读）
+│       │   ├── MANIFEST.json       ← 元数据 + 分片索引（sessionId 是索引键）
+│       │   ├── 000000.jsonl        ← 第 0 代（compact 前，原文保留只读）
+│       │   ├── 000001.jsonl        ← 第 1 代（compact 行 + 保留消息）
 │       │   └── 000002.jsonl        ← 第 2 代（当前活跃，append 中）
 │       └── 2026-06-28T14-15-30-456Z_fff9872aaa12/  ← 时间戳便于文件系统排序
 │           ├── MANIFEST.json
 │           └── 000000.jsonl        ← 从未 compact 的唯一活跃分片
-├── config.yaml                     # 全局配置
+├── config.yaml                     # 全局配置（providers / Agent / Embedding / Novels:Path）
+├── workspaces.json                 # 项目目录清单（Roots + ActiveRoot，TUI/Desktop 共用）
 ├── cloud-session.json              # 云端凭据（ApiKey/PublicId/WorkspaceId/Plan）
-├── logs/                           # Serilog 日志
+├── vectors.db                      # 检索内核 + Agent 记忆（vec0 + FTS5）
+├── novel-sync/{novelId}.json       # 云端同步游标
+├── todos/{sessionId}.json          # 会话级 Todo（BlockedBy 依赖）
+├── plugins/                        # 用户级插件（优先级低于项目级 .mythology/plugins）
+├── logs/                           # Serilog 日志（滚动按天，保留 14 天）
 │   └── mythology-{date}.log
-└── input-history/                  # 输入历史
+├── input-history/{sessionId}.jsonl # 输入历史（每会话一个文件）
+└── backups/{timestamp}/              # 迁移前数据备份（sessions/ + config.yaml + vectors.db）
 ```
 
 **目录命名格式**：`{yyyy-MM-ddTHH-mm-ss-fffZ}_{sessionId}/`。时间戳来自会话创建时的 UTC 时间（自动迁移时来自旧文件的创建时间）。索引键从 MANIFEST.json 的 `sessionId` 字段读取，与目录名无关。
 
-**分片规则**：每次 compact 创建下一个序号的文件。活跃分片 = 最大序号的分片。`GetSession`/`GetSessions` 从 MANIFEST 快速读取元数据，无需全量解析 JSONL。旧格式 `{sessionId}.jsonl` 文件在首次访问时自动迁移。
+**分片规则**：每次 compact 创建下一个序号的分片（`{newSeq:D6}.jsonl`），首行写 `compact` 条目、随后是被保留的消息行；旧分片原样保留，被压缩消息的原文永远可经 `decompress` 读回。换页（context window）同样滚动新分片，首行写 `window` 条目但不生成摘要。活跃分片 = MANIFEST 的 `activeSegment`。`GetSession`/`GetSessions` 从 MANIFEST 快速读取元数据，无需全量解析 JSONL。旧格式 `{sessionId}.jsonl` 文件在首次访问时自动迁移为目录。
 
-**JSONL 条目类型**：
+**JSONL 条目类型**（`type` 字段 kebab-case）：
 
 | type | 说明 |
 |------|------|
 | `message` | 对话消息（user/assistant/tool/system） |
-| `compact` | 上下文压缩摘要（每个分片的第一行） |
-| `event` | 事件条目（interrupt/error/model_change/variant_selected） |
+| `compact` | 上下文压缩摘要：`blockId`（= 新分片 seq `bN`）+ `compressedMessageIds` + `summary`，是 decompress 的定位锚 |
+| `window` | 上下文页起始标记（换页，不生成摘要） |
+| `event` | 事件条目（interrupt/error/model_change/variant_selected/variant_set_created） |
 | `leaf` | 活跃分支指针 |
 | `label` | 用户书签/标记 |
 | `branch_summary` | 被放弃分支的 AI 摘要 |
@@ -350,12 +380,12 @@ status: draft
 - ✅ 追加写入，无事务，不会损坏
 - ✅ `cat` / `grep` / `jq` 直接查看
 - ✅ 会话恢复：回放 `type=message` 的行
-- ✅ 审计追踪：`event` 条目记录 entity_change
+- ✅ 审计追踪：实体变更另写 `~/.mythology/sessions/--novels-{name}--/audit_{novelId}.jsonl`
 - ✅ 分支支持：`leaf` + `branch_summary` 支持对话分支树
-- ✅ 上下文压缩：`compact` 创建新分片，旧分片冻结为只读
+- ✅ 上下文压缩：`compact` 创建新分片，旧分片冻结为只读，原文可经 `decompress` 按 `blockId` 读回
 - ✅ 自动迁移：旧单文件格式无缝过渡
 
-### 3. 共享检索内核 — `vectors.db`（唯一保留的 SQLite）
+### 3. 共享检索内核 — `~/.mythology/vectors.db`（唯一保留的 SQLite）
 
 `vectors.db` 承载共享检索内核：`RetrievalKernel` 先执行 metadata/权限过滤，再并行召回 dense `vec0` 与 FTS5（中文 `simple` tokenizer）的候选，以 RRF 融合、按 `RankingProfile` 重排。它覆盖三个逻辑域：
 
@@ -518,7 +548,7 @@ Mythology/
 │   │   ├── Vector/            # 检索内核 + Agent 记忆（RetrievalKernel / IRetrievalStore / SqliteRetrievalStore / AgentMemoryStore / IEmbeddingService）
 │   │   ├── Shared/            # 共享类型（AtomicFile / EditHunk / JsonHelper / TodoStore / UserQuestionStore）
 │   │   ├── Infrastructure/    # 基础设施（CancellationHttpHandler / CircuitBreaker / IdGenerator）
-│   │   └── Data/              # 数据层（INovelStore / FileNovelStore / FileSessionStore / ConfigStore / Migrations[001_SessionSegments + 002_CompactBlocks]）
+│   │   └── Data/              # 数据层（INovelStore / FileNovelStore / FileSessionStore / ConfigStore / Migrations[001–008]）
 │   │
 │   ├── ClientPlatform/        # 云端客户端库（ClientPlatform）
 │   │   ├── RetrievalRestClient.cs      # /v1/retrieval（REST，扣费）
@@ -573,7 +603,7 @@ Mythology/
 │       ├── VSA/              # HolographicEngine + VsaCore + VSAConfig
 │       └── Diagnostics/      # FailureReport + PatternClassifier + CostEstimator
 │
-├── novels/                   # 创作资产目录（Git 管理）
+├── novels/                   # 创作资产目录（默认候选根之一；实际根由启动链解析，见「存储详解」）
 │
 ├── docs/
 │   ├── architecture.md            # 架构设计（Agent/ToolSearch/云端协作/Session/Provider/命令）
