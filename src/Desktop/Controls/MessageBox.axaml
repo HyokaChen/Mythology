@@ -1,0 +1,37 @@
+<Window
+  x:Class="Desktop.Controls.MessageBox"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  x:Name="MessageBoxWindow"
+  Width="420"
+  Height="200"
+  MinWidth="400"
+  MinHeight="140"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <!-- 文本顶置 · 动作钉在右下（StackPanel 根会让按钮随内容上浮，底部留空） -->
+  <Grid RowDefinitions="*,Auto" Margin="24,20,24,20">
+    <TextBlock
+      x:Name="MessageText"
+      Grid.Row="0"
+      VerticalAlignment="Top"
+      FontSize="14"
+      Foreground="{DynamicResource BrushForestInk}"
+      TextWrapping="Wrap"
+      LineHeight="21"
+    />
+    <StackPanel Grid.Row="1" Spacing="16">
+      <Border Height="1" Background="{DynamicResource BrushMist}" />
+      <Button
+        x:Name="OkButton"
+        Classes="Primary"
+        FontSize="14"
+        Content="确定"
+        HorizontalAlignment="Right"
+        Click="OkButton_OnClick"
+      />
+    </StackPanel>
+  </Grid>
+</Window>

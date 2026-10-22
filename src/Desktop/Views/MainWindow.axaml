@@ -1,0 +1,420 @@
+<Window
+  x:Class="Desktop.Views.MainWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="clr-namespace:Desktop.Controls"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:views="clr-namespace:Desktop.Views"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:MainWindowViewModel"
+  Title="Mythology — 桌面写作助手"
+  Width="1280"
+  Height="820"
+  MinWidth="1080"
+  MinHeight="680"
+  WindowStartupLocation="CenterScreen"
+  WindowState="Maximized"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <!-- ═══════════ Header（UI.md：标题 + 小说 + 对话切换 + 操作） ═══════════ -->
+    <Border
+      Grid.Row="0"
+      Background="{DynamicResource BrushLinen}"
+      BorderBrush="{DynamicResource BrushMist}"
+      BorderThickness="0,0,0,1"
+      Padding="18,9,14,9"
+    >
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <!-- 品牌：官方完整 logo（mark + Mythology + 下划线 + tagline，编排天然正确） -->
+        <Image
+          Height="46"
+          Source="avares://MythDesktop/Assets/mythology-logo.png"
+          VerticalAlignment="Center"
+        />
+
+        <!-- 中间：当前小说 + 对话（按钮形式，点击打开对应选择器；对齐 TUI Ctrl+O / Ctrl+E） -->
+        <StackPanel
+          Grid.Column="1"
+          Orientation="Horizontal"
+          Spacing="6"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Center"
+        >
+          <!-- 当前小说 → 打开项目选择器 -->
+          <Button
+            Classes="NavPill"
+            Padding="12,6"
+            VerticalAlignment="Center"
+            MaxWidth="210"
+            Click="NovelButton_OnClick"
+            ToolTip.Tip="{Binding NovelPillTip}"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon
+                Kind="BookOpen"
+                Size="14"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                Text="{Binding CurrentNovelLabel}"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+              />
+              <lucide:LucideIcon
+                Kind="ChevronDown"
+                Size="12"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+          <!-- 当前会话 → 打开会话管理器 -->
+          <Button
+            Classes="NavPill"
+            Padding="12,6"
+            VerticalAlignment="Center"
+            MaxWidth="240"
+            Click="SessionButton_OnClick"
+            ToolTip.Tip="{Binding SessionPillTip}"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon
+                Kind="MessagesSquare"
+                Size="14"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                Text="{Binding ConversationTitle}"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+              />
+              <lucide:LucideIcon
+                Kind="ChevronDown"
+                Size="12"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+
+        <!-- 右侧：实用工具按钮 + 主 CTA（DESIGN.md §Nav Header：Primary CTA 居右） -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <!-- 云端胶囊：状态文字 + 图标合一，常驻可点击，连接成功变绿 -->
+          <Button
+            x:Name="CloudButton"
+            Classes="NavPill"
+            Padding="12,6"
+            VerticalAlignment="Center"
+            Click="CloudButton_OnClick"
+            Foreground="{Binding CloudStatusForeground}"
+            ToolTip.Tip="{Binding CloudButtonTip}"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon
+                Kind="{Binding CloudButtonIcon}"
+                Size="14"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                Text="{Binding CloudStatusHeader}"
+                FontFamily="{StaticResource FontSans}"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+          <!-- 云端同步标识（cloud-novel-sync v3）：⇅ 同步中/已同步/冲突/离线；未登录或未接线隐藏 -->
+          <TextBlock
+            Text="{Binding SyncStatusText}"
+            FontFamily="{StaticResource FontSans}"
+            FontSize="11"
+            VerticalAlignment="Center"
+            Foreground="{Binding SyncStatusForeground}"
+            IsVisible="{Binding IsSyncVisible}"
+            ToolTip.Tip="云端小说同步状态（cloud-conflicts/ 下有冲突副本时需手动合并）"
+          />
+          <!-- 主题切换 -->
+          <Button
+            x:Name="ThemeButton"
+            Classes="NavPill"
+            Padding="12,6"
+            VerticalAlignment="Center"
+            Click="ThemeButton_OnClick"
+            ToolTip.Tip="{Binding ThemeToggleTip}"
+          >
+            <lucide:LucideIcon Kind="{Binding ThemeIcon}" Size="14" StrokeWidth="1.6" />
+          </Button>
+          <!-- 设置（有可用更新时图标右上角亮状态点，数据源 = MainWindowViewModel.UpdatePrompt；Sage Leaf 徽标填充） -->
+          <Button
+            x:Name="SettingsButton"
+            Classes="NavPill"
+            Padding="12,6"
+            VerticalAlignment="Center"
+            Click="SettingsButton_OnClick"
+            ToolTip.Tip="设置（Ctrl+P）"
+          >
+            <Panel>
+              <lucide:LucideIcon
+                Kind="Settings"
+                Size="14"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+              <Ellipse
+                Width="6"
+                Height="6"
+                Fill="{DynamicResource BrushSageLeaf}"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                IsVisible="{Binding UpdatePrompt.HasPendingUpdate, FallbackValue=False}"
+              />
+            </Panel>
+          </Button>
+
+          <!-- 视觉分隔线（1px Mist） -->
+          <Border Width="1" Height="22" Margin="6,0,6,0" Background="{DynamicResource BrushMist}" />
+
+          <!-- 主 CTA：新建对话（DESIGN.md §Primary Pill CTA：Forest Ink 填充 · 24/12 内边距 · CTA 居右） -->
+          <Button
+            Classes="Primary"
+            VerticalAlignment="Center"
+            Command="{Binding NewConversationCommand}"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon Kind="Plus" Size="14" StrokeWidth="2" VerticalAlignment="Center" />
+              <TextBlock Text="新建对话" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ═══════════ 吊销横幅（§13.6 非模态可操作会话恢复：不打断创作） ═══════════ -->
+    <Border
+      Grid.Row="1"
+      IsVisible="{Binding IsCloudInvalidBannerVisible}"
+      Background="{DynamicResource BrushLichen}"
+      BorderBrush="{DynamicResource BrushAmberPin}"
+      BorderThickness="0,0,0,1"
+      Padding="18,8,14,8"
+    >
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <lucide:LucideIcon
+            Kind="Lock"
+            Size="14"
+            StrokeWidth="1.6"
+            Foreground="{DynamicResource BrushAmberPin}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Text="云端登录已失效 — 云端同步与分析已暂停，本地创作不受影响"
+            FontSize="14"
+            Foreground="{DynamicResource BrushAmberPin}"
+            TextTrimming="CharacterEllipsis"
+          />
+        </StackPanel>
+        <Button
+          Grid.Column="1"
+          Classes="Primary"
+          Content="立即重新登录"
+          Click="CloudReloginButton_OnClick"
+        />
+        <Button
+          Grid.Column="2"
+          Classes="NavPill"
+          Margin="6,0,0,0"
+          Click="CloudBannerDismiss_OnClick"
+          ToolTip.Tip="关闭横幅（可随时从右上角云端按钮重新登录）"
+        >
+          <lucide:LucideIcon Kind="X" Size="13" StrokeWidth="1.8" VerticalAlignment="Center" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <!-- ═══════════ 主体：对话流 | 右侧设定面板（UI.md 7:3） ═══════════ -->
+    <Grid Grid.Row="2" x:Name="MainColumns" ColumnDefinitions="*,4,320">
+      <views:ConversationView Grid.Column="0" DataContext="{Binding ActiveConversationVm}" />
+      <!-- 右栏列宽可拖（宽度写入 config.yaml 的 ui.outline-panel-width，重启保持） -->
+      <GridSplitter
+        Grid.Column="1"
+        Name="SidePanelSplitter"
+        Width="4"
+        ResizeDirection="Columns"
+        ResizeBehavior="PreviousAndNext"
+        Cursor="SizeWestEast"
+        Background="Transparent"
+        DragCompleted="SidePanelSplitter_OnDragCompleted"
+      />
+      <Grid Grid.Column="2" RowDefinitions="*,Auto">
+        <views:SetUpPanelView Grid.Row="0" DataContext="{Binding SetUpPanel}" />
+        <views:TodoPanelView Grid.Row="1" DataContext="{Binding TodoPanel}" />
+      </Grid>
+    </Grid>
+
+    <!-- ═══════════ 状态栏（UI.md §4：状态 | 小说 | Token | 模型 | 工具） ═══════════ -->
+    <Border
+      Grid.Row="3"
+      Background="{DynamicResource BrushBone}"
+      BorderBrush="{DynamicResource BrushMist}"
+      BorderThickness="0,1,0,0"
+      Padding="20,6,16,6"
+    >
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <controls:BusySpinner
+            x:Name="StatusSpinner"
+            IsActive="{Binding IsBusy}"
+            IsVisible="{Binding IsBusy}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            Text="{Binding StatusText}"
+            MaxWidth="440"
+            TextTrimming="CharacterEllipsis"
+            ToolTip.Tip="{Binding StatusTooltip}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageMist}"
+            Text="·"
+            VerticalAlignment="Center"
+          />
+          <Button
+            Classes="NavPill"
+            Padding="8,3"
+            Click="SessionButton_OnClick"
+            ToolTip.Tip="当前会话 · 点击切换/管理（Ctrl+E）"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              Text="{Binding ConversationTitle}"
+              TextTrimming="CharacterEllipsis"
+              MaxWidth="280"
+              VerticalAlignment="Center"
+            />
+          </Button>
+          <TextBlock
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageMist}"
+            Text="·"
+            VerticalAlignment="Center"
+          />
+          <Button
+            Classes="NavPill"
+            Padding="8,3"
+            Click="CloudButton_OnClick"
+            ToolTip.Tip="云端账号 · 点击登录/管理"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="{Binding CloudStatusText}"
+              VerticalAlignment="Center"
+            />
+          </Button>
+        </StackPanel>
+        <StackPanel
+          Grid.Column="1"
+          Orientation="Horizontal"
+          Spacing="12"
+          VerticalAlignment="Center"
+        >
+          <Button
+            Classes="NavPill"
+            Padding="8,3"
+            Click="StatusContext_OnClick"
+            ToolTip.Tip="上下文占用（会话口径）· 点击查看会话状态"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <lucide:LucideIcon
+                Kind="ChartBar"
+                Size="11"
+                StrokeWidth="1.6"
+                Foreground="{DynamicResource BrushSageGray}"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                FontFamily="{StaticResource FontMono}"
+                FontSize="11"
+                Foreground="{Binding ContextGaugeBrush}"
+                Text="{Binding ContextGaugeText}"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+          <Border
+            Width="1"
+            Height="10"
+            Background="{DynamicResource BrushMist}"
+            VerticalAlignment="Center"
+          />
+          <Button
+            Classes="NavPill"
+            Padding="8,3"
+            Click="ModelButton_OnClick"
+            ToolTip.Tip="快速切换模型（当前提供商）· 也可 Ctrl+K 命令面板"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <lucide:LucideIcon
+                Kind="Brain"
+                Size="12"
+                StrokeWidth="1.6"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                FontFamily="{StaticResource FontMono}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushSageGray}"
+                Text="{Binding ModelText}"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+          <Border
+            Width="1"
+            Height="10"
+            Background="{DynamicResource BrushMist}"
+            VerticalAlignment="Center"
+          />
+          <Button
+            Classes="NavPill"
+            Padding="8,3"
+            Click="StatusTools_OnClick"
+            ToolTip.Tip="工具统计 · 点击打开工具设置"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              Text="{Binding ToolsText}"
+              VerticalAlignment="Center"
+            />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- 自动更新非模态弹窗（DataContext = MainWindowViewModel.UpdatePrompt；遮罩不拦截点击，主界面仍可操作） -->
+    <controls:UpdatePromptDialog
+      Grid.Row="0"
+      Grid.RowSpan="4"
+      DataContext="{Binding UpdatePrompt}"
+    />
+  </Grid>
+</Window>

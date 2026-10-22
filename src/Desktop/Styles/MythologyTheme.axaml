@@ -1,0 +1,259 @@
+<!-- DESIGN.md (Adaline) Token → Avalonia ResourceDictionary
+     纸感刊物 × 终端：Linen 纸 · Forest Ink 墨 · Olive Press CTA · hairline 分隔 · 无阴影 -->
+<ResourceDictionary
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <!-- ══════════ Colors ══════════ -->
+  <Color x:Key="ColorForestInk">#0a1d08</Color>
+  <Color x:Key="ColorOlivePress">#2b390a</Color>
+  <Color x:Key="ColorSageLeaf">#4a6d47</Color>
+  <Color x:Key="ColorDeepTeal">#2b6b5e</Color>
+  <Color x:Key="ColorCrimsonSpecimen">#991e4b</Color>
+  <Color x:Key="ColorAmberPin">#80581c</Color>
+  <Color x:Key="ColorLinen">#f8f9f5</Color>
+  <Color x:Key="ColorBone">#eff2e8</Color>
+  <Color x:Key="ColorMist">#e1e6df</Color>
+  <Color x:Key="ColorSlateHollow">#2a332a</Color>
+  <Color x:Key="ColorSageGray">#6b7860</Color>
+  <Color x:Key="ColorSageMist">#a5ac9f</Color>
+  <Color x:Key="ColorEucalyptus">#c9d5c5</Color>
+  <Color x:Key="ColorLichen">#c5ccb6</Color>
+  <Color x:Key="ColorSurfaceGlow">#fdfefb</Color>
+  <Color x:Key="ColorBlush">#e3c9d0</Color>
+  <Color x:Key="ColorMistOnSlate">#F5F6F014</Color>
+
+  <!-- ══════════ Brushes ══════════ -->
+  <SolidColorBrush x:Key="BrushForestInk" Color="{StaticResource ColorForestInk}" />
+  <SolidColorBrush x:Key="BrushOlivePress" Color="{StaticResource ColorOlivePress}" />
+  <SolidColorBrush x:Key="BrushSageLeaf" Color="{StaticResource ColorSageLeaf}" />
+  <SolidColorBrush x:Key="BrushDeepTeal" Color="{StaticResource ColorDeepTeal}" />
+  <SolidColorBrush x:Key="BrushCrimsonSpecimen" Color="{StaticResource ColorCrimsonSpecimen}" />
+  <SolidColorBrush x:Key="BrushAmberPin" Color="{StaticResource ColorAmberPin}" />
+  <SolidColorBrush x:Key="BrushLinen" Color="{StaticResource ColorLinen}" />
+  <SolidColorBrush x:Key="BrushBone" Color="{StaticResource ColorBone}" />
+  <SolidColorBrush x:Key="BrushMist" Color="{StaticResource ColorMist}" />
+  <SolidColorBrush x:Key="BrushSlateHollow" Color="{StaticResource ColorSlateHollow}" />
+  <SolidColorBrush x:Key="BrushSageGray" Color="{StaticResource ColorSageGray}" />
+  <SolidColorBrush x:Key="BrushSageMist" Color="{StaticResource ColorSageMist}" />
+  <SolidColorBrush x:Key="BrushEucalyptus" Color="{StaticResource ColorEucalyptus}" />
+  <!-- Eucalyptus 悬停薄雾（hover wash）—— 20% 不透明度的 Eucalyptus，
+       这个值原先以 #33c9d5c5 内联写在四处 Style 里，现升为命名 token -->
+  <SolidColorBrush
+    x:Key="BrushEucalyptusWash"
+    Color="{StaticResource ColorEucalyptus}"
+    Opacity="0.2"
+  />
+  <SolidColorBrush x:Key="BrushLichen" Color="{StaticResource ColorLichen}" />
+  <SolidColorBrush x:Key="BrushSurfaceGlow" Color="{StaticResource ColorSurfaceGlow}" />
+  <SolidColorBrush x:Key="BrushMistOnSlate" Color="{StaticResource ColorMistOnSlate}" />
+  <!-- Amber 警示薄雾（13% 不透明度）：ProjectPicker 的 LLM 说明横幅 -->
+  <SolidColorBrush x:Key="BrushAmberWash" Color="{StaticResource ColorAmberPin}" Opacity="0.13" />
+
+  <!-- ══════════ Fonts（Akkurat → Inter；Newsreader 衬线标题；Fragment Mono 字段标签） ══════════ -->
+  <!-- CJK 回退：Inter 无中文字形，缺省时由系统回退，中英混排处行高/基线漂移。
+       显式声明字体栈，让所有 FontSans 消费点获得同一套回退度量（对齐 TabItem 的既有做法）。 -->
+  <FontFamily x:Key="FontSans">Inter, PingFang SC, Microsoft YaHei, Noto Sans CJK SC</FontFamily>
+  <FontFamily x:Key="FontSerif">
+    avares://MythDesktop/Assets/Fonts/Newsreader.ttf#Newsreader
+  </FontFamily>
+  <FontFamily x:Key="FontMono">
+    avares://MythDesktop/Assets/Fonts/FragmentMono-Regular.ttf#Fragment Mono
+  </FontFamily>
+
+  <!-- ══════════ Type Scale（DESIGN.md） ══════════ -->
+  <x:Double x:Key="FontSizeTag">11</x:Double>
+  <x:Double x:Key="FontSizeCaption">14</x:Double>
+  <x:Double x:Key="FontSizeBodySm">16</x:Double>
+  <x:Double x:Key="FontSizeBody">16</x:Double>
+  <x:Double x:Key="FontSizeSubheading">18</x:Double>
+  <x:Double x:Key="FontSizeHeadingSm">26</x:Double>
+  <x:Double x:Key="FontSizeHeading">30</x:Double>
+  <x:Double x:Key="FontSizeHeadingLg">53</x:Double>
+
+  <!-- ══════════ Spacing（DESIGN.md，紧凑密度） ══════════ -->
+  <x:Double x:Key="Spacing4">4</x:Double>
+  <x:Double x:Key="Spacing6">6</x:Double>
+  <x:Double x:Key="Spacing8">8</x:Double>
+  <x:Double x:Key="Spacing10">10</x:Double>
+  <x:Double x:Key="Spacing12">12</x:Double>
+  <x:Double x:Key="Spacing16">16</x:Double>
+  <x:Double x:Key="Spacing18">18</x:Double>
+  <x:Double x:Key="Spacing20">20</x:Double>
+  <x:Double x:Key="Spacing24">24</x:Double>
+  <x:Double x:Key="Spacing32">32</x:Double>
+  <x:Double x:Key="Spacing40">40</x:Double>
+  <x:Double x:Key="Spacing48">48</x:Double>
+  <x:Double x:Key="Spacing64">64</x:Double>
+
+  <!-- ══════════ Border Radius ══════════ -->
+  <CornerRadius x:Key="RadiusSmall">1.5</CornerRadius>
+  <CornerRadius x:Key="RadiusInputs">4</CornerRadius>
+  <CornerRadius x:Key="RadiusCards">10</CornerRadius>
+  <CornerRadius x:Key="RadiusButtons">20</CornerRadius>
+  <CornerRadius x:Key="RadiusTags">9999</CornerRadius>
+  <CornerRadius x:Key="RadiusCardsSm">6</CornerRadius>
+
+  <!-- ══════════ 布局常量 ══════════ -->
+  <x:Double x:Key="PageMaxWidth">1200</x:Double>
+  <x:Double x:Key="CardPadding">20</x:Double>
+  <x:Double x:Key="ElementGap">6</x:Double>
+  <!-- ══ 下拉选择：AdalineComboBox 自定义模板（DESIGN.md：细线条 chevron · hairline 边框 · 圆角浮层） ══ -->
+  <ControlTheme x:Key="AdalineComboBox" TargetType="ComboBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    <Setter Property="MaxDropDownHeight" Value="360" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="*,Auto">
+          <Border
+            x:Name="BackgroundBorder"
+            Grid.ColumnSpan="2"
+            Background="{TemplateBinding Background}"
+            BorderBrush="{TemplateBinding BorderBrush}"
+            BorderThickness="{TemplateBinding BorderThickness}"
+            CornerRadius="{TemplateBinding CornerRadius}"
+          />
+          <ContentPresenter
+            x:Name="PART_ContentPresenter"
+            Grid.Column="0"
+            Content="{TemplateBinding SelectionBoxItem}"
+            ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+            Margin="{TemplateBinding Padding}"
+          />
+          <Popup
+            Grid.Column="0"
+            Name="PART_Popup"
+            IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
+            MinWidth="{Binding Bounds.Width, RelativeSource={RelativeSource TemplatedParent}}"
+            MaxHeight="{TemplateBinding MaxDropDownHeight}"
+            PlacementTarget="BackgroundBorder"
+            IsLightDismissEnabled="True"
+          >
+            <Border
+              Background="{DynamicResource BrushSurfaceGlow}"
+              BorderBrush="{DynamicResource BrushMist}"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="4"
+            >
+              <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+              >
+                <ItemsPresenter Name="PART_ItemsPresenter" Margin="2" />
+              </ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <!-- 全局默认：所有 ComboBox（含代码创建）使用 Adaline 模板，无 Fluent 箭头 -->
+  <ControlTheme
+    x:Key="{x:Type ComboBox}"
+    BasedOn="{StaticResource AdalineComboBox}"
+    TargetType="ComboBox"
+  />
+
+  <!-- ══ Fluent 菜单资源覆盖（保留默认模板观感，hover 改为 Adaline sage 色，杜绝黄色） ══ -->
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver">#FFc9d5c5</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver">#FF0a1d08</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed">#FFc9d5c5</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed">#FF0a1d08</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundDisabled">#33ffffff</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundDisabled">#FFa5ac9f</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutPresenterBackground">#FFFDFEFB</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush">#FFe1e6df</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutSubItemChevron">#FF6b7860</SolidColorBrush>
+  <SolidColorBrush x:Key="MenuFlyoutSubItemChevronPointerOver">#FF0a1d08</SolidColorBrush>
+  <Thickness x:Key="MenuFlyoutPresenterBorderThemeThickness">1</Thickness>
+
+  <!-- ══ SukiUI 资源覆盖 → Adaline 色调 ══ -->
+  <!-- 阴影：全部透明（杜绝 BoxShadow 色块） -->
+  <BoxShadows x:Key="SukiPopupShadow">0 0 0 0 Transparent</BoxShadows>
+  <BoxShadows x:Key="SukiSmallPopupShadow">0 0 0 0 Transparent</BoxShadows>
+  <BoxShadows x:Key="SukiBigPopupShadow">0 0 0 0 Transparent</BoxShadows>
+  <!-- ContextMenu / MenuItem 核心色 → Adaline（SukiUI 定义为 Color 类型，不可用 SolidColorBrush 覆盖） -->
+  <Color x:Key="SukiCardBackground">#fdfefb</Color>
+  <Color x:Key="SukiMenuBorderBrush">#e1e6df</Color>
+  <Color x:Key="SukiBackground">#fdfefb</Color>
+  <Color x:Key="SukiLightBorderBrush">#e1e6df</Color>
+  <Color x:Key="SukiText">#0a1d08</Color>
+  <Color x:Key="SukiMuteText">#6b7860</Color>
+  <SolidColorBrush x:Key="PopupGradientBrush" Color="Transparent" />
+
+  <!-- ══ Adaline ContextMenu：替换 SukiUI 模板（去除 Margin-16 阴影层 + PopupGradientBrush）══ -->
+  <!-- SukiUI 原模板用 Panel 双 Border（Margin-16 阴影 + Margin-15 内容 + 渐变叠层），
+       导致即使 SukiPopupShadow=Transparent 仍有可见边框/色块。
+       此模板仅保留单一内容 Border，无阴影、无渐变、无多余边距。 -->
+  <ControlTheme x:Key="AdalineContextMenu" TargetType="ContextMenu">
+    <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_LayoutTransform" RenderTransformOrigin="0,0">
+          <Border.RenderTransform>
+            <ScaleTransform ScaleX="0.92" ScaleY="0.92" />
+          </Border.RenderTransform>
+          <Border
+            Background="{TemplateBinding Background}"
+            BorderBrush="{TemplateBinding BorderBrush}"
+            BorderThickness="{TemplateBinding BorderThickness}"
+            ClipToBounds="True"
+            CornerRadius="{TemplateBinding CornerRadius}"
+          >
+            <ItemsPresenter
+              Name="PART_ItemsPresenter"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+              ItemsPanel="{TemplateBinding ItemsPanel}"
+              KeyboardNavigation.TabNavigation="Continue"
+              Margin="{TemplateBinding Padding}"
+            />
+          </Border>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <!-- 打开动画：缩放 + 渐显 -->
+    <Style Selector="^[IsOpen=True] /template/ Border#PART_LayoutTransform">
+      <Style.Animations>
+        <Animation FillMode="Forward" Duration="0:0:0.2">
+          <KeyFrame Cue="0%">
+            <Setter Property="ScaleTransform.ScaleY" Value="0.92" />
+            <Setter Property="ScaleTransform.ScaleX" Value="0.92" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="ScaleTransform.ScaleY" Value="1" />
+            <Setter Property="ScaleTransform.ScaleX" Value="1" />
+          </KeyFrame>
+        </Animation>
+        <Animation FillMode="Forward" Duration="0:0:0.15">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="0" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="1" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </ControlTheme>
+</ResourceDictionary>

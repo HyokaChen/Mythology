@@ -1,0 +1,432 @@
+<UserControl
+  x:Class="Desktop.Views.ConversationView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="clr-namespace:Desktop.Controls"
+  xmlns:conv="clr-namespace:Desktop.Converters"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
+  xmlns:models="clr-namespace:Desktop.Models"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:ConversationViewModel"
+>
+  <UserControl.Resources>
+    <conv:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVisibility" />
+    <conv:CountToVisibilityConverter x:Key="CountToVisibility" />
+    <conv:ObservableStringBuilderToStringConverter x:Key="StringBuilderToString" />
+    <conv:SenderToBoolConverter x:Key="IsUser" />
+    <conv:SenderToBoolConverter x:Key="IsAgent" />
+    <conv:SenderToBoolConverter x:Key="IsSystem" />
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="*,Auto">
+    <!-- ═══════════ 对话流（UI.md：用户右 65% / 助手左 Markdown / 步骤/来源） ═══════════ -->
+    <Grid Grid.Row="0">
+      <!--
+        空状态（工作台引导区）。
+        居中排版（衬线标题 + 纯动词快捷操作，无装饰 emoji）。
+      -->
+      <StackPanel
+        MaxWidth="560"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Spacing="6"
+        IsVisible="{Binding HasMessages, Converter={StaticResource InvertedBoolToVisibility}}"
+      >
+        <!-- 这一屏唯一的衬线锚点 -->
+        <TextBlock
+          FontFamily="{StaticResource FontSerif}"
+          FontSize="44"
+          FontWeight="Light"
+          LineHeight="48"
+          Foreground="{DynamicResource BrushForestInk}"
+          HorizontalAlignment="Center"
+          TextAlignment="Center"
+          Text="开始创作"
+        />
+
+        <TextBlock
+          FontSize="14"
+          Foreground="{DynamicResource BrushSageGray}"
+          HorizontalAlignment="Center"
+          TextAlignment="Center"
+          Text="输入创作指令，或从快捷操作开始。"
+          TextWrapping="Wrap"
+        />
+
+        <Border Height="1" Margin="0,16,0,0" Background="{DynamicResource BrushMist}" />
+
+        <!-- 快捷操作：点击预填输入框。纯动词，无装饰字形 -->
+        <WrapPanel Margin="0,16,0,0" ItemSpacing="8" LineSpacing="8" HorizontalAlignment="Center">
+          <Button
+            Classes="Ghost"
+            Padding="14,7"
+            Click="QuickAction_OnClick"
+            Tag="写一章"
+            Content="写一章"
+          />
+          <Button
+            Classes="Ghost"
+            Padding="14,7"
+            Click="QuickAction_OnClick"
+            Tag="建角色"
+            Content="建角色"
+          />
+          <Button
+            Classes="Ghost"
+            Padding="14,7"
+            Click="QuickAction_OnClick"
+            Tag="埋伏笔"
+            Content="埋伏笔"
+          />
+          <Button
+            Classes="Ghost"
+            Padding="14,7"
+            Click="QuickAction_OnClick"
+            Tag="查设定"
+            Content="查设定"
+          />
+          <Button
+            Classes="Ghost"
+            Padding="14,7"
+            Click="QuickAction_OnClick"
+            Tag="续写"
+            Content="续写"
+          />
+        </WrapPanel>
+
+        <TextBlock
+          FontFamily="{StaticResource FontMono}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageMist}"
+          Margin="0,16,0,0"
+          HorizontalAlignment="Center"
+          TextAlignment="Center"
+          Text="@ 引用角色/章节 · / 唤起命令 · Enter 发送 · 右侧面板查看设定"
+        />
+      </StackPanel>
+
+      <!-- 消息流（有消息才显示，避免透明列表覆盖空状态） -->
+      <controls:AutoScrollItemsControl
+        x:Name="MessageList"
+        Margin="0,0,0,0"
+        ItemsSource="{Binding Messages}"
+        IsVisible="{Binding HasMessages}"
+      >
+        <controls:AutoScrollItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="models:ChatMessage">
+            <StackPanel Margin="0,0,0,12">
+              <!-- 用户消息：右对齐 Forest Ink 气泡（UI.md 5.1） -->
+              <StackPanel
+                Margin="96,2,0,0"
+                HorizontalAlignment="Right"
+                Spacing="3"
+                IsVisible="{Binding Sender, Converter={StaticResource IsUser}, ConverterParameter=User}"
+              >
+                <TextBlock Classes="Eyebrow" HorizontalAlignment="Right" Text="你" />
+                <Border Classes="UserBubble" HorizontalAlignment="Right">
+                  <TextBlock
+                    Text="{Binding Content, Converter={StaticResource StringBuilderToString}}"
+                    TextWrapping="Wrap"
+                  />
+                </Border>
+              </StackPanel>
+
+              <!-- 助手消息：左对齐 Bone 卡 + LiveMarkdown（UI.md 5.2） -->
+              <StackPanel
+                Margin="0,2,96,0"
+                Spacing="6"
+                IsVisible="{Binding Sender, Converter={StaticResource IsAgent}, ConverterParameter=Agent}"
+              >
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Loading}">
+                  <TextBlock Classes="Eyebrow" Text="写作中" VerticalAlignment="Center" />
+                  <controls:BusySpinner IsActive="{Binding Loading}" FontSize="12" />
+                </StackPanel>
+
+                <!-- Agent 步骤（思考/工具调用，UI.md 5.3-5.8） -->
+                <ItemsControl
+                  ItemsSource="{Binding AgentSteps}"
+                  IsVisible="{Binding AgentSteps.Count, Converter={StaticResource CountToVisibility}}"
+                >
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:AgentStep">
+                      <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1,0,0">
+                          <controls:BusySpinner
+                            IsActive="{Binding IsProcessing}"
+                            IsVisible="{Binding IsProcessing}"
+                            FontSize="12"
+                            VerticalAlignment="Center"
+                          />
+                          <lucide:LucideIcon
+                            Kind="{Binding StatusIcon}"
+                            Size="11"
+                            StrokeWidth="1.6"
+                            IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                            VerticalAlignment="Center"
+                          />
+                          <TextBlock
+                            Text="{Binding Title}"
+                            Classes="Tag"
+                            VerticalAlignment="Center"
+                          />
+                          <TextBlock
+                            Text="{Binding ArgumentsSummary}"
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="11"
+                            Foreground="{DynamicResource BrushSageMist}"
+                            TextTrimming="CharacterEllipsis"
+                            MaxWidth="420"
+                            VerticalAlignment="Center"
+                          />
+                        </StackPanel>
+                        <TextBlock
+                          Text="{Binding ResultSummary}"
+                          IsVisible="{Binding HasResult}"
+                          FontSize="11"
+                          Foreground="{DynamicResource BrushSageGray}"
+                          TextWrapping="Wrap"
+                          Margin="18,0,0,0"
+                        />
+                        <TextBlock
+                          Text="{Binding ThinkingText}"
+                          IsVisible="{Binding HasThinking}"
+                          FontSize="11"
+                          Foreground="{DynamicResource BrushSageMist}"
+                          TextWrapping="Wrap"
+                          Margin="18,0,0,0"
+                        />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- 流式 Markdown 正文 -->
+                <Border Classes="AgentBubble">
+                  <md:MarkdownRenderer
+                    MarkdownBuilder="{Binding Content}"
+                    CodeBlockColorTheme="LightPlus"
+                  />
+                </Border>
+
+                <!-- 信息来源 -->
+                <ItemsControl
+                  ItemsSource="{Binding Sources}"
+                  IsVisible="{Binding Sources.Count, Converter={StaticResource CountToVisibility}}"
+                >
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:SourceInfo">
+                      <TextBlock
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="11"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Title}"
+                      />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <!-- 系统提示：居中细注（压缩/溢出重试/持久化故障等,对齐 TUI 系统行语义） -->
+              <StackPanel
+                HorizontalAlignment="Center"
+                Spacing="3"
+                Margin="48,2,48,0"
+                IsVisible="{Binding Sender, Converter={StaticResource IsSystem}, ConverterParameter=System}"
+              >
+                <TextBlock Classes="Eyebrow" HorizontalAlignment="Center" Text="系统" />
+                <TextBlock
+                  Text="{Binding Content, Converter={StaticResource StringBuilderToString}}"
+                  FontSize="12"
+                  Foreground="{DynamicResource BrushSageGray}"
+                  MaxWidth="640"
+                  TextWrapping="Wrap"
+                  TextAlignment="Center"
+                  HorizontalAlignment="Center"
+                />
+              </StackPanel>
+            </StackPanel>
+          </DataTemplate>
+        </controls:AutoScrollItemsControl.ItemTemplate>
+        <controls:AutoScrollItemsControl.Template>
+          <ControlTemplate TargetType="controls:AutoScrollItemsControl">
+            <ScrollViewer
+              x:Name="PART_ScrollViewer"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+              Padding="28,18,28,12"
+            >
+              <ItemsPresenter />
+            </ScrollViewer>
+          </ControlTemplate>
+        </controls:AutoScrollItemsControl.Template>
+      </controls:AutoScrollItemsControl>
+    </Grid>
+
+    <!-- ═══════════ 输入区 ═══════════ -->
+    <Border
+      Grid.Row="1"
+      BorderBrush="{DynamicResource BrushMist}"
+      BorderThickness="0"
+      Padding="24,10,24,14"
+    >
+      <StackPanel Spacing="8">
+        <Border
+          x:Name="InputCard"
+          Classes="Card Glow"
+          CornerRadius="{StaticResource RadiusCards}"
+          Padding="14,8"
+          MinHeight="60"
+        >
+          <Grid RowDefinitions="Auto,Auto">
+            <!-- @ 提及 / # 实体引用补全弹窗（锚定输入卡片：上方 + 左右等宽） -->
+            <Popup
+              x:Name="SuggestionPopup"
+              PlacementTarget="{Binding ElementName=InputCard}"
+              Placement="TopEdgeAlignedLeft"
+              Width="{Binding Bounds.Width, ElementName=InputCard}"
+              IsLightDismissEnabled="True"
+              IsOpen="{Binding IsSuggestionPopupVisible, Mode=TwoWay}"
+            >
+              <Border Classes="Card Glow" Padding="6">
+                <ListBox
+                  x:Name="SuggestionList"
+                  Background="Transparent"
+                  MaxHeight="260"
+                  ItemsSource="{Binding Suggestions}"
+                  SelectedIndex="{Binding SelectedSuggestionIndex}"
+                >
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:FileSystemItem">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="2,3">
+                        <lucide:LucideIcon
+                          Grid.Column="0"
+                          Kind="{Binding IconKind}"
+                          Size="14"
+                          StrokeWidth="1.6"
+                          Foreground="{DynamicResource BrushSageLeaf}"
+                          VerticalAlignment="Center"
+                        />
+                        <TextBlock
+                          Grid.Column="1"
+                          Text="{Binding Name}"
+                          FontSize="14"
+                          FontWeight="Medium"
+                          TextTrimming="CharacterEllipsis"
+                          VerticalAlignment="Center"
+                        />
+                        <TextBlock
+                          Grid.Column="2"
+                          Text="{Binding FullPath}"
+                          MaxWidth="150"
+                          FontFamily="{StaticResource FontMono}"
+                          FontSize="11"
+                          Foreground="{DynamicResource BrushSageMist}"
+                          TextTrimming="CharacterEllipsis"
+                          VerticalAlignment="Center"
+                        />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
+            </Popup>
+
+            <!-- 斜杠命令补全弹窗 -->
+            <Popup
+              Grid.Row="0"
+              x:Name="CommandPopup"
+              PlacementTarget="{Binding ElementName=InputCard}"
+              Placement="TopEdgeAlignedLeft"
+              Width="{Binding Bounds.Width, ElementName=InputCard}"
+              IsLightDismissEnabled="True"
+              IsOpen="{Binding IsCommandPopupVisible, Mode=TwoWay}"
+            >
+              <Border Classes="Card Glow" Padding="6">
+                <ListBox
+                  x:Name="CommandList"
+                  Background="Transparent"
+                  MaxHeight="220"
+                  ItemsSource="{Binding CommandSuggestions}"
+                  SelectedIndex="{Binding SelectedCommandIndex}"
+                >
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock
+                        Text="{Binding}"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="14"
+                        Margin="2,3"
+                      />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Border>
+            </Popup>
+
+            <TextBox
+              x:Name="InputBox"
+              Grid.Row="0"
+              Classes="PromptBox"
+              Text="{Binding InputText}"
+              PlaceholderText="{Binding PlaceholderText}"
+              AcceptsReturn="True"
+              TextWrapping="Wrap"
+              MinHeight="44"
+              MaxHeight="150"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+              KeyDown="InputBox_OnKeyDown"
+              TextChanged="InputBox_OnTextChanged"
+            />
+
+            <StackPanel
+              Grid.Row="1"
+              Orientation="Horizontal"
+              HorizontalAlignment="Right"
+              Spacing="10"
+              Margin="0,6,0,0"
+            >
+              <Button
+                x:Name="StopButton"
+                Classes="Ghost"
+                Command="{Binding StopProcessingCommand}"
+                IsVisible="{Binding IsProcessing}"
+              >
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <lucide:LucideIcon
+                    Kind="CircleStop"
+                    Size="13"
+                    StrokeWidth="1.8"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Text="停止" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button
+                x:Name="SendButton"
+                Classes="Primary"
+                Command="{Binding SendMessageCommand}"
+                IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+              >
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="发送" VerticalAlignment="Center" />
+                  <lucide:LucideIcon
+                    Kind="CornerDownLeft"
+                    Size="13"
+                    StrokeWidth="1.8"
+                    VerticalAlignment="Center"
+                  />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+        <TextBlock
+          Text="Enter 发送 · Shift+Enter 换行 · / 命令补全 · @ 引用角色/章节 · # 引用设定实体 · Ctrl+K 命令面板 · Esc 中断"
+          Classes="Tag"
+          Foreground="{DynamicResource BrushSageMist}"
+        />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

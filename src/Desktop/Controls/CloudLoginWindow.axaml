@@ -1,0 +1,131 @@
+<Window
+  x:Class="Desktop.Controls.CloudLoginWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  Title="登录 Mythology Cloud"
+  Width="480"
+  Height="560"
+  MinWidth="420"
+  MinHeight="480"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <StackPanel>
+    <!-- ═══════ 登录表单面板（内容顶置 · 动作条钉在右下） ═══════ -->
+    <Grid x:Name="FormPanel" Margin="24,20,24,20" RowDefinitions="*,Auto">
+      <StackPanel Grid.Row="0" Spacing="16">
+        <TextBlock Classes="Tag" Text="MYTHOLOGY CLOUD" HorizontalAlignment="Center" />
+        <lucide:LucideIcon
+          Kind="Cloud"
+          Size="28"
+          StrokeWidth="1.6"
+          Foreground="{DynamicResource BrushSageLeaf}"
+          HorizontalAlignment="Center"
+        />
+        <TextBlock Classes="DialogTitle" Text="登录 Mythology Cloud" HorizontalAlignment="Center" />
+        <TextBlock
+          Text="同步小说 · 跨设备协作 · 云端备份"
+          FontSize="12"
+          Foreground="{DynamicResource BrushSageGray}"
+          HorizontalAlignment="Center"
+        />
+        <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,2" />
+
+        <TextBlock Classes="Tag" Text="选择登录方式" />
+
+        <Button x:Name="OAuthButton" Classes="Primary" Content="浏览器授权登录" />
+        <Button x:Name="DeviceButton" Classes="Ghost" Content="改用设备码（扫码）" />
+
+        <TextBlock Classes="Tag" Text="或手动输入 API Key" />
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="ManualKeyBox" Classes="Adaline" PlaceholderText="mk_live_…" />
+          <!-- DESIGN.md §Primary Pill CTA：每屏至多一个填充 CTA（主 CTA = 浏览器授权登录） -->
+          <Button
+            x:Name="ManualKeyButton"
+            Grid.Column="1"
+            Classes="Ghost"
+            Margin="8,0,0,0"
+            Content="确认"
+          />
+        </Grid>
+
+        <!-- 设备流面板 -->
+        <Border x:Name="DevicePanel" Classes="Card" Padding="20" IsVisible="False">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="Tag" Text="设备流登录（扫码）" />
+            <Image x:Name="QrImage" Width="176" Height="176" HorizontalAlignment="Center" />
+            <TextBlock
+              x:Name="UserCodeText"
+              FontSize="16"
+              FontWeight="Bold"
+              FontFamily="{StaticResource FontMono}"
+              Foreground="{DynamicResource BrushForestInk}"
+              HorizontalAlignment="Center"
+            />
+            <TextBlock
+              x:Name="VerificationUriText"
+              Classes="Tag"
+              FontSize="9.5"
+              TextWrapping="Wrap"
+              MaxWidth="320"
+              HorizontalAlignment="Center"
+            />
+            <TextBlock
+              x:Name="DeviceStatusText"
+              Classes="Tag"
+              FontSize="9.5"
+              TextWrapping="Wrap"
+              MaxWidth="320"
+              HorizontalAlignment="Center"
+            />
+          </StackPanel>
+        </Border>
+
+        <TextBlock
+          x:Name="StatusText"
+          Classes="Tag"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextAlignment="Center"
+        />
+      </StackPanel>
+
+      <StackPanel Grid.Row="1" Spacing="16">
+        <Border Height="1" Background="{DynamicResource BrushMist}" />
+        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+          <Button x:Name="SkipButton" Classes="Ghost" FontSize="14" Content="跳过" />
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+
+    <!-- ═══════ 登录成功面板（内容顶置 · 动作条钉在右下） ═══════ -->
+    <Grid x:Name="SuccessPanel" Margin="24,20,24,20" RowDefinitions="*,Auto" IsVisible="False">
+      <StackPanel Grid.Row="0" Spacing="16">
+        <lucide:LucideIcon
+          Kind="CircleCheckBig"
+          Size="40"
+          StrokeWidth="1.6"
+          Foreground="{DynamicResource BrushSageLeaf}"
+          HorizontalAlignment="Center"
+        />
+        <TextBlock Classes="DialogTitle" Text="登录成功" HorizontalAlignment="Center" />
+        <TextBlock
+          Text="云端已就绪。开始你的第一部小说吧！"
+          FontSize="14"
+          Foreground="{DynamicResource BrushSageGray}"
+          HorizontalAlignment="Center"
+        />
+      </StackPanel>
+
+      <StackPanel Grid.Row="1" Spacing="16">
+        <Border Height="1" Background="{DynamicResource BrushMist}" />
+        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+          <Button x:Name="LaterButton" Classes="Ghost" FontSize="14" Content="稍后再说" />
+          <Button x:Name="ConfirmProjectButton" Classes="Primary" Content="创建我的第一个项目 →" />
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+  </StackPanel>
+</Window>

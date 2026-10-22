@@ -1,0 +1,91 @@
+<UserControl
+  x:Class="Desktop.Views.TodoPanelView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:TodoPanelViewModel"
+>
+  <Border
+    Background="{DynamicResource BrushBone}"
+    BorderBrush="{DynamicResource BrushMist}"
+    BorderThickness="1,1,0,0"
+  >
+    <Grid RowDefinitions="Auto,*" MinHeight="250">
+      <!-- 标题栏（DESIGN.md §Category Tag：Fragment Mono 标签） -->
+      <Border Grid.Row="0" Padding="14,10,14,6" Background="Transparent">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            FontWeight="Medium"
+            Foreground="{DynamicResource BrushOlivePress}"
+            Text="任务"
+            TextTrimming="CharacterEllipsis"
+          />
+          <TextBlock
+            Grid.Column="1"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageMist}"
+            Text="{Binding TotalCount, StringFormat='{}共 {0} 项'}"
+            IsVisible="{Binding HasItems}"
+          />
+        </Grid>
+      </Border>
+
+      <!-- 空态 -->
+      <Border Grid.Row="1" Padding="14,10,14,14" IsVisible="{Binding IsEmpty}">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="Tag" Text="暂无任务" />
+        </StackPanel>
+      </Border>
+
+      <!-- 任务列表 -->
+      <Border Grid.Row="1" IsVisible="{Binding HasItems}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Items}" Margin="10,0,10,10">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:TodoItemRow">
+                <Border
+                  Classes="Card Glow"
+                  Padding="10,7"
+                  Margin="0,0,0,5"
+                  CornerRadius="{StaticResource RadiusCardsSm}"
+                >
+                  <Grid ColumnDefinitions="Auto,8,*">
+                    <lucide:LucideIcon
+                      Grid.Column="0"
+                      Kind="{Binding StatusIcon}"
+                      Size="14"
+                      StrokeWidth="1.8"
+                      Foreground="{DynamicResource BrushSageLeaf}"
+                      VerticalAlignment="Center"
+                    />
+                    <StackPanel Grid.Column="2" Spacing="2">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock
+                          FontSize="11"
+                          FontWeight="Medium"
+                          Foreground="{DynamicResource BrushForestInk}"
+                          Text="{Binding Subject}"
+                          TextTrimming="CharacterEllipsis"
+                        />
+                      </StackPanel>
+                      <TextBlock
+                        FontSize="11"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding StatusLabel}"
+                        IsVisible="{Binding IsCompleted}"
+                      />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Border>
+</UserControl>

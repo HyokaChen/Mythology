@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- CHANGE_07: jieba.NET and System.Numerics.Tensors removed — local algorithms deleted, cloud-only -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ClientPlatform\ClientPlatform.csproj">
+      <!-- 共享依赖：由 Host 主程序加载（与 Core 同法）。复制进插件目录会留下过期副本。 -->
+      <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Core\Core.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>WritingTools.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <Version>2.0.0</Version>
+    <PluginId>writing-enhancement-tools</PluginId>
+    <PluginName>Writing Enhancement Tools</PluginName>
+    <PluginDescription>写作增强工具集：云端诊断、本地增强、自动修复</PluginDescription>
+    <PluginAuthor>mythology</PluginAuthor>
+    <PluginMinCoreVersion>1.0.0</PluginMinCoreVersion>
+    <PluginPermissions>novel:read;novel:write;cloud:harness</PluginPermissions>
+
+    <OutputPath>../../Host/bin/$(Configuration)/$(TargetFramework)/plugins/writing-enhancement-tools</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+</Project>

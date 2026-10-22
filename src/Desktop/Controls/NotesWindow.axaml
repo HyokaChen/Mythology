@@ -1,0 +1,160 @@
+<Window
+  x:Class="Desktop.Controls.NotesWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:c="clr-namespace:Desktop.Controls"
+  Title="笔记"
+  Width="820"
+  Height="620"
+  MinWidth="640"
+  MinHeight="480"
+  CanResize="True"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid Margin="32,32,32,24" RowSpacing="20" RowDefinitions="Auto,*,Auto">
+    <!-- ═══════ 标题区：SectionHeading + 说明 + hairline ═══════ -->
+    <StackPanel Grid.Row="0" Spacing="6">
+      <TextBlock Text="笔记" Classes="SectionHeading" />
+      <TextBlock
+        x:Name="Subtitle"
+        Text="作者随手记：候选确认后才参与远期推演"
+        FontSize="14"
+        Foreground="{DynamicResource BrushSageGray}"
+      />
+      <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,0" />
+    </StackPanel>
+
+    <!-- ═══════ 主体：左列表（320） + 右详情 ═══════ -->
+    <Grid Grid.Row="1" ColumnDefinitions="320,*" ColumnSpacing="20">
+      <Grid Grid.Column="0" RowDefinitions="Auto,*" RowSpacing="10">
+        <ComboBox
+          x:Name="FilterBox"
+          Grid.Row="0"
+          Theme="{StaticResource AdalineComboBox}"
+          HorizontalAlignment="Stretch"
+        />
+        <Grid Grid.Row="1">
+          <Border Classes="Card" Padding="8">
+            <ListBox
+              x:Name="NoteList"
+              FontSize="14"
+              Background="Transparent"
+              HorizontalAlignment="Stretch"
+            >
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="c:NoteRow">
+                  <Border
+                    Classes="Card"
+                    CornerRadius="{StaticResource RadiusCardsSm}"
+                    Padding="12,9"
+                    Margin="0,0,0,6"
+                    Background="{DynamicResource BrushSurfaceGlow}"
+                  >
+                    <StackPanel Spacing="2">
+                      <TextBlock
+                        Text="{Binding Title}"
+                        FontSize="13.5"
+                        FontWeight="Medium"
+                        Foreground="{DynamicResource BrushForestInk}"
+                        TextTrimming="CharacterEllipsis"
+                      />
+                      <TextBlock
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="10"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Meta}"
+                      />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Border>
+          <Border
+            x:Name="EmptyNote"
+            Classes="EmptyNote"
+            IsVisible="False"
+            VerticalAlignment="Top"
+            Margin="0,4,0,0"
+          >
+            <StackPanel Spacing="6">
+              <TextBlock
+                Text="还没有笔记"
+                FontSize="16"
+                FontWeight="Medium"
+                Foreground="{DynamicResource BrushForestInk}"
+              />
+              <TextBlock
+                Text="点「新建」记下设定 / 桥段 / 伏笔；对话里说「记一下：…」也会自动落候选。"
+                FontSize="14"
+                Foreground="{DynamicResource BrushSageGray}"
+                TextWrapping="Wrap"
+                MaxWidth="260"
+              />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Grid>
+
+      <Border Grid.Column="1" Classes="Card" Padding="20,16">
+        <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+          <ComboBox
+            x:Name="DetailStatusBox"
+            Grid.Row="0"
+            Width="140"
+            HorizontalAlignment="Left"
+            Theme="{StaticResource AdalineComboBox}"
+          />
+          <TextBlock
+            x:Name="DetailTitle"
+            Grid.Row="1"
+            FontSize="17"
+            FontWeight="Medium"
+            Foreground="{DynamicResource BrushForestInk}"
+            TextWrapping="Wrap"
+          />
+          <TextBlock
+            x:Name="DetailMeta"
+            Grid.Row="2"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="10.5"
+            Foreground="{DynamicResource BrushSageMist}"
+            TextWrapping="Wrap"
+          />
+          <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+            <TextBlock
+              x:Name="DetailBody"
+              FontSize="14"
+              Foreground="{DynamicResource BrushForestInk}"
+              TextWrapping="Wrap"
+            />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- ═══════ 底部：计数（左） + 动作（右，唯一 Primary） ═══════ -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+      <TextBlock
+        x:Name="CountNote"
+        Grid.Column="0"
+        FontFamily="{StaticResource FontMono}"
+        FontSize="10.5"
+        Foreground="{DynamicResource BrushSageMist}"
+        VerticalAlignment="Center"
+      />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+        <Button x:Name="NewButton" Classes="Ghost" FontSize="14" Content="新建" />
+        <Button x:Name="CloseButton" Classes="Ghost" FontSize="14" Content="关闭" />
+        <Button
+          x:Name="EditButton"
+          Classes="Primary"
+          FontSize="14"
+          Content="编辑"
+          IsEnabled="False"
+        />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

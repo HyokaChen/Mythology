@@ -1,0 +1,155 @@
+<UserControl
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:Class="Desktop.Controls.UpdatePromptDialog"
+  x:DataType="vm:UpdateState"
+>
+  <!-- 自动更新提示弹窗 —— 全屏不拦截遮罩 + 居中 Specimen Card，DataContext 为共享单例 UpdateState（与设置页同源）。
+       交互：非模态（遮罩 IsHitTestVisible=False，主界面仍可操作）；Esc = 稍后提醒；唯一出口是「等待」——
+       检测到更新即静默下载，卡片内就地显示下载进度与更新内容；下载完成右下角按钮变为「开始安装」，
+       校验/下载失败则变为「重试」（无「跳过此版本」出口）。
+       视觉（DESIGN.md/Adaline）：Bone 卡面 + 1px Mist 发丝边框 + 10px 圆角（无阴影）；Fragment Mono
+       承载眉标/版本/元数据/百分比（field-note 语言）；进度条 3px（RadiusSmall=1.5）；正文 Sage Gray；
+       动作条用发丝分隔线 + 右下 Ghost/Primary（同 AskUserWindow）。 -->
+
+  <!-- FallbackValue=False：DataContext 为 null（设计时/DI 未就绪）也不能整窗盖遮罩 -->
+  <Panel
+    x:Name="RootPanel"
+    IsVisible="{Binding IsPromptVisible, FallbackValue=False}"
+    Focusable="True"
+  >
+    <!-- 遮罩：Slate Hollow 半透明 scrim（Surfaces L4）；必须显式 IsHitTestVisible=False，否则吞掉整窗点击 -->
+    <Border
+      Background="#802A332A"
+      HorizontalAlignment="Stretch"
+      VerticalAlignment="Stretch"
+      IsHitTestVisible="False"
+    />
+
+    <!-- 卡片：Specimen Card（Bone 表面 + 1px Mist 发丝边框 + 10px 圆角 + 20px 内边距，无阴影） -->
+    <Border
+      HorizontalAlignment="Center"
+      VerticalAlignment="Center"
+      Width="420"
+      Classes="Card"
+      Padding="20"
+    >
+      <StackPanel Spacing="16">
+        <!-- 眉标（Category Tag：Fragment Mono 追踪小字）+ 标题 -->
+        <StackPanel Spacing="6">
+          <TextBlock Classes="Tag" Text="版本更新" />
+          <TextBlock
+            Text="发现新版本"
+            FontSize="14"
+            FontWeight="Medium"
+            Foreground="{DynamicResource BrushForestInk}"
+          />
+        </StackPanel>
+
+        <!-- 版本与元数据（Fragment Mono = 版本号/日期/体积这类 field-note 的唯一字体） -->
+        <StackPanel Spacing="4">
+          <TextBlock
+            Text="{Binding LatestVersion, StringFormat='v{0}'}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="14"
+            Foreground="{DynamicResource BrushForestInk}"
+          />
+          <TextBlock
+            Text="{Binding CurrentVersion, StringFormat='当前版本 v{0}'}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+          />
+          <TextBlock
+            Text="{Binding PublishedAt, StringFormat='发布于 {0:yyyy-MM-dd HH:mm}'}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            IsVisible="{Binding PublishedAt, Converter={x:Static ObjectConverters.IsNotNull}}"
+          />
+          <TextBlock
+            Text="{Binding InstallerSizeText, StringFormat='安装包 {0}'}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            IsVisible="{Binding HasInstallerSize}"
+          />
+        </StackPanel>
+
+        <!-- 更新内容：Linen 内嵌面板 + 1px Mist 发丝边框（Code Block Panel：无阴影、无圆角外容器），长日志就地滚动 -->
+        <StackPanel Spacing="6" IsVisible="{Binding HasReleaseNotes}">
+          <TextBlock Classes="Eyebrow" Text="更新内容" />
+          <Border
+            Background="{DynamicResource BrushLinen}"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="1"
+            Padding="12,10"
+          >
+            <ScrollViewer
+              MaxHeight="160"
+              VerticalScrollBarVisibility="Auto"
+              HorizontalScrollBarVisibility="Disabled"
+            >
+              <TextBlock
+                Text="{Binding ReleaseNotes}"
+                FontSize="13"
+                TextWrapping="Wrap"
+                Foreground="{DynamicResource BrushSageGray}"
+              />
+            </ScrollViewer>
+          </Border>
+        </StackPanel>
+
+        <!-- 下载进度：3px 细轨（RadiusSmall=1.5）+ Sage Leaf 填充 + Mono 百分比 -->
+        <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsDownloading}">
+          <ProgressBar
+            Value="{Binding DownloadProgress}"
+            Maximum="100"
+            Width="300"
+            Height="3"
+            CornerRadius="1.5"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            Background="{DynamicResource BrushMist}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Text="{Binding DownloadProgress, StringFormat={}{0:F0}%}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            VerticalAlignment="Center"
+          />
+        </StackPanel>
+
+        <!-- 状态/错误行 -->
+        <TextBlock
+          Text="{Binding StatusText}"
+          FontSize="12"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextWrapping="Wrap"
+        />
+
+        <!-- 动作条：发丝分隔线 + 右下 Ghost/Primary（AskUserWindow 同款；下载中只有一个出口：等待） -->
+        <StackPanel Spacing="12">
+          <Border Height="1" Background="{DynamicResource BrushMist}" />
+          <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+            <Button Classes="Ghost" Command="{Binding RemindLaterCommand}" Content="稍后提醒" />
+            <Button
+              Classes="Primary"
+              Command="{Binding PrimaryActionCommand}"
+              IsVisible="{Binding IsFailed, FallbackValue=False}"
+              Content="重试"
+            />
+            <Button
+              Classes="Primary"
+              Command="{Binding InstallNowCommand}"
+              IsVisible="{Binding IsInstallReady, FallbackValue=False}"
+              Content="开始安装"
+            />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </Panel>
+</UserControl>

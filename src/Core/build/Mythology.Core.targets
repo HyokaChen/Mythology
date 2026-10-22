@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Mythology.Core NuGet 包的构建钩子。
+    当外部插件通过 PackageReference 引用 Mythology.Core 时，
+    自动设置 Private=false，阻止 Core.dll 被复制到插件输出目录。
+    Core.dll 由 Host 主程序加载到默认 ALC，插件通过 PluginLoadContext 共享引用，
+    复制到插件目录只会造成版本混乱和虚假警告。
+  -->
+  <ItemGroup>
+    <ReferenceCurrentPackage Update="Mythology.Core">
+      <Private>false</Private>
+    </ReferenceCurrentPackage>
+  </ItemGroup>
+</Project>

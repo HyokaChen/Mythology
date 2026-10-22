@@ -1,0 +1,733 @@
+<UserControl
+  x:Class="Desktop.Views.SetUpPanelView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:conv="clr-namespace:Desktop.Converters"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:models="clr-namespace:Desktop.Models"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:SetUpPanelViewModel"
+>
+  <UserControl.Resources>
+    <conv:BoolAndVisibilityConverter x:Key="BoolAndVisibility" />
+    <conv:CountToVisibilityConverter x:Key="CountToVisibility" />
+    <conv:StringNotEmptyConverter x:Key="StringNotEmptyConverter" />
+    <conv:ZeroCountToVisibilityConverter x:Key="ZeroCountToVisibility" />
+    <conv:PercentToTextConverter x:Key="PercentToText" />
+
+    <!-- 实体项模板：标本卡（Bone 底 · Mist 边框 · 10px 圆角 · 无阴影）；密度按 DESIGN.md "compact" -->
+    <DataTemplate x:Key="EntityItemTemplate" x:DataType="models:EntityItem">
+      <!-- Glow = 亮面卡（SurfaceGlow 由 Class 承载；此前本地 Background 会压过 hover 样式） -->
+      <Border
+        Classes="Card Glow OutlineRow"
+        Padding="10,7"
+        CornerRadius="{StaticResource RadiusCardsSm}"
+        Margin="0,0,0,4"
+        Cursor="Hand"
+      >
+        <Grid ColumnDefinitions="Auto,6,*,Auto">
+          <lucide:LucideIcon
+            Grid.Column="0"
+            Kind="{Binding IconKind}"
+            Size="14"
+            StrokeWidth="1.6"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            VerticalAlignment="Center"
+          />
+          <StackPanel Grid.Column="2" Spacing="1">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock
+                Text="{Binding Name}"
+                FontSize="13"
+                FontWeight="Medium"
+                Foreground="{DynamicResource BrushForestInk}"
+                TextTrimming="CharacterEllipsis"
+              />
+              <!-- 状态标记（情节线伏笔/回收/伏笔回收/已决；无标记隐藏）：与名字同行，省一行 -->
+              <Border
+                Classes="TagPill"
+                Padding="6,1"
+                VerticalAlignment="Center"
+                IsVisible="{Binding HasMarker}"
+              >
+                <TextBlock Classes="Tag" FontSize="10" Text="{Binding MarkerText}" />
+              </Border>
+            </StackPanel>
+            <TextBlock
+              Text="{Binding Summary}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              TextTrimming="CharacterEllipsis"
+              IsVisible="{Binding Summary, Converter={StaticResource StringNotEmptyConverter}}"
+            />
+            <!-- 关系 Chip 行（本体关系索引生成；无关系隐藏） -->
+            <ItemsControl
+              ItemsSource="{Binding Chips}"
+              IsVisible="{Binding Chips.Count, Converter={StaticResource CountToVisibility}}"
+              Margin="0,2,0,0"
+            >
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel ItemSpacing="4" LineSpacing="4" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Classes="TagPill" Padding="8,2">
+                    <TextBlock Classes="Tag" FontSize="10" Text="{Binding}" />
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <!-- 元数据行（mono 小字：状态 · 字数 · 出场/变化计数） -->
+            <TextBlock
+              Text="{Binding MetaLine}"
+              IsVisible="{Binding MetaLine, Converter={StaticResource StringNotEmptyConverter}}"
+              FontFamily="{StaticResource FontMono}"
+              FontSize="10"
+              Foreground="{DynamicResource BrushSageMist}"
+              Margin="0,2,0,0"
+            />
+          </StackPanel>
+          <Button
+            Grid.Column="3"
+            Classes="MoreButton"
+            Click="EntityMore_OnClick"
+            ToolTip.Tip="更多操作"
+          >
+            <lucide:LucideIcon Kind="Ellipsis" Size="14" StrokeWidth="1.8" />
+            <Button.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="查看 / 编辑" Click="EntityEdit_OnClick">
+                  <MenuItem.Icon>
+                    <lucide:LucideIcon Kind="PenLine" Size="14" StrokeWidth="1.8" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="插入引用" Click="EntityInsert_OnClick">
+                  <MenuItem.Icon>
+                    <lucide:LucideIcon Kind="CornerDownLeft" Size="14" StrokeWidth="1.8" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="本体关系" Click="EntityRelations_OnClick">
+                  <MenuItem.Icon>
+                    <lucide:LucideIcon Kind="Link2" Size="14" StrokeWidth="1.8" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="历史" Click="EntityHistory_OnClick">
+                  <MenuItem.Icon>
+                    <lucide:LucideIcon Kind="Clock3" Size="14" StrokeWidth="1.8" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="删除" Click="EntityDelete_OnClick">
+                  <MenuItem.Icon>
+                    <lucide:LucideIcon
+                      Kind="Trash"
+                      Size="14"
+                      StrokeWidth="1.8"
+                      Foreground="{DynamicResource BrushCrimsonSpecimen}"
+                    />
+                  </MenuItem.Icon>
+                </MenuItem>
+              </ContextMenu>
+            </Button.ContextMenu>
+          </Button>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <!-- ═══ 右侧设定面板（UI.md §3：8 Tab · 大纲/角色/组织/地点/情节/场景/道具/关系；
+       顺序对齐 TUI SetUpPanel —— 大纲在首位） ═══ -->
+  <Border
+    Background="{DynamicResource BrushBone}"
+    BorderBrush="{DynamicResource BrushMist}"
+    BorderThickness="1,0,0,0"
+  >
+    <!--
+      8 个 Tab 由 ItemsSource 数据驱动渲染（VM: SetUpPanelViewModel.Tabs）：
+      Header / 空态文案 / 实体集合来自 EntityTab；大纲 Tab 通过 HasProgress 显示进度卡。
+      取代原先 8 段同构 TabItem。code-behind 按 SelectedIndex 映射 EntityType（真源 =
+      SetUpPanelViewModel.SectionTypes：大纲在首位，实体分区依次后移一一对应）。
+    -->
+    <TabControl
+      x:Name="MainTabControl"
+      Padding="0"
+      Background="Transparent"
+      ItemsSource="{Binding Tabs}"
+      SelectedIndex="0"
+    >
+      <!-- 单行 pill 带（内容宽度、放不下自动折行）：DESIGN.md「Pill Tab / Segment」——
+           4×2 等宽网格会吃掉两行高度、读起来像仪表盘栅格而不是标签带 -->
+      <TabControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel />
+        </ItemsPanelTemplate>
+      </TabControl.ItemsPanel>
+
+      <TabControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:EntityTab">
+          <TextBlock Text="{Binding Header}" />
+        </DataTemplate>
+      </TabControl.ItemTemplate>
+
+      <TabControl.ContentTemplate>
+        <DataTemplate x:DataType="vm:EntityTab">
+          <Grid RowDefinitions="Auto,Auto,Auto,*">
+            <!-- ① 工具带：**全宽搜索字段**（占满整行 + 右端内嵌图标按钮）。
+                 搜索是即输即筛（magnifier = 聚焦；✕ 有词才出现），不再与计数/新建挤一行——
+                 字段的左右缘即面板的左右缘，读起来才是一条「搜索栏」。 -->
+            <Grid Grid.Row="0" Margin="14,8,14,4">
+              <TextBox
+                Classes="Adaline"
+                HorizontalAlignment="Stretch"
+                Padding="10,4,34,4"
+                PlaceholderText="{Binding Parent.SearchPlaceholder}"
+                Text="{Binding Parent.SearchText, Mode=TwoWay}"
+              />
+              <!-- 仅保留「清空」；占位文案由 VM 按分区给出（不含放大镜，TUI 同口径）——
+                   放大镜只出现在元信息行的「筛选」入口上 -->
+              <StackPanel
+                Orientation="Horizontal"
+                Spacing="0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Margin="0,0,12,0"
+              >
+                <Button
+                  Classes="IconButton"
+                  Padding="5,2"
+                  ToolTip.Tip="清空搜索"
+                  Click="ClearSearch_OnClick"
+                  IsVisible="{Binding Parent.SearchText, Converter={StaticResource StringNotEmptyConverter}}"
+                >
+                  <lucide:LucideIcon Kind="X" Size="12" StrokeWidth="1.8" />
+                </Button>
+              </StackPanel>
+            </Grid>
+
+            <!-- ② 实体 tab 元信息行：计数（mono 小字）+ 动作「＋ 添加」「🔍 筛选」（TUI 同序） -->
+            <Grid
+              Grid.Row="1"
+              Margin="14,0,14,4"
+              ColumnDefinitions="*,Auto,Auto"
+              ColumnSpacing="6"
+              IsVisible="{Binding HasNoProgress}"
+            >
+              <TextBlock
+                Grid.Column="0"
+                VerticalAlignment="Center"
+                FontFamily="{StaticResource FontMono}"
+                FontSize="10"
+                Foreground="{DynamicResource BrushSageMist}"
+                Text="{Binding Items.Count, StringFormat='{}· {0} 条'}"
+              />
+              <Button
+                Grid.Column="1"
+                Classes="NavPill"
+                Padding="8,3"
+                FontSize="11"
+                Click="AddEntity_OnClick"
+                ToolTip.Tip="新建当前类型的条目"
+              >
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <lucide:LucideIcon
+                    Kind="Plus"
+                    Size="11"
+                    StrokeWidth="2"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Text="添加" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button
+                Grid.Column="2"
+                Classes="NavPill"
+                Padding="8,3"
+                FontSize="11"
+                Click="FilterEntity_OnClick"
+                ToolTip.Tip="按类型 / 属性筛选（与搜索叠加；命中的条数显示在搜索框占位里）"
+              >
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <lucide:LucideIcon
+                    Kind="Funnel"
+                    Size="11"
+                    StrokeWidth="1.8"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Text="筛选" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Grid>
+
+            <!-- ② 大纲：范围 + 状态（同一行位；千章规模「按卷收窄 + 筛出没写的」两个维度） -->
+            <Grid
+              Grid.Row="1"
+              Margin="12,0,12,6"
+              ColumnDefinitions="Auto,*,Auto,Auto"
+              ColumnSpacing="6"
+              IsVisible="{Binding HasProgress}"
+            >
+              <TextBlock Classes="Tag" VerticalAlignment="Center" Text="范围" />
+              <ComboBox
+                Grid.Column="1"
+                Theme="{StaticResource AdalineComboBox}"
+                HorizontalAlignment="Stretch"
+                ItemsSource="{Binding Parent.ChapterScopeOptions}"
+                SelectedItem="{Binding Parent.ChapterScope, Mode=TwoWay}"
+              />
+              <ComboBox
+                Grid.Column="2"
+                Width="104"
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding Parent.ChapterStatusOptions}"
+                SelectedItem="{Binding Parent.ChapterStatusFilter, Mode=TwoWay}"
+              />
+              <TextBlock
+                Grid.Column="3"
+                VerticalAlignment="Center"
+                FontFamily="{StaticResource FontMono}"
+                FontSize="10"
+                Foreground="{DynamicResource BrushSageMist}"
+                Text="{Binding Parent.ChapterScopeSummary}"
+              />
+            </Grid>
+
+            <!-- ③ 大纲：云端同步（面板内可视化；云端未接线 / 非大纲 tab 整行隐藏） -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="12,0,12,6">
+              <StackPanel.IsVisible>
+                <MultiBinding Converter="{StaticResource BoolAndVisibility}">
+                  <Binding Path="HasProgress" />
+                  <Binding Path="Parent.IsCloudConfigured" />
+                </MultiBinding>
+              </StackPanel.IsVisible>
+              <TextBlock
+                Classes="Tag"
+                VerticalAlignment="Center"
+                Text="{Binding Parent.CloudSyncText}"
+              />
+              <Button Classes="NavPill" Padding="8,3" FontSize="11" Click="CloudSync_OnClick">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <lucide:LucideIcon
+                    Kind="RefreshCw"
+                    Size="12"
+                    StrokeWidth="1.6"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Text="同步" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="NavPill" Padding="8,3" FontSize="11" Click="CloudPull_OnClick">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <lucide:LucideIcon
+                    Kind="ArrowDownToLine"
+                    Size="12"
+                    StrokeWidth="1.6"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Text="拉取" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+
+            <!-- ═══ 通用实体列表（非大纲 Tab）：VSP 直挂 ScrollViewer → 真正虚拟化 ═══ -->
+            <ScrollViewer
+              Grid.Row="3"
+              HorizontalScrollBarVisibility="Disabled"
+              IsVisible="{Binding HasNoProgress}"
+            >
+              <ItemsControl ItemsSource="{Binding Items}" Margin="12,0,12,14">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:EntityItem">
+                    <ContentControl
+                      Content="{Binding}"
+                      ContentTemplate="{StaticResource EntityItemTemplate}"
+                      PointerPressed="EntityItem_OnPointerPressed"
+                    />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+            <!-- 通用实体空态（非大纲 Tab）：「还没有」与「未命中」是两种状态（TUI 同口径） -->
+            <Border Grid.Row="3" Classes="EmptyNote" Margin="12,8,12,0">
+              <Border.IsVisible>
+                <MultiBinding Converter="{StaticResource BoolAndVisibility}">
+                  <Binding Path="HasNoProgress" />
+                  <Binding Path="Items.Count" Converter="{StaticResource ZeroCountToVisibility}" />
+                </MultiBinding>
+              </Border.IsVisible>
+              <Panel>
+                <TextBlock
+                  Classes="Tag"
+                  Text="{Binding EmptyText}"
+                  IsVisible="{Binding Parent.ShowEntityEmptyHint}"
+                />
+                <TextBlock
+                  Classes="Tag"
+                  Text="{Binding Parent.SearchEmptyHint}"
+                  IsVisible="{Binding Parent.HasSearchText}"
+                />
+                <!-- 「没有实体」与「筛选后没命中」是两种状态（有筛选时不能报成「暂无 X」） -->
+                <TextBlock
+                  Classes="Tag"
+                  Text="{Binding Parent.FilterEmptyHint}"
+                  IsVisible="{Binding Parent.ShowFilterEmptyHint}"
+                />
+              </Panel>
+            </Border>
+
+            <!-- ═══ 大纲（大纲 Tab）：书级摘要条 + 卷/章结构树 ═══
+                 书级内容（总纲/检查）不再占树里的层级 → 收进摘要条的两个入口 -->
+            <Grid Grid.Row="3" RowDefinitions="Auto,*,Auto" IsVisible="{Binding HasProgress}">
+              <Border
+                Grid.Row="0"
+                Padding="12,8,12,8"
+                BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource BrushMist}"
+              >
+                <StackPanel Spacing="5">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock
+                      Text="{Binding Parent.BookSummary.Title}"
+                      FontSize="13"
+                      FontWeight="SemiBold"
+                      Foreground="{DynamicResource BrushForestInk}"
+                      VerticalAlignment="Center"
+                    />
+                    <TextBlock
+                      Text="{Binding Parent.BookSummary.OutlineLine}"
+                      FontSize="11"
+                      Foreground="{DynamicResource BrushSageGray}"
+                      TextTrimming="CharacterEllipsis"
+                      VerticalAlignment="Center"
+                    />
+                  </StackPanel>
+                  <!-- 计数行 + 造型进度：百分比 mono 小字靠右，进度条是一条 3px 细线（无阴影/无卡片，DESIGN.md） -->
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                      <TextBlock
+                        Classes="Tag"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="10"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Parent.BookSummary.VolumeCount, StringFormat='{}{0} 卷'}"
+                      />
+                      <TextBlock
+                        Classes="Tag"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="10"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Parent.BookSummary.ChapterCount, StringFormat='{}{0} 章'}"
+                      />
+                      <TextBlock
+                        Classes="Tag"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="10"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Parent.BookSummary.DoneCount, StringFormat='发布 {0}'}"
+                      />
+                      <TextBlock
+                        Classes="Tag"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="10"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        Text="{Binding Parent.BookSummary.TotalWords, StringFormat='{}{0:N0} 字'}"
+                      />
+                    </StackPanel>
+                    <TextBlock
+                      Grid.Column="1"
+                      VerticalAlignment="Center"
+                      FontFamily="{StaticResource FontMono}"
+                      FontSize="10"
+                      Foreground="{DynamicResource BrushSageGray}"
+                      Text="{Binding ProgressPercent, Converter={StaticResource PercentToText}}"
+                    />
+                  </Grid>
+                  <ProgressBar
+                    Value="{Binding ProgressPercent}"
+                    Maximum="100"
+                    Height="3"
+                    CornerRadius="1.5"
+                    Foreground="{DynamicResource BrushSageLeaf}"
+                    Background="{DynamicResource BrushMist}"
+                  />
+                </StackPanel>
+              </Border>
+
+              <TreeView
+                Grid.Row="1"
+                x:Name="OutlineTree"
+                ItemsSource="{Binding Parent.OutlineNodes}"
+                SelectionMode="Single"
+                Background="Transparent"
+              >
+                <!-- TreeViewItem.IsExpanded ↔ 节点 VM：程序化 reveal 能展开、用户展开能回写状态集合 -->
+                <TreeView.Styles>
+                  <Style Selector="TreeViewItem" x:DataType="vm:OutlineNodeVm">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                  </Style>
+                </TreeView.Styles>
+                <TreeView.ItemTemplate>
+                  <TreeDataTemplate x:DataType="vm:OutlineNodeVm" ItemsSource="{Binding Children}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,1,0,1">
+                      <StackPanel Grid.Column="0" Spacing="1">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock
+                            Text="{Binding Title}"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Foreground="{DynamicResource BrushForestInk}"
+                            VerticalAlignment="Center"
+                          />
+                          <TextBlock
+                            Text="{Binding Meta}"
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="10"
+                            Foreground="{DynamicResource BrushSageMist}"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding Meta, Converter={StaticResource StringNotEmptyConverter}}"
+                          />
+                        </StackPanel>
+                        <TextBlock
+                          Text="{Binding Summary}"
+                          FontSize="11"
+                          Foreground="{DynamicResource BrushSageGray}"
+                          TextTrimming="CharacterEllipsis"
+                        >
+                          <TextBlock.IsVisible>
+                            <MultiBinding Converter="{StaticResource BoolAndVisibility}">
+                              <Binding Path="ShowsSummary" />
+                              <Binding
+                                Path="Summary"
+                                Converter="{StaticResource StringNotEmptyConverter}"
+                              />
+                            </MultiBinding>
+                          </TextBlock.IsVisible>
+                        </TextBlock>
+                      </StackPanel>
+                      <StackPanel
+                        Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="2"
+                        VerticalAlignment="Center"
+                      >
+                        <!-- 行上只有两个动作：＋（下一层新建）与 ⋯（详情 / 检查 / 删除）——
+                             详情、检查、删除进菜单，行上不再并排四个图标（用户反馈：太抽象太乱）。
+                             图标一律 Lucide 线性图标，不用 emoji。 -->
+                        <Button
+                          Classes="MoreButton"
+                          Click="OutlineNodeAdd_OnClick"
+                          ToolTip.Tip="新增（书→分卷 / 卷→章节）"
+                          IsVisible="{Binding CanAdd}"
+                        >
+                          <lucide:LucideIcon Kind="Plus" Size="14" StrokeWidth="2" />
+                        </Button>
+                        <Button
+                          Classes="MoreButton"
+                          Click="OutlineNodeMore_OnClick"
+                          ToolTip.Tip="更多（详情 / 检查 / 删除）"
+                        >
+                          <lucide:LucideIcon Kind="Ellipsis" Size="14" StrokeWidth="1.8" />
+                          <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding Row}">
+                              <!-- ① 详情（各层级编辑器；菜单置顶，行上不再单列按钮） -->
+                              <MenuItem
+                                Header="详情"
+                                Click="OnNovelInfo_Click"
+                                IsVisible="{Binding IsNovel}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="PenLine" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="详情"
+                                Click="VolumeGroupEdit_OnClick"
+                                IsVisible="{Binding IsVolume}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="PenLine" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="细纲"
+                                Click="ChapterOutline_OnClick"
+                                IsVisible="{Binding IsChapter}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="ListTree" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="内容"
+                                Click="ChapterContent_OnClick"
+                                IsVisible="{Binding IsChapter}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="BookOpen" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <!-- 发布 / 撤回（章专属；按草稿/发布两态由 code-behind 显隐，Tag 标记） -->
+                              <MenuItem
+                                Header="发布"
+                                Click="ChapterPublish_OnClick"
+                                Tag="publish"
+                                IsVisible="False"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Send" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="撤回"
+                                Click="ChapterUnpublish_OnClick"
+                                Tag="unpublish"
+                                IsVisible="False"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Undo2" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <!-- 时间线（书 / 卷 / 章）：状态变化 + 本体动作 + 旧字段审计 -->
+                              <MenuItem
+                                Header="时间线"
+                                Click="OutlineTimeline_OnClick"
+                                IsVisible="{Binding IsChapter}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Clock3" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <Separator IsVisible="{Binding IsNovel}" />
+                              <!-- ② 检查（书/卷）→ 打开检查结果窗（云端运行按钮在窗内） -->
+                              <MenuItem
+                                Header="检查"
+                                Click="OnSetupCheck_Click"
+                                IsVisible="{Binding IsNovel}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Search" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="检查"
+                                Click="OnSetupCheck_Click"
+                                IsVisible="{Binding IsVolume}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Search" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <!-- 书 / 卷的时间线（章的时间线在细纲项之后） -->
+                              <MenuItem
+                                Header="时间线"
+                                Click="OutlineTimeline_OnClick"
+                                IsVisible="{Binding IsNovel}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Clock3" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="时间线"
+                                Click="OutlineTimeline_OnClick"
+                                IsVisible="{Binding IsVolume}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon Kind="Clock3" Size="14" StrokeWidth="1.8" />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <MenuItem
+                                Header="删除"
+                                Click="NovelDelete_OnClick"
+                                IsVisible="{Binding IsNovel}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon
+                                    Kind="Trash"
+                                    Size="14"
+                                    StrokeWidth="1.8"
+                                    Foreground="{DynamicResource BrushCrimsonSpecimen}"
+                                  />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <!-- ③ 删除（各层级置底；弹窗确认） -->
+                              <Separator IsVisible="{Binding IsVolume}" />
+                              <MenuItem
+                                Header="删除"
+                                Click="VolumeGroupDelete_OnClick"
+                                IsVisible="{Binding IsVolume}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon
+                                    Kind="Trash"
+                                    Size="14"
+                                    StrokeWidth="1.8"
+                                    Foreground="{DynamicResource BrushCrimsonSpecimen}"
+                                  />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                              <Separator IsVisible="{Binding IsChapter}" />
+                              <MenuItem
+                                Header="删除"
+                                Click="ChapterDelete_OnClick"
+                                IsVisible="{Binding IsChapter}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon
+                                    Kind="Trash"
+                                    Size="14"
+                                    StrokeWidth="1.8"
+                                    Foreground="{DynamicResource BrushCrimsonSpecimen}"
+                                  />
+                                </MenuItem.Icon>
+                              </MenuItem>
+                            </ContextMenu>
+                          </Button.ContextMenu>
+                        </Button>
+                      </StackPanel>
+                    </Grid>
+                  </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+
+              <!-- 行内新建章节输入条（卷头「+」/ 更多菜单 → 新建章节 / 空态行「+」触发；Enter 连打 · Esc 取消，不弹窗） -->
+              <Border
+                Grid.Row="2"
+                Margin="12,0,12,10"
+                Padding="10,7"
+                CornerRadius="{StaticResource RadiusCardsSm}"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource BrushMist}"
+                Background="{DynamicResource BrushSurfaceGlow}"
+                IsVisible="{Binding Parent.InlineCreateActive}"
+              >
+                <StackPanel Spacing="4">
+                  <TextBlock
+                    FontSize="11"
+                    FontWeight="SemiBold"
+                    Foreground="{DynamicResource BrushForestInk}"
+                    Text="{Binding Parent.InlineCreateCaption}"
+                  />
+                  <TextBox
+                    x:Name="InlineCreateBox"
+                    Classes="Adaline"
+                    FontSize="12"
+                    PlaceholderText="章节标题 · Enter 新建（可连打）· Esc 取消"
+                    KeyDown="InlineCreateBox_OnKeyDown"
+                  />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Grid>
+        </DataTemplate>
+      </TabControl.ContentTemplate>
+    </TabControl>
+  </Border>
+</UserControl>

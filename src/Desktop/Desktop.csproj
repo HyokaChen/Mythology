@@ -1,0 +1,188 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- 对话框 XAML（AboutDialog/ProjectPickerWindow 等）只有带参构造函数，无法通过
+         avares:// 运行时加载器实例化 → AVLN3001。它们仅从代码 new Xxx(args) + InitializeComponent()
+         （编译路径，作用于现有实例）加载，从不经 URI 加载，警告无害 → 显式屏蔽。 -->
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <AssemblyName>MythDesktop</AssemblyName>
+    <RootNamespace>Desktop</RootNamespace>
+    <!-- 发布：自包含单文件 -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;Tests\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../CloudDiagnosis/CloudDiagnosis.csproj" />
+    <ProjectReference Include="../Core/Core.csproj" />
+    <ProjectReference Include="../ClientPlatform/ClientPlatform.csproj" />
+    <ProjectReference Include="../Channels/WeChat/Channels.WeChat.csproj" />
+    <ProjectReference Include="../StabilityHarness/StabilityHarness.csproj" />
+    <!-- 不引用 Host 或 Tui -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Desktop.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Avalonia 核心 -->
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+
+    <!-- SukiUI 主题 -->
+    <PackageReference Include="SukiUI" Version="7.0.1" />
+
+    <!-- ReactiveUI（与 LKK 版本组合一致；SourceGenerators 与当前 SDK Roslyn 带不兼容，改用 RaiseAndSetIfChanged 手写属性） -->
+    <PackageReference Include="ReactiveUI" Version="26.0.1" />
+    <PackageReference Include="ReactiveUI.Avalonia" Version="12.1.6" />
+    <PackageReference
+      Include="ReactiveUI.Avalonia.Microsoft.Extensions.DependencyInjection"
+      Version="12.1.6"
+    />
+
+    <!-- LiveMarkdown 流式渲染 -->
+    <PackageReference Include="LiveMarkdown.Avalonia" Version="2.4.3" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Math" Version="2.4.3" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Mermaid" Version="2.4.3" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Svg" Version="2.4.3" />
+
+    <!-- 图标 -->
+    <PackageReference Include="Lucide.Avalonia" Version="0.2.26" />
+
+    <!-- 平滑滚动 -->
+    <PackageReference Include="SmoothScroll.Avalonia" Version="12.0.0.14" />
+
+    <!-- 微软扩展 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.13" />
+    <PackageReference
+      Include="Microsoft.Extensions.Configuration.EnvironmentVariables"
+      Version="10.0.13"
+    />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+
+    <!-- SQLite（对话历史） -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+
+    <!-- 工具 -->
+    <PackageReference Include="Ulid" Version="1.4.1" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 在编译 Desktop 之前，先编译所有插件项目（插件项目 OutputPath 硬编码到 Host/bin，
+       这里再复制到 Desktop 的 bin/plugins/，保证桌面端自包含插件 DLL）。
+       这是 MSBuild Target，不是 ProjectReference，不引入编译时类型依赖。
+       RemoveProperties 剥掉 dotnet publish -r/-p:Version 传来的全局属性：不剥则插件输出多一层
+       <rid>/ 子目录（运行时只扫 plugins/<name>/*.dll，会一个插件都加载不到），且 plugin.json
+       版本被应用版本覆盖。 -->
+  <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
+    <MSBuild
+      Projects="..\Plugins\FileSystem\Plugins.FileSystem.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\NovelTools\Plugins.NovelTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\SemanticRetrievalTool\Plugins.SemanticRetrievalTool.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\WebSearchTools\Plugins.WebSearchTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\ContextContinuation\Plugins.ContextContinuation.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\WritingTools\Plugins.WritingTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+  </Target>
+
+  <!-- 复制插件输出（Host/bin/.../plugins/*）到 Desktop 输出目录 -->
+  <Target Name="CopyPluginsToDesktop" AfterTargets="BuildPlugins">
+    <ItemGroup>
+      <_PluginSource Include="..\Host\bin\$(Configuration)\$(TargetFramework)\plugins\**\*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_PluginSource)"
+      DestinationFolder="$(OutputPath)plugins\%(RecursiveDir)"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+
+  <!-- jieba.NET 词典资源：复制到 Desktop 输出目录（ToolSearchEngine 运行需要，与 Host/Core 一致） -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(JiebaResourceFiles)"
+      DestinationFolder="$(JiebaResourcesDest)"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+
+  <!-- 发布载荷：Build 阶段由 MSBuild Target 复制到 $(OutputPath) 的 plugins/ 与 Resources/
+       不是 Content item，dotnet publish 不会带进 $(PublishDir)；而运行时按
+       AppContext.BaseDirectory/plugins（内置插件）与 /Resources（jieba 词典）查找，缺失即残废。
+       PackAsTool 的包内容取自 $(PublishDir)，故同一 Target 同时修好 nupkg。 -->
+  <Target Name="CopyRuntimeAssetsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PluginPublishFiles Include="$(OutputPath)plugins\**\*" />
+      <_JiebaPublishFiles Include="$(OutputPath)Resources\**\*" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_PluginPublishFiles)' == ''"
+      Text="发布载荷缺少 plugins/（$(OutputPath)plugins 未生成，检查 BuildPlugins Target）"
+    />
+    <Error
+      Condition="'@(_JiebaPublishFiles)' == ''"
+      Text="发布载荷缺少 Resources/（$(OutputPath)Resources 未生成，检查 CopyJiebaResources Target）"
+    />
+    <Copy
+      SourceFiles="@(_PluginPublishFiles)"
+      DestinationFolder="$(PublishDir)plugins\%(RecursiveDir)"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      SourceFiles="@(_JiebaPublishFiles)"
+      DestinationFolder="$(PublishDir)Resources"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+</Project>

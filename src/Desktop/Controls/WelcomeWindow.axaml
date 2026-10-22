@@ -1,0 +1,55 @@
+<Window
+  x:Class="Desktop.Controls.WelcomeWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Title="欢迎使用 Mythology"
+  Width="480"
+  Height="400"
+  MinWidth="420"
+  MinHeight="360"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid Margin="32,32,32,24" RowSpacing="20" RowDefinitions="Auto,*,Auto">
+    <!-- 品牌锚点：全窗唯一的衬线 display moment -->
+    <StackPanel Grid.Row="0" Spacing="6">
+      <TextBlock Text="Mythology" Classes="Display" />
+      <TextBlock
+        Text="AI 小说写作助手"
+        FontSize="14"
+        Foreground="{DynamicResource BrushSageGray}"
+      />
+      <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,0" />
+    </StackPanel>
+
+    <TextBlock
+      Grid.Row="1"
+      x:Name="HintText"
+      Text="开始创作前需要先配置 LLM 提供商与 API Key。配置好之后，就能创建角色、撰写章节。"
+      FontSize="14"
+      Foreground="{DynamicResource BrushSageGray}"
+      TextWrapping="Wrap"
+      MaxWidth="380"
+      VerticalAlignment="Center"
+      LineHeight="21"
+    />
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+      <Button
+        x:Name="BrowseButton"
+        Classes="Ghost"
+        FontSize="14"
+        Content="先逛逛"
+        Click="BrowseButton_OnClick"
+      />
+      <Button
+        x:Name="SettingsButton"
+        Classes="Primary"
+        FontSize="14"
+        Content="打开设置"
+        Click="SettingsButton_OnClick"
+      />
+    </StackPanel>
+  </Grid>
+</Window>

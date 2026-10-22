@@ -1,0 +1,278 @@
+<Window
+  x:Class="Desktop.Controls.ProjectPickerWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:c="clr-namespace:Desktop.Controls"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  Title="小说项目"
+  Width="560"
+  Height="600"
+  MinWidth="480"
+  MinHeight="460"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid>
+    <!-- ═══════ 主面板：项目列表（列表弹性填充，按钮固定底部） ═══════ -->
+    <Grid
+      x:Name="MainPanel"
+      Margin="32,32,32,24"
+      RowSpacing="20"
+      RowDefinitions="Auto,Auto,*,Auto,Auto"
+    >
+      <StackPanel Grid.Row="0" Spacing="6">
+        <TextBlock Text="你的书房" Classes="Display" />
+        <TextBlock
+          Text="最近更新在前 · 双击或回车打开 · 列表汇总所有已登记的项目目录"
+          FontSize="14"
+          Foreground="{DynamicResource BrushSageGray}"
+        />
+        <!-- 当前写入目录（新建项目落盘处 / 云端拉取落盘处）-->
+        <TextBlock
+          x:Name="ActiveDirNote"
+          FontFamily="{StaticResource FontMono}"
+          FontSize="10.5"
+          Foreground="{DynamicResource BrushSageMist}"
+          TextTrimming="CharacterEllipsis"
+        />
+        <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,0" />
+      </StackPanel>
+
+      <!-- LLM 未配置提示（mono 标签 + 正文，无警示 emoji） -->
+      <Border
+        Grid.Row="1"
+        x:Name="LlmHintBanner"
+        IsVisible="False"
+        Classes="Card"
+        Background="{DynamicResource BrushAmberWash}"
+        Padding="16,12"
+      >
+        <StackPanel Spacing="6">
+          <TextBlock Classes="Tag" Text="待配置" />
+          <TextBlock
+            FontSize="14"
+            Foreground="{DynamicResource BrushAmberPin}"
+            TextWrapping="Wrap"
+            Text="还没有 LLM API Key。创建项目后到设置里配好连接器，就能开始写。"
+          />
+        </StackPanel>
+      </Border>
+
+      <!-- 列表区：Card 列表 + 空状态 -->
+      <Grid Grid.Row="2">
+        <Border Classes="Card" Padding="8">
+          <ListBox
+            x:Name="NovelList"
+            FontSize="14"
+            Background="Transparent"
+            HorizontalAlignment="Stretch"
+          >
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="c:NovelItem">
+                <Border
+                  Classes="Card"
+                  CornerRadius="{StaticResource RadiusCardsSm}"
+                  Padding="12,9"
+                  Margin="0,0,0,6"
+                  Background="{DynamicResource BrushSurfaceGlow}"
+                >
+                  <StackPanel Spacing="2">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <TextBlock
+                        Grid.Column="0"
+                        Text="{Binding Title}"
+                        FontSize="13.5"
+                        FontWeight="Medium"
+                        Foreground="{DynamicResource BrushForestInk}"
+                        TextTrimming="CharacterEllipsis"
+                      />
+                      <Border
+                        Grid.Column="1"
+                        Classes="TagPill"
+                        IsVisible="{Binding IsCurrent}"
+                        VerticalAlignment="Center"
+                      >
+                        <TextBlock Classes="Tag" Text="当前" />
+                      </Border>
+                    </Grid>
+                    <TextBlock
+                      FontFamily="{StaticResource FontMono}"
+                      FontSize="10"
+                      Foreground="{DynamicResource BrushSageMist}"
+                      TextTrimming="CharacterEllipsis"
+                    >
+                      <Run Text="{Binding Genre, Mode=OneWay}" />
+                      <Run Text=" · " />
+                      <Run Text="{Binding Chapters, Mode=OneWay}" />
+                      <Run Text=" 章 · 更新 " />
+                      <Run Text="{Binding Date, Mode=OneWay}" />
+                      <Run Text=" · " />
+                      <Run Text="{Binding Directory, Mode=OneWay}" />
+                    </TextBlock>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
+        <Border
+          x:Name="EmptyNote"
+          Classes="EmptyNote"
+          IsVisible="False"
+          VerticalAlignment="Top"
+          Margin="0,4,0,0"
+        >
+          <StackPanel Spacing="6">
+            <TextBlock
+              Text="书房还是空的"
+              FontSize="16"
+              FontWeight="Medium"
+              Foreground="{DynamicResource BrushForestInk}"
+            />
+            <TextBlock
+              Text="打开电脑上的小说文件夹，里面的书会自动加载进来；新建项目也会落在同一个文件夹。"
+              FontSize="14"
+              Foreground="{DynamicResource BrushSageGray}"
+              TextWrapping="Wrap"
+              MaxWidth="360"
+            />
+            <Button
+              x:Name="OpenEmptyFolderButton"
+              Classes="Primary"
+              Content="打开本地文件夹…"
+              HorizontalAlignment="Right"
+              Margin="0,8,0,0"
+            />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Grid.Row="3" Height="1" Background="{DynamicResource BrushMist}" />
+      <!-- 底部：计数（左，上下文元数据） + 动作（右，唯一 Primary） -->
+      <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
+        <TextBlock
+          x:Name="CountNote"
+          Grid.Column="0"
+          FontFamily="{StaticResource FontMono}"
+          FontSize="10.5"
+          Foreground="{DynamicResource BrushSageMist}"
+          VerticalAlignment="Center"
+        />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+          <Button
+            x:Name="AddFolderButton"
+            Classes="Ghost"
+            FontSize="14"
+            Content="打开其他目录…"
+            ToolTip.Tip="把电脑上的另一个小说目录加入项目列表（不会移动或删除任何文件）"
+          />
+          <!-- DESIGN.md：填充 CTA 每屏至多一个 → 新建小说为次级动作（描边），打开保持唯一 Primary -->
+          <Button x:Name="NewButton" Classes="Ghost" FontSize="14" Content="新建小说" />
+          <Button
+            x:Name="OpenButton"
+            Classes="Primary"
+            FontSize="14"
+            Content="打开"
+            IsEnabled="False"
+          />
+        </StackPanel>
+      </Grid>
+    </Grid>
+
+    <!-- ═══════ 表单面板：新建项目（标题/按钮固定，字段区可滚动防溢出） ═══════ -->
+    <Grid
+      x:Name="FormPanel"
+      Margin="32,32,32,24"
+      RowDefinitions="Auto,*,Auto,Auto"
+      IsVisible="False"
+    >
+      <TextBlock Grid.Row="0" Text="新建小说项目" Classes="SectionHeading" />
+
+      <ScrollViewer
+        Grid.Row="1"
+        Margin="0,16,0,0"
+        VerticalScrollBarVisibility="Auto"
+        HorizontalScrollBarVisibility="Disabled"
+      >
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="书名 *" />
+            <TextBox x:Name="TitleBox" Classes="Adaline" PlaceholderText="例如：山海遗闻" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="作者" />
+            <TextBox x:Name="AuthorBox" Classes="Adaline" PlaceholderText="笔名，或留空" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="题材（大类 / 二级）" />
+            <Grid ColumnDefinitions="*,12,*">
+              <ComboBox x:Name="CategoryBox" HorizontalAlignment="Stretch" />
+              <ComboBox x:Name="SubcategoryBox" Grid.Column="2" HorizontalAlignment="Stretch" />
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="简介" />
+            <TextBox
+              x:Name="DescBox"
+              Classes="Adaline"
+              PlaceholderText="一两句说清故事，可留空"
+              AcceptsReturn="True"
+              TextWrapping="Wrap"
+              MinHeight="64"
+            />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="目标字数" />
+            <TextBox x:Name="TargetWordsBox" Classes="Adaline" PlaceholderText="字" Text="50000" />
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="Tag" Text="总纲" />
+            <TextBox
+              x:Name="OutlineBox"
+              Classes="Adaline"
+              PlaceholderText="全书走向 / 主题 / 核心冲突 / 结局方向，可留空"
+              AcceptsReturn="True"
+              TextWrapping="Wrap"
+              MinHeight="88"
+            />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Row="2" Height="1" Background="{DynamicResource BrushMist}" Margin="0,16,0,0" />
+      <!-- 返回（左，导航动作） + 创建（右，唯一填充 CTA） -->
+      <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,16,0,0">
+        <Button
+          x:Name="BackButton"
+          Grid.Column="0"
+          Classes="Ghost"
+          FontSize="14"
+          HorizontalAlignment="Left"
+        >
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <lucide:LucideIcon
+              Kind="ChevronLeft"
+              Size="14"
+              StrokeWidth="1.8"
+              VerticalAlignment="Center"
+            />
+            <TextBlock Text="返回" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button
+          x:Name="CreateButton"
+          Grid.Column="1"
+          Classes="Primary"
+          FontSize="14"
+          Content="创建"
+        />
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>

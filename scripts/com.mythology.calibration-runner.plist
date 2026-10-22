@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  WritingTools 阈值校准 — macOS launchd 定时任务
+
+  安装:
+    cp scripts/com.mythology.calibration-runner.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.mythology.calibration-runner.plist
+
+  卸载:
+    launchctl unload ~/Library/LaunchAgents/com.mythology.calibration-runner.plist
+    rm ~/Library/LaunchAgents/com.mythology.calibration-runner.plist
+
+  查看状态:
+    launchctl list | grep mythology
+
+  手动触发:
+    launchctl start com.mythology.calibration-runner
+
+  配置说明:
+    - StartCalendarInterval: 每周日凌晨 3:00 执行
+    - CALIBRATION_COUNT: 每种题材生成章节数（默认 100）
+    - CALIBRATION_SEED: 留空则用时间戳（每次结果不同）
+    - 输出目录: <项目>/calibration-output/<时间戳>/
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mythology.calibration-runner</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/krp/Documents/GithubProjects/Mythology/scripts/calibrate.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CALIBRATION_COUNT</key>
+        <string>100</string>
+        <!-- 留空则用时间戳，设为固定值则可复现 -->
+        <key>CALIBRATION_SEED</key>
+        <string></string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/krp/Documents/GithubProjects/Mythology/calibration-output/launchd-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/krp/Documents/GithubProjects/Mythology/calibration-output/launchd-stderr.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/krp/Documents/GithubProjects/Mythology</string>
+
+    <!-- 如果上次还在跑就跳过 -->
+    <key>ThrottleInterval</key>
+    <integer>3600</integer>
+</dict>
+</plist>

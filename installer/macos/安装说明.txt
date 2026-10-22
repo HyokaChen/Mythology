@@ -1,0 +1,30 @@
+Mythology Desktop 安装说明（macOS / Apple Silicon）
+==================================================
+
+1) 安装
+   把左边的 Mythology.app 拖进右边的 Applications（应用程序）文件夹。
+
+2) 首次打开被拦怎么办
+   本版本没有 Apple 公证（只做了 ad-hoc 签名），Gatekeeper 会拦下第一次启动，
+   可能提示“无法验证开发者”“已损坏”等。任选一种方式放行：
+
+   A. 图形界面：在「应用程序」里右键 Mythology.app →「打开」→ 再点「打开」。
+      （只需这一次；之后可以正常双击。）
+
+   B. 终端执行一次，去掉下载隔离属性：
+        xattr -dr com.apple.quarantine /Applications/Mythology.app
+      然后正常双击启动。
+
+3) 确认签名 / 隔离状态
+   看签名（本版本应为 Signature=adhoc）：
+        codesign -dv --verbose=2 /Applications/Mythology.app
+   看隔离属性（上一步执行后应为空）：
+        xattr -l /Applications/Mythology.app
+
+4) 数据目录
+   会话、配置、小说索引都存在 ~/.mythology，与 TUI 版（dotnet tool）共用；
+   删除 App 不会删除该目录。
+
+5) 校验下载
+   每个发行产物都带同名 .sha256：
+        shasum -a 256 -c Mythology-Desktop-<版本>-osx-arm64.dmg.sha256

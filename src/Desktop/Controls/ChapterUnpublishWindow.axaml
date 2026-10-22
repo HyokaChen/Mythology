@@ -1,0 +1,58 @@
+<Window
+  x:Class="Desktop.Controls.ChapterUnpublishWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Title="撤回章节"
+  Width="640"
+  Height="480"
+  MinWidth="520"
+  MinHeight="340"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <!-- 结构固定、内容由 code-behind 按预览填充（只读列出后续已发布章 / 冲突） -->
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24,20,24,16">
+    <StackPanel Grid.Row="0" Spacing="4">
+      <TextBlock
+        x:Name="TitleText"
+        FontSize="15"
+        FontWeight="SemiBold"
+        Foreground="{DynamicResource BrushForestInk}"
+        TextWrapping="Wrap"
+      />
+      <TextBlock x:Name="SubtitleText" Classes="Tag" />
+    </StackPanel>
+
+    <ScrollViewer
+      Grid.Row="1"
+      Margin="0,12,0,0"
+      VerticalScrollBarVisibility="Auto"
+      HorizontalScrollBarVisibility="Disabled"
+    >
+      <StackPanel Spacing="14">
+        <TextBlock x:Name="SummaryText" TextWrapping="Wrap" FontSize="12" />
+
+        <StackPanel x:Name="LaterSection" Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="后续已发布章节（须从后往前撤回）" />
+          <StackPanel x:Name="LaterPanel" Spacing="3" />
+        </StackPanel>
+
+        <StackPanel x:Name="ConflictsSection" Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="发布后被修改的实体（撤回会冲突）" />
+          <StackPanel x:Name="ConflictsPanel" Spacing="3" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel
+      Grid.Row="2"
+      Orientation="Horizontal"
+      Spacing="12"
+      HorizontalAlignment="Right"
+      Margin="0,14,0,0"
+    >
+      <Button x:Name="CancelButton" Classes="Ghost" Content="取消（保持发布）" />
+      <Button x:Name="ConfirmButton" Classes="Danger" Content="确认撤回" />
+    </StackPanel>
+  </Grid>
+</Window>

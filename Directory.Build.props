@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!-- 统一版本号 — Core NuGet 包和 Host .NET Tool 使用同一版本 -->
+    <MythologyVersion>0.0.2</MythologyVersion>
+
+    <!-- XenoAtom.Terminal.UI 3.8.1 源生成器编译时引用 Roslyn 5.3，
+         而 .NET SDK 10.0.103 附带 Roslyn 5.0，导致 CS9057。
+         源生成器无法加载但不影响编译产出，待 XenoAtom 发布兼容版本后移除。 -->
+    <NoWarn>$(NoWarn);CS9057</NoWarn>
+
+    <!-- SQLitePCLRaw vulnerability (GHSA-2m69-gcr7-jv3q / CVE-2025-6965) fixed:
+         SQLitePCLRaw.lib.e_sqlite3 2.1.12 (contains SQLite 3.50.3, fixes CVE-2025-6965).
+         System.Drawing.Common vulnerability (GHSA-rxg9-xrhp-64gj / CVE-2021-24112)
+         fixed by explicit override to 10.0.10 in Plugins.WritingTools.csproj.
+         EF1002/EF1003: ALTER TABLE DDL with string-concatenated column defs are safe
+         (column names are hardcoded string literals, not user input). -->
+  </PropertyGroup>
+</Project>

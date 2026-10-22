@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Plugins.ContextContinuation.csproj" />
+  </ItemGroup>
+
+  <!-- jieba.NET 词典资源：复制到测试输出目录（HashEmbedder/BM25 分词需要，与 Core.Tests 同法） -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(JiebaResourceFiles)"
+      DestinationFolder="$(JiebaResourcesDest)"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+</Project>

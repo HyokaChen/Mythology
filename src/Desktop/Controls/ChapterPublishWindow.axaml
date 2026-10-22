@@ -1,0 +1,66 @@
+<Window
+  x:Class="Desktop.Controls.ChapterPublishWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Title="发布章节"
+  Width="720"
+  Height="660"
+  MinWidth="560"
+  MinHeight="460"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <!-- 结构固定、内容由 code-behind 按 VM 填充（列表行只用 Classes 挂全局样式） -->
+  <Grid RowDefinitions="Auto,*,Auto" Margin="24,20,24,16">
+    <StackPanel Grid.Row="0" Spacing="4">
+      <TextBlock
+        x:Name="TitleText"
+        FontSize="15"
+        FontWeight="SemiBold"
+        Foreground="{DynamicResource BrushForestInk}"
+        TextWrapping="Wrap"
+      />
+      <TextBlock x:Name="SubtitleText" Classes="Tag" />
+    </StackPanel>
+
+    <ScrollViewer
+      Grid.Row="1"
+      Margin="0,12,0,0"
+      VerticalScrollBarVisibility="Auto"
+      HorizontalScrollBarVisibility="Disabled"
+    >
+      <StackPanel Spacing="14">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="待生效变化" />
+          <StackPanel x:Name="PendingPanel" Spacing="3" />
+        </StackPanel>
+
+        <StackPanel x:Name="DeathsSection" Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="正文检测到的死亡（勾选后发布时登记）" />
+          <StackPanel x:Name="DeathsPanel" Spacing="4" />
+        </StackPanel>
+
+        <StackPanel x:Name="SuggestionsSection" Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="联动建议（自动项不可取消）" />
+          <StackPanel x:Name="SuggestionsPanel" Spacing="4" />
+        </StackPanel>
+
+        <StackPanel x:Name="IssuesSection" Spacing="6">
+          <TextBlock Classes="Eyebrow" Text="预检提示" />
+          <StackPanel x:Name="IssuesPanel" Spacing="3" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel
+      Grid.Row="2"
+      Orientation="Horizontal"
+      Spacing="12"
+      HorizontalAlignment="Right"
+      Margin="0,14,0,0"
+    >
+      <Button x:Name="CancelButton" Classes="Ghost" Content="取消（保持草稿）" />
+      <Button x:Name="PublishButton" Classes="Primary" Content="发布章节" />
+    </StackPanel>
+  </Grid>
+</Window>

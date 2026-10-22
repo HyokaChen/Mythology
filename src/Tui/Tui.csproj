@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Tui is a library; Host is the entry point -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DiffPlex" Version="1.9.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+    <!-- XenoAtom.Terminal.UI 及其 Markdown 扩展改为源码工程引用，指向同级的 fork。
+         原因：fork 上有 RequestRegionRender（区域重发），官方 3.10.0 没有。
+         两个都必须换——Extensions.Markdown 自身依赖主程序集，只换主包会把官方版
+         再拉回来，导致程序集里出现两份 XenoAtom.Terminal.UI，类型标识冲突。
+         上游合入该 API 并发版后，可改回 PackageReference 并删除 fork。 -->
+    <ProjectReference Include="..\..\XenoAtom.Terminal.UI\src\XenoAtom.Terminal.UI\XenoAtom.Terminal.UI.csproj" />
+    <ProjectReference Include="..\..\XenoAtom.Terminal.UI\src\XenoAtom.Terminal.UI.Extensions.Markdown\XenoAtom.Terminal.UI.Extensions.Markdown.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\ClientPlatform\ClientPlatform.csproj" />
+    <ProjectReference Include="..\Channels\WeChat\Channels.WeChat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- XenoAtom.Terminal.UI 的 [Bindable] 分布属性由 SourceGen 生成实现部分。
+         工程引用不像 NuGet 包那样自动传递内嵌分析器，必须显式引入，
+         否则 DirtyRepairGuard.Epoch 之类的 partial property 报 CS9248。
+         OutputItemType=Analyzer + ReferenceOutputAssembly=false：只当分析器，不引用其程序集。 -->
+    <ProjectReference
+      Include="..\..\XenoAtom.Terminal.UI\src\XenoAtom.Terminal.UI.SourceGen\XenoAtom.Terminal.UI.SourceGen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tui.Tests" />
+  </ItemGroup>
+</Project>

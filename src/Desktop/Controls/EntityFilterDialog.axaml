@@ -1,0 +1,25 @@
+<Window
+  x:Class="Desktop.Controls.EntityFilterDialog"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Width="380"
+  SizeToContent="Height"
+  MinWidth="340"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid RowDefinitions="Auto,Auto" Margin="24,20,24,16">
+    <!-- 维度行（Eyebrow 标签 + Adaline 下拉；1~2 行，code-behind 构建） -->
+    <StackPanel x:Name="FieldRows" Grid.Row="0" Spacing="14" />
+
+    <!-- 动作条（清除 / 应用；右下） -->
+    <StackPanel Grid.Row="1" Spacing="12" Margin="0,16,0,0">
+      <Border Height="1" Background="{DynamicResource BrushMist}" />
+      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+        <Button x:Name="ClearButton" Classes="Ghost" Content="清除" />
+        <Button x:Name="ApplyButton" Classes="Primary" Content="应用" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

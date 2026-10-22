@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Mythology brand board</title>
+  <desc id="desc">Light editorial brand board for Mythology, an AI novel writing assistant.</desc>
+  <rect width="1600" height="1000" fill="#2a332a"/>
+  <rect x="48" y="48" width="1504" height="904" rx="10" fill="#f8f9f5"/>
+  <g fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="2">
+    <text x="92" y="94">MYTHOLOGY / BRAND SYSTEM</text>
+    <text x="1430" y="94">01—03</text>
+  </g>
+  <path d="M92 122h1416" stroke="#e1e6df" stroke-width="2"/>
+  <g transform="translate(92 178)">
+    <rect width="560" height="420" rx="8" fill="#eff2e8" stroke="#e1e6df" stroke-width="2"/>
+    <text x="34" y="46" fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.6">01 / THE MARK</text>
+    <g transform="translate(168 84) scale(0.88)">
+      <rect width="256" height="256" rx="48" fill="#f8f9f5"/>
+      <path d="M48 71.5c24.3 2.1 45.5 10.9 64 26.4V190c-18.5-15.5-39.7-24.3-64-26.4V71.5Z" fill="#c9d5c5" stroke="#0a1d08" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M208 71.5c-24.3 2.1-45.5 10.9-64 26.4V190c18.5-15.5-39.7-24.3-64-26.4V71.5Z" fill="#e3c9d0" stroke="#0a1d08" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M128 97.9V190" fill="none" stroke="#0a1d08" stroke-width="7" stroke-linecap="round"/>
+      <path d="M128 190c9.9-13 22.8-23.9 38.7-32.6" fill="none" stroke="#2b6b5e" stroke-width="7" stroke-linecap="round"/>
+      <path d="m157 149 10.8 8.4-13.1 2.8" fill="none" stroke="#2b6b5e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="34" y="369" fill="#0a1d08" font-family="Newsreader, Georgia, serif" font-size="31" font-weight="300">story, in motion.</text>
+  </g>
+  <g transform="translate(684 178)">
+    <rect width="824" height="200" rx="8" fill="#e1e6df" stroke="#e1e6df" stroke-width="2"/>
+    <text x="34" y="46" fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.6">02 / WORDMARK</text>
+    <text x="34" y="128" fill="#0a1d08" font-family="Newsreader, Georgia, serif" font-size="72" font-weight="300" letter-spacing="-2.2">Mythology</text>
+    <text x="525" y="126" fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.8">AI NOVEL WRITING ASSISTANT</text>
+  </g>
+  <g transform="translate(684 398)">
+    <rect width="824" height="200" rx="8" fill="#c9d5c5" stroke="#e1e6df" stroke-width="2"/>
+    <text x="34" y="46" fill="#0a1d08" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.6">03 / COLOR FIELD</text>
+    <rect x="34" y="80" width="148" height="72" rx="4" fill="#0a1d08"/>
+    <rect x="194" y="80" width="148" height="72" rx="4" fill="#2b390a"/>
+    <rect x="354" y="80" width="148" height="72" rx="4" fill="#4a6d47"/>
+    <rect x="514" y="80" width="148" height="72" rx="4" fill="#2b6b5e"/>
+    <rect x="674" y="80" width="116" height="72" rx="4" fill="#991e4b"/>
+    <g fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+      <text x="34" y="177">FOREST</text><text x="194" y="177">OLIVE</text><text x="354" y="177">SAGE</text><text x="514" y="177">TEAL</text><text x="674" y="177">CRIMSON</text>
+    </g>
+  </g>
+  <g transform="translate(92 628)">
+    <rect width="1416" height="252" rx="8" fill="#eff2e8" stroke="#e1e6df" stroke-width="2"/>
+    <text x="34" y="46" fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="1.6">04 / PRODUCT LANGUAGE</text>
+    <text x="34" y="128" fill="#0a1d08" font-family="Newsreader, Georgia, serif" font-size="54" font-weight="300">Write the next chapter.</text>
+    <rect x="974" y="84" width="174" height="48" rx="24" fill="#0a1d08"/>
+    <text x="1015" y="114" fill="#f8f9f5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="1.2">START WRITING</text>
+    <rect x="1168" y="84" width="174" height="48" rx="24" fill="none" stroke="#4a6d47" stroke-width="2"/>
+    <text x="1214" y="114" fill="#0a1d08" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="1.2">READ DOCS</text>
+    <path d="M34 166h1308" stroke="#e1e6df" stroke-width="2"/>
+    <text x="34" y="205" fill="#6b7860" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="1.4">OPEN THE FILE. FOLLOW THE THREAD. KEEP THE STORY MOVING.</text>
+  </g>
+  <text x="92" y="924" fill="#a5ac9f" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="1.4">MYTHOLOGY / LIGHT EDITORIAL SYSTEM / 2026</text>
+</svg>

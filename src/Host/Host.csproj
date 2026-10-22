@@ -1,0 +1,143 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
+    <!-- .NET Tool 配置 -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mythology</ToolCommandName>
+    <PackageId>Mythology</PackageId>
+    <Version>$(MythologyVersion)</Version>
+    <Authors>HyokaChen</Authors>
+    <Description>AI 驱动的网络小说创作助手（终端 TUI）。ReAct Agent Loop 引擎 + 116 个写作/检索/分析工具，创作资产为本地 YAML/Markdown 文件（可 Git 管理），按需工具注入与可逆上下文压缩。</Description>
+    <PackageTags>mythology;novel;ai;writing;agent;llm;cli-tool;tui</PackageTags>
+    <PackageReadmeFile>PACKAGE_README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReleaseNotes>NuGet 包页面补全：README、图标、发布说明、项目链接。首个发布到 nuget.org 的版本（0.0.1 元数据已不可覆盖）。</PackageReleaseNotes>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/HyKaChen/Mythology</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/HyKaChen/Mythology.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Copyright>Copyright (c) 2026 HyokaChen</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../CloudDiagnosis/CloudDiagnosis.csproj" />
+    <ProjectReference Include="../Core/Core.csproj" />
+    <ProjectReference Include="../Tui/Tui.csproj" />
+    <ProjectReference Include="../StabilityHarness/StabilityHarness.csproj" />
+    <ProjectReference Include="../ClientPlatform/ClientPlatform.csproj" />
+    <ProjectReference Include="../Channels/WeChat/Channels.WeChat.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="PACKAGE_README.md" Pack="true" PackagePath="" />
+    <None Include="../../assets/mythology-mark.png" Pack="true" PackagePath="icon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.13" />
+    <PackageReference
+      Include="Microsoft.Extensions.Configuration.EnvironmentVariables"
+      Version="10.0.13"
+    />
+    <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <!-- EF Core removed: using file-based storage -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 在编译/运行 Host 之前，先编译所有插件项目。
+       插件项目的 OutputPath 指向 Host 的 bin/plugins/，DLL 自动落到正确位置。
+       这是 MSBuild Target，不是 ProjectReference，不引入编译时类型依赖。
+       RemoveProperties 剥掉 dotnet publish -r/-p:Version 传来的全局属性：不剥则插件输出多一层
+       <rid>/ 子目录（运行时只扫 plugins/<name>/*.dll，会一个插件都加载不到），且 plugin.json
+       版本被应用版本覆盖。 -->
+  <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
+    <MSBuild
+      Projects="..\Plugins\FileSystem\Plugins.FileSystem.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\NovelTools\Plugins.NovelTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\SemanticRetrievalTool\Plugins.SemanticRetrievalTool.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\WebSearchTools\Plugins.WebSearchTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\ContextContinuation\Plugins.ContextContinuation.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+    <MSBuild
+      Projects="..\Plugins\WritingTools\Plugins.WritingTools.csproj"
+      Targets="Restore;Build"
+      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
+    />
+  </Target>
+
+  <!-- jieba.NET 词典资源：复制到 Host 输出目录（ToolSearchEngine 运行需要） -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(JiebaResourceFiles)"
+      DestinationFolder="$(JiebaResourcesDest)"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+
+  <!-- 发布载荷：Build 阶段由 MSBuild Target 复制到 $(OutputPath) 的 plugins/ 与 Resources/
+       不是 Content item，dotnet publish 不会带进 $(PublishDir)；而运行时按
+       AppContext.BaseDirectory/plugins（内置插件）与 /Resources（jieba 词典）查找，缺失即残废。
+       PackAsTool 的包内容取自 $(PublishDir)，故同一 Target 同时修好 nupkg。 -->
+  <Target Name="CopyRuntimeAssetsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PluginPublishFiles Include="$(OutputPath)plugins\**\*" />
+      <_JiebaPublishFiles Include="$(OutputPath)Resources\**\*" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_PluginPublishFiles)' == ''"
+      Text="发布载荷缺少 plugins/（$(OutputPath)plugins 未生成，检查 BuildPlugins Target）"
+    />
+    <Error
+      Condition="'@(_JiebaPublishFiles)' == ''"
+      Text="发布载荷缺少 Resources/（$(OutputPath)Resources 未生成，检查 CopyJiebaResources Target）"
+    />
+    <Copy
+      SourceFiles="@(_PluginPublishFiles)"
+      DestinationFolder="$(PublishDir)plugins\%(RecursiveDir)"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      SourceFiles="@(_JiebaPublishFiles)"
+      DestinationFolder="$(PublishDir)Resources"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+</Project>

@@ -1,0 +1,206 @@
+# ── .NET / C# ──
+**/bin/
+**/obj/
+*.exe
+*.dll
+*.pdb
+*.so
+*.dylib
+*.nupkg
+*.snupkg
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.rptproj.rsuser
+[Dd]ebug/
+[Rr]elease/
+[Dd]ebugPublic/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.log
+*.tmp
+*.temp
+*.nupkg
+*.snupkg
+packages/
+*.nuget.props
+*.nuget.targets
+.nuget/
+*.Tools*
+
+# ── JetBrains Rider ──
+.idea/
+*.sln.iml
+*.sln.DotSettings
+*.sln.DotSettings.user
+_project_*
+_reSharper*/
+*.[Rr]e[Ss]harper*
+[Rr]e[Ss]harper*/
+_temp_*
+_teamcity*/
+.dotSettings
+.dotSettings.user
+
+# ── Visual Studio ──
+.vs/
+*.sdf
+*.opensdf
+*.cachefile
+*.VC.db
+*.VC.opendb
+*.VC.VC.opendb
+ipch/
+*.ipch
+*.iobj
+*.ipdb
+[Pp]ackages/
+[Pp]ackage/
+[Bb]uild[Cc]ache/
+[Nn]u[Cc]ache/
+*.tlh
+*.tli
+*.metagen
+*.rsuser
+
+# ── VS Code ──
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+*.code-snippets
+
+# ── macOS ──
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100*
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ── Linux ──
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+.lock
+.swp
+.swo
+.swn
+
+# ── Windows ──
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# ── Node / npm (unlikely in C# project, but safe) ──
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Test results ──
+TestResults/
+[Tt]est[Rr]esult/
+*.trx
+*.trerr
+coverage/
+*.coverage
+*.coveragexml
+opencover/
+dotcover/
+ncrypt/
+lcov.*
+*.lcov
+# MTP（xunit v3）在仓库根目录落 TestResults/（运行 dotnet test 时生成）。
+# 注意：只忽略仓库根那一份（前导 /）——未锚定的模式会连带匹配
+# src/Tui/Tests/TestResults/ 等子目录（本仓没有，但同族仓有，勿改）。
+/TestResults/
+
+# ── Secrets / Config ──
+*.user
+*.secrets
+secrets.json
+appsettings.*.local.json
+user.config
+*.key
+*.pfx
+*.crt
+certificate.pfx
+
+# ── Misc ──
+*.bak
+*.old
+*.orig
+*.pid
+*.seed
+*.pid.lock
+*.swp
+*.swo
+*~
+.rakeTasks
+*.pid
+*.seed
+Rider/
+Debug/
+Release/
+**/obj/
+**/bin/
+dist/
+state-harness/
+XenoAtom.Terminal/
+LLMTornado/
+novel-creator/
+# 只忽略仓库根的运行时小说数据目录：不加前导 / 的话，模式会连带匹配
+# src/Core/Novels/（macOS/Windows 大小写不敏感），把源码目录整目录吞掉 → 远端构建必炸。
+# 事故史（勿删此注释）：7defb75(09-13) 首次修复 → baf1c86(09-16) 又在文末追回未锚定的
+# `novels/` → 879f29d(09-27) 新建的 src/Core/Novels/OutlineRows.cs 被静默吞掉未入库，
+# 干净 clone 自此编译不过（Core.Tests/Desktop/Tui/Host）。
+/novels/
+/novels-data/
+/src/novels/
+.pi*/
+*.db
+# 不要用全局 *.txt：它会把 assets/fonts/LICENSE.txt 这类需要入库的文本文件一起吞掉。
+# 只忽略明确的临时/产物目录（bintestlock 是测试用的重定向输出目录）。
+/exports/
+bintestlock/
+
+# ── Agent / IDE config ──
+.claude/
+node_modules/
+LlmTornado/
+.vinv/
+# ⚠️ 此处禁止再出现未锚定的 `novels/`（任意层级匹配，会吞掉 src/Core/Novels/ 源码，
+#    2026-09-16 baf1c86 复发过一次，事故记录见本文件 178-183 行注释）。
+# 本地/私有（不纳入开源仓库）
+.env
+.claude/settings.local.json
+Skills-Results/

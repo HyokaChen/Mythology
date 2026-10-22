@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\Core.csproj">
+      <!-- Core.dll 是共享依赖，由 Host 主程序加载，不需要复制到插件目录 -->
+      <Private>false</Private>
+    </ProjectReference>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ContextContinuation.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <Version>1.0.0</Version>
+    <PluginId>context-continuation</PluginId>
+    <PluginName>Context Continuation</PluginName>
+    <PluginDescription>上下文接续：换页（new_context）+ 历史检索（history_*）+ 跨页笔记（notes_*）</PluginDescription>
+    <PluginAuthor>mythology</PluginAuthor>
+    <PluginMinCoreVersion>1.0.0</PluginMinCoreVersion>
+    <!-- 会话转录（读历史/写页标记）与向量库（可选语义检索通道） -->
+    <PluginPermissions>session:read;session:write;vector:read;vector:write</PluginPermissions>
+
+    <OutputPath>../../Host/bin/$(Configuration)/$(TargetFramework)/plugins/context-continuation</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+</Project>

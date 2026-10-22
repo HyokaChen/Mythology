@@ -1,0 +1,38 @@
+<Project>
+  <!--
+    构建时自动生成 plugin.json。
+    条件：csproj 定义了 PluginId 属性（只有插件项目才定义）。
+    数据源：csproj 中的 Plugin* 属性。
+    输出：$(OutputPath)plugin.json
+
+    注意：permissions 字段由 csproj 的 PluginPermissions 属性生成，
+    运行时不读取此字段（权限由 DLL 中的 PluginPermissionAttribute 决定）。
+    此字段仅用于 plugin list 展示和插件网站展示。
+  -->
+  <Target Name="GeneratePluginManifest" AfterTargets="Build" Condition="'$(PluginId)' != ''">
+    <!-- 把分号分隔的 PluginPermissions 转为 JSON 数组 -->
+    <!-- "novel:read;novel:write" → '"novel:read", "novel:write"' -->
+    <ItemGroup>
+      <_PermSplit Include="$(PluginPermissions)" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_PermJson>@(_PermSplit->'"%(Identity)"', ', ')</_PermJson>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(OutputPath)" />
+    <WriteLinesToFile
+      File="$(OutputPath)plugin.json"
+      Lines="{
+  &quot;name&quot;: &quot;$(PluginName)&quot;,
+  &quot;id&quot;: &quot;$(PluginId)&quot;,
+  &quot;version&quot;: &quot;$(Version)&quot;,
+  &quot;description&quot;: &quot;$(PluginDescription)&quot;,
+  &quot;author&quot;: &quot;$(PluginAuthor)&quot;,
+  &quot;min-core-version&quot;: &quot;$(PluginMinCoreVersion)&quot;,
+  &quot;permissions&quot;: [$(_PermJson)]
+}"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+    />
+  </Target>
+</Project>

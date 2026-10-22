@@ -1,0 +1,35 @@
+<Application
+  x:Class="Desktop.App"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:Desktop"
+  xmlns:suki="https://github.com/kikipoulet/SukiUI"
+  RequestedThemeVariant="Light"
+>
+  <Application.DataTemplates>
+    <local:ViewLocator />
+  </Application.DataTemplates>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- DESIGN.md (Adaline) 全部 Color/Font/Radius Token -->
+        <ResourceInclude Source="avares://MythDesktop/Styles/MythologyTheme.axaml" />
+        <!-- LiveMarkdown 默认资源 -->
+        <ResourceInclude Source="avares://LiveMarkdown.Avalonia/Defaults.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <!-- SukiUI Theme（自带基础控件样式，无需 FluentTheme，与 LKK 一致） -->
+    <suki:SukiTheme Locale="zh-CN" ThemeColor="Blue" />
+
+    <!-- 全局组件样式：PillButton / Card / Eyebrow / 输入框 / 消息气泡 -->
+    <StyleInclude Source="avares://MythDesktop/Styles/MythologyStyles.axaml" />
+
+    <!-- LiveMarkdown 流式 Markdown 样式 -->
+    <StyleInclude Source="avares://LiveMarkdown.Avalonia/Styles.axaml" />
+    <StyleInclude Source="avares://LiveMarkdown.Avalonia.Mermaid/Styles.axaml" />
+  </Application.Styles>
+</Application>

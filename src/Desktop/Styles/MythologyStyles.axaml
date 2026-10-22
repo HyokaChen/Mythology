@@ -1,0 +1,384 @@
+<!-- 全局组件样式（Adaline / DESIGN.md）
+     PillButton · Card · Eyebrow · 输入框 · 消息气泡 · Mono 标签 -->
+<Styles
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <!-- ── Eyebrow：字段标签（Fragment Mono，大写，追踪） ── -->
+  <Style Selector="TextBlock.Eyebrow">
+    <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+    <Setter Property="LetterSpacing" Value="0.4" />
+  </Style>
+
+  <!-- ── Mono 标签（badge / category tag） ── -->
+  <Style Selector="TextBlock.Tag">
+    <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+    <Setter Property="LetterSpacing" Value="0.4" />
+  </Style>
+  <!-- ── 危险正文（预检阻断 / 失败提示；与 Button.Danger 同色） ── -->
+  <Style Selector="TextBlock.Danger">
+    <Setter Property="Foreground" Value="{DynamicResource BrushCrimsonSpecimen}" />
+  </Style>
+  <Style Selector="Border.TagPill">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusTags}" />
+    <Setter Property="Padding" Value="10,3" />
+  </Style>
+
+  <!-- ── Card：Bone 表面 + 1px Mist 边框 + 10px 圆角，无阴影 ── -->
+  <Style Selector="Border.Card">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusCards}" />
+  </Style>
+  <!-- 亮面卡：Linen 底（高于 Bone 一级） -->
+  <Style Selector="Border.Card.Glow">
+    <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
+  </Style>
+  <!-- 深色卡：Slate Hollow（镜像 Footer Band） -->
+  <Style Selector="Border.Card.Dark">
+    <Setter Property="Background" Value="{DynamicResource BrushSlateHollow}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMistOnSlate}" />
+  </Style>
+
+  <!-- ── 主 Pill 按钮（DESIGN.md §Primary Pill CTA / Agent Prompt：Olive Press #2b390a 填充 · Linen 文字 · hover 加深为 Forest Ink） ── -->
+  <Style Selector="Button.Primary">
+    <Setter Property="Background" Value="{DynamicResource BrushOlivePress}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushLinen}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusButtons}" />
+    <Setter Property="Padding" Value="24,12" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.Primary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
+  <!-- ── 描边 Ghost 按钮（DESIGN.md §Outlined Ghost Button：透明 · 1px Lichen 边框 · Olive Press 文字 · 20/12 内边距） ── -->
+  <Style Selector="Button.Ghost">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusButtons}" />
+    <Setter Property="Padding" Value="20,12" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.Ghost:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
+  <!-- ── 禁用态：撤掉填充/描边重量（禁用的 CTA 不得与启用的 CTA 争夺视觉焦点） ── -->
+  <Style Selector="Button.Primary:disabled">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageMist}" />
+    <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+  <Style Selector="Button.Primary:disabled /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+  </Style>
+  <Style Selector="Button.Ghost:disabled">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageMist}" />
+    <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+
+  <!-- ── 危险按钮（DESIGN.md：行动调色板只有 Forest Ink / Olive Press，Crimson 仅作 supporting accent，
+       不可作状态色；故删除确认用描边强调而非彩色填充 CTA） ── -->
+  <Style Selector="Button.Danger">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushCrimsonSpecimen}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushCrimsonSpecimen}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusButtons}" />
+    <Setter Property="Padding" Value="20,12" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.Danger:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushCrimsonSpecimen}" />
+    <Setter Property="Foreground" Value="White" />
+  </Style>
+
+  <!-- ── 图标按钮（卡片右侧动作：修改 / 删除；DESIGN.md：透明底 · pill · Eucalyptus hover wash） ── -->
+  <Style Selector="Button.IconButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9999" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.IconButton:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+  <!-- 危险图标（删除）：hover 用 Crimson Specimen 文字色，仍无填充 -->
+  <Style Selector="Button.IconButton.Danger:pointerover">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushCrimsonSpecimen}" />
+  </Style>
+
+  <!-- ── 透明导航 Pill（DESIGN.md §Transparent Nav Pill：9999px 圆角） ── -->
+  <Style Selector="Button.NavPill">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9999" />
+    <Setter Property="Padding" Value="12,6" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.NavPill:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+
+  <!-- 键盘可达性：:focus-visible（Tab 聚焦）给与 hover 同源的 wash -->
+  <Style Selector="Button.NavPill:focus-visible">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+
+  <!-- 「更多」按钮（Lucide Ellipsis）：无边框，淡色，hover 加深 -->
+  <Style Selector="Button.MoreButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="8,3" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.MoreButton:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
+  <!-- ── 密钥输入框：聚焦即明文（对齐 TUI PasswordRevealMode.WhileFocused） ── -->
+  <Style Selector="TextBox.RevealOnFocus:focus">
+    <Setter Property="RevealPassword" Value="True" />
+  </Style>
+
+  <!-- ── 输入框（透明底 · hairline Mist 边框 · 焦点 Forest Ink） ── -->
+  <Style Selector="TextBox.Adaline">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusInputs}" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="FontSize" Value="14" />
+    <!-- 多行输入顶对齐：Avalonia TextBox 默认 VerticalContentAlignment=Center，
+         拉伸后的多行框（正文编辑器 / 长文本字段）会把文字竖直居中——书写必须从顶部起排 -->
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+  </Style>
+  <Style Selector="TextBox.Adaline:focus /template/ Border#PART_Border">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushOlivePress}" />
+  </Style>
+
+  <!-- ── 会话输入框（无边框，仅底部 hairline） ── -->
+  <Style Selector="TextBox.PromptBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="LineHeight" Value="22" />
+    <!-- 多行输入顶对齐（默认 Center 会让拉伸后的编辑区把文字竖直居中） -->
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+  </Style>
+
+  <!-- ── Hero Display（衬线标题，Adaline 唯一 display moment） ── -->
+  <Style Selector="TextBlock.Display">
+    <Setter Property="FontFamily" Value="{StaticResource FontSerif}" />
+    <Setter Property="FontSize" Value="44" />
+    <Setter Property="FontWeight" Value="Light" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="LineHeight" Value="48" />
+  </Style>
+
+  <!-- ── 章节标题（Akkurat/Inter 400，紧排） ── -->
+  <Style Selector="TextBlock.SectionHeading">
+    <Setter Property="FontSize" Value="26" />
+    <Setter Property="FontWeight" Value="Regular" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="LetterSpacing" Value="-0.5" />
+  </Style>
+
+  <!-- ── 对话框标题（中型窗口：Eyebrow 标签 + 本标题构成头部层级） ── -->
+  <Style Selector="TextBlock.DialogTitle">
+    <Setter Property="FontSize" Value="18" />
+    <Setter Property="FontWeight" Value="Regular" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
+  <!-- ── 消息气泡 ── -->
+  <!-- 用户消息：Olive Press 填充 · Linen 文字 · 20px 圆角 -->
+  <Style Selector="Border.UserBubble">
+    <Setter Property="Background" Value="{DynamicResource BrushOlivePress}" />
+    <Setter Property="CornerRadius" Value="16" />
+    <Setter Property="Padding" Value="16,10" />
+    <Setter Property="MaxWidth" Value="720" />
+  </Style>
+  <Style Selector="Border.UserBubble TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource BrushLinen}" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="LineHeight" Value="24" />
+  </Style>
+  <!-- 助手消息：Bone 卡 · Mist 边框 -->
+  <Style Selector="Border.AgentBubble">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusCards}" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="MaxWidth" Value="860" />
+  </Style>
+
+  <!-- ── 空状态提示 ── -->
+  <Style Selector="Border.EmptyNote">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusCards}" />
+    <Setter Property="Padding" Value="20" />
+  </Style>
+
+  <!-- ── 下拉列表项：选中态 Eucalyptus（替代默认蓝） -->
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+
+  <!-- ── TabControl（Adaline：Forest Ink 选中 + Sage 下划线，两侧面板统一） ── -->
+  <Style Selector="TabControl">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="TabItem">
+    <Setter Property="FontSize" Value="12" />
+    <!-- 统一字体栈：让 “MCP” 等拉丁标签与中文标签用同一字体度量，
+         避开 Inter 无 CJK 字形而回退 PingFang 造成的行高/基线错位 -->
+    <Setter Property="FontFamily" Value="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Inter" />
+    <!-- 固定高度 + 内容居中：避开中英文字体回退（Inter 无 CJK → PingFang）导致的
+         行高/基线差异；垂直 padding 归零，高度由 Height 统一控制 -->
+    <Setter Property="Height" Value="36" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Foreground" Duration="0:0:0.2" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <!-- 模板内容宿主垂直居中（SukiUI / Fluent 两种模板均适用） -->
+  <Style Selector="TabItem /template/ ContentPresenter">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TabItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+  <Style Selector="TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <!-- 不改 FontWeight：加粗会改变文字度量，导致 tab 宽度随选中跳变（Adaline 以颜色+下划线区分） -->
+  </Style>
+  <!-- Tab 选中底线：SageLeaf 颜色（SukiUI 模板使用 PART_Underline；SettingsView 用自定义模板实现短横线） -->
+  <Style Selector="TabItem /template/ Border#PART_Underline">
+    <Setter Property="Background" Value="{DynamicResource BrushSageLeaf}" />
+  </Style>
+  <Style Selector="TabItem:selected /template/ ContentPresenter">
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+
+  <!-- ══ ContextMenu：用 Style setter 强制应用 AdalineContextMenu（优先级高于 SukiTheme） ══ -->
+  <Style Selector="ContextMenu">
+    <Setter Property="Theme" Value="{StaticResource AdalineContextMenu}" />
+  </Style>
+
+  <!-- ══ MenuItem：覆盖 SukiUI 的 SukiMenuItemStyle（模板内 Border#root） ══ -->
+  <Style Selector="MenuItem">
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="FontSize" Value="12.5" />
+  </Style>
+  <!-- hover → Adaline sage 高亮（仅悬浮项，不影响面板背景） -->
+  <Style Selector="MenuItem:pointerover /template/ Border#root">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+  <Style Selector="MenuItem:selected /template/ Border#root">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="MenuItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+    <Setter Property="FontWeight" Value="Medium" />
+  </Style>
+  <Style Selector="MenuItem /template/ TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+  <!-- 隐藏 SukiUI 图标旁竖线（PART_HorizontalSeparator） -->
+  <Style Selector="MenuItem /template/ Rectangle#PART_HorizontalSeparator">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <!-- Separator：hairline Mist 色，紧凑间距 -->
+  <Style Selector="Separator">
+    <Setter Property="Margin" Value="8,3" />
+    <Setter Property="Background" Value="{DynamicResource BrushMist}" />
+  </Style>
+
+  <!-- ── 滚动条：窄、Mist 色调 ── -->
+  <Style Selector="ScrollBar">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="ScrollBar Thumb">
+    <Setter Property="Background" Value="{DynamicResource BrushLichen}" />
+  </Style>
+  <Style Selector="ScrollBar Thumb:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMist}" />
+  </Style>
+
+  <!-- ── 大纲行「刚创建」一次性高亮（Amber 包边；下次刷新即消失） ── -->
+  <Style Selector="Border.newly">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushAmberPin}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <!-- ── 大纲行（卷头 / 章行）：可点击行，hover 提亮一级 ── -->
+  <Style Selector="Border.OutlineRow:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+  </Style>
+  <!-- 章行本体已用 SurfaceGlow，hover 需再提一级到 Bone -->
+  <Style Selector="Border.OutlineRow.Solid:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushBone}" />
+  </Style>
+
+  <!-- ── 气泡底板：裸 <Flyout> 的内容外套一层纸面卡片 ──
+       Flyout 继承 PopupFlyoutBase，既没有 Background 也没有 Template，内容被直接塞进
+       Popup 宿主——不套这层，气泡就是全透明的，字直接浮在面板上。
+       与 AdalineComboBox 的下拉浮层同规格。 -->
+  <Style Selector="Border.FlyoutPanel">
+    <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12,10" />
+  </Style>
+</Styles>

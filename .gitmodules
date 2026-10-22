@@ -1,0 +1,4 @@
+[submodule "XenoAtom.Terminal.UI"]
+	path = XenoAtom.Terminal.UI
+	url = https://github.com/HyokaChen/XenoAtom.Terminal.UI.git
+	branch = feat/region-render

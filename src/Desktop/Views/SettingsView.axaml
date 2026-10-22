@@ -1,0 +1,1248 @@
+<UserControl
+  x:Class="Desktop.Views.SettingsView"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:conv="clr-namespace:Desktop.Converters"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:SettingsViewModel"
+>
+  <UserControl.Resources>
+    <conv:StringNotEmptyConverter x:Key="StringNotEmpty" />
+    <conv:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVisibility" />
+
+    <!-- ── TabItem 自定义模板：Grid 布局实现垂直居中 + 短横线选中指示器 ── -->
+    <!-- 不用 BasedOn={StaticResource {x:Type TabItem}}：App 未引入 FluentTheme，
+         SukiTheme 不注册类型键的 ControlTheme 资源，该查找必然失败；
+         字体/前景色等仍由 MythologyStyles 与 SukiUI 的全局 Style setter 生效 -->
+    <ControlTheme x:Key="AdalineSettingsTabItem" TargetType="TabItem">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border
+            Name="PART_LayoutRoot"
+            Margin="8,0"
+            Padding="{TemplateBinding Padding}"
+            Background="Transparent"
+          >
+            <Grid RowDefinitions="*,Auto">
+              <!-- 内容区域：垂直居中 -->
+              <ContentPresenter
+                Name="PART_HeaderPresenter"
+                Padding="0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                HorizontalContentAlignment="Center"
+                Content="{TemplateBinding Header}"
+                ContentTemplate="{TemplateBinding HeaderTemplate}"
+              >
+                <ContentPresenter.Transitions>
+                  <Transitions>
+                    <BrushTransition Property="Foreground" Duration="0:0:0.1" />
+                  </Transitions>
+                </ContentPresenter.Transitions>
+              </ContentPresenter>
+              <!-- 选中底线：短横线（居中，24px 等宽圆角） -->
+              <Border
+                Name="PART_Underline"
+                Grid.Row="1"
+                Height="3"
+                Width="24"
+                HorizontalAlignment="Center"
+                Background="{DynamicResource BrushSageLeaf}"
+                CornerRadius="55"
+                Opacity="0"
+              >
+                <Border.Transitions>
+                  <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
+                  </Transitions>
+                </Border.Transitions>
+              </Border>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:selected /template/ Border#PART_Underline">
+        <Setter Property="Opacity" Value="1" />
+      </Style>
+    </ControlTheme>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- ═══ Tab 头区域居中：ItemsPresenter 水平居中 ═══ -->
+    <Style Selector="TabControl#SettingsTabControl /template/ ItemsPresenter#PART_ItemsPresenter">
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ═══ 应用自定义 TabItem 主题 ═══ -->
+    <Style Selector="TabControl#SettingsTabControl TabItem">
+      <Setter Property="Theme" Value="{StaticResource AdalineSettingsTabItem}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="*,Auto">
+    <!-- ═══════ 设置内容：连接器 / MCP / 工具（对齐 TUI SettingsDialog，风格 Adaline） ═══════ -->
+    <TabControl
+      x:Name="SettingsTabControl"
+      Grid.Row="0"
+      Padding="0"
+      Background="Transparent"
+      SelectedIndex="0"
+    >
+      <!-- ── 连接器 Tab ── -->
+      <TabItem Header="连接器">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="LLM 提供商与模型配置"
+            />
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="Tag" Text="提供商" />
+              <ComboBox
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding ProviderOptions}"
+                SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                HorizontalAlignment="Stretch"
+              />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="Tag" VerticalAlignment="Center" Text="默认模型" />
+                <Button
+                  Grid.Column="1"
+                  Classes="Ghost"
+                  Click="DiscoverModels_OnClick"
+                  IsEnabled="{Binding !IsDiscoveringModels}"
+                  Content="发现模型"
+                  ToolTip.Tip="从提供商 API 拉取可用模型列表（需已填写 API Key）"
+                />
+              </Grid>
+              <!-- 发现成功 → 下拉选择；失败/自定义 → 手动输入回退（对齐 TUI ProviderTab） -->
+              <ComboBox
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding ModelOptions}"
+                SelectedItem="{Binding Model}"
+                HorizontalAlignment="Stretch"
+                IsVisible="{Binding IsModelListVisible}"
+              />
+              <TextBox
+                Classes="Adaline"
+                Text="{Binding Model}"
+                PlaceholderText="如 gpt-4o-mini / deepseek-v4-flash"
+                IsVisible="{Binding IsModelListVisible, Converter={StaticResource InvertedBoolToVisibility}}"
+              />
+              <TextBlock
+                Text="{Binding ModelDiscoverStatus}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushSageMist}"
+                IsVisible="{Binding ModelDiscoverStatus, Converter={StaticResource StringNotEmpty}}"
+              />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,12,*">
+              <StackPanel Grid.Column="0" Spacing="6">
+                <TextBlock Classes="Tag" Text="思考级别" />
+                <ComboBox
+                  Theme="{StaticResource AdalineComboBox}"
+                  ItemsSource="{Binding ThinkingLevelOptions}"
+                  SelectedItem="{Binding ThinkingLevel, Mode=TwoWay}"
+                  HorizontalAlignment="Stretch"
+                />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Spacing="6">
+                <TextBlock Classes="Tag" Text="上下文窗口" />
+                <ComboBox
+                  Theme="{StaticResource AdalineComboBox}"
+                  ItemsSource="{Binding ContextWindowOptions}"
+                  SelectedItem="{Binding ContextWindow, Mode=TwoWay}"
+                  HorizontalAlignment="Stretch"
+                />
+              </StackPanel>
+            </Grid>
+
+            <!-- API Key 卡片列表（多提供商，TUI ProviderTab 对齐） -->
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="Tag" VerticalAlignment="Center" Text="API 密钥" />
+                <Button
+                  Grid.Column="1"
+                  Classes="Ghost"
+                  Click="AddApiKey_OnClick"
+                  Content="添加密钥"
+                />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding ApiKeys}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ApiKeyRow">
+                    <Border
+                      Classes="Card"
+                      Padding="12,10"
+                      Margin="0,0,0,8"
+                      Background="{DynamicResource BrushSurfaceGlow}"
+                    >
+                      <StackPanel Spacing="8">
+                        <!-- ── 展示态：只读摘要 + 右侧修改 / 删除（Lucide） ── -->
+                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
+                          <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock
+                              FontSize="14"
+                              FontWeight="Medium"
+                              Foreground="{DynamicResource BrushForestInk}"
+                              Text="{Binding ProviderDisplay}"
+                              TextTrimming="CharacterEllipsis"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageGray}"
+                              Text="{Binding MaskedKey}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding ProtocolLine}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding NameLine}"
+                              IsVisible="{Binding IsCustom}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding BaseUrlLine}"
+                              TextTrimming="CharacterEllipsis"
+                              IsVisible="{Binding IsCustom}"
+                            />
+                          </StackPanel>
+                          <StackPanel
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            VerticalAlignment="Center"
+                          >
+                            <Button
+                              Classes="IconButton"
+                              Click="EditApiKey_OnClick"
+                              ToolTip.Tip="修改"
+                            >
+                              <lucide:LucideIcon Kind="Pencil" Size="14" StrokeWidth="1.6" />
+                            </Button>
+                            <Button
+                              Classes="IconButton Danger"
+                              Click="RemoveApiKey_OnClick"
+                              ToolTip.Tip="删除"
+                            >
+                              <lucide:LucideIcon Kind="Trash" Size="14" StrokeWidth="1.6" />
+                            </Button>
+                          </StackPanel>
+                        </Grid>
+
+                        <!-- ── 编辑态：提供商 → 协议 → 地址（仅自定义）→ 密钥 ── -->
+                        <Grid ColumnDefinitions="Auto,12,*,Auto" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="提供商" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{Binding ProviderOptions}"
+                            SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch"
+                          />
+                          <Button
+                            Grid.Column="3"
+                            Classes="Ghost"
+                            Margin="8,0,0,0"
+                            Click="EndEdit_OnClick"
+                            Content="完成"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="协议" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{x:Static vm:ApiKeyRow.ProtocolOptions}"
+                            SelectedItem="{Binding Protocol}"
+                            HorizontalAlignment="Stretch"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock
+                            Classes="Tag"
+                            VerticalAlignment="Center"
+                            Text="地址"
+                            IsVisible="{Binding IsCustom}"
+                          />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline RevealOnFocus"
+                            Text="{Binding BaseUrl}"
+                            PlaceholderText="Base URL (https://…/v1)"
+                            IsVisible="{Binding IsCustom}"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="密钥" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline RevealOnFocus"
+                            Text="{Binding ApiKey}"
+                            PasswordChar="•"
+                            PlaceholderText="API Key (sk-…)"
+                          />
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 嵌入 Tab ── -->
+      <TabItem Header="嵌入">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="文本向量化模型（独立 embedding 连接器，留空时降级为纯 BM25 检索）"
+            />
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="Tag" Text="提供商" />
+              <ComboBox
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding EmbeddingProviderOptions}"
+                SelectedItem="{Binding EmbeddingProviderDisplay, Mode=TwoWay}"
+                HorizontalAlignment="Stretch"
+              />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="Tag" VerticalAlignment="Center" Text="模型名称" />
+                <Button
+                  Grid.Column="1"
+                  Classes="Ghost"
+                  Click="DiscoverEmbeddingModels_OnClick"
+                  IsEnabled="{Binding !IsDiscoveringEmbeddingModels}"
+                  Content="发现模型"
+                  ToolTip.Tip="从 embedding 提供商 API 拉取可用模型列表（需已填写 API Key）"
+                />
+              </Grid>
+              <!-- 发现成功 → 下拉选择；失败/自定义 → 手动输入回退 -->
+              <ComboBox
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding EmbeddingModelOptions}"
+                SelectedItem="{Binding EmbeddingModel}"
+                HorizontalAlignment="Stretch"
+                IsVisible="{Binding IsEmbeddingModelListVisible}"
+              />
+              <TextBox
+                Classes="Adaline"
+                Text="{Binding EmbeddingModel}"
+                PlaceholderText="text-embedding-3-small"
+                IsVisible="{Binding IsEmbeddingModelListVisible, Converter={StaticResource InvertedBoolToVisibility}}"
+              />
+              <TextBlock
+                Text="{Binding EmbeddingModelDiscoverStatus}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushSageMist}"
+                IsVisible="{Binding EmbeddingModelDiscoverStatus, Converter={StaticResource StringNotEmpty}}"
+              />
+            </StackPanel>
+
+            <!-- API Key 卡片列表（独立 embedding 连接器） -->
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="Tag" VerticalAlignment="Center" Text="API 密钥" />
+                <Button
+                  Grid.Column="1"
+                  Classes="Ghost"
+                  Click="AddEmbeddingApiKey_OnClick"
+                  Content="添加密钥"
+                />
+              </Grid>
+              <ItemsControl ItemsSource="{Binding EmbeddingApiKeys}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ApiKeyRow">
+                    <Border
+                      Classes="Card"
+                      Padding="12,10"
+                      Margin="0,0,0,8"
+                      Background="{DynamicResource BrushSurfaceGlow}"
+                    >
+                      <StackPanel Spacing="8">
+                        <!-- ── 展示态：只读摘要 + 右侧修改 / 删除（Lucide） ── -->
+                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
+                          <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock
+                              FontSize="14"
+                              FontWeight="Medium"
+                              Foreground="{DynamicResource BrushForestInk}"
+                              Text="{Binding ProviderDisplay}"
+                              TextTrimming="CharacterEllipsis"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageGray}"
+                              Text="{Binding MaskedKey}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding ProtocolLine}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding NameLine}"
+                              IsVisible="{Binding IsCustom}"
+                            />
+                            <TextBlock
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              Text="{Binding BaseUrlLine}"
+                              TextTrimming="CharacterEllipsis"
+                              IsVisible="{Binding IsCustom}"
+                            />
+                          </StackPanel>
+                          <StackPanel
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            VerticalAlignment="Center"
+                          >
+                            <Button
+                              Classes="IconButton"
+                              Click="EditEmbeddingApiKey_OnClick"
+                              ToolTip.Tip="修改"
+                            >
+                              <lucide:LucideIcon Kind="Pencil" Size="14" StrokeWidth="1.6" />
+                            </Button>
+                            <Button
+                              Classes="IconButton Danger"
+                              Click="RemoveEmbeddingApiKey_OnClick"
+                              ToolTip.Tip="删除"
+                            >
+                              <lucide:LucideIcon Kind="Trash" Size="14" StrokeWidth="1.6" />
+                            </Button>
+                          </StackPanel>
+                        </Grid>
+
+                        <!-- ── 编辑态：提供商 → 协议 → 地址（仅自定义）→ 密钥 ── -->
+                        <Grid ColumnDefinitions="Auto,12,*,Auto" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="提供商" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{Binding ProviderOptions}"
+                            SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch"
+                          />
+                          <Button
+                            Grid.Column="3"
+                            Classes="Ghost"
+                            Margin="8,0,0,0"
+                            Click="EndEdit_OnClick"
+                            Content="完成"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="协议" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{x:Static vm:ApiKeyRow.ProtocolOptions}"
+                            SelectedItem="{Binding Protocol}"
+                            HorizontalAlignment="Stretch"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock
+                            Classes="Tag"
+                            VerticalAlignment="Center"
+                            Text="地址"
+                            IsVisible="{Binding IsCustom}"
+                          />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline RevealOnFocus"
+                            Text="{Binding BaseUrl}"
+                            PlaceholderText="Base URL (https://…/v1)"
+                            IsVisible="{Binding IsCustom}"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="密钥" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline RevealOnFocus"
+                            Text="{Binding ApiKey}"
+                            PasswordChar="•"
+                            PlaceholderText="API Key (sk-…)"
+                          />
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <TextBlock
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              Text="独立配置 embedding 连接器。未配置独立密钥时自动回退到聊天连接器。留空模型名时降级为纯 BM25 检索。"
+              TextWrapping="Wrap"
+            />
+
+            <!-- ═══ 本地判定（System One / d1-omni）· 可选（默认关闭；不可达时自动跳过判定） ═══ -->
+            <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,4,0,4" />
+            <TextBlock Classes="Tag" Text="本地判定（System One）· 可选" />
+            <Border Classes="Card" Padding="20">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,16,*">
+                  <TextBlock Classes="Tag" Text="启用" VerticalAlignment="Center" />
+                  <ToggleSwitch
+                    Grid.Column="2"
+                    IsChecked="{Binding SystemOneEnabled}"
+                    HorizontalAlignment="Left"
+                  />
+                </Grid>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="Tag" Text="服务地址" />
+                  <TextBox
+                    Classes="Adaline"
+                    Text="{Binding SystemOneBaseUrl}"
+                    PlaceholderText="http://127.0.0.1:8080"
+                  />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="Tag" Text="接口路径" />
+                  <TextBox
+                    Classes="Adaline"
+                    Text="{Binding SystemOnePath}"
+                    PlaceholderText="/v1/systemone"
+                  />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="Tag" Text="模型" />
+                  <TextBox
+                    Classes="Adaline"
+                    Text="{Binding SystemOneModel}"
+                    PlaceholderText="d1-omni"
+                  />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="Tag" Text="访问密钥（托管 Jev）" />
+                  <TextBox
+                    Classes="Adaline"
+                    Text="{Binding SystemOneApiKey}"
+                    PlaceholderText="本地端点留空"
+                  />
+                </StackPanel>
+                <Grid ColumnDefinitions="*,16,*">
+                  <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Classes="Tag" Text="超时（ms）" />
+                    <TextBox
+                      Classes="Adaline"
+                      Text="{Binding SystemOneTimeoutMs}"
+                      PlaceholderText="20000"
+                    />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="4">
+                    <TextBlock Classes="Tag" Text="状态字符预算" />
+                    <TextBox
+                      Classes="Adaline"
+                      Text="{Binding SystemOneMaxStateChars}"
+                      PlaceholderText="3000"
+                    />
+                  </StackPanel>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <TextBlock Classes="Tag" Text="检索重排" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneRerankEnabled}" />
+                  <TextBlock Classes="Tag" Text="冲突判定" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneConflictsEnabled}" />
+                  <TextBlock Classes="Tag" Text="关系提案" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneRelationsEnabled}" />
+                </StackPanel>
+                <!-- 循环判定（一轮三处启发式复核；失败一律保持既有行为）-->
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                  <TextBlock Classes="Tag" Text="停止复核" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneStopCheckEnabled}" />
+                  <TextBlock Classes="Tag" Text="漂移复核" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneDriftCheckEnabled}" />
+                  <TextBlock Classes="Tag" Text="稳定性复核" VerticalAlignment="Center" />
+                  <ToggleSwitch IsChecked="{Binding SystemOneStabilityCheckEnabled}" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="Tag" Text="关系提案最低概率（0~1）" />
+                  <TextBox
+                    Classes="Adaline"
+                    Text="{Binding SystemOneRelationsMinProbability}"
+                    PlaceholderText="0.7"
+                  />
+                </StackPanel>
+                <TextBlock
+                  FontSize="11"
+                  Foreground="{DynamicResource BrushSageMist}"
+                  Text="需本机另跑 llama-server（建议 -b 8192 -ub 8192 以容纳更长状态）；也可指向托管 Jev（TypeSafe：服务地址 https://api.typesafe.ai + 访问密钥）。模型不可达时自动跳过判定，检索不受影响。"
+                  TextWrapping="Wrap"
+                />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 上下文 Tab（管理模式热切换：compact ↔ continuation） ── -->
+      <TabItem Header="上下文">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="上下文管理模式（保存后立即生效，无需重启）"
+            />
+
+            <StackPanel Spacing="6">
+              <TextBlock Classes="Tag" Text="模式" />
+              <ComboBox
+                Theme="{StaticResource AdalineComboBox}"
+                ItemsSource="{Binding ContextModeOptions}"
+                SelectedItem="{Binding ContextModeDisplay, Mode=TwoWay}"
+                HorizontalAlignment="Stretch"
+              />
+            </StackPanel>
+
+            <Border Classes="Card" Padding="16,14">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Text="接续模式：向量检索旧页" FontSize="14" />
+                  <TextBlock
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextWrapping="Wrap"
+                    Text="封页时给旧页建向量索引，供 history_search_contents 语义检索。embedding 不可达时自动降级为字面检索。"
+                  />
+                </StackPanel>
+                <ToggleSwitch
+                  Grid.Column="1"
+                  IsChecked="{Binding ContextVectorRetrieval}"
+                  VerticalAlignment="Center"
+                />
+              </Grid>
+            </Border>
+
+            <TextBlock
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              TextWrapping="Wrap"
+              Text="{Binding ContextModeStatus}"
+            />
+
+            <TextBlock
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              TextWrapping="Wrap"
+              Text="压缩：接近上限时把早期消息摘要成压缩块（有损，可 /decompress 恢复）· 接续：接近上限时开启新页，旧页原文留在历史里按需检索（不丢细节）。切换会就地重注册工具并重建检索索引。"
+            />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── MCP Tab ── -->
+      <TabItem Header="MCP">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="MCP 服务器配置（stdin / streamable-http）"
+            />
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="Tag" VerticalAlignment="Center" Text="服务器" />
+              <Button Grid.Column="1" Classes="Ghost" Click="AddMcp_OnClick" Content="添加服务器" />
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding McpServers}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:McpServerRow">
+                  <Border
+                    Classes="Card"
+                    Padding="12,10"
+                    Margin="0,0,0,8"
+                    Background="{DynamicResource BrushSurfaceGlow}"
+                  >
+                    <StackPanel Spacing="8">
+                      <!-- ── 展示态：只读摘要 + 启用开关 + 修改 / 删除（Lucide） ── -->
+                      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                          <TextBlock
+                            FontSize="14"
+                            FontWeight="Medium"
+                            Foreground="{DynamicResource BrushForestInk}"
+                            Text="{Binding TitleLine}"
+                            TextTrimming="CharacterEllipsis"
+                          />
+                          <TextBlock
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="11"
+                            Foreground="{DynamicResource BrushSageGray}"
+                            Text="{Binding TransportLine}"
+                          />
+                          <TextBlock
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="11"
+                            Foreground="{DynamicResource BrushSageMist}"
+                            Text="{Binding EndpointLine}"
+                            TextTrimming="CharacterEllipsis"
+                          />
+                          <TextBlock
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="11"
+                            Foreground="{DynamicResource BrushSageMist}"
+                            Text="{Binding AuthLine}"
+                            IsVisible="{Binding !IsStdio}"
+                          />
+                        </StackPanel>
+                        <StackPanel
+                          Grid.Column="1"
+                          Orientation="Horizontal"
+                          Spacing="4"
+                          VerticalAlignment="Center"
+                        >
+                          <ToggleSwitch IsChecked="{Binding Enabled}" ToolTip.Tip="启用" />
+                          <Button Classes="IconButton" Click="EditMcp_OnClick" ToolTip.Tip="修改">
+                            <lucide:LucideIcon Kind="Pencil" Size="14" StrokeWidth="1.6" />
+                          </Button>
+                          <Button
+                            Classes="IconButton Danger"
+                            Click="RemoveMcp_OnClick"
+                            ToolTip.Tip="删除"
+                          >
+                            <lucide:LucideIcon Kind="Trash" Size="14" StrokeWidth="1.6" />
+                          </Button>
+                        </StackPanel>
+                      </Grid>
+
+                      <!-- ── 编辑态：表单（由「修改」进入） ── -->
+                      <StackPanel Spacing="8" IsVisible="{Binding IsEditing}">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBox
+                            Classes="Adaline"
+                            Text="{Binding Name}"
+                            PlaceholderText="服务器名称"
+                          />
+                          <Button
+                            Grid.Column="1"
+                            Classes="Ghost"
+                            Margin="8,0,0,0"
+                            Click="EndEdit_OnClick"
+                            Content="完成"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="传输" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{x:Static vm:McpServerRow.TransportOptions}"
+                            SelectedItem="{Binding Transport}"
+                          />
+                        </Grid>
+                        <TextBox
+                          Classes="Adaline"
+                          Text="{Binding Url}"
+                          PlaceholderText="URL（streamable-http / sse）"
+                          IsVisible="{Binding !IsStdio}"
+                        />
+                        <!-- 鉴权（仅 HTTP 传输）：none / bearer / 自定义头 -->
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding !IsStdio}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="鉴权" />
+                          <ComboBox
+                            Grid.Column="2"
+                            Theme="{StaticResource AdalineComboBox}"
+                            ItemsSource="{x:Static vm:McpServerRow.AuthOptions}"
+                            SelectedItem="{Binding Auth}"
+                            HorizontalAlignment="Stretch"
+                          />
+                        </Grid>
+                        <TextBox
+                          Classes="Adaline RevealOnFocus"
+                          Text="{Binding BearerToken}"
+                          PasswordChar="•"
+                          PlaceholderText="Bearer 令牌"
+                          IsVisible="{Binding IsBearerAuth}"
+                        />
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsHeaderAuth}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="头名" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline"
+                            Text="{Binding AuthHeader}"
+                            PlaceholderText="X-API-Key"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsHeaderAuth}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="头值" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline RevealOnFocus"
+                            Text="{Binding AuthValue}"
+                            PasswordChar="•"
+                            PlaceholderText="值"
+                          />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,12,*" IsVisible="{Binding IsStdio}">
+                          <TextBox
+                            Grid.Column="0"
+                            Classes="Adaline"
+                            Text="{Binding Command}"
+                            PlaceholderText="命令（stdio）"
+                          />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline"
+                            Text="{Binding Args}"
+                            PlaceholderText="参数（空格分隔）"
+                          />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Classes="Tag" Text="启用" VerticalAlignment="Center" />
+                          <ToggleSwitch IsChecked="{Binding Enabled}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 工具 Tab ── -->
+      <TabItem Header="工具">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="插件启用开关（保存后生效）"
+            />
+
+            <ItemsControl ItemsSource="{Binding Plugins}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SkillRow">
+                  <Border
+                    Classes="Card"
+                    Padding="12,10"
+                    Margin="0,0,0,8"
+                    Background="{DynamicResource BrushSurfaceGlow}"
+                  >
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="2">
+                        <TextBlock
+                          FontSize="14"
+                          FontWeight="Medium"
+                          Foreground="{DynamicResource BrushForestInk}"
+                          Text="{Binding PluginName}"
+                        />
+                        <TextBlock
+                          FontFamily="{StaticResource FontMono}"
+                          FontSize="11"
+                          Foreground="{DynamicResource BrushSageMist}"
+                          Text="{Binding ToolCount, StringFormat='{}TOOLS · {0}'}"
+                        />
+                      </StackPanel>
+                      <ToggleSwitch
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        IsChecked="{Binding IsEnabled}"
+                      />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 外观 Tab（主题即时生效，独立于保存按钮）── -->
+      <TabItem Header="外观">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="主题与界面外观（即时生效，独立于「保存」按钮）"
+            />
+
+            <Border Classes="Card" Padding="16,14">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Text="深色主题" FontSize="14" />
+                  <TextBlock
+                    Text="夜空墨绿（Slate Hollow）深色变体 · 浅色为 Adaline 纸感"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextWrapping="Wrap"
+                  />
+                </StackPanel>
+                <ToggleSwitch
+                  Grid.Column="1"
+                  IsChecked="{Binding IsDarkTheme}"
+                  VerticalAlignment="Center"
+                />
+              </Grid>
+            </Border>
+
+            <TextBlock
+              Text="快捷键 Ctrl+T · /theme dark|light|toggle 亦可切换"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+            />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 账号 Tab（管理视图；登录引导在独立 CloudLoginWindow）── -->
+      <TabItem Header="账号">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="Mythology Cloud 同步与协作"
+            />
+
+            <!-- 已登录：field-note 标签 + 键值两列（mono 标签 / mono 值）+ 动作右下 -->
+            <Border
+              Classes="Card"
+              Padding="20"
+              Background="{DynamicResource BrushSurfaceGlow}"
+              IsVisible="{Binding IsCloudLoggedIn}"
+            >
+              <StackPanel Spacing="12">
+                <TextBlock Classes="Tag" Text="已登录" />
+                <TextBlock
+                  FontSize="16"
+                  FontWeight="Medium"
+                  Foreground="{DynamicResource BrushForestInk}"
+                  Text="{Binding CloudDisplayId}"
+                  TextTrimming="CharacterEllipsis"
+                />
+                <Grid ColumnDefinitions="Auto,12,*" RowDefinitions="Auto,Auto" RowSpacing="4">
+                  <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Classes="Tag"
+                    VerticalAlignment="Center"
+                    Text="计划"
+                  />
+                  <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="2"
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    Text="{Binding CloudPlan}"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock
+                    Grid.Row="1"
+                    Grid.Column="0"
+                    Classes="Tag"
+                    VerticalAlignment="Center"
+                    Text="登录于"
+                  />
+                  <TextBlock
+                    Grid.Row="1"
+                    Grid.Column="2"
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    Text="{Binding CloudSavedAt}"
+                    VerticalAlignment="Center"
+                  />
+                </Grid>
+                <Button
+                  Classes="Ghost"
+                  HorizontalAlignment="Right"
+                  Click="CloudLogout_OnClick"
+                  Content="退出登录"
+                />
+              </StackPanel>
+            </Border>
+
+            <!-- 未登录 -->
+            <Border
+              Classes="Card"
+              Padding="20"
+              Background="{DynamicResource BrushSurfaceGlow}"
+              IsVisible="{Binding !IsCloudLoggedIn}"
+            >
+              <StackPanel Spacing="12">
+                <TextBlock Classes="Tag" Text="未登录" />
+                <StackPanel Spacing="6">
+                  <TextBlock
+                    FontSize="16"
+                    FontWeight="Medium"
+                    Foreground="{DynamicResource BrushForestInk}"
+                    Text="登录 Mythology Cloud"
+                  />
+                  <TextBlock
+                    FontSize="14"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    Text="同步小说 · 跨设备协作 · 云端备份"
+                    TextWrapping="Wrap"
+                  />
+                </StackPanel>
+                <Button
+                  Classes="Ghost"
+                  HorizontalAlignment="Right"
+                  Click="CloudLogin_OnClick"
+                  Content="去登录"
+                />
+              </StackPanel>
+            </Border>
+
+            <!-- 状态提示（mono 辅助元数据） -->
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              Text="{Binding CloudStatus}"
+              IsVisible="{Binding CloudStatus, Converter={StaticResource StringNotEmpty}}"
+            />
+
+            <!-- ═══ 微信（扫码绑定后在微信里指挥本机助手）═══ -->
+            <!-- 外层只管可见性（保留父 VM 的 DataContext），内层才切到微信卡片 VM：
+                 同一元素上同时改 IsVisible 与 DataContext 会让两个绑定互相打到对方的 DataContext -->
+            <ContentControl IsVisible="{Binding HasWeChatCard}">
+              <Border
+                Classes="Card"
+                Padding="20"
+                Background="{DynamicResource BrushSurfaceGlow}"
+                DataContext="{Binding WeChat}"
+              >
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                  <StackPanel Grid.Column="0" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Classes="Tag" Text="微信通道" />
+                    <TextBlock
+                      FontSize="14"
+                      Foreground="{DynamicResource BrushSageGray}"
+                      Text="{Binding StatusText}"
+                      TextWrapping="Wrap"
+                    />
+                    <TextBlock
+                      FontSize="12"
+                      FontFamily="{StaticResource FontMono}"
+                      Foreground="{DynamicResource BrushSageMist}"
+                      Text="{Binding PeerText}"
+                      IsVisible="{Binding IsBound}"
+                    />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button
+                        Classes="Ghost"
+                        Content="{Binding BindButtonText}"
+                        IsEnabled="{Binding !IsBusy}"
+                        Click="WeChatBind_OnClick"
+                      />
+                      <Button
+                        Classes="Ghost"
+                        Content="解除绑定"
+                        IsVisible="{Binding IsBound}"
+                        Click="WeChatUnbind_OnClick"
+                      />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <!-- 二维码：白底 + 内边距，深色主题下也能扫 -->
+                  <Border
+                    Grid.Column="1"
+                    Width="132"
+                    Height="132"
+                    CornerRadius="8"
+                    ClipToBounds="True"
+                    Background="#FFFFFF"
+                    Padding="6"
+                    IsVisible="{Binding IsQrVisible}"
+                    ToolTip.Tip="用微信扫码，扫完在手机上点确认"
+                  >
+                    <Image Source="{Binding QrImage}" Stretch="Uniform" />
+                  </Border>
+                </Grid>
+              </Border>
+            </ContentControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 关于 Tab（版本与更新；卡片状态来自共享单例 UpdateState，与弹窗同源） ── -->
+      <TabItem Header="关于">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <StackPanel
+            Margin="20,16,20,20"
+            Spacing="16"
+            MaxWidth="680"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              Text="版本与更新（GitHub Releases）"
+            />
+
+            <!-- 更新卡片：DataContext 切到共享单例 UpdateState（复用本文件「微信卡片」范式；
+                 不要在同一个元素上同时设 IsVisible 与 DataContext——两个绑定互打） -->
+            <Border
+              Classes="Card"
+              Padding="20"
+              Background="{DynamicResource BrushSurfaceGlow}"
+              DataContext="{Binding Update}"
+            >
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <StackPanel Grid.Column="0" Spacing="8" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="Tag" Text="更新" />
+                    <!-- 状态点：有可用更新（下载中或已就绪）—— DESIGN.md：徽标填充用 Sage Leaf，Crimson 不作状态色 -->
+                    <Ellipse
+                      Width="8"
+                      Height="8"
+                      Fill="{DynamicResource BrushSageLeaf}"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding HasPendingUpdate}"
+                    />
+                  </StackPanel>
+                  <TextBlock
+                    Text="{Binding StatusText}"
+                    FontSize="14"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextWrapping="Wrap"
+                  />
+                </StackPanel>
+                <StackPanel
+                  Grid.Column="1"
+                  Orientation="Horizontal"
+                  Spacing="8"
+                  VerticalAlignment="Center"
+                >
+                  <ProgressBar
+                    IsVisible="{Binding IsDownloading}"
+                    Value="{Binding DownloadProgress}"
+                    Maximum="100"
+                    Width="80"
+                    Height="3"
+                    CornerRadius="1.5"
+                    Foreground="{DynamicResource BrushSageLeaf}"
+                    Background="{DynamicResource BrushMist}"
+                    VerticalAlignment="Center"
+                  />
+                  <Button
+                    Classes="Ghost"
+                    Command="{Binding PrimaryActionCommand}"
+                    IsEnabled="{Binding IsPrimaryActionEnabled}"
+                    Content="{Binding PrimaryActionText}"
+                  />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+
+    <!-- ═══════ 底部动作条（DESIGN.md：Primary CTA 居右 · 状态为 mono 元数据） ═══════ -->
+    <Border
+      Grid.Row="1"
+      BorderBrush="{DynamicResource BrushMist}"
+      BorderThickness="0,1,0,0"
+      Padding="20,12"
+      Background="{DynamicResource BrushBone}"
+    >
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock
+          Grid.Column="0"
+          FontFamily="{StaticResource FontMono}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          Text="{Binding SaveStatus}"
+          TextTrimming="CharacterEllipsis"
+          VerticalAlignment="Center"
+          IsVisible="{Binding SaveStatus, Converter={StaticResource StringNotEmpty}}"
+        />
+        <Button
+          Grid.Column="1"
+          Classes="Primary"
+          Margin="16,0,0,0"
+          Command="{Binding SaveCommand}"
+          Content="保存并生效"
+        />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

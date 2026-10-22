@@ -1,0 +1,154 @@
+﻿<Window
+  x:Class="Desktop.Controls.ChapterReaderWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
+  Title="阅读章"
+  Width="780"
+  Height="680"
+  MinWidth="600"
+  MinHeight="500"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,0,0,0">
+    <!-- 标题头 -->
+    <Grid Grid.Row="0" Margin="24,20,24,0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto">
+      <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+        <TextBlock
+          x:Name="TitleBlock"
+          FontSize="18"
+          FontWeight="Medium"
+          Foreground="{DynamicResource BrushOlivePress}"
+        />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock
+            x:Name="StatusTag"
+            Classes="Tag"
+            Foreground="{DynamicResource BrushSageMist}"
+          />
+          <TextBlock
+            x:Name="WordCountBlock"
+            Classes="Tag"
+            Foreground="{DynamicResource BrushSageMist}"
+          />
+        </StackPanel>
+      </StackPanel>
+      <Button
+        Grid.Column="2"
+        x:Name="PrevButton"
+        Classes="NavPill"
+        Padding="10,4"
+        IsEnabled="False"
+      >
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <lucide:LucideIcon
+            Kind="ChevronLeft"
+            Size="14"
+            StrokeWidth="1.8"
+            VerticalAlignment="Center"
+          />
+          <TextBlock Text="上一章" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <Button
+        Grid.Column="3"
+        x:Name="NextButton"
+        Classes="NavPill"
+        Padding="10,4"
+        Margin="6,0,0,0"
+        IsEnabled="False"
+      >
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <TextBlock Text="下一章" VerticalAlignment="Center" />
+          <lucide:LucideIcon
+            Kind="ChevronRight"
+            Size="14"
+            StrokeWidth="1.8"
+            VerticalAlignment="Center"
+          />
+        </StackPanel>
+      </Button>
+      <Button
+        Grid.Column="4"
+        x:Name="OutlineButton"
+        Classes="Ghost"
+        Padding="14,7"
+        Margin="12,0,0,0"
+        Content="细纲"
+      />
+      <Button
+        Grid.Column="5"
+        x:Name="EditToggleButton"
+        Classes="Primary"
+        Margin="12,0,0,0"
+        Content="编辑"
+      />
+    </Grid>
+
+    <!-- 分隔线 -->
+    <Border Grid.Row="1" Height="1" Background="{DynamicResource BrushMist}" Margin="24,16,24,0" />
+
+    <!-- 细纲信息带（大纲三层：梗概 / 计划关系胶囊 / 实际出场与变化） -->
+    <Border
+      x:Name="OutlinePanel"
+      Grid.Row="2"
+      Classes="Card Glow"
+      Margin="24,12,24,0"
+      Padding="14,10"
+      IsVisible="False"
+    >
+      <StackPanel Spacing="6">
+        <TextBlock
+          x:Name="SummaryText"
+          FontSize="14"
+          Foreground="{DynamicResource BrushForestInk}"
+          TextWrapping="Wrap"
+          IsVisible="False"
+        />
+        <WrapPanel x:Name="ChipsPanel" ItemSpacing="4" LineSpacing="4" />
+        <TextBlock
+          x:Name="RecordsText"
+          FontFamily="{StaticResource FontMono}"
+          FontSize="10"
+          Foreground="{DynamicResource BrushSageMist}"
+          TextWrapping="Wrap"
+          IsVisible="False"
+        />
+      </StackPanel>
+    </Border>
+
+    <!-- 正文区：阅读态 Markdown 渲染（自身滚动；展示卡占满内容行，
+         此前 MaxWidth=720 + 左对齐 → 宽窗口下右侧大片留白） -->
+    <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled" Margin="24,16,24,12">
+      <Border x:Name="ReadPanel" Classes="Card" Padding="32,24">
+        <md:MarkdownRenderer x:Name="MarkdownView" CodeBlockColorTheme="LightPlus" />
+      </Border>
+    </ScrollViewer>
+
+    <!-- 编辑态：TextBox 自带滚动，直接占满内容行（不再套 ScrollViewer、不再固定 400–800 高度）；
+         正文顶部起排 + 两端对齐（不是居中展示的短文案） -->
+    <TextBox
+      x:Name="ContentEditor"
+      Grid.Row="3"
+      Classes="PromptBox"
+      AcceptsReturn="True"
+      TextWrapping="Wrap"
+      VerticalContentAlignment="Top"
+      TextAlignment="Justify"
+      Margin="24,16,24,12"
+      VerticalAlignment="Stretch"
+      IsVisible="False"
+    />
+
+    <!-- 底部动作条（分割线 + 右下按钮；此前两者挤在同一 Grid.Row 里重叠） -->
+    <StackPanel Grid.Row="4" Spacing="12" Margin="24,0,24,16">
+      <Border Height="1" Background="{DynamicResource BrushMist}" />
+      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+        <Button x:Name="CloseButton" Classes="Ghost" Content="关闭" />
+        <Button x:Name="SaveButton" Classes="Primary" Content="保存" IsVisible="False" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

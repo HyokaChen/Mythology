@@ -1,0 +1,167 @@
+<Window
+  x:Class="Desktop.Controls.SetupCheckWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:models="clr-namespace:Desktop.Models"
+  xmlns:vm="clr-namespace:Desktop.ViewModels"
+  x:DataType="vm:SetUpPanelViewModel"
+  Title="设定检查"
+  Width="560"
+  Height="640"
+  MinWidth="440"
+  MinHeight="420"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24,20,24,16">
+    <!-- 标题 -->
+    <TextBlock Grid.Row="0" Classes="Eyebrow" Text="设定检查" />
+
+    <!-- hairline -->
+    <Border Grid.Row="1" Height="1" Margin="0,14,0,0" Background="{DynamicResource BrushMist}" />
+
+    <!-- 内容（模板平移自「检查」Flyout） -->
+    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" Margin="0,12,0,0">
+      <StackPanel Spacing="8">
+        <TextBlock
+          Text="{Binding CheckSummary}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextWrapping="Wrap"
+        />
+        <ItemsControl ItemsSource="{Binding Findings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:SetupFindingItem">
+              <Border Padding="0,0,0,6" Margin="0,0,0,4">
+                <StackPanel Spacing="3">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <lucide:LucideIcon
+                      Kind="{Binding VerdictIcon}"
+                      Size="12"
+                      StrokeWidth="1.6"
+                      Foreground="{DynamicResource BrushSageGray}"
+                      VerticalAlignment="Center"
+                    />
+                    <TextBlock
+                      Text="{Binding VerdictLabel}"
+                      FontFamily="{StaticResource FontMono}"
+                      FontSize="10"
+                      VerticalAlignment="Center"
+                    />
+                    <TextBlock
+                      Text="{Binding Description}"
+                      TextWrapping="Wrap"
+                      FontSize="11"
+                      Foreground="{DynamicResource BrushForestInk}"
+                      VerticalAlignment="Center"
+                    />
+                  </StackPanel>
+                  <TextBlock
+                    Text="{Binding Evidence, StringFormat='证据: {0}'}"
+                    IsVisible="{Binding HasEvidence}"
+                    FontSize="10"
+                    Foreground="{DynamicResource BrushSageMist}"
+                    TextWrapping="Wrap"
+                  />
+                  <TextBlock
+                    Text="{Binding FixCandidates, StringFormat='修复: {0}'}"
+                    IsVisible="{Binding HasFixCandidates}"
+                    FontSize="10"
+                    Foreground="{DynamicResource BrushSageMist}"
+                    TextWrapping="Wrap"
+                  />
+                  <TextBlock
+                    Text="{Binding Suggestion, StringFormat='建议: {0}'}"
+                    IsVisible="{Binding HasSuggestion}"
+                    FontSize="10"
+                    Foreground="{DynamicResource BrushSageMist}"
+                    TextWrapping="Wrap"
+                  />
+                  <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    IsVisible="{Binding CanFeedback}"
+                  >
+                    <Button
+                      Classes="IconButton"
+                      Padding="3"
+                      Tag="adopted"
+                      Click="OnSetupFeedback_Click"
+                      ToolTip.Tip="采纳（这条检查有用）"
+                    >
+                      <lucide:LucideIcon Kind="ThumbsUp" Size="10" StrokeWidth="1.6" />
+                    </Button>
+                    <Button
+                      Classes="IconButton"
+                      Padding="3"
+                      Tag="dismissed"
+                      Click="OnSetupFeedback_Click"
+                      ToolTip.Tip="忽略（这条检查不准确）"
+                    >
+                      <lucide:LucideIcon Kind="ThumbsDown" Size="10" StrokeWidth="1.6" />
+                    </Button>
+                    <Button
+                      Classes="IconButton"
+                      Padding="3"
+                      IsVisible="{Binding HasEntityLink}"
+                      Click="OnFindingNavigate_Click"
+                      Tag="{Binding}"
+                      ToolTip.Tip="跳转到相关实体"
+                    >
+                      <lucide:LucideIcon Kind="Link2" Size="10" StrokeWidth="1.6" />
+                    </Button>
+                    <TextBlock
+                      Text="{Binding Id}"
+                      FontSize="9"
+                      Foreground="{DynamicResource BrushSageMist}"
+                      VerticalAlignment="Center"
+                    />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock
+          Text="{Binding OutlineMetrics}"
+          IsVisible="{Binding HasOutlineMetrics}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextWrapping="Wrap"
+        />
+        <TextBlock
+          Text="{Binding GraphSummary, StringFormat='设定图：{0}'}"
+          IsVisible="{Binding HasGraphSummary}"
+          FontSize="10"
+          Foreground="{DynamicResource BrushSageMist}"
+          TextWrapping="Wrap"
+        />
+        <TextBlock
+          Text="{Binding VolumeSummary, StringFormat='分卷大纲：{0}'}"
+          IsVisible="{Binding HasVolumeSummary}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextWrapping="Wrap"
+        />
+        <TextBlock
+          Text="{Binding CoverageSummary}"
+          IsVisible="{Binding HasCoverageSummary}"
+          FontSize="10"
+          Foreground="{DynamicResource BrushSageMist}"
+          TextWrapping="Wrap"
+        />
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- 底部 -->
+    <StackPanel Grid.Row="3" Spacing="12" Margin="0,12,0,0">
+      <Border Height="1" Background="{DynamicResource BrushMist}" />
+      <!-- DESIGN.md：次级在左 · Primary 居右（此前 Primary 在左、Ghost 在最右，动作序倒置） -->
+      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+        <Button x:Name="CloseButton" Classes="Ghost" Content="关闭" />
+        <Button x:Name="RunCheckButton" Classes="Primary" Content="运行检查" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

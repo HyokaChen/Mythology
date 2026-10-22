@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
+    <!-- NuGet 包配置 -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Mythology.Core</PackageId>
+    <Version>$(MythologyVersion)</Version>
+    <Authors>HyokaChen</Authors>
+    <Description>Mythology 插件开发 SDK — IToolPlugin / AgentTool 插件契约、Agent 引擎（ConversationLoop + ToolInjector）、YAML/Markdown 文件数据层、JSONL 会话分片存储、向量检索内核（dense vec0 + FTS5 + RRF）与 Agent 记忆子系统。第三方插件只需引用此包。</Description>
+    <PackageTags>mythology;plugin;sdk;agent;llm;novel;ai</PackageTags>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/HyKaChen/Mythology</PackageProjectUrl>
+    <!-- IsAotCompatible 不适用：项目使用反射插件加载，不兼容 AOT -->
+    <NoWarn>$(NoWarn);IL2026;IL3050;IL2072;IL2090</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <PackageReference Include="System.Numerics.Tensors" Version="10.0.13" />
+    <PackageReference Include="Tacos" Version="1.0.4" />
+    <PackageReference Include="Tacos.SourceGenerator" Version="1.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LlmTornado" Version="3.8.74" NoWarn="NU1903" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" NoWarn="NU1903" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+    <PackageReference Include="sqlite-vec" Version="0.1.7-alpha.2.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+    <!-- 日志（双入口共用 CoreServiceExtensions 注册） -->
+    <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <!-- jieba 中文分词（ToolSearchEngine 检索用）。System.Drawing.Common 直接引用覆盖 jieba.NET 传递的漏洞版本。 -->
+    <PackageReference Include="jieba.NET" Version="0.42.2" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.13" />
+  </ItemGroup>
+  <!-- jieba.NET 词典资源：将 NuGet 包中的 Resources/ 复制到输出目录（与 云端私有仓库 的 云端私有引擎 同款） -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(JiebaResourceFiles)"
+      DestinationFolder="$(JiebaResourcesDest)"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="" />
+    <!-- NuGet build targets：外部插件引用时自动设置 Private=false -->
+    <None Include="build/Mythology.Core.targets" Pack="true" PackagePath="build" />
+    <None Include="../../assets/mythology-mark.png" Pack="true" PackagePath="icon.png" />
+  </ItemGroup>
+</Project>

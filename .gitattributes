@@ -1,0 +1,9 @@
+# 打包脚本要在 Linux/macOS runner 与本地 Git Bash 里执行：强制 LF，
+# 否则 core.autocrlf=true 会在工作树里注入 CRLF，bash 会把 "#!/usr/bin/env bash\r" 当成不存在的解释器。
+*.sh   text eol=lf
+*.conf text eol=lf
+
+# Inno Setup 脚本/语言文件：中文内容必须保持 UTF-8（.iss 另需 BOM，已写死在文件里），
+# 行尾固定 CRLF（ISCC 两种都吃，钉死避免每次 checkout 抖 diff）。
+*.iss  text eol=crlf
+*.isl  text eol=crlf

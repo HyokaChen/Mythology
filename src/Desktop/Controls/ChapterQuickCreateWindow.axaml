@@ -1,0 +1,58 @@
+<Window
+  x:Class="Desktop.Controls.ChapterQuickCreateWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  x:Name="ChapterQuickCreateWindowRoot"
+  Width="460"
+  Height="300"
+  MinWidth="420"
+  CanResize="False"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+>
+  <!-- 表单顶置 · 动作条钉在右下（StackPanel 根会让按钮随内容上浮） -->
+  <Grid RowDefinitions="*,Auto" Margin="24,20,24,20">
+    <StackPanel Grid.Row="0" Spacing="14">
+      <TextBlock
+        Text="只填标题与所属卷，回车即建；细纲、计划出场、正文随时在 ⋯ 菜单里补。"
+        FontSize="12"
+        Foreground="{DynamicResource BrushSageGray}"
+        TextWrapping="Wrap"
+      />
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="Eyebrow" Text="标题" />
+        <TextBox
+          x:Name="TitleBox"
+          Classes="Adaline"
+          PlaceholderText="例如：雪夜启程（留空 = 新章节）"
+        />
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Classes="Eyebrow" Text="所属卷" />
+        <ComboBox x:Name="VolumeBox" HorizontalAlignment="Stretch" />
+      </StackPanel>
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Spacing="14">
+      <Border Height="1" Background="{DynamicResource BrushMist}" />
+      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+        <Button x:Name="CancelButton" Classes="Ghost" Content="取消" Click="CancelButton_OnClick" />
+        <Button
+          x:Name="CreateButton"
+          Classes="Primary"
+          Content="创建"
+          Click="CreateButton_OnClick"
+        />
+      </StackPanel>
+      <TextBlock
+        Text="Enter 创建 · Esc 取消"
+        FontSize="10"
+        Foreground="{DynamicResource BrushSageMist}"
+        FontFamily="{StaticResource FontMono}"
+        LetterSpacing="0.2"
+      />
+    </StackPanel>
+  </Grid>
+</Window>

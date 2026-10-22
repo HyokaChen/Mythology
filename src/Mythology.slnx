@@ -1,0 +1,43 @@
+﻿<Solution>
+  <Folder Name="/Channels/">
+    <Project Path="Channels/WeChat/Channels.WeChat.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/" />
+  <Folder Name="/Plugins/ContextContinuation/">
+    <Project Path="Plugins/ContextContinuation/Plugins.ContextContinuation.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/NovelTools/">
+    <Project Path="Plugins/NovelTools/Plugins.NovelTools.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/SemanticRetrievalTool/">
+    <Project Path="Plugins/SemanticRetrievalTool/Plugins.SemanticRetrievalTool.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/FileSystem/">
+    <Project Path="Plugins/FileSystem/Plugins.FileSystem.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/WebSearchTools/">
+    <Project Path="Plugins/WebSearchTools/Plugins.WebSearchTools.csproj" />
+  </Folder>
+  <Folder Name="/Plugins/WritingTools/">
+    <Project Path="Plugins/WritingTools/Plugins.WritingTools.csproj" />
+  </Folder>
+  <Project Path="Core/Core.csproj" />
+  <Project Path="Core/Tests/Core.Tests.csproj" />
+  <Project Path="Plugins/ContextContinuation/Tests/ContextContinuation.Tests.csproj" />
+  <Project Path="Plugins/NovelTools/Tests/NovelTools.Tests.csproj" />
+  <Project Path="Plugins/FileSystem/Tests/FileSystem.Tests.csproj" />
+  <Project Path="Plugins/SemanticRetrievalTool/Tests/SemanticRetrievalTool.Tests.csproj" />
+  <Project Path="Plugins/WebSearchTools/Tests/WebSearchTools.Tests.csproj" />
+  <Project Path="Plugins/WritingTools/Tests/WritingTools.Tests.csproj" />
+  <Project Path="StabilityHarness/StabilityHarness.csproj" />
+  <Project Path="StabilityHarness/Tests/StabilityHarness.Tests.csproj" />
+  <Project Path="Host/Host.csproj" />
+  <Project Path="Host/Tests/Host.Tests.csproj" />
+  <Project Path="ClientPlatform/ClientPlatform.csproj" />
+  <Project Path="ClientPlatform/Tests/ClientPlatform.Tests.csproj" />
+  <Project Path="Channels/WeChat/Tests/Channels.WeChat.Tests.csproj" />
+  <Project Path="Tui/Tui.csproj" />
+  <Project Path="Tui/Tests/Tui.Tests.csproj" />
+  <Project Path="Desktop/Desktop.csproj" />
+  <Project Path="Desktop/Tests/Desktop.Tests.csproj" />
+</Solution>

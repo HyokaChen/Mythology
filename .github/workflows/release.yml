@@ -1,0 +1,413 @@
+# 发布流水线：Desktop 三平台安装包（Windows setup.exe / Linux deb / macOS dmg）+ TUI dotnet tool nupkg。
+# 触发：push v* tag（全跑 + 发 Release），或手动 dispatch（按开关选择性构建/发布）。
+# 注意：产物不签名 —— Windows setup.exe 无数字签名（SmartScreen 会提示"未知发布者"）；
+#       macOS 仅 ad-hoc 签名、不公证（用户首次需右键→打开）。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 X.Y.Z（不带 v）；留空则取触发 ref 的 tag"
+        required: false
+        default: ""
+      build_tui:
+        description: "构建 TUI nupkg（dotnet tool）"
+        type: boolean
+        default: true
+      build_desktop:
+        description: "构建 Desktop 三平台安装包（Linux/Windows/macOS）"
+        type: boolean
+        default: true
+      publish_release:
+        description: "发 GitHub Release（push tag 时自动发；dispatch 默认不发）"
+        type: boolean
+        default: false
+      publish_nuget:
+        description: "推送 TUI nupkg 到 nuget.org（Trusted Publishing / OIDC，需先在 nuget.org 配置可信任发布者策略）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  prepare:
+    name: 解析版本
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      base: ${{ steps.ver.outputs.base }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # resolve_version 兜底要读 tag
+
+      - name: 派生并校验版本号
+        id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="${INPUT_VERSION:-${GITHUB_REF_NAME}}"
+          VERSION="${RAW#v}"
+          # 允许 SemVer 预发布后缀（v0.0.2-alpha.1 等）；构建号（+meta）不允许。
+          # BASE=去掉预发布后缀的 X.Y.Z，用于 GitHub Release 的 tag 归一。
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "错误：版本号必须是 X.Y.Z 或 X.Y.Z-预发布（tag 形如 v1.2.3 / v1.2.3-alpha.1），实际：'$RAW'" >&2
+            exit 1
+          fi
+          BASE="$(printf '%s' "$VERSION" | sed -E 's/-[0-9A-Za-z.-]+$//')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "tag=$RAW" >> "$GITHUB_OUTPUT"
+          echo "发布版本：$RAW"
+
+      # runner 能力自检（不阻断，仅记录）：与 LKK release.yaml 的 prepare 自检同构。
+      # `git submodule status` 能提前暴露 submodule 未检出——否则要等 tui job 编译时
+      # 才以 669 个 CS0246 的形式爆（子模块内容缺失时 dotnet build src/Tui 实测报 669 error）。
+      - name: 环境自检（记录 runner 能力，便于排查）
+        run: |
+          echo "== dotnet SDK =="; dotnet --version
+          echo "== unzip ==";    unzip -v 2>/dev/null | head -1 || echo "缺 unzip（build-tui.sh 的 verify_nupkg 需要）"
+          echo "== git ==";      git --version
+          git submodule status || true   # 确认 XenoAtom.Terminal.UI 被检出
+
+  tui:
+    name: TUI（dotnet tool nupkg）
+    needs: prepare
+    # push tag 时 inputs 为 null → null != false → true（跑）；dispatch 默认 true（跑），取消勾则跳过。
+    if: ${{ inputs.build_tui != false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Tui → XenoAtom.Terminal.UI submodule（.gitmodules 指向公开仓
+          # HyokaChen/XenoAtom.Terminal.UI，匿名 clone 即可，无需 secret）。
+          submodules: true
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # runner 镜像不预热 NuGet global packages；缓存 key 随 csproj 内容变化（包版本/引用变动即失效）。
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/**/*.csproj', 'src/Plugins/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: 构建并冒烟
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x installer/*.sh installer/lib/*.sh
+          installer/build-tui.sh --version "${{ needs.prepare.outputs.version }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tui
+          path: |
+            dist/*.nupkg
+            dist/*.nupkg.sha256
+          if-no-files-found: error
+
+  linux:
+    name: Linux（.deb）
+    needs: prepare
+    if: ${{ inputs.build_desktop != false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Tui → XenoAtom.Terminal.UI submodule（.gitmodules 指向公开仓
+          # HyokaChen/XenoAtom.Terminal.UI，匿名 clone 即可，无需 secret）。
+          submodules: true
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # runner 镜像不预热 NuGet global packages；缓存 key 随 csproj 内容变化（包版本/引用变动即失效）。
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/**/*.csproj', 'src/Plugins/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: 构建 .deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x installer/*.sh installer/lib/*.sh
+          installer/build-linux.sh --version "${{ needs.prepare.outputs.version }}" --rid linux-x64
+
+      - name: 复验包结构
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="dist/Mythology-Desktop-${{ needs.prepare.outputs.version }}-linux-x64.deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -E "(usr/bin/mythology-desktop|opt/mythology-desktop/MythDesktop$)"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: |
+            dist/*.deb
+            dist/*.deb.sha256
+          if-no-files-found: error
+
+  windows:
+    name: Windows（Inno Setup）
+    needs: prepare
+    if: ${{ inputs.build_desktop != false }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Tui → XenoAtom.Terminal.UI submodule（.gitmodules 指向公开仓
+          # HyokaChen/XenoAtom.Terminal.UI，匿名 clone 即可，无需 secret）。
+          submodules: true
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # runner 镜像不预热 NuGet global packages；缓存 key 随 csproj 内容变化（包版本/引用变动即失效）。
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/**/*.csproj', 'src/Plugins/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
+      # Inline PowerShell must stay pure ASCII: Windows PowerShell 5.1 decodes the temp
+      # script file with the system ANSI codepage, so non-ASCII literals can break parsing.
+      # Windows Server 2025 runner image ships InnoSetup 6.7.1 (actions/runner-images
+      # 20260913+, verified 2026-10-12); choco only as a fallback when it is missing.
+      # Unconditional choco install would reinstall the package on every run and can exit
+      # non-zero on an already-installed package, faking a build failure.
+      - name: Ensure Inno Setup 6 is available
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe') {
+            Write-Host 'Inno Setup 6 already present (runner image) - skipping choco'
+          } else {
+            choco install innosetup --no-progress -y
+          }
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            if (Test-Path 'C:\Program Files\Inno Setup 6\ISCC.exe') { $iscc = 'C:\Program Files\Inno Setup 6\ISCC.exe' }
+          }
+          if (-not (Test-Path $iscc)) {
+            throw 'ISCC.exe not found after install'
+          }
+          Write-Host "ISCC: $iscc"
+
+      - name: Build setup.exe
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\installer\build-windows.ps1 -Version "${{ needs.prepare.outputs.version }}" -Rid win-x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test (silent install, payload check, silent uninstall)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\installer\smoke-windows.ps1 -Version "${{ needs.prepare.outputs.version }}" -Rid win-x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            dist/*-setup.exe
+            dist/*-setup.exe.sha256
+          if-no-files-found: error
+
+  macos:
+    name: macOS（.dmg）
+    needs: prepare
+    if: ${{ inputs.build_desktop != false }}
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Tui → XenoAtom.Terminal.UI submodule（.gitmodules 指向公开仓
+          # HyokaChen/XenoAtom.Terminal.UI，匿名 clone 即可，无需 secret）。
+          submodules: true
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # runner 镜像不预热 NuGet global packages；缓存 key 随 csproj 内容变化（包版本/引用变动即失效）。
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/**/*.csproj', 'src/Plugins/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: 构建 .dmg（ad-hoc 签名，脚本内含挂载复验）
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x installer/*.sh installer/lib/*.sh
+          installer/build-macos.sh --version "${{ needs.prepare.outputs.version }}" --rid osx-arm64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          if-no-files-found: error
+
+  nuget:
+    name: 推送 NuGet
+    needs: [prepare, tui]
+    # 仅手动 dispatch 且勾选 publish_nuget 时执行；push tag 触发时 inputs 为 null → 跳过。
+    if: ${{ !cancelled() && needs.tui.result == 'success' && inputs.publish_nuget == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Trusted Publishing（OIDC）：用短期凭据替代长期 API Key，无需配 NUGET_API_KEY secret。
+    # job 级 permissions 完全替换顶层 contents:write，故显式列出本 job 所需项。
+    permissions:
+      id-token: write  # OIDC 换临时 key 必须
+      actions: read    # 下载 tui artifact 必须
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: tui
+          path: dist
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Trusted Publishing：用 GitHub OIDC token 向 nuget.org 换取 1 小时有效的临时 API Key。
+      # 前提：nuget.org 已为本仓库配置「可信任发布者策略」（见 commit 说明）。
+      - name: NuGet OIDC 登录
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: hyokachen
+
+      - name: 推送 nupkg 到 nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          nupkg="dist/Mythology.${VERSION}.nupkg"
+          [ -f "$nupkg" ] || { echo "错误：未找到 $nupkg（tui artifact 下载是否完整？）" >&2; exit 1; }
+          echo "推送 $nupkg → nuget.org（Trusted Publishing / OIDC）"
+          dotnet nuget push "$nupkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+          echo "完成。nuget.org 索引可能需几分钟，之后可用："
+          echo "  dotnet tool install -g Mythology --version ${VERSION}"
+
+  release:
+    name: 发布 GitHub Release
+    # 只依赖 prepare + tui：即使桌面包被 build_desktop=false 跳过，release 仍能发
+    # （只上传实际存在的产物，见下方校验/上传逻辑）。
+    needs: [prepare, tui]
+    # 发 Release 的两个前提，缺一不发：
+    #   1. tui 真的成功（result == 'success'）：被 if 跳过（skipped）或失败时绝不发——
+    #      否则 download-artifact 拿不到 nupkg，"没有任何 .sha256 产物"假失败（2026-09-14）。
+    #   2. push tag 事件自动发；手动 dispatch 必须显式勾选 publish_release。
+    if: ${{ !cancelled() && needs.tui.result == 'success' && (github.event_name == 'push' || inputs.publish_release == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # gh release create 要在 git 仓库里跑（它得解析 tag/commit 并推送 tag），
+      # 缺这一步就是 "failed to run git: fatal: not a git repository"。
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 校验存在的产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l dist || true
+          shopt -s nullglob
+          sidecars=(dist/*.sha256)
+          if [ "${#sidecars[@]}" -eq 0 ]; then
+            echo "错误：没有任何 .sha256 产物（至少需要 tui nupkg）" >&2
+            exit 1
+          fi
+          echo "找到 ${#sidecars[@]} 个 .sha256，逐一校验："
+          ( cd dist && sha256sum -c ./*.sha256 )
+
+      - name: 创建/更新 Release 并上传
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 一、安装说明（未签名，需要用户手动放行一次）；二、GitHub 自动生成的变更列表。
+          # gh 支持 --notes 与 --generate-notes 并用：自定义内容前置，生成内容附后。
+          read -r -d '' NOTES <<'EOF' || true
+          ## 安装 / 运行
+
+          | 平台 | 产物 | 安装 |
+          | --- | --- | --- |
+          | Windows x64 | `*-win-x64-setup.exe` | 双击安装；未签名，SmartScreen 提示"未知发布者"→「更多信息」→「仍要运行」 |
+          | Linux x64 | `*-linux-x64.deb` | `sudo apt install ./Mythology-Desktop-<ver>-linux-x64.deb` |
+          | macOS（Apple Silicon） | `*-osx-arm64.dmg` | 拖进「应用程序」；未公证（ad-hoc 签名），首次被拦时右键 `Mythology.app`→「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/Mythology.app` |
+          | TUI（任意平台） | `Mythology.<ver>.nupkg` | `dotnet tool install -g Mythology --version <ver> --add-source <本页下载目录>` |
+
+          校验下载：每个产物都有同名 `.sha256`（`sha256sum -c <文件>.sha256`；macOS 用 `shasum -a 256 -c`）。
+          macOS 签名状态可自查：`codesign -dv --verbose=2 /Applications/Mythology.app`（应为 `Signature=adhoc`）。
+          dmg 内附 `安装说明.txt`。
+          EOF
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "Mythology $VERSION" --generate-notes --notes "$NOTES"
+          # 只上传实际存在的产物（桌面包可能被 build_desktop=false 跳过，glob 匹配不到时跳过该类）。
+          shopt -s nullglob
+          assets=(dist/*.exe dist/*.deb dist/*.dmg dist/*.nupkg dist/*.sha256)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "错误：没有可上传的产物" >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
+          gh release view "$TAG"

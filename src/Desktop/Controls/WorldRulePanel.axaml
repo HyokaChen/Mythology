@@ -1,0 +1,90 @@
+<UserControl
+  x:Class="Desktop.Controls.WorldRulePanel"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <Grid RowDefinitions="Auto,*" Margin="14,10,14,10">
+    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+      <TextBlock Classes="SectionHeading" Text="世界规则" />
+      <TextBlock
+        FontSize="11"
+        Foreground="{DynamicResource BrushSageGray}"
+        TextWrapping="Wrap"
+        Text="规则 = 可执行硬约束（数值 / 前置 / 禁止 / 触发）；设定 = 描述性世界观，不参与机器判定。规则与设定改动即时保存。"
+      />
+      <TextBlock
+        x:Name="StatusText"
+        FontSize="10"
+        Foreground="{DynamicResource BrushSageMist}"
+        TextWrapping="Wrap"
+        IsVisible="False"
+      />
+    </StackPanel>
+
+    <TabControl x:Name="ViewTabs" Grid.Row="1" Padding="0" Background="Transparent">
+      <TabItem Header="规则">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,6,0,0">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,6">
+            <ComboBox
+              x:Name="RuleCategoryFilter"
+              Theme="{StaticResource AdalineComboBox}"
+              HorizontalAlignment="Stretch"
+            />
+            <Button
+              Grid.Column="1"
+              Classes="NavPill"
+              Padding="8,3"
+              FontSize="11"
+              Content="新建规则"
+              Click="NewRule_OnClick"
+            />
+          </Grid>
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="RulesList" Spacing="6" Margin="0,0,0,6" />
+          </ScrollViewer>
+          <ScrollViewer
+            x:Name="RuleFormScroll"
+            Grid.Row="2"
+            MaxHeight="380"
+            HorizontalScrollBarVisibility="Disabled"
+            IsVisible="False"
+          >
+            <StackPanel x:Name="RuleFormHost" Spacing="6" />
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="设定">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,6,0,0">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,0,0,6">
+            <ComboBox
+              x:Name="SettingCategoryFilter"
+              Theme="{StaticResource AdalineComboBox}"
+              HorizontalAlignment="Stretch"
+            />
+            <Button
+              Grid.Column="1"
+              Classes="NavPill"
+              Padding="8,3"
+              FontSize="11"
+              Content="新建设定"
+              Click="NewSetting_OnClick"
+            />
+          </Grid>
+          <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="SettingsList" Spacing="6" Margin="0,0,0,6" />
+          </ScrollViewer>
+          <ScrollViewer
+            x:Name="SettingFormScroll"
+            Grid.Row="2"
+            MaxHeight="380"
+            HorizontalScrollBarVisibility="Disabled"
+            IsVisible="False"
+          >
+            <StackPanel x:Name="SettingFormHost" Spacing="6" />
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</UserControl>
