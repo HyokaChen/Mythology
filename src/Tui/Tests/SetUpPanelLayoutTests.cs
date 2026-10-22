@@ -382,7 +382,7 @@ public sealed class SetUpPanelLayoutTests
             CancellationToken ct = default
         ) => Task.FromResult<string?>(null);
 
-        // ── Entity Evolution（ENTITY-EVOLUTION：布局测试桩不消费）──
+        // ── Entity Evolution（entity-evolution-lifecycle：布局测试桩不消费）──
         public Task<List<AppearanceRecord>> GetAppearances(
             string novelId,
             CancellationToken ct = default

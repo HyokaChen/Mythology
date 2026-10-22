@@ -616,7 +616,7 @@ internal sealed class FakeNovelStore : INovelStore
         CancellationToken ct = default
     ) => Task.FromResult<string?>(null);
 
-    // ── Entity Evolution（ENTITY-EVOLUTION：TUI 桩空实现）──
+    // ── Entity Evolution（entity-evolution-lifecycle：TUI 桩空实现）──
     public Task<List<AppearanceRecord>> GetAppearances(
         string novelId,
         CancellationToken ct = default

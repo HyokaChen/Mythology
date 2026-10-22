@@ -1,7 +1,7 @@
 namespace Desktop.Models;
 
 /// <summary>
-/// 云端账号登录状态 — 替代 bool IsCloudLoggedIn 的表达力（docs/DESKTOP-LOGIN-FLOW.md §3）：
+/// 云端账号登录状态 — 替代 bool IsCloudLoggedIn 的表达力（云端登录设计 §3）：
 /// 区分 未登录 / 校验中 / 已登录 / 无效 / 离线 / 限流 / 配额。
 /// 任何状态都不阻断本地创作（云端是可选项）。
 /// 注意：无独立的 Expired 状态——§13 Tier 1 后本地过期只是提示，

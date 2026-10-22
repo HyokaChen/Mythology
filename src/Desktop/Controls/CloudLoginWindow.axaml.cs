@@ -9,7 +9,7 @@ using QRCoder;
 namespace Desktop.Controls;
 
 /// <summary>
-/// 独立云端登录窗口（docs/DESKTOP-LOGIN-FLOW.md §8）：
+/// 独立云端登录窗口（云端登录设计 §8）：
 /// OAuth（默认，失败自动回退设备流）→ 设备流（扫码/用户码）→ 手动 Key，一屏三态切换。
 /// 只依赖 CloudAuthService，不持有任何存储/协议细节。
 /// 登录成功后：无小说（offerProjectCreation）→ 展示"创建第一个项目"成功态；否则自动关闭。
@@ -20,7 +20,7 @@ public partial class CloudLoginWindow : Window
     private readonly bool _offerProjectCreation;
 
     /// <summary>
-    /// 登录成功后用户选择"创建第一个项目"（docs/DESKTOP-LOGIN-FLOW.md §6.4 onboarding 衔接）。
+    /// 登录成功后用户选择"创建第一个项目"（云端登录设计 §6.4 onboarding 衔接）。
     /// 调用方（启动引导 / Header ☁️）据此直接打开项目引导。
     /// </summary>
     public bool ProjectCreationRequested { get; private set; }

@@ -53,7 +53,7 @@ public static class SyncDocumentEnumerator
     };
 
     /// <summary>
-    /// 演化分片目录 → 同步文档类型（ENTITY-EVOLUTION E1）。与 <see cref="EntityDirToType"/> 分开：
+    /// 演化分片目录 → 同步文档类型（entity-evolution-lifecycle E1）。与 <see cref="EntityDirToType"/> 分开：
     /// 这些目录按章整文件存储（appearances/ch{Order:D3}.yaml），内容是 YAML **列表**而非 mapping，
     /// 文件内没有顶层 id，故实体 Id 由文件名解析为 <c>ch_{Order}</c>（与 setup.check 的
     /// <c>ch_{Order}</c> 章节引用规范化同形，云端 云端图谱投影器 认这个类型）。
@@ -325,7 +325,7 @@ public static class SyncDocumentEnumerator
             return (TypeOfFile, relativePath, FileTitle(relativePath));
         }
 
-        // 演化分片（ENTITY-EVOLUTION E1）：整章一个文件、内容是 YAML 列表（无顶层 id），
+        // 演化分片（entity-evolution-lifecycle E1）：整章一个文件、内容是 YAML 列表（无顶层 id），
         // EntityId 取文件名解析出的 ch_{Order}；非该形态（用户自放的文件）降级 file，不丢文件。
         if (EvolutionDirToType.TryGetValue(parentDir, out var evolutionType))
         {
@@ -385,7 +385,7 @@ public static class SyncDocumentEnumerator
                 || segment.Equals("cloud-conflicts", StringComparison.Ordinal)
                 || segment.Equals("ontology", StringComparison.Ordinal)
                 || segment.Equals("changesets", StringComparison.Ordinal)
-                // 作者随手记只在本机（不送云端，见驱动推演与随手记 §Assumptions）
+                // 作者随手记只在本机（不送云端，见docs/plot-forecast-and-notes.md §Assumptions）
                 || segment.Equals("notes", StringComparison.Ordinal)
             )
             {

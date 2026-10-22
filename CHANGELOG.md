@@ -71,7 +71,7 @@
   「前一章」误注入的缺陷（`LastPreviousChapterText` → `LastChapterText`，语义为末章/收束章，
   云端请求不携带 → 分析器按目标章尾部自派生）——因此本项**不改变 23 维分析器分数**。
   billing 只按 `Chapters` 计，不加价。详见 `云端私有文档`
-  §3.2/§4 与 `docs/HARNESS-CLOUD.md` §17.3。回归：`DiagnosisSchedulerTests.FunnelRequests_StoryCheckCarriesUpstreamWindow_Only`。
+  §3.2/§4 与 `docs/harness-cloud.md` §17.3。回归：`DiagnosisSchedulerTests.FunnelRequests_StoryCheckCarriesUpstreamWindow_Only`。
 - **关系提案管线升格（`scan_relationships`：全本体 + 证据闸门 + 回执）**：本体收敛到
   `Core/Data/RelationshipOntology`（15 条 `RelationshipType` 的域/值域/有向/云端两通道 token +
   20 条结构性边词汇），`SetupDigestBuilder` 的类型与有向映射改读本体（行为不变）；
@@ -81,7 +81,7 @@
   `relation_failed_schema_check` / `below_probability_threshold` / `below_confidence_threshold` /
   `passed_configured_gates`），新增 `system-one.relations.min-confidence`（默认 0.8）与逐批回执
   `RelationshipScanDetails.Receipts`（model/tokens/耗时/成败）。仍不写库（确认后经
-  `manage_relationship`）。契约见 `docs/VEC.md` §2.10/§2.12 与变更记录。
+  `manage_relationship`）。契约见 `docs/vec.md` §2.10/§2.12 与变更记录。
   回归：`RelationshipOntologyTests`（6 例）、`RelationshipScanTests`（14 例）。
 - **诊断请求挂设定图（scene.plan/story.check）**：`WritingFlowHook` 在调度命中后构建设定图摘要
   （`SetupDigestBuilder`，集合加载同 `check_setup` 工具），经 `DiagnosisInput.SetupDigest` 传给
@@ -90,7 +90,7 @@
   `planned-beats`（修正为按章序匹配后首次真正生效）/ `continuity-audit` / `rule-findings`；
   旧客户端行为不变（服务端新键 additive，按 key 读）。
   跳过轮不构图（成本门控），本地读取失败静默降级（不阻断本轮诊断）。契约见
-  `docs/HARNESS-CLOUD.md` §17。回归：`DiagnosisSchedulerTests`（scene.plan/story.check 挂 / context.retrieve 不挂）、
+  `docs/harness-cloud.md` §17。回归：`DiagnosisSchedulerTests`（scene.plan/story.check 挂 / context.retrieve 不挂）、
   `WritingFlowHookCloudTests`（命中轮构图一次、幂等跳过轮不构图）。
 - **TUI 总纲入口与大纲动作收敛**：新建小说表单可填写总纲并保存到 `Novel.Outline`；小说行菜单「查看总纲」打开全文阅读窗。`检查结果` 只展开最近一次报告（未运行时显示说明），`运行设定检查` 单独调用云端 `check_setup` 并把报告追加到对话；未分卷组移除没有可执行项的 `⋯`。回归覆盖总纲持久化/阅读、检查状态和节点动作。
 - **新增真实终端流分析器 `scripts/analyze_tui_capture.py`（TUI 排障）**：
@@ -253,8 +253,8 @@
   - **测试**：`Tui.Tests` 707/707 全绿（新增 71 例）。
 - **Desktop 图标体系收口：功能字形统一 Lucide、窗口标题去 emoji**：`⋯`「更多」/ `＋`「新建章节」/ `⇅ 同步` / `⬇ 拉取` / `← →` 翻章 / `发送 ↵` / `⏹ 停止` 等操作字形改为 Lucide 1px 描边图标（与既有 `ChevronLeft` 同体系）；`AskUserWindow` / `ConfirmDeleteWindow` / `ChapterSearchWindow` / `EntityEditWindow` 标题去掉 emoji；`AgentStep.StatusIcon` 与 `SetupFindingItem.VerdictIcon` 由 emoji 字符串改为 `LucideIconKind`（判定附 `VerdictLabel` 文字标签）。会话内容里的 emoji（系统提示 / 工具摘要 / 压缩标记）属用户数据，保留。emoji 扫描由 9 文件 InlineData 扩为全量 `AllAxaml_ContainsNoEmoji`。
 - **Novel 模型补 Author / TargetWords 字段**：新建小说表单与小说信息编辑器里的「作者」「目标字数」此前是死字段——`Novel` 模型无对应属性，填写即丢。现已补 `Author` / `TargetWords`，接入 `novel.yaml`（`author` / `target-words`）持久化与三个加载适配器，Desktop / TUI 创建写入均接上；编辑器可改、项目列表可读。
-- **TUI 大纲页书级入口正名：「📝 编辑总纲」→「📖 小说信息」**：该入口打开的本来就是完整小说信息编辑器（标题 / 类型 / 简介 / 总纲 / 写作风格）——旧名容易误会成只能编辑总纲；入口按钮 / 注释 / `docs/UI.md §3.9` / `SetUpPanelLayoutTests` 入口锁同步，`Tui.Tests` 635/635 全绿。
-- **Desktop 书摘要条入口正名：「总纲」→「小说信息」**：该按钮打开的本来就是完整小说信息编辑器（标题 / 类型 / 简介 / 总纲 等全部字段）——旧名容易误会成只能编辑总纲；提示语 / 注释 / `docs/UI.md §3.9` / `SetUpPanelViewStructureTests` 入口锁同步，`Desktop.Tests` 271/271 全绿。
+- **TUI 大纲页书级入口正名：「📝 编辑总纲」→「📖 小说信息」**：该入口打开的本来就是完整小说信息编辑器（标题 / 类型 / 简介 / 总纲 / 写作风格）——旧名容易误会成只能编辑总纲；入口按钮 / 注释 / `docs/ui.md §3.9` / `SetUpPanelLayoutTests` 入口锁同步，`Tui.Tests` 635/635 全绿。
+- **Desktop 书摘要条入口正名：「总纲」→「小说信息」**：该按钮打开的本来就是完整小说信息编辑器（标题 / 类型 / 简介 / 总纲 等全部字段）——旧名容易误会成只能编辑总纲；提示语 / 注释 / `docs/ui.md §3.9` / `SetUpPanelViewStructureTests` 入口锁同步，`Desktop.Tests` 271/271 全绿。
 - **Desktop 新建小说表单：新增「总纲」字段**：创建时即可填写全书走向（写入 `Novel.Outline`）；留空照旧，建后可在小说信息编辑器中补写。
 - **Desktop 设定面板入口精简：本体概览下线 + 总纲直达小说信息编辑**：书级入口只留真正需要交互的两项。
   - **本体概览移除**：摘要条按钮 / `OntologyOverviewWindow` / `OntologyRows` 六维统计装配一并删除——
@@ -262,7 +262,7 @@
     结构树「书级内容不入树」不变（`OutlineRows.Build(showOntology: false)`）。
   - **总纲入口收直**：`总纲` 按钮由「只读窗（窗内再点编辑）」改为直接打开小说信息编辑器
     （`EntityType.Novel`，总纲字段在其中；关闭后刷新摘要条与大纲），删除 `NovelOutlineWindow`。
-  - **同步**：`docs/UI.md §3.9` Desktop 入口描述更新为两入口；`AdalineDesignSystemTests` /
+  - **同步**：`docs/ui.md §3.9` Desktop 入口描述更新为两入口；`AdalineDesignSystemTests` /
     `SetUpPanelViewStructureTests` / `SetUpPanelOutlineRowsTests` 清单与断言同步；`Desktop.Tests` 271/271 全绿。
 - **Desktop 顶部导航「可切换性」深化 + §Nav Header 对齐**：小说 / 会话切换器的可发现性与键盘可达性收口。
   - **切换器胶囊**：尾部补 `ChevronDown` 12px 描边字形（与文字同色，静默的「可打开选择器」信号）；
@@ -338,7 +338,7 @@
   现拆为 `RejectedInProgress` / `RejectedWrongMode`（TUI 与 Desktop 同批修改，文案分开），
   溢出路径的返回值也随之分开——前者返回 `true` 交上层重试，后者返回 `false` 停止重试并报错（什么都没做，重试无用）。
   回归：Desktop 3 例（含 compact 模式放行对照组 + 文案区分断言）+ TUI 3 例，并做过变异验证
-  （把任一分支改回旧行为，对应测试即红）。上下文管理两套逻辑的完整设计见 `docs/CONTEXT-MANAGEMENT.md`。
+  （把任一分支改回旧行为，对应测试即红）。上下文管理两套逻辑的完整设计见 `docs/context-management.md`。
 - **修复 Desert Light 对话框未聚焦输入框的深色底带**：修复前 `Theme.DefaultLight.InputFill` 是半透明黑色
   `RGBA(0,0,0,16)`，在暖色对话框上形成图 1 中姓名/年龄输入框的暗带；图 2 中聚焦的姓名框变白、
   年龄框仍未聚焦。Desert Light 现将普通输入底设为调色板对话框面色 `DialogContentBg`，保留白色聚焦底。
@@ -401,7 +401,7 @@
 - **DECISION 前置过滤阈值可配**（`src/CloudDiagnosis`）：`ShouldSkipDecision` 的
   「结构化角色数 < 3」「章节序 < 5」两条硬编码阈值改由 `CloudDiagnosis:DecisionMinCharacters` /
   `CloudDiagnosis:DecisionMinChapterOrder` 提供（默认值不变），默认行为与配置解析均有测试锚定。
-- **大纲 / 卷的呈现与交互重构**（契约见 `docs/UI.md §3.9`）：
+- **大纲 / 卷的呈现与交互重构**（契约见 `docs/ui.md §3.9`）：
   - 两端统一「一行一个主操作 + `⋯` 溢出菜单」：卷行 `＋ ⋯`、章行 `📖 ⋯`，其余结构动作进菜单
     （TUI = `Popup` + `OptionList`，Desktop = `ContextMenu`），替代原先 TUI 行上 5 / 8 个 emoji 按钮。
   - 缩进即层级：行按 `OutlineRow.Depth` 缩进（卷与书级 = 0、章 = 1），Desktop 章行缩进 18px。
@@ -420,7 +420,7 @@
 - **云端诊断深度分级**：付费档 `fiction.story.check` 由 quick 升为 standard（启用 RST 修辞结构
   Layer B：基准/切换点/verdicts）；单次单元成本与耗时可能上升（服务端 30s 执行上限内）。
   免费档（context.retrieve / scene.plan）保持 quick。
-- **书级内容移出结构树**（`docs/UI.md §3.9`）：总纲 / 本体概览 / 设定检查不再是树里的三行——
+- **书级内容移出结构树**（`docs/ui.md §3.9`）：总纲 / 本体概览 / 设定检查不再是树里的三行——
   它们是「书的属性」而非「结构」，改由顶部摘要条承载（书名 · 走向 · `N 卷` `N 章` `终稿 N` `N 字`）。
   TUI = 树首摘要行 + 工具栏三个展开开关（`📖 总纲` / `🔬 本体概览` / `🔍 检查`，
   与其余工具栏按钮同处 `WrapHStack`，窄面板折行不压缩）；Desktop = 树上方摘要条 +
@@ -445,7 +445,7 @@
   `focus-areas` 会重复（实测 `["去AI味","去AI味","爽感"]`）→ 已 `Distinct()`；A-8 建议文本不再重复。
 - **删除死代码**：`CloudAnalysisTool.ParseOverallScore`（读 `features.overall-score`）无任何调用点——
   各工具壳一律消费 `dimensions.*.overall-score`（story.check 路径，百分制）。若将来需要展示
-  `features` 级综合分，需按 0-1 线协议 ×100（见 `docs/HARNESS-CLOUD.md` 结果契约行）。
+  `features` 级综合分，需按 0-1 线协议 ×100（见 `docs/harness-cloud.md` 结果契约行）。
 - **云端分数标度（跨仓库）**：`features.overall-score` 的线协议为 **0-1**，但云端 Harness 实现
   曾直接发出百分制（`CalculateOverallScore` 的 `product×100`）——导致 ①`fiction.scene.plan` 的
   可配置三态阈值恒真（`choose_focus` / `human_decision_required` 永不触发，人工决策弹窗成为死路径）；
@@ -522,7 +522,7 @@
      `context.retrieve` 也加同一实质字门槛（两能力共用）留待标定与产品决定。
   3. **标定（W-1，阻塞）**：`ScenePlanMinSubstantiveChars` / `ScenePlanPassScore` / `ScenePlanWarningScore`
      三者均为文档化的初始假设值，待语料分位数标定（`data/corpus` 当前无数据）。
-- **本文件为新增文件**：`docs/StabilityHarness.md` 声明「重大变更会记录在 CHANGELOG.md 中」，此前主仓缺该文件。
+- **本文件为新增文件**：`docs/stability-harness.md` 声明「重大变更会记录在 CHANGELOG.md 中」，此前主仓缺该文件。
 - 未变更：实体 id、kebab-case YAML / JSON 线协议、分页与虚拟化铁律；章 / 卷排序契约本轮**有变**——
   `Chapter.Order` 仍是全书唯一的排序键与文件名（`ch{Order:D3}.md`），但新建章不再一律追加到全书末尾，
   而是插入到指定章之后（空号不足时先全章重排，见 Added）。

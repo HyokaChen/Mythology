@@ -355,7 +355,7 @@ public sealed class EnhancementEngineCloudTests
             CancellationToken ct = default
         ) => throw new NotSupportedException();
 
-        // ── Entity Evolution（ENTITY-EVOLUTION：桩不消费演化数据）──
+        // ── Entity Evolution（entity-evolution-lifecycle：桩不消费演化数据）──
         public Task<List<AppearanceRecord>> GetAppearances(
             string novelId,
             CancellationToken ct = default

@@ -7,7 +7,7 @@ namespace Tui.Controls;
 /// 外壳文本（对话框标题等）的宽度安全处理：
 /// 部分终端对 VS15/ZWJ/ZWNJ 序列的宽度处理与框架记账存在分歧——
 /// 先清洗易碎序列，再按显示宽度（框架 GetWidth，与 emoji 双宽一致）截断。
-/// 参见 docs/UI.md §14 图形字符宽度安全。
+/// 参见 docs/ui.md §14 图形字符宽度安全。
 /// </summary>
 internal static class ChromeText
 {

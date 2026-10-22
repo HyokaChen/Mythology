@@ -9,7 +9,7 @@ using Xunit;
 namespace Desktop.Tests;
 
 /// <summary>
-/// CloudAuthService 单元测试（docs/DESKTOP-LOGIN-FLOW.md §7 校验逻辑落地验证）：
+/// CloudAuthService 单元测试（云端登录设计 §7 校验逻辑落地验证）：
 /// - 启动校验：无凭据 / 本地过期（§13 提示而非硬门：200 续期 / 401 清除 / 离线保留）/ 远程 200 / 401 / 403 / 429 / 402 / 网络异常 / 503；
 /// - 手动 Key：格式校验 + 远程有效性双重校验 + 离线暂存；
 /// - 设备流：批准成功 / 轮询超时 / 授权失败；

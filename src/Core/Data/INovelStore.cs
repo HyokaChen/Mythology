@@ -210,7 +210,7 @@ public interface INovelStore
     Task SaveWorldRule(string novelId, WorldRule rule, CancellationToken ct = default);
     Task DeleteWorldRule(string novelId, string ruleId, CancellationToken ct = default);
 
-    // Entity Evolution（ENTITY-EVOLUTION §3.3：出场记录 + 变化事件，按章分片，整章替换）
+    // Entity Evolution（entity-evolution-lifecycle §3.3：出场记录 + 变化事件，按章分片，整章替换）
     Task<List<AppearanceRecord>> GetAppearances(string novelId, CancellationToken ct = default);
     Task<List<AppearanceRecord>> GetAppearancesByChapter(
         string novelId,

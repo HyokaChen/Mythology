@@ -810,7 +810,7 @@ public sealed partial class TuiApp
     }
 
     /// <summary>
-    /// 启动引导（docs/DESKTOP-LOGIN-FLOW.md §6 的 TUI 形态，与 Desktop onboarding 对齐）：
+    /// 启动引导（云端登录设计 §6 的 TUI 形态，与 Desktop onboarding 对齐）：
     /// 1. 云端：新用户（无凭据 + 无小说）→ 默认弹登录框（Esc/取消可跳过）；
     /// 2. 登录成功 + 无小说 → 直达新建项目表单（onboarding 衔接）；
     /// 3. 否则 → 常规项目选择/新建。

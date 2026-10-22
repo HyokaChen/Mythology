@@ -610,7 +610,7 @@ public class FactionRelationship : Entity
 }
 
 /// <summary>
-/// 出场记录实体（ENTITY-EVOLUTION §3.1）——「实体×章节」出现矩阵的行，
+/// 出场记录实体（entity-evolution-lifecycle §3.1）——「实体×章节」出现矩阵的行，
 /// 承载本体「对象/行动」的在场维度。按章分片存 appearances/ch{Order}.yaml。
 /// </summary>
 public class AppearanceRecord : Entity
@@ -638,7 +638,7 @@ public class AppearanceRecord : Entity
 }
 
 /// <summary>
-/// 变化事件实体（ENTITY-EVOLUTION §3.1）——本体「状态」维度载体。
+/// 变化事件实体（entity-evolution-lifecycle §3.1）——本体「状态」维度载体。
 /// 记录实体在某章发生的性格/行为/状态/关系等变化，按章分片存 evolution/ch{Order}.yaml。
 /// </summary>
 public class EntityStateChange : Entity

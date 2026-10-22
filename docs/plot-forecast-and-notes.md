@@ -9,7 +9,7 @@
 - T-Mem 的四象限 trigger（entity / bridge / scene / horizon）**已在云端实现**（`fiction.associative.link` + `AssociativeTriggerHook`），但只「向后」：索引已写内容，查询是刚写/将写的场景，**从不拿未来计划当查询**。
 - 三层大纲：`Novel.Outline` / `Volume` / `Chapter.Summary+PlotlineIds+CharacterIds+Notes`。每轮只有 `NovelContextBlock` 注入总纲 200 字 + 卷纲 40 字/卷，**细纲不进上下文**；`TurnpointsBeatParser`（确定性正则，`src/Core/Cloud/TurnpointsBeatParser.cs:39-42`）能解析「第5章：真相揭露」，但本地无人消费。
 - `Plotline.PlannedRevealChapterId` 的到期判定散落在云端诊断（写完之后）、`recall_foreshadowing`、`get_writing_stats`，彼此口径不同。
-- **笔记功能不存在**：无笔记实体、无笔记目录、无笔记 UI；`Chapter.Notes` / `Volume.Notes` 是计划备注字段。`docs/记忆运维闭环_PLAN.md` 里的 `MemoryMinder` / `MemoryPromotionScanner` **只是计划文档，未实现**（全仓 grep 仅命中该文档）。
+- **笔记功能不存在**：无笔记实体、无笔记目录、无笔记 UI；`Chapter.Notes` / `Volume.Notes` 是计划备注字段。`docs/memory-ops-loop-plan.md` 里的 `MemoryMinder` / `MemoryPromotionScanner` **只是计划文档，未实现**（全仓 grep 仅命中该文档）。
 
 本计划交付一条闭合链路：**随手记（实体 + LLM 工具 + 会话自动捕获 + 双端窗口）→ 索引进同一混合检索内核（FTS/Bm25 + 向量 + RRF + Jev 判定重排）→ 远期推演把它作为线索注入写作/规划回合**；同时把大纲/细纲变成确定性的「到期义务 + 计划转折 + 播种缺口 + 风险」，并在写作/规划工具调用后以 `[远期推演]` 前缀静默注入 `Agent.InjectQueue`，另提供 `forecast_plot` 工具按需取证据。
 

@@ -5,7 +5,7 @@ using Xunit;
 namespace Core.Tests;
 
 /// <summary>
-/// as-of 派生视图测试（ENTITY-EVOLUTION §8 E3 验收）：
+/// as-of 派生视图测试（entity-evolution-lifecycle §8 E3 验收）：
 /// 出场曲线 / as-of 状态重放 / 合并时间线 / 缺席配角精确版。
 /// 用 FileNovelStore（真实 YAML 往返）保证与存储层契约一致。
 /// </summary>

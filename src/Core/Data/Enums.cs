@@ -162,7 +162,7 @@ public enum ChangeVisibility
     Private,
 }
 
-/// <summary>出场强度枚举（ENTITY-EVOLUTION §3.1）。</summary>
+/// <summary>出场强度枚举（entity-evolution-lifecycle §3.1）。</summary>
 public enum AppearanceMode
 {
     /// <summary>在场：有戏份/参与对话/实际出场。</summary>
@@ -173,7 +173,7 @@ public enum AppearanceMode
 }
 
 /// <summary>
-/// 变化面枚举（ENTITY-EVOLUTION §3.1）——本体「状态」的切面维度。
+/// 变化面枚举（entity-evolution-lifecycle §3.1）——本体「状态」的切面维度。
 /// </summary>
 public enum EvolutionAspect
 {
@@ -739,10 +739,10 @@ public enum EntityType
     /// <summary>小说。</summary>
     Novel,
 
-    /// <summary>出场记录（ENTITY-EVOLUTION）。</summary>
+    /// <summary>出场记录（entity-evolution-lifecycle）。</summary>
     Appearance,
 
-    /// <summary>变化事件（ENTITY-EVOLUTION）。</summary>
+    /// <summary>变化事件（entity-evolution-lifecycle）。</summary>
     StateChange,
 
     /// <summary>分卷（大纲二层：卷纲）。</summary>

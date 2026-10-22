@@ -4,7 +4,7 @@ using Core.Data;
 namespace Desktop.Controls;
 
 /// <summary>
-/// # 实体引用补全语法（对齐 TUI TuiApp.Completion.cs 与 docs/ARCHITECTURE.md §13）：
+/// # 实体引用补全语法（对齐 TUI TuiApp.Completion.cs 与 docs/architecture.md §13）：
 /// 一级 `#前缀` → 类型显示名；二级 `#类型:前缀` → 该类型实体名。
 /// 纯函数：不碰存储与 UI；补全候选与发送内联共用同一份语法定义。
 /// </summary>

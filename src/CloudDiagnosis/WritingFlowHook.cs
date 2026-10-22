@@ -868,7 +868,7 @@ public sealed class WritingFlowHook(
 
         // §7.2/MED-1 修复：方向①缺席配角候选——优先使用云端 features.absentCharacters
         // （Q13：云端由 novel_features character_appearances 全书序列推导），缺失时回退
-        // 本地权威出场记录（ENTITY-EVOLUTION §5 精确版），无记录数据再回退最近 K 章正文
+        // 本地权威出场记录（entity-evolution-lifecycle §5 精确版），无记录数据再回退最近 K 章正文
         // 出场计数（纯字符串包含轻量启发式，§3.2 允许级别）。
         var absentSupporting = cloudAbsent is { Count: > 0 }
             ? cloudAbsent
@@ -984,7 +984,7 @@ public sealed class WritingFlowHook(
     }
 
     /// <summary>
-    /// 从权威出场记录加载「当前章之前已出场角色 ID 集」（ENTITY-EVOLUTION §5.2）。
+    /// 从权威出场记录加载「当前章之前已出场角色 ID 集」（entity-evolution-lifecycle §5.2）。
     /// 返回 null = 无记录数据（未启用 L0 打底）→ 调用方回退正文扫描。
     /// </summary>
     private async Task<IReadOnlySet<string>?> LoadPriorAppearedIdsAsync(
@@ -1025,7 +1025,7 @@ public sealed class WritingFlowHook(
     }
 
     /// <summary>
-    /// 从本地权威出场记录查近窗缺席配角（ENTITY-EVOLUTION §5.2 精确版）。
+    /// 从本地权威出场记录查近窗缺席配角（entity-evolution-lifecycle §5.2 精确版）。
     /// 返回 null 表示小说尚无出场记录数据（未启用 L0 打底）→ 调用方回退字符串扫描。
     /// </summary>
     private async Task<IReadOnlyList<string>?> FindAbsentSupportingFromRecordsAsync(

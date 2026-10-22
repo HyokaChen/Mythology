@@ -8,7 +8,7 @@ using EntityTypeEnum = Core.Data.EntityType;
 namespace Plugins.NovelTools.Tools;
 
 /// <summary>
-/// 登记变化事件（ENTITY-EVOLUTION §4.3 L2 + 状态变更生命周期）——
+/// 登记变化事件（entity-evolution-lifecycle §4.3 L2 + 状态变更生命周期）——
 /// AI 写作时显式登记实体在某章发生的性格/行为/状态/关系等变化，Source=Ai。
 /// 草稿章写入 Pending（待发布）；已发布章写入 pending 后立即补记（ApplyAmendment）。
 /// </summary>

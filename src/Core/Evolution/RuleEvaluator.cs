@@ -4,7 +4,7 @@ namespace Core.Evolution;
 
 /// <summary>
 /// 规则评估事实：数值指标 + 状态/行动 token。
-/// 只有结构化事实才会被评估；正文文本不参与推断（ENTITY-EVOLUTION 红线 5）。
+/// 只有结构化事实才会被评估；正文文本不参与推断（entity-evolution-lifecycle 红线 5）。
 /// </summary>
 public sealed record RuleFacts(
     IReadOnlyDictionary<string, double> Numeric,

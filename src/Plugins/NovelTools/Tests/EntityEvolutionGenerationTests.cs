@@ -6,7 +6,7 @@ using Xunit;
 namespace NovelTools.Tests;
 
 /// <summary>
-/// 实体演化生成链路测试（ENTITY-EVOLUTION §8 E2 验收）：
+/// 实体演化生成链路测试（entity-evolution-lifecycle §8 E2 验收）：
 /// WriteChapterTool 保存章节 → L0 扫描钩子 → appearances 出场记录落地；
 /// record_appearance / record_evolution 工具的 L2 显式登记。
 /// </summary>

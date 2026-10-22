@@ -229,13 +229,13 @@ public sealed record SetupCheckInput(
     IReadOnlyList<SetupLocationInput>? Locations = null, // v2 一等实体（反漂移锚点）
     IReadOnlyList<SetupOrganizationInput>? Organizations = null, // v2 一等实体
     IReadOnlyList<SetupItemInput>? Items = null, // v2 一等实体（所有权链）
-    // ENTITY-EVOLUTION §6.1 通道①（E4 镜像；默认不上传，见 SetupDigestBuilder 开关）
+    // entity-evolution-lifecycle §6.1 通道①（E4 镜像；默认不上传，见 SetupDigestBuilder 开关）
     IReadOnlyList<CloudEntityAppearanceInput>? EntityAppearances = null,
     IReadOnlyList<CloudEvolutionEventInput>? EntityEvolutionEvents = null
 );
 
 /// <summary>
-/// 实体出场摘要（ENTITY-EVOLUTION §6.1）— 云端 CloudEntityAppearance 镜像。
+/// 实体出场摘要（entity-evolution-lifecycle §6.1）— 云端 CloudEntityAppearance 镜像。
 /// 稠密出现摘要：每实体 + 其出现过的 ch_{Order} 列表 + mode 列表（一一对应）。
 /// </summary>
 public sealed record CloudEntityAppearanceInput(
@@ -246,7 +246,7 @@ public sealed record CloudEntityAppearanceInput(
 );
 
 /// <summary>
-/// 变化事件（ENTITY-EVOLUTION §6.1）— 云端 CloudEvolutionEvent 镜像。
+/// 变化事件（entity-evolution-lifecycle §6.1）— 云端 CloudEvolutionEvent 镜像。
 /// 稀疏语义事件：目标实体 + 发生章 + 变化面 + 前后态 + 证据。
 /// </summary>
 public sealed record CloudEvolutionEventInput(

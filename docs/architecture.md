@@ -911,7 +911,7 @@ ThinkingLevel 通过双轨映射实现跨 Provider 的推理控制：
 
 ## 8. TUI 布局概览
 
-> 详细的 TUI 布局规范、状态原型、控件映射和交互行为见 [UI.md](./UI.md)。
+> 详细的 TUI 布局规范、状态原型、控件映射和交互行为见 [ui.md](./ui.md)。
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1069,7 +1069,7 @@ CircuitBreaker 精确重复调用阈值通过 `ModelContextProfile.ScaledCircuit
 
 与 LlmTornado 的 `GuardRailFunction` 对比：接口化（非 delegate）、支持输入+输出、异步、warn/block 两级。
 
-> 详细的 StabilityHarness 算法规范、性能指标和项目结构见 [StabilityHarness.md](./StabilityHarness.md)。
+> 详细的 StabilityHarness 算法规范、性能指标和项目结构见 [stability-harness.md](./stability-harness.md)。
 
 ---
 

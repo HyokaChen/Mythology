@@ -114,7 +114,7 @@ public sealed class NovelToolsPlugin : IToolPlugin
         yield return new CheckTimelineConsistencyTool(_store);
 
         // ════════════════════════════════════════════════
-        // 4.2.9 实体演化（ENTITY-EVOLUTION：出场/变化显式登记，L0 扫描在 WriteChapter/RewriteSelection 钩子内）
+        // 4.2.9 实体演化（entity-evolution-lifecycle：出场/变化显式登记，L0 扫描在 WriteChapter/RewriteSelection 钩子内）
         // ════════════════════════════════════════════════
         yield return new RecordAppearanceTool(_store);
         yield return new RecordEvolutionTool(_store);

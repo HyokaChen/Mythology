@@ -25,7 +25,7 @@ public static class SetupDigestBuilder
         IReadOnlyList<Location>? locations = null,
         IReadOnlyList<Item>? items = null,
         IReadOnlyList<WorldRule>? worldRules = null,
-        // ENTITY-EVOLUTION §6.1 通道①（E4 镜像：有值才上传——云端未实现前调用方不传）
+        // entity-evolution-lifecycle §6.1 通道①（E4 镜像：有值才上传——云端未实现前调用方不传）
         IReadOnlyList<AppearanceRecord>? appearances = null,
         IReadOnlyList<EntityStateChange>? stateChanges = null
     )
@@ -206,7 +206,7 @@ public static class SetupDigestBuilder
             .Select(w => new WorldRuleInput(w.Id, w.Type, w.Value, w.Unit, w.Description))
             .ToList();
 
-        // ENTITY-EVOLUTION §6.1 通道①（E4 镜像）：实体×章出现摘要 + 变化事件。
+        // entity-evolution-lifecycle §6.1 通道①（E4 镜像）：实体×章出现摘要 + 变化事件。
         // 稠密出现按实体聚合（全章序+mode 数组）；稀疏事件逐条直映射。
         // 章节引用一律 ch_{Order} 规范化（B2 先例）；空表不上报（NullIfEmpty 语义）。
         var appearanceInputs = BuildAppearanceInputs(appearances, chapterRefMap);
@@ -254,7 +254,7 @@ public static class SetupDigestBuilder
     }
 
     /// <summary>
-    /// 出场记录 → 实体聚合摘要（ENTITY-EVOLUTION §6.1）。
+    /// 出场记录 → 实体聚合摘要（entity-evolution-lifecycle §6.1）。
     /// 同实体多条记录并成一条：章序数组（升序去重）+ mode 数组（按章序对齐）。
     /// 无法解析到 ch_{Order} 的记录（章已删/无 Order）跳过。
     /// </summary>

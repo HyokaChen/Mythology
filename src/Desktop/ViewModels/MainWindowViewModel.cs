@@ -526,7 +526,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 启动引导（docs/DESKTOP-LOGIN-FLOW.md §6）：
+    /// 启动引导（云端登录设计 §6）：
     /// 1. 云端：新用户（无小说+无凭据）或凭据失效 → 弹 CloudLoginWindow（可跳过）；
     /// 2. 未配置 LLM API Key → 弹 WelcomeWindow（引导去设置）；
     /// 3. 无任何小说 → 弹 ProjectPickerWindow（引导新建项目）。

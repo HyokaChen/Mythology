@@ -86,7 +86,7 @@ dotnet add package Mythology.Core
 - 三级信任体系（Builtin / Verified / External）+ `[PluginPermission]` 声明式权限
 - `mythology build --install` 编译并安装到 `~/.mythology/plugins`
 
-完整插件开发指南见 [docs/PLUGIN.md](https://github.com/HyKaChen/Mythology/blob/main/docs/PLUGIN.md)。
+完整插件开发指南见 [docs/plugin.md](https://github.com/HyKaChen/Mythology/blob/main/docs/plugin.md)。
 
 ## 相关包
 

@@ -562,7 +562,7 @@ public class SetupDigestBuilderTests
         Assert.False(setup.Relations!.Single(r => r.Type == "ally").Directional);
     }
 
-    // ── ENTITY-EVOLUTION §6.1 通道①（E4 镜像）──
+    // ── entity-evolution-lifecycle §6.1 通道①（E4 镜像）──
 
     [Fact]
     public void Build_WithoutEvolutionData_OmitsNewFields()

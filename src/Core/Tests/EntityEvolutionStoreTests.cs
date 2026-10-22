@@ -4,7 +4,7 @@ using Xunit;
 namespace Core.Tests;
 
 /// <summary>
-/// 实体×章节演化元信息存储测试（ENTITY-EVOLUTION §8 E1 验收）。
+/// 实体×章节演化元信息存储测试（entity-evolution-lifecycle §8 E1 验收）。
 /// 覆盖：按章分片往返序列化、章删除级联删除演化分片、EntityType snake_case 新枚举值兼容。
 /// </summary>
 [Collection("FileNovelStore")]
@@ -168,7 +168,7 @@ public sealed class EntityEvolutionStoreTests : IAsyncDisposable
     [Fact]
     public async Task EvolutionShards_ClassifyAsTypedDocuments_NotDegradedToFile()
     {
-        // 回归护栏（ENTITY-EVOLUTION §10 开放问题 7）：分片内容是 YAML 列表而非常规实体的
+        // 回归护栏（entity-evolution-lifecycle §10 开放问题 7）：分片内容是 YAML 列表而非常规实体的
         // mapping，若 Classify 只认 mapping 的 id 字段，分片会被降级为 file —— 云端
         // 云端图谱投影器 虽然能按路径前缀兜底，但图边 SourceDocumentType 会记成 file。
         var chapter = await SeedNovelWithChapterAsync(order: 3);

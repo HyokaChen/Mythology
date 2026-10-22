@@ -201,7 +201,7 @@ public sealed partial class SetUpPanel
     /// <summary>当前展开的关系实体 ID。</summary>
     private string? _expandedRelationshipId;
 
-    // ── 实体演化视图（ENTITY-EVOLUTION §7：详情区出场摘要 + 本体时间线） ──
+    // ── 实体演化视图（entity-evolution-lifecycle §7：详情区出场摘要 + 本体时间线） ──
     /// <summary>最近一次刷新加载的演化时间线视图（只用于出场摘要：出场章序 + 强度）。</summary>
     private EntityTimelineView? _timeline;
 
@@ -2187,7 +2187,7 @@ public sealed partial class SetUpPanel
 
     // ── 章节详情构建（细纲 + 正文记录） ──
 
-    /// <summary>变化面枚举 → 图标（ENTITY-EVOLUTION 演化轨迹图标体系）。</summary>
+    /// <summary>变化面枚举 → 图标（entity-evolution-lifecycle 演化轨迹图标体系）。</summary>
     private static string AspectIcon(EvolutionAspect aspect) =>
         aspect switch
         {

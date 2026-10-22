@@ -1736,7 +1736,7 @@ public sealed class FileNovelStore : INovelStore
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  Entity Evolution（ENTITY-EVOLUTION §3.2/§3.3：按章分片，整章替换，章级联删除）
+    //  Entity Evolution（entity-evolution-lifecycle §3.2/§3.3：按章分片，整章替换，章级联删除）
     //  appearances/ch{Order:D3}.yaml = 该章全部 AppearanceRecord
     //  evolution/ch{Order:D3}.yaml   = 该章全部 EntityStateChange
     // ═══════════════════════════════════════════════════════════
@@ -4606,7 +4606,7 @@ public sealed class FileNovelStore : INovelStore
                 var novelId = GetNovelIdFromDir(novelDir);
                 var title = meta.GetValueOrDefault("title") ?? id;
                 File.Delete(mdPath);
-                // ENTITY-EVOLUTION §3.2 章级联：删章 = 删该章两个演化分片（O(1)，每分片只含该章记录）
+                // entity-evolution-lifecycle §3.2 章级联：删章 = 删该章两个演化分片（O(1)，每分片只含该章记录）
                 await DeleteChapterAppearances(novelId, id);
                 await DeleteEntityStateChanges(novelId, id);
                 // 变更集随章删除（发布/撤回记录不再有意义）

@@ -1,8 +1,8 @@
 # 本地检索子系统设计（VEC）
 
-> 状态：**与代码同步**（2026-08-30 校准）。本文是本地检索子系统的**唯一规范文档**，文件名 `docs/VEC.md`。
-> 2026-07 由旧 `VEC.md` 合并而来：架构理论（目标、决策、分块理论、混合检索原理、记忆域规则、迁移史）
-> 已并入本文（曾用名 VEC-LOCAL.md，现已改回 VEC.md）。
+> 状态：**与代码同步**（2026-08-30 校准）。本文是本地检索子系统的**唯一规范文档**，文件名 `docs/vec.md`。
+> 2026-07 由旧 `vec.md` 合并而来：架构理论（目标、决策、分块理论、混合检索原理、记忆域规则、迁移史）
+> 已并入本文（曾用名 VEC-LOCAL.md，现已改回 vec.md）。
 > 缺口清单见第 6 章；架构决议见 §0.4；反模式红线见第 7 章。
 
 ## 0. 总纲与职责边界
@@ -20,7 +20,7 @@
 `IFictionHarnessClient`（capability `fiction.story.check`）调用云端，不在本设计范围内。
 私有权重参数在云端 `Profiles/WritingProfileData`（CHANGE_07 迁出）。
 
-### 0.2 不可破坏的边界（原 VEC.md §1.3）
+### 0.2 不可破坏的边界（原 vec.md §1.3）
 
 - YAML、Markdown 与 `INovelStore` 是小说事实的唯一权威来源；向量/FTS/元数据均为**可重建派生数据**。
 - 用户显式记忆、推断记忆、小说事实不得混淆。用户规则不能被“相似的章节文本”覆盖。
@@ -29,7 +29,7 @@
 - 索引失败必须可观测、可重试、可修复；**禁止**静默写入随机向量或零向量。
 - 本方案不引入实体关系表；关联检索先读实体现有 ID 引用再排序。
 
-### 0.3 已作架构决策（原 VEC.md §1.2）
+### 0.3 已作架构决策（原 vec.md §1.2）
 
 | 决策 | 结论 |
 |---|---|
@@ -41,7 +41,7 @@
 | 关系表 | 不需要，关联在应用层从事实源构建 |
 | 数据模型反向依赖 | 禁止 `IIndexable` 反射自动化；每实体显式声明构建策略 |
 
-### 0.4 最终架构决议（原 VEC.md §17）
+### 0.4 最终架构决议（原 vec.md §17）
 
 1. 检索子系统升级为共享内核；逻辑上严格分为**用户长期记忆**与**小说实体知识**两个域。
 2. 小说知识域必须全文 ~300 字语义分块，保留父章节/offset/序号/版本，服务暗线检索。
@@ -115,7 +115,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 
 ## 2. 域一：小说知识快速混合检索
 
-### 2.1 数据模型：三层派生结构（原 VEC.md §4.1）
+### 2.1 数据模型：三层派生结构（原 vec.md §4.1）
 
 物理同库 `vectors.db`，逻辑三层：
 
@@ -125,7 +125,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 | 块层 | `retrieval_chunks` | 可引用文本单元；字符区间、序号、块类型、父级定位、chunk hash |
 | 索引层 | `vec_chunks`（vec0）+ `retrieval_chunks_fts`（fts5） | 同一块 dense 向量 + 倒排索引；可重建 |
 
-### 2.2 稳定字段（原 VEC.md §4.2，唯一权威契约）
+### 2.2 稳定字段（原 vec.md §4.2，唯一权威契约）
 
 | 字段 | 约束 |
 |---|---|
@@ -142,7 +142,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 | `index_status` | `pending/ready/failed/stale/deleted`；failed 不得参与召回 |
 | `created-at` / `indexed_at` | 审计；不替代实体修改时间 |
 
-### 2.3 metadata schema（原 VEC.md §4.3/§4.4）
+### 2.3 metadata schema（原 vec.md §4.3/§4.4）
 
 **原则**：高频强过滤字段入规范化列/辅助索引，不进 JSON 后过滤；低频/展示字段保留 JSON。
 所有 metadata key 受控字典，禁止 `chapterId`/`chapter_id`/`sourceChapter` 混写。
@@ -163,7 +163,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 （explicit/confirmed_inference/system_default，未确认推断不注入）、`confidence`、
 `priority`、`expires_at`、`evidence_refs`（引用集合，不存整篇敏感会话）。
 
-### 2.4 分块策略（原 VEC.md §6）
+### 2.4 分块策略（原 vec.md §6）
 
 | 参数 | 值 | 说明 |
 |---|---|---|
@@ -183,7 +183,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 变化 → 该章全部块整体原子重建替换。不要按字符偏移局部修补。原块替换完成前可标 stale，
 查询可读旧块并标注版本，或等待替换。默认一致性与正确性优先于毫秒级实时。
 
-### 2.5 实体索引内容策略（原 VEC.md §10）
+### 2.5 实体索引内容策略（原 vec.md §10）
 
 检索文本不是序列化 dump：用可读标签建立语义（“角色”“动机”“弱点”），
 名称/别名/标题等专名同时提供 FTS 友好字段；不把未经验证的 AI 推断写入事实索引。
@@ -239,7 +239,7 @@ RetrievalKernel.SearchAsync(request)
   3. RetrievalPostProcessor.Process(results, RankingConfig.ForProfile(profile))
 ```
 
-**过滤语义（原 VEC.md §8.2）**：
+**过滤语义（原 vec.md §8.2）**：
 - 多条件默认 AND；同字段多允许值默认 OR。
 - ID 集合 `contains`：空集合不得匹配全部。
 - `chapter_order`/数值/时间用类型化比较，禁止字符串词法比较。
@@ -250,7 +250,7 @@ RetrievalKernel.SearchAsync(request)
 InMemoryRetrievalStore；simple 分词加载失败 → unicode61（记警告）。
 实时索引（事件通道）与启动对账（补偿通道）双通道，崩溃/离线/队列失败由对账兜底。
 
-### 2.8 排序 Profile 与重排信号（原 VEC.md §7.3）
+### 2.8 排序 Profile 与重排信号（原 vec.md §7.3）
 
 | Profile | 取向 | 典型调用方 |
 |---|---|---|
@@ -318,7 +318,7 @@ embedding 单条 / 批量延迟（含失败率、零向量次数）
 
 ## 3. 域二：用户长期记忆
 
-### 3.1 信任层级（原 VEC.md §5.1.1）
+### 3.1 信任层级（原 vec.md §5.1.1）
 
 | 层级 | 是否自动写入 | 是否注入 prompt | 示例 |
 |---|---|---|---|
@@ -342,7 +342,7 @@ embedding 单条 / 批量延迟（含失败率、零向量次数）
 命名空间：`ns="rule"` 规则，`ns="default"` 偏好。作用域 `AgentMemoryScope`：
 Global / PerNovel / PerSession。
 
-### 3.2 作用域与覆盖 + owner 前置（原 VEC.md §5.1.2/§5.1.3）
+### 3.2 作用域与覆盖 + owner 前置（原 vec.md §5.1.2/§5.1.3）
 
 1. `global_user`：标点、格式、协作方式等跨项目稳定规则。
 2. `novel_override`：只对某部小说有效的语气、禁用词、叙事视角、类型约束。
@@ -393,7 +393,7 @@ BM25 与规则通道恒全量，显式规则遗漏率不受影响（非候选行
 
 用户可审查、可回溯、可撤销——记忆不是黑箱。
 
-### 3.6 目标工具族（原 VEC.md §11.1）
+### 3.6 目标工具族（原 vec.md §11.1）
 
 **目标形态（工具面向用户任务，不让 Agent 猜 vec0 表结构）：**
 
@@ -424,7 +424,7 @@ BM25 与规则通道恒全量，显式规则遗漏率不受影响（非候选行
 
 错误语义统一：参数缺失/无小说/不存在 → `IsError=true` 可读文本，不抛异常打断 Loop。
 
-### 3.7 生命周期与衰减红线（原 VEC.md §5.1.5）
+### 3.7 生命周期与衰减红线（原 vec.md §5.1.5）
 
 - 强化：`ReinforceAsync` 提升 Importance；有用性反馈走 mark_useful/useless。
 - 过期：`ExpiresAt` 到期即 `IsExpired`，召回层排除；显式规则默认不过期。
@@ -525,7 +525,7 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
 > config.yaml `Embedding.Provider: cloud` 时启用（未登录/服务端未配置时首次调用显式失败，
 > **不静默退零向量**）；**云端 `Cloud:VectorDimension` 必须同为 1024**，否则首次索引/检索显式报错并给出调整指引。
 
-### 5.4 迁移与重建史（原 VEC.md §12，已完成）
+### 5.4 迁移与重建史（原 vec.md §12，已完成）
 
 旧 `IVectorStore` 栈（InMemoryVectorStore/SqliteVectorStore/VectorIndexer/VectorSearchEngine/MinHeap）
 在该内核通过验收、所有工具切换后 clean cutover 删除（对应原 §12.2/§15 “长期维护两套检索接口”反模式）。
@@ -567,7 +567,7 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
 
 ---
 
-## 7. 风险与反模式红线（原 VEC.md §15）
+## 7. 风险与反模式红线（原 vec.md §15）
 
 | 风险/反模式 | 处置 |
 |---|---|
@@ -587,7 +587,7 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
 
 ## 8. 测试与验收
 
-### 8.1 必测行为矩阵（原 VEC.md §14.1）
+### 8.1 必测行为矩阵（原 vec.md §14.1）
 
 | 类别 | 必测场景 | 现状 |
 |---|---|---|
@@ -601,7 +601,7 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
 | 候选推断 | <3 章不产出；≥3 章稳定模式产出；确认后才可注入 | ✅（AnalyzeStyleToolTests 等） |
 | 性能 | 真实小说规模压测（延迟 p95、队列积压恢复） | ⬜ 待真实数据（§2.11） |
 
-### 8.2 检索质量指标（原 VEC.md §14.2）
+### 8.2 检索质量指标（原 vec.md §14.2）
 
 - **Recall@K**：已标注证据是否进入前 K；追踪暗线、人物设定、专名。
 - **MRR / nDCG**：关键证据是否足够靠前。
@@ -658,11 +658,11 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
   同步补齐 `InMemoryRetrievalStore` 结构化 metadata 前置过滤（participant/plotline/location/scene-type/chapter_order，
   与 SqliteRetrievalStore 语义一致，修复 JsonElement 标量提取），消除降级路径过滤失效。
   测试：SemanticRetrievalTool 36/36、Core 932 通过（1 个既有 AtomicFile 平台换行失败）。
-- **2026-07-26**：VEC.md 完成（Phase 0–4 实现，603 项测试）。
+- **2026-07-26**：vec.md 完成（Phase 0–4 实现，603 项测试）。
 - **后续**：新增 `CandidateInferenceAnalyzer` 接线为第 14 个记忆工具 `tool_analyze_style`；
   修复 `tool_store` 记忆类型参数描述与 `AgentMemoryKind` 枚举不一致的缺陷
   （旧文误写 `1=Inferred,3=ConfirmedInference`，实际 `1=ConfirmedInference,2=CandidateInference,3=NarrativeContract`）。
-- **2026-07（合并）**：旧 `VEC.md` 合并入本文，成为唯一规范文档（曾用名 `VEC-LOCAL.md`）。
-- **2026-08-30（校准）**：文件名定稿为 `docs/VEC.md`，README/ARCHITECTURE 引用同步；
+- **2026-07（合并）**：旧 `vec.md` 合并入本文，成为唯一规范文档（曾用名 `VEC-LOCAL.md`）。
+- **2026-08-30（校准）**：文件名定稿为 `docs/vec.md`，README/ARCHITECTURE 引用同步；
   域二物理库更正为 `vectors.db`（与域一共享，非独立 `memories.db`）；embedding 现状校准为
   本地 LlmTornado `EmbeddingService`（维度固定 1024，不探测），云端 `CloudEmbeddingClient` 未实现。

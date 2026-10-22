@@ -308,7 +308,7 @@ public sealed class WritingToolsPluginRegistrationTests
             CancellationToken ct = default
         ) => Task.FromResult<string?>(null);
 
-        // ── Entity Evolution（ENTITY-EVOLUTION：桩不消费演化数据）──
+        // ── Entity Evolution（entity-evolution-lifecycle：桩不消费演化数据）──
         public Task<List<AppearanceRecord>> GetAppearances(
             string novelId,
             CancellationToken ct = default

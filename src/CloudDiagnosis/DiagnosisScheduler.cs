@@ -30,7 +30,7 @@ public sealed record DiagnosisInput
     public string? SceneGoal { get; init; }
 
     /// <summary>
-    /// 当前章之前已出场的角色 ID 集（ENTITY-EVOLUTION §5.2：L2-2 新角色首现判定改读
+    /// 当前章之前已出场的角色 ID 集（entity-evolution-lifecycle §5.2：L2-2 新角色首现判定改读
     /// 权威出场记录；null = 无记录数据，回退章节正文扫描）。
     /// </summary>
     public IReadOnlySet<string>? PriorAppearedCharacterIds { get; init; }
@@ -555,7 +555,7 @@ public sealed class DiagnosisScheduler(
         if (string.IsNullOrEmpty(input.CurrentContent))
             return false;
 
-        // ENTITY-EVOLUTION §5.2：有权威出场记录时改读「此前已出场集」——
+        // entity-evolution-lifecycle §5.2：有权威出场记录时改读「此前已出场集」——
         // 当前章出现且不在前序记录中的角色 = 新登场（免逐章正文扫描）。
         if (input.PriorAppearedCharacterIds is { } priorAppeared)
         {

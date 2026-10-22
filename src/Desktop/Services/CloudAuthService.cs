@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Desktop.Services;
 
 /// <summary>
-/// 云端账号门面 — Desktop 云端登录状态的唯一来源（docs/DESKTOP-LOGIN-FLOW.md §4）：
+/// 云端账号门面 — Desktop 云端登录状态的唯一来源（云端登录设计 §4）：
 /// - 持有唯一 CloudSessionStore（DI 单例）与连接状态（CloudAuthState）；
 /// - 协议（OAuth 本地回调 / 设备流 / 手动 Key）复用 ClientPlatform 客户端，不重写；
 /// - Entrypoint 1：启动自动登录校验（远程 Probe；本地过期只是提示，由服务端裁决，见 §13）；

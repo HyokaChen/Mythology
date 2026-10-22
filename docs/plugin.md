@@ -502,7 +502,7 @@ Batch 工具允许 LLM 在一次调用中操作多个实体，名称前缀 `batc
 | analyze_style | style | 写作风格 |
 | analyze_network_structure | network | 角色网络（PageRank/枢纽章/伏笔网络） |
 
-> 维度键与云端 `fiction.story.check` 返回的 `dimensions` 23 键对应（详见 `docs/HARNESS-CLOUD.md` §0.3）。
+> 维度键与云端 `fiction.story.check` 返回的 `dimensions` 23 键对应（详见 `docs/harness-cloud.md` §0.3）。
 > 算法/阈值/题材基准全部在云端仓库，本仓库不重复实现。
 
 ---

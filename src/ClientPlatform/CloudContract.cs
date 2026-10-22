@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace ClientPlatform;
 
 /// <summary>
-/// §13 Tier 2 云端契约（docs/DESKTOP-LOGIN-FLOW.md §13.5）：
+/// §13 Tier 2 云端契约（云端登录设计 §13.5）：
 /// 登录响应（POST /v1/oauth/token、POST /v1/device/token、SSE /v1/device/token/stream）与
 /// GET /v1/capabilities 可选携带服务端过期时间 `expires-at`（ISO-8601 UTC 字符串）。
 ///

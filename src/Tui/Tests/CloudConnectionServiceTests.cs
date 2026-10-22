@@ -7,7 +7,7 @@ using Xunit;
 namespace Tui.Tests;
 
 /// <summary>
-/// CloudConnectionService 单元测试（docs/DESKTOP-LOGIN-FLOW.md §13 Tier 1 落地验证）：
+/// CloudConnectionService 单元测试（云端登录设计 §13 Tier 1 落地验证）：
 /// - 本地过期不再短路 IsConfigured（提示而非硬门，与 Desktop 对齐）；
 /// - RenewIfDue：过期 → 滑动续期落盘；未临近 → 不重写；手动 Key（null）→ 永不续期；
 /// - 仅服务端 401/403 才裁决失效（Probe 层职责，本类只负责续期提示）。

@@ -439,7 +439,7 @@ public sealed class FakeNovelStore : INovelStore
         CancellationToken ct = default
     ) => Task.FromResult(_characters.TryGetValue(characterId, out var c) ? c.Name : null);
 
-    // ── Entity Evolution（ENTITY-EVOLUTION：测试桩内存实现）──
+    // ── Entity Evolution（entity-evolution-lifecycle：测试桩内存实现）──
     private readonly Dictionary<string, List<AppearanceRecord>> _appearances = [];
     private readonly Dictionary<string, List<EntityStateChange>> _stateChanges = [];
 

@@ -6,7 +6,7 @@ using Core.Tools;
 namespace Plugins.NovelTools.Tools;
 
 /// <summary>
-/// 登记出场记录（ENTITY-EVOLUTION §4.3 L2）——AI 写作时显式登记实体在某章的出场，
+/// 登记出场记录（entity-evolution-lifecycle §4.3 L2）——AI 写作时显式登记实体在某章的出场，
 /// Source=Ai，与 L0 扫描记录并存（System 打底不覆盖 Ai/User 记录）。
 /// </summary>
 public sealed class RecordAppearanceTool(INovelStore store)

@@ -3,7 +3,7 @@ using Core.Data;
 namespace Core.Evolution;
 
 /// <summary>
-/// 出场/演化记录器（ENTITY-EVOLUTION §4.1 L0 扫描层）。
+/// 出场/演化记录器（entity-evolution-lifecycle §4.1 L0 扫描层）。
 /// 把 DiagnosisScheduler.HasNewCharacterDebut / WritingFlowHook.FindAbsentSupportingCandidates
 /// 的运行时字符串扫描固化为持久化出场记录——零 token、无条件执行、Source=System。
 /// 章节 ID 解析：chapter.Id（写路径）/ 章序（读路径过滤）。

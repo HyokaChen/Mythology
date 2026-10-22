@@ -92,7 +92,7 @@ public sealed record ProjectSummary
 // ── 4.2.2 章节与大纲 ──
 
 /// <summary>
-/// 演化记录安全包装（ENTITY-EVOLUTION §4.1/§4.2）：L0 扫描失败只丢打底数据、
+/// 演化记录安全包装（entity-evolution-lifecycle §4.1/§4.2）：L0 扫描失败只丢打底数据、
 /// 不阻断写作主流程；OperationCanceledException 照常上抛（用户取消语义优先）。
 /// </summary>
 internal static class EvolutionHook

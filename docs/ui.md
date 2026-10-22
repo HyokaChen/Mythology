@@ -630,7 +630,7 @@ ToolExecutionEnd(id, isError, result, details)
 
 ## 9. Markdown 渲染规范
 
-> 详细的 Markdown 渲染器技术设计见 [MARKDOWN-RENDERER.md](./MARKDOWN-RENDERER.md)。
+> 详细的 Markdown 渲染器技术设计见 [markdown-renderer.md](./markdown-renderer.md)。
 
 ### 9.1 渲染管线
 

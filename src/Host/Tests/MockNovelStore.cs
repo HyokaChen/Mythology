@@ -379,7 +379,7 @@ public sealed class MockNovelStore : INovelStore
     public Task<long> GetOntologyJournalStamp(string novelId, CancellationToken ct = default) =>
         Task.FromResult(0L);
 
-    // ── Entity Evolution（ENTITY-EVOLUTION：测试桩内存实现）──
+    // ── Entity Evolution（entity-evolution-lifecycle：测试桩内存实现）──
     private readonly Dictionary<string, List<AppearanceRecord>> _appearances = [];
     private readonly Dictionary<string, List<EntityStateChange>> _stateChanges = [];
 

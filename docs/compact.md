@@ -70,7 +70,7 @@
 
 ### 1.4 评审结论：模型驱动压缩不落地（2026-08-30）
 
-经对照现网压缩链路评审，**不实现 `CompressTool` / `CompressionPrompt` / `CompressionEngine` 的模型驱动部分**。此前对 `docs/COMPACT.md` 的模型驱动压缩尝试已全部撤销（git 还原，工作区无残留）。理由：
+经对照现网压缩链路评审，**不实现 `CompressTool` / `CompressionPrompt` / `CompressionEngine` 的模型驱动部分**。此前对 `docs/compact.md` 的模型驱动压缩尝试已全部撤销（git 还原，工作区无残留）。理由：
 
 | 维度 | 论证 |
 |---|---|

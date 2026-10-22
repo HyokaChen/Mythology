@@ -3,7 +3,7 @@ using Core.Data;
 namespace Core.Evolution;
 
 /// <summary>
-/// as-of 派生视图（ENTITY-EVOLUTION §5）——「计算」要素的本地实现。
+/// as-of 派生视图（entity-evolution-lifecycle §5）——「计算」要素的本地实现。
 /// 内存构建：全量出场记录 + 变化事件按实体分组、按章序重放，不落盘（NKW 原则：
 /// 派生视图每次现算，无失效同步问题）。
 /// 数据量级：单部小说数千条，构建毫秒级。
