@@ -10,6 +10,7 @@
 1. **出场与变化记录**：谁在哪一章出场、发生了什么变化（结构化、带证据、可审计）。
 2. **状态变更事务**：草稿章中的变化待发布；发布时统一应用结构化效果与联动；撤回按变更集精确回滚。
 3. **统一时间线**：所有实体的每次变化可回答「哪一章、哪一场、哪个地点、哪条情节线、什么时间、谁在场、是否公开」。
+4. **批量编辑入口**：harness 通过 `edit_entities` 跨类型批量修改设定面板条目；字段白名单复用 `EntityFieldRegistry`，不另立第二份字段表。
 
 人工在面板直接改状态字段也算「设定变更」，立即生效并落盘，可撤销；新会话通过游标摘要主动获得上次会话以来的变化。
 
@@ -211,14 +212,68 @@ public string? SessionId { get; set; }                  // 跨会话摘要标注
 7. 契约字段必须与生成器成对交付，验收含字段非空率。
 8. 云端图谱仅作同步文件的派生投影，不承担权威真源。
 
-## 12. 测试
+## 12. 设定面板批量编辑（`edit_entities`）
+
+### 12.1 目标与边界
+
+- 设定面板（TUI `SetUpPanel` / Desktop `SetUpPanelView`）八个 tab 的条目，harness 必须能改，且支持一次调用跨类型批量修改。
+- 只补「修改」：create/delete 仍由 `manage_*` / `batch_create_*` 负责。
+- 章节 `order` 与 `content` 不进 `edit_entities`：前者受 `ch{Order:D3}.md` 全局唯一文件名约束（用 `reorder_chapters`），后者已有 `write_chapter` / `edit_text`（带索引与演化钩子）；工具报错并指路。
+- 地点邻接（`Location.AdjacentLocations`）不在本工具范围（不是面板编辑字段），需要时单独加结构化字段类型。
+
+### 12.2 字段真源：`EntityFieldRegistry`
+
+`src/Core/Data/EntityFieldRegistry.cs` 是唯一字段白名单（字段名/中文标签/FieldType/枚举选项）。`edit_entities` 用：
+
+- `WritableFields(type)`：排除 `ReadOnly` 展示字段；
+- `FindWritableField(type, field)`：接受模型属性名或 kebab 字段名（忽略大小写与 `-`/`_`）。
+
+新增字段只改注册表，工具与两端编辑窗自动一致；不要再为工具复制字段表。
+
+### 12.3 工具契约
+
+`EditEntitiesTool(INovelStore store, RetrievalKernel? kernel = null)`：
+
+```csharp
+EditEntitiesParams { NovelId; List<EntityEditItem>? Items }
+EntityEditItem   { EntityType; EntityId; List<EntityFieldPatch> Fields }
+EntityFieldPatch { Field; string? Value; List<string>? Values }
+EditEntitiesDetails { UpdatedCount; FailedCount; UpdatedIds }
+```
+
+- 支持类型：`novel/volume/chapter/character/faction/location/plotline/scene/item/relationship`。
+- `entity-id` 对 character/faction/location/plotline/scene/item/volume 同时接受名称；novel 留空用 `novel_id`。
+- 标量字段用 `value`（枚举可传中文标签或英文值）；列表字段用 `values`（空数组 = 清空）。
+- 逐条独立事务：某条字段非法只让该条失败，其余继续；任一条字段非法时该条整条不写。
+- 写入经 `INovelStore`：触发 `OnEntityChanged`、审计、本体 journal、向量索引，并遵守章节状态门禁与已发布引用守卫。
+
+### 12.4 写入器
+
+`EntityFieldWriter`（同文件 internal）：
+
+- `Apply`：先校验全部字段（白名单、Chapter 禁 `Order`/`Content`、类型转换），再统一赋值；枚举走 `RelationshipTypeExtensions` / 枚举名归一；`bool` 接受 `true/false/1/0/是/否/on/off`；数字用 InvariantCulture。
+- `SaveAsync`：角色 `faction-id` 位移与组织 `members` 变更双向对账（旧组织出列/新组织入列、成员旧组织移除）；其余类型直接走对应 `SaveX`。
+- `IndexAsync`：Character/Faction/Location/Plotline/Item/Chapter（摘要）重建检索索引；与自动索引同源，避免面板刷新后索引漂移。
+
+### 12.5 注册与测试
+
+- 注册：`NovelToolsPlugin` 4.2.1 段 `EditEntitiesTool(_store, _kernel)`。
+- 测试（`EditEntitiesToolTests`）：
+  - 一次调用跨 6 类型覆盖历史缺口字段（角色 status/tags/abilities/notes；关系 since/until；场景 item-ids；章节 summary/plotline-ids/character-ids/notes/volume-id/title/status；小说 author/target-words/target-audience/enhancement-profile/auto-diagnose/auto-enhance/completion-status；分卷 notes）；
+  - 未知字段只失败该条，其余成功；
+  - 章节 `order`/`content` 被拒并指路；
+  - 名称解析 + 组织成员双向对账；
+  - 只读字段被拒；
+  - 插件注册表包含 `edit_entities`。
+
+## 13. 测试
 
 - Core：`ChapterLifecycleServiceTests`、`StateEffectApplierTests`、`EntityEvolutionStoreTests`、EntityTimeline/as-of、manual/digest、引用守卫、死亡检测。
-- 工具：`record_evolution`/`delete_evolution`/`undo_manual_state_change`/`set_chapter_status`/`scan_ontology`。
-- UI：TUI 发布对话框与时间线、Desktop `ChapterPublishViewModel` 与章节时间线。
+- 工具：`record_evolution`/`delete_evolution`/`undo_manual_state_change`/`set_chapter_status`/`scan_ontology`/`edit_entities`。
+- UI：TUI 发布对话框与时间线、Desktop `ChapterPublishViewModel` 与章节时间线；`EntityEditorFieldCoverageTests` 保证注册表与模型字段一致。
 - 回归口径：`dotnet build src/Mythology.slnx` + 各测试程序集（xunit v3 MTP）。
 
-## 13. 开放问题
+## 14. 开放问题
 
 - 云端 E5 契约字段与演化算子（另行确认）。
 - 乱序撤回需要章节依赖图（当前要求从后往前撤回）。
