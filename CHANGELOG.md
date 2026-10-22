@@ -71,7 +71,7 @@
   「前一章」误注入的缺陷（`LastPreviousChapterText` → `LastChapterText`，语义为末章/收束章，
   云端请求不携带 → 分析器按目标章尾部自派生）——因此本项**不改变 23 维分析器分数**。
   billing 只按 `Chapters` 计，不加价。详见 `云端私有文档`
-  §3.2/§4 与 `docs/harness-cloud.md` §17.3。回归：`DiagnosisSchedulerTests.FunnelRequests_StoryCheckCarriesUpstreamWindow_Only`。
+  §3.2/§4 与 云端诊断设计（历史文档，已移除）。回归：`DiagnosisSchedulerTests.FunnelRequests_StoryCheckCarriesUpstreamWindow_Only`。
 - **关系提案管线升格（`scan_relationships`：全本体 + 证据闸门 + 回执）**：本体收敛到
   `Core/Data/RelationshipOntology`（15 条 `RelationshipType` 的域/值域/有向/云端两通道 token +
   20 条结构性边词汇），`SetupDigestBuilder` 的类型与有向映射改读本体（行为不变）；
@@ -90,7 +90,7 @@
   `planned-beats`（修正为按章序匹配后首次真正生效）/ `continuity-audit` / `rule-findings`；
   旧客户端行为不变（服务端新键 additive，按 key 读）。
   跳过轮不构图（成本门控），本地读取失败静默降级（不阻断本轮诊断）。契约见
-  `docs/harness-cloud.md` §17。回归：`DiagnosisSchedulerTests`（scene.plan/story.check 挂 / context.retrieve 不挂）、
+  云端诊断设计（历史文档，已移除）。回归：`DiagnosisSchedulerTests`（scene.plan/story.check 挂 / context.retrieve 不挂）、
   `WritingFlowHookCloudTests`（命中轮构图一次、幂等跳过轮不构图）。
 - **TUI 总纲入口与大纲动作收敛**：新建小说表单可填写总纲并保存到 `Novel.Outline`；小说行菜单「查看总纲」打开全文阅读窗。`检查结果` 只展开最近一次报告（未运行时显示说明），`运行设定检查` 单独调用云端 `check_setup` 并把报告追加到对话；未分卷组移除没有可执行项的 `⋯`。回归覆盖总纲持久化/阅读、检查状态和节点动作。
 - **新增真实终端流分析器 `scripts/analyze_tui_capture.py`（TUI 排障）**：
@@ -344,7 +344,7 @@
   年龄框仍未聚焦。Desert Light 现将普通输入底设为调色板对话框面色 `DialogContentBg`，保留白色聚焦底。
 - **撤回此前对该现象的 OSC 11 / 框架 emit 归因**：截图与运行时输入填充值吻合；旧探针只检查合成缓冲，
   未按真实 hover → 输入框聚焦序列证明终端输出存在 overlay z-order 缺陷。OSC 11 恢复为应用对话区底色；
-  `docs/upstream-emit-layer-overdraw.md` 已标记撤回，不应据此提交框架缺陷。
+  上游发射层覆绘提案（历史文档，已移除）已标记撤回，不应据此提交框架缺陷。
 - **定位「汉字后一块随主题变色的黑块/白块」= 终端把汉字渲染成 1 格宽（字体问题）**：
   用 `scripts/analyze_tui_capture.py` 对用户真实录制做「宽字形续格被覆盖」检测，抓到
   `off=42093 (69,19) 覆盖了宽字形 '…' 的续格，写入 '析'` —— 应用与框架按「汉字=2 格」排版，
@@ -445,7 +445,7 @@
   `focus-areas` 会重复（实测 `["去AI味","去AI味","爽感"]`）→ 已 `Distinct()`；A-8 建议文本不再重复。
 - **删除死代码**：`CloudAnalysisTool.ParseOverallScore`（读 `features.overall-score`）无任何调用点——
   各工具壳一律消费 `dimensions.*.overall-score`（story.check 路径，百分制）。若将来需要展示
-  `features` 级综合分，需按 0-1 线协议 ×100（见 `docs/harness-cloud.md` 结果契约行）。
+  `features` 级综合分，需按 0-1 线协议 ×100（见 云端诊断设计（历史文档，已移除）结果契约）。
 - **云端分数标度（跨仓库）**：`features.overall-score` 的线协议为 **0-1**，但云端 Harness 实现
   曾直接发出百分制（`CalculateOverallScore` 的 `product×100`）——导致 ①`fiction.scene.plan` 的
   可配置三态阈值恒真（`choose_focus` / `human_decision_required` 永不触发，人工决策弹窗成为死路径）；

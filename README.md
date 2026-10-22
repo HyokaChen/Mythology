@@ -581,18 +581,15 @@ Mythology/
 │   ├── ui.md                      # TUI 布局规范
 │   ├── plugin.md                  # 插件开发指南
 │   ├── markdown-renderer.md       # Markdown 渲染器技术设计
-│   ├── humanizer.md               # AI 痕迹消除规则
 │   ├── stability-harness.md       # 稳定性监控算法规范
 │   ├── vec.md                     # 检索内核设计（dense + FTS5 + RRF + 分块）
 │   ├── compact.md                 # 块式压缩引擎设计（可逆恢复）
 │   ├── context-management.md      # 上下文管理与压缩策略
 │   ├── desktop.md                 # 桌面客户端设计（Avalonia + ReactiveUI）
-│   ├── harness-cloud.md           # 云端诊断链路（客户端接入与降级契约）
 │   ├── entity-evolution-lifecycle.md # 实体演化 + 状态生命周期 + edit_entities 批量编辑
 │   ├── plot-forecast-and-notes.md # 远期推演 + 作者随手记
 │   ├── memory-ops-loop-plan.md    # 记忆运维闭环（计划）
 │   ├── wechat.md                  # 微信通道
-│   └── upstream-emit-layer-overdraw.md # 上游发射层覆绘（已撤回提案）
 │
 ├── Directory.Build.props     # 统一版本号 (MythologyVersion)
 ```
@@ -787,7 +784,6 @@ installer\build-windows.ps1 -Version 1.2.3   # Inno Setup 安装器（需 ISCC.e
 | **[检索内核](./docs/vec.md)** | dense + FTS5 + RRF + 分块设计 |
 | **[块式压缩引擎](./docs/compact.md)** | 模型驱动块式压缩、可逆恢复、`[mN]` ref 标签 |
 | **[桌面客户端](./docs/desktop.md)** | Avalonia + ReactiveUI 双入口架构、ViewModel/View 映射、信号链路 |
-| **[云端诊断链路](./docs/harness-cloud.md)** | DiagnosisScheduler 调度器、SignalBuilder 翻译层、HumanDecisionBridge 裁决回路 |
 | **[实体演化与状态生命周期](./docs/entity-evolution-lifecycle.md)** | 出场记录、状态变化、发布事务、变更集回滚、全实体时间线、设定变更、`edit_entities` 批量编辑 |
 | **[远期推演与随手记](./docs/plot-forecast-and-notes.md)** | 大纲/细纲驱动的未来 N 章推演、作者笔记实体与双端 UI |
 
