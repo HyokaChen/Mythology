@@ -35,22 +35,17 @@
           HorizontalAlignment="Stretch"
         />
         <Grid Grid.Row="1">
-          <Border Classes="Card" Padding="8">
+          <Border Classes="Card" Padding="0">
             <ListBox
               x:Name="NoteList"
               FontSize="14"
               Background="Transparent"
               HorizontalAlignment="Stretch"
+              ItemContainerTheme="{StaticResource AdalineRowContainer}"
             >
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="c:NoteRow">
-                  <Border
-                    Classes="Card"
-                    CornerRadius="{StaticResource RadiusCardsSm}"
-                    Padding="12,9"
-                    Margin="0,0,0,6"
-                    Background="{DynamicResource BrushSurfaceGlow}"
-                  >
+                  <Grid Margin="14,9">
                     <StackPanel Spacing="2">
                       <TextBlock
                         Text="{Binding Title}"
@@ -66,7 +61,7 @@
                         Text="{Binding Meta}"
                       />
                     </StackPanel>
-                  </Border>
+                  </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>

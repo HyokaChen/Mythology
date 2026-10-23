@@ -7,6 +7,7 @@
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
   xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
   xmlns:models="clr-namespace:Desktop.Models"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
   x:DataType="vm:ConversationViewModel"
 >
@@ -32,6 +33,7 @@
         VerticalAlignment="Center"
         Spacing="6"
         IsVisible="{Binding HasMessages, Converter={StaticResource InvertedBoolToVisibility}}"
+        motion:Motion.Enter="True"
       >
         <!-- 这一屏唯一的衬线锚点 -->
         <TextBlock
@@ -115,7 +117,7 @@
       >
         <controls:AutoScrollItemsControl.ItemTemplate>
           <DataTemplate x:DataType="models:ChatMessage">
-            <StackPanel Margin="0,0,0,12">
+            <StackPanel Margin="0,0,0,12" motion:Motion.Enter="True">
               <!-- 用户消息：右对齐 Forest Ink 气泡（UI.md 5.1） -->
               <StackPanel
                 Margin="96,2,0,0"
@@ -150,7 +152,11 @@
                 >
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="models:AgentStep">
-                      <StackPanel Spacing="2">
+                      <StackPanel
+                        Spacing="2"
+                        motion:Motion.Enter="True"
+                        motion:Motion.EnterRise="4"
+                      >
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1,0,0">
                           <controls:BusySpinner
                             IsActive="{Binding IsProcessing}"
@@ -221,6 +227,8 @@
                         FontSize="11"
                         Foreground="{DynamicResource BrushSageMist}"
                         Text="{Binding Title}"
+                        motion:Motion.Enter="True"
+                        motion:Motion.EnterRise="4"
                       />
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
@@ -287,6 +295,7 @@
               Width="{Binding Bounds.Width, ElementName=InputCard}"
               IsLightDismissEnabled="True"
               IsOpen="{Binding IsSuggestionPopupVisible, Mode=TwoWay}"
+              motion:Motion.PopupEnter="True"
             >
               <Border Classes="Card Glow" Padding="6">
                 <ListBox
@@ -295,6 +304,7 @@
                   MaxHeight="260"
                   ItemsSource="{Binding Suggestions}"
                   SelectedIndex="{Binding SelectedSuggestionIndex}"
+                  ItemContainerTheme="{StaticResource AdalineRowContainer}"
                 >
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="models:FileSystemItem">
@@ -341,6 +351,7 @@
               Width="{Binding Bounds.Width, ElementName=InputCard}"
               IsLightDismissEnabled="True"
               IsOpen="{Binding IsCommandPopupVisible, Mode=TwoWay}"
+              motion:Motion.PopupEnter="True"
             >
               <Border Classes="Card Glow" Padding="6">
                 <ListBox
@@ -349,6 +360,7 @@
                   MaxHeight="220"
                   ItemsSource="{Binding CommandSuggestions}"
                   SelectedIndex="{Binding SelectedCommandIndex}"
+                  ItemContainerTheme="{StaticResource AdalineRowContainer}"
                 >
                   <ListBox.ItemTemplate>
                     <DataTemplate>

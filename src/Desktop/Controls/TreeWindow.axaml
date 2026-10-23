@@ -18,6 +18,7 @@
         x:Name="TreeList"
         Background="Transparent"
         SelectionChanged="TreeList_OnSelectionChanged"
+        ItemContainerTheme="{StaticResource AdalineRowContainer}"
       >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:TreeWindow+TreeRow">

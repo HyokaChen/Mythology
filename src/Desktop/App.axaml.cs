@@ -1,8 +1,10 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Desktop.Styles;
 using Desktop.ViewModels;
 using Desktop.Views;
 using LiveMarkdown.Avalonia;
@@ -32,6 +34,16 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // ── 全局窗口入场动效：所有 Window（含未来新增对话框）统一淡入 ──
+        Window.WindowOpenedEvent.AddClassHandler<Window>(
+            static (window, args) =>
+            {
+                _ = args;
+                if (window.Content is Visual content)
+                    _ = Motion.FadeIn(content);
+            }
+        );
+
         // ── SukiUI 主题（与 LKK 一致：Light 基色 + 自定义品牌色卡） ──
         // 品牌色：Adaline（DESIGN.md）—— Olive Press（CTA 主色）+ Sage Leaf（强调色）
         SukiTheme.GetInstance().ChangeBaseTheme(ThemeVariant.Light);

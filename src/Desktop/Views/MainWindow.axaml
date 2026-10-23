@@ -4,6 +4,7 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="clr-namespace:Desktop.Controls"
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   xmlns:views="clr-namespace:Desktop.Views"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
   x:DataType="vm:MainWindowViewModel"
@@ -201,6 +202,8 @@
       BorderBrush="{DynamicResource BrushAmberPin}"
       BorderThickness="0,0,0,1"
       Padding="18,8,14,8"
+      motion:Motion.Enter="True"
+      motion:Motion.EnterRise="-8"
     >
       <Grid ColumnDefinitions="*,Auto,Auto">
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

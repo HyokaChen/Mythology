@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
   x:DataType="vm:TodoPanelViewModel"
 >
@@ -52,6 +53,8 @@
                   Padding="10,7"
                   Margin="0,0,0,5"
                   CornerRadius="{StaticResource RadiusCardsSm}"
+                  motion:Motion.Enter="True"
+                  motion:Motion.EnterRise="4"
                 >
                   <Grid ColumnDefinitions="Auto,8,*">
                     <lucide:LucideIcon

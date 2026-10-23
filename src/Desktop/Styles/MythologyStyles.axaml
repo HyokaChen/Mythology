@@ -3,6 +3,7 @@
 <Styles
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
 >
   <!-- ── Eyebrow：字段标签（Fragment Mono，大写，追踪） ── -->
   <Style Selector="TextBlock.Eyebrow">
@@ -27,6 +28,29 @@
     <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
     <Setter Property="CornerRadius" Value="{StaticResource RadiusTags}" />
     <Setter Property="Padding" Value="10,3" />
+  </Style>
+  <!-- 描边标签（DESIGN.md §Category Tag：「transparent with hairline border」）——
+       用在列表行内：与行底的状态雾同层，不会像实色块那样把行切成两个颜色。
+       但「当前」这类必须一眼看见的状态标记，用描边 + 低对比文字在选中雾面上会糊掉，
+       故按 DESIGN.md §Tokens「Sage Leaf = badge fills」做实心徽标：Linen 字 + Sage Leaf 底，
+       对比度足够，且与行内的透明 tag 形成层级（DESIGN.md §Imagery：annotate rather than decorate）。 -->
+  <Style Selector="Border.TagPillOutline">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusTags}" />
+    <Setter Property="Padding" Value="10,3" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.TagPillSolid">
+    <Setter Property="Background" Value="{DynamicResource BrushSageLeaf}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusTags}" />
+    <Setter Property="Padding" Value="10,3" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <!-- 实心徽标配 Linen 字：Sage Leaf 上放 Olive Press 会太暗，放 Linen 才读得清 -->
+  <Style Selector="Border.TagPillSolid TextBlock.Tag">
+    <Setter Property="Foreground" Value="{DynamicResource BrushLinen}" />
   </Style>
 
   <!-- ── Card：Bone 表面 + 1px Mist 边框 + 10px 圆角，无阴影 ── -->
@@ -158,7 +182,7 @@
     <Setter Property="Cursor" Value="Hand" />
   </Style>
   <Style Selector="Button.MoreButton:pointerover">
-    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
 
@@ -255,13 +279,27 @@
     <Setter Property="Padding" Value="20" />
   </Style>
 
-  <!-- ── 下拉列表项：选中态 Eucalyptus（替代默认蓝） -->
-  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
-    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  <!-- ── 列表行状态（选中/悬停）由 AdalineRowContainer 容器主题统一负责 ──
+       不在这里写 /template/ ContentPresenter 的底色：那会在 ContentPresenter 上再画一层，
+       与容器主题画在 PART_Border 上的那层几何不同、还会叠加（选中行 33%+33% 变成深块）。
+       所有 ListBox 都挂 ItemContainerTheme="{StaticResource AdalineRowContainer}"，
+       唯一绘图面就是 PART_Border。ComboBoxItem 是独立类型，不冲突，仍走默认模板。 -->
+  <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
   </Style>
-  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Foreground"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
   </Style>
 
   <!-- ── TabControl（Adaline：Forest Ink 选中 + Sage 下划线，两侧面板统一） ── -->
@@ -323,7 +361,7 @@
     <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
   </Style>
   <Style Selector="MenuItem:selected /template/ Border#root">
-    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
     <Setter Property="BorderBrush" Value="Transparent" />
   </Style>
   <Style Selector="MenuItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
@@ -380,5 +418,135 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="12,10" />
+  </Style>
+
+  <!-- ── 动效层：交互反馈（时长 token 见 Desktop/Styles/Motion.cs） ── -->
+
+  <!-- 按钮：按下缩放 0.97 + 前景/边框色过渡；背景过渡覆盖两种写法：
+       Primary 直接改模板 presenter 背景；IconButton/Ghost 改 Button.Background 由 TemplateBinding 传到 presenter -->
+  <Style Selector="Button">
+    <Setter Property="RenderTransform" Value="scale(1)" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Foreground"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <BrushTransition
+          Property="BorderBrush"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <TransformOperationsTransition
+          Property="RenderTransform"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="CubicEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button:pressed">
+    <Setter Property="RenderTransform" Value="scale(0.97)" />
+  </Style>
+  <Style Selector="Button /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <!-- 列表行状态过渡由 AdalineRowContainer / 全局 ListBoxItem 样式负责，
+       此处不再重复声明（同一属性上的 Transitions 会被后声明者整体覆盖） -->
+
+  <!-- 菜单项 / Tab / 大纲行 / 输入框聚焦 / 进度条 -->
+  <Style Selector="MenuItem /template/ Border#root">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="TabItem /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Border.OutlineRow">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <BrushTransition
+          Property="BorderBrush"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="TextBox.Adaline /template/ Border#PART_Border">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="BorderBrush"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="ProgressBar">
+    <Setter Property="Transitions">
+      <Transitions>
+        <DoubleTransition
+          Property="Value"
+          Duration="{x:Static motion:Motion.Slow}"
+          Easing="CubicEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <!-- 大纲 TreeView 悬停/选中：与列表行同一套 Sage Mist 薄雾，且不加边框
+       （外层 Card 已有一条 Mist 边线，再画环就是双层边框） -->
+  <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  </Style>
+  <Style Selector="TreeViewItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
+  <!-- 提示气泡：Style.Animations 每次附加播一次，故只在新实例时可见 -->
+  <Style Selector="ToolTip">
+    <Style.Animations>
+      <Animation Duration="0:0:0.12" FillMode="Forward">
+        <KeyFrame Cue="0%">
+          <Setter Property="Opacity" Value="0" />
+        </KeyFrame>
+        <KeyFrame Cue="100%">
+          <Setter Property="Opacity" Value="1" />
+        </KeyFrame>
+      </Animation>
+    </Style.Animations>
   </Style>
 </Styles>

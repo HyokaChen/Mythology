@@ -37,13 +37,17 @@
   <SolidColorBrush x:Key="BrushSageGray" Color="{StaticResource ColorSageGray}" />
   <SolidColorBrush x:Key="BrushSageMist" Color="{StaticResource ColorSageMist}" />
   <SolidColorBrush x:Key="BrushEucalyptus" Color="{StaticResource ColorEucalyptus}" />
-  <!-- Eucalyptus 悬停薄雾（hover wash）—— 20% 不透明度的 Eucalyptus，
-       这个值原先以 #33c9d5c5 内联写在四处 Style 里，现升为命名 token -->
-  <SolidColorBrush
-    x:Key="BrushEucalyptusWash"
-    Color="{StaticResource ColorEucalyptus}"
-    Opacity="0.2"
-  />
+  <!-- Eucalyptus 悬停薄雾（hover wash）—— 20% alpha 的 Eucalyptus。
+       用 #RRGGBBAA 十六进制 alpha 而不是 SolidColorBrush.Opacity：后者把整支笔降 alpha，
+       叠在 Bone 卡面上会显脏；笔 alpha 则与底色正确混合。
+       DESIGN.md §Surfaces：Eucalyptus = "soft surface tints / hover wash"，是薄雾不是实色。 -->
+  <SolidColorBrush x:Key="BrushEucalyptusWash" Color="#33C9D5C5" />
+  <!-- 列表行状态薄雾（DESIGN.md §Components "Pill Tab / Segment"：
+       "Transparent fill … Forest Ink text, subtle Sage Mist wash on active state"）。
+       行表面是平的——不加边框：容器 Card 已有一条 Mist 边线，行内再画环就是双层边框。
+       hover 12% / selected 20% 同色系分档，选中靠雾的浓度区分，不靠色块。 -->
+  <SolidColorBrush x:Key="BrushSageMistWash" Color="#1FA5AC9F" />
+  <SolidColorBrush x:Key="BrushSageMistSelected" Color="#33A5AC9F" />
   <SolidColorBrush x:Key="BrushLichen" Color="{StaticResource ColorLichen}" />
   <SolidColorBrush x:Key="BrushSurfaceGlow" Color="{StaticResource ColorSurfaceGlow}" />
   <SolidColorBrush x:Key="BrushMistOnSlate" Color="{StaticResource ColorMistOnSlate}" />
@@ -254,6 +258,54 @@
           </KeyFrame>
         </Animation>
       </Style.Animations>
+    </Style>
+  </ControlTheme>
+
+  <!-- ══════════ AdalineRowContainer：列表行容器 ══════════
+       按 DESIGN.md §Code Block Panel「inner rows separated by 1px dividers」：
+       列表是表，不是一摞卡片——行无圆角、无边框、无内边距（内边距由行模板自己出），
+       整块雾面铺满 Card 宽度；行间 1px Mist 分隔线由底边框出。
+       状态雾统一：hover 12% / selected 20% Sage Mist（DESIGN.md §Components Pill Tab）。 -->
+  <ControlTheme x:Key="AdalineRowContainer" TargetType="ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border
+          Name="PART_Border"
+          Background="{TemplateBinding Background}"
+          BorderBrush="{TemplateBinding BorderBrush}"
+          BorderThickness="{TemplateBinding BorderThickness}"
+          CornerRadius="0"
+          Padding="{TemplateBinding Padding}"
+        >
+          <ContentPresenter
+            Name="PART_ContentPresenter"
+            Content="{TemplateBinding Content}"
+            ContentTemplate="{TemplateBinding ContentTemplate}"
+            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+          />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover /template/ Border#PART_Border">
+      <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+    </Style>
+    <Style Selector="^:selected /template/ Border#PART_Border">
+      <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+    </Style>
+    <!-- 清掉 SukiUI / Fluent 自带的选中装饰（勾选圆点 / 指示条 / 圆角高亮块）：
+         它们挂在 ListBoxItem 自身的 :selected 上（不走 /template/），容器主题换不掉，
+         且会与我们的 Sage Mist 雾叠成深块。这里把选中态的所有装饰性 token 归零，
+         选中只保留一层雾。 -->
+    <Style Selector="^:selected">
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
     </Style>
   </ControlTheme>
 </ResourceDictionary>

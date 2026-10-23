@@ -25,7 +25,12 @@
 
     <!-- 模型列表 -->
     <Border Grid.Row="1" Classes="Card" Margin="0,10,0,0" Padding="6">
-      <ListBox x:Name="ModelList" Background="Transparent" Tapped="ModelList_OnTapped">
+      <ListBox
+        x:Name="ModelList"
+        Background="Transparent"
+        Tapped="ModelList_OnTapped"
+        ItemContainerTheme="{StaticResource AdalineRowContainer}"
+      >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:QuickModelItem">
             <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">

@@ -30,6 +30,7 @@
         Background="Transparent"
         DoubleTapped="CommandList_OnDoubleTapped"
         KeyDown="CommandList_OnKeyDown"
+        ItemContainerTheme="{StaticResource AdalineRowContainer}"
       >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:PaletteCommand">

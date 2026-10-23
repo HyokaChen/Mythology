@@ -2,8 +2,9 @@
   x:Class="Desktop.Controls.WorldRulePanel"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
 >
-  <Grid RowDefinitions="Auto,*" Margin="14,10,14,10">
+  <Grid RowDefinitions="Auto,*" Margin="14,10,14,10" motion:Motion.Enter="True">
     <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
       <TextBlock Classes="SectionHeading" Text="世界规则" />
       <TextBlock

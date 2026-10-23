@@ -61,57 +61,50 @@
 
       <!-- 列表区：Card 列表 + 空状态 -->
       <Grid Grid.Row="2">
-        <Border Classes="Card" Padding="8">
+        <Border Classes="Card" Padding="0">
           <ListBox
             x:Name="NovelList"
             FontSize="14"
             Background="Transparent"
             HorizontalAlignment="Stretch"
+            ItemContainerTheme="{StaticResource AdalineRowContainer}"
           >
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="c:NovelItem">
-                <Border
-                  Classes="Card"
-                  CornerRadius="{StaticResource RadiusCardsSm}"
-                  Padding="12,9"
-                  Margin="0,0,0,6"
-                  Background="{DynamicResource BrushSurfaceGlow}"
-                >
-                  <StackPanel Spacing="2">
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                      <TextBlock
-                        Grid.Column="0"
-                        Text="{Binding Title}"
-                        FontSize="13.5"
-                        FontWeight="Medium"
-                        Foreground="{DynamicResource BrushForestInk}"
-                        TextTrimming="CharacterEllipsis"
-                      />
-                      <Border
-                        Grid.Column="1"
-                        Classes="TagPill"
-                        IsVisible="{Binding IsCurrent}"
-                        VerticalAlignment="Center"
-                      >
-                        <TextBlock Classes="Tag" Text="当前" />
-                      </Border>
-                    </Grid>
+                <StackPanel Margin="14,9" Spacing="2">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                     <TextBlock
-                      FontFamily="{StaticResource FontMono}"
-                      FontSize="10"
-                      Foreground="{DynamicResource BrushSageMist}"
+                      Grid.Column="0"
+                      Text="{Binding Title}"
+                      FontSize="13.5"
+                      FontWeight="Medium"
+                      Foreground="{DynamicResource BrushForestInk}"
                       TextTrimming="CharacterEllipsis"
+                    />
+                    <Border
+                      Grid.Column="1"
+                      Classes="TagPillSolid"
+                      IsVisible="{Binding IsCurrent}"
+                      VerticalAlignment="Center"
                     >
-                      <Run Text="{Binding Genre, Mode=OneWay}" />
-                      <Run Text=" · " />
-                      <Run Text="{Binding Chapters, Mode=OneWay}" />
-                      <Run Text=" 章 · 更新 " />
-                      <Run Text="{Binding Date, Mode=OneWay}" />
-                      <Run Text=" · " />
-                      <Run Text="{Binding Directory, Mode=OneWay}" />
-                    </TextBlock>
-                  </StackPanel>
-                </Border>
+                      <TextBlock Classes="Tag" Text="当前" />
+                    </Border>
+                  </Grid>
+                  <TextBlock
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="10"
+                    Foreground="{DynamicResource BrushSageMist}"
+                    TextTrimming="CharacterEllipsis"
+                  >
+                    <Run Text="{Binding Genre, Mode=OneWay}" />
+                    <Run Text=" · " />
+                    <Run Text="{Binding Chapters, Mode=OneWay}" />
+                    <Run Text=" 章 · 更新 " />
+                    <Run Text="{Binding Date, Mode=OneWay}" />
+                    <Run Text=" · " />
+                    <Run Text="{Binding Directory, Mode=OneWay}" />
+                  </TextBlock>
+                </StackPanel>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

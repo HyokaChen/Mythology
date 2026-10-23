@@ -5,6 +5,7 @@
   xmlns:conv="clr-namespace:Desktop.Converters"
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
   xmlns:models="clr-namespace:Desktop.Models"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
   x:DataType="vm:SetUpPanelViewModel"
 >
@@ -173,7 +174,7 @@
 
       <TabControl.ContentTemplate>
         <DataTemplate x:DataType="vm:EntityTab">
-          <Grid RowDefinitions="Auto,Auto,Auto,*">
+          <Grid RowDefinitions="Auto,Auto,Auto,*" motion:Motion.Enter="True">
             <!-- ① 工具带：**全宽搜索字段**（占满整行 + 右端内嵌图标按钮）。
                  搜索是即输即筛（magnifier = 聚焦；✕ 有词才出现），不再与计数/新建挤一行——
                  字段的左右缘即面板的左右缘，读起来才是一条「搜索栏」。 -->
@@ -707,6 +708,7 @@
                 BorderBrush="{DynamicResource BrushMist}"
                 Background="{DynamicResource BrushSurfaceGlow}"
                 IsVisible="{Binding Parent.InlineCreateActive}"
+                motion:Motion.Enter="True"
               >
                 <StackPanel Spacing="4">
                   <TextBlock

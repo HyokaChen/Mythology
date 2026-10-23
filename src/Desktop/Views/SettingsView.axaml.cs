@@ -21,6 +21,11 @@ public partial class SettingsView : UserControl
             if (InitialTab > 0)
                 SettingsTabControl.SelectedIndex = InitialTab;
         };
+        SettingsTabControl.SelectionChanged += (_, _) =>
+        {
+            if (SettingsTabControl.SelectedContent is Avalonia.Visual content)
+                _ = Desktop.Styles.Motion.PlayEnter(content, rise: 6);
+        };
     }
 
     private SettingsViewModel? Vm => DataContext as SettingsViewModel;
