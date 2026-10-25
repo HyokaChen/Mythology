@@ -53,13 +53,13 @@
     />
 
     <!-- LiveMarkdown 流式渲染 -->
-    <PackageReference Include="LiveMarkdown.Avalonia" Version="2.4.3" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Math" Version="2.4.3" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Mermaid" Version="2.4.3" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Svg" Version="2.4.3" />
+    <PackageReference Include="LiveMarkdown.Avalonia" Version="2.5.1" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Math" Version="2.5.1" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Mermaid" Version="2.5.1" />
+    <PackageReference Include="LiveMarkdown.Avalonia.Svg" Version="2.5.1" />
 
     <!-- 图标 -->
-    <PackageReference Include="Lucide.Avalonia" Version="0.2.26" />
+    <PackageReference Include="Lucide.Avalonia" Version="0.2.28" />
 
     <!-- 平滑滚动 -->
     <PackageReference Include="SmoothScroll.Avalonia" Version="12.0.0.14" />

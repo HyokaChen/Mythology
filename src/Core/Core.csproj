@@ -26,7 +26,7 @@
     <PackageReference Include="Tacos.SourceGenerator" Version="1.0.4" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="LlmTornado" Version="3.8.74" NoWarn="NU1903" />
+    <PackageReference Include="LlmTornado" Version="3.8.79" NoWarn="NU1903" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" NoWarn="NU1903" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <PackageReference Include="sqlite-vec" Version="0.1.7-alpha.2.1" />
