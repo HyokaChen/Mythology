@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:c="clr-namespace:Desktop.Controls"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Title="笔记"
   Width="820"
   Height="620"
@@ -11,6 +12,7 @@
   CanResize="True"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid Margin="32,32,32,24" RowSpacing="20" RowDefinitions="Auto,*,Auto">
     <!-- ═══════ 标题区：SectionHeading + 说明 + hairline ═══════ -->
@@ -43,7 +45,7 @@
               Background="Transparent"
               HorizontalAlignment="Stretch"
               ItemContainerTheme="{StaticResource AdalineRowContainer}"
-            >
+          motion:Motion.Stagger="True">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="c:NoteRow">
                   <Grid Margin="16,12">

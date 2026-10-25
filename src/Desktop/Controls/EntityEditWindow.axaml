@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.EntityEditWindow"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   x:Name="EntityEditWindowRoot"
   Width="620"
   Height="760"
@@ -9,6 +10,7 @@
   MinHeight="560"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid RowDefinitions="*,Auto,Auto">
     <!-- 动态 Tab 内容区（由代码构建） -->

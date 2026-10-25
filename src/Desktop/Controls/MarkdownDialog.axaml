@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   x:Name="MarkdownWindow"
   Width="640"
   Height="520"
@@ -10,6 +11,7 @@
   MinHeight="340"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <ScrollViewer
     x:Name="MarkdownScroller"

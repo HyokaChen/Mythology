@@ -339,7 +339,11 @@
               HorizontalScrollBarVisibility="Disabled"
               IsVisible="{Binding HasNoProgress}"
             >
-              <ItemsControl ItemsSource="{Binding Items}" Margin="12,0,12,14">
+              <ItemsControl
+                ItemsSource="{Binding Items}"
+                Margin="12,0,12,14"
+                motion:Motion.Stagger="True"
+              >
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <VirtualizingStackPanel />

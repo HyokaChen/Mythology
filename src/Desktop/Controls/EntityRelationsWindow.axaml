@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.EntityRelationsWindow"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Title="本体关系"
   Width="520"
   Height="640"
@@ -9,6 +10,7 @@
   MinHeight="400"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24,20,24,16">
     <!-- 标题 -->

@@ -3,12 +3,14 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:controls="clr-namespace:Desktop.Controls"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Width="520"
   Height="460"
   MinWidth="440"
   MinHeight="360"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid RowDefinitions="Auto,*,Auto" Margin="20,16,20,14">
     <!-- 搜索框 -->
@@ -30,7 +32,7 @@
         Background="Transparent"
         Tapped="ModelList_OnTapped"
         ItemContainerTheme="{StaticResource AdalineRowContainer}"
-      >
+          motion:Motion.Stagger="True">
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:QuickModelItem">
             <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">

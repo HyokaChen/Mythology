@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:controls="clr-namespace:Desktop.Controls"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Title="Mythology — 帮助与关于"
   Width="640"
   Height="520"
@@ -11,13 +12,14 @@
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
   x:DataType="controls:AboutDialog"
+  motion:Motion.Enter="True"
 >
   <TabControl x:Name="AboutTabs" Padding="0" Background="Transparent" SelectedIndex="0">
     <!-- ═════ 快捷键 ═════ -->
     <TabItem Header="快捷键">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="20,16">
-          <ItemsControl ItemsSource="{Binding Shortcuts}">
+          <ItemsControl ItemsSource="{Binding Shortcuts}" motion:Motion.Stagger="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="controls:AboutDialog+Entry">
                 <Grid ColumnDefinitions="150,*" Margin="0,3,0,3">
@@ -47,7 +49,7 @@
     <TabItem Header="命令">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="20,16">
-          <ItemsControl ItemsSource="{Binding Commands}">
+          <ItemsControl ItemsSource="{Binding Commands}" motion:Motion.Stagger="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="controls:AboutDialog+Entry">
                 <Grid ColumnDefinitions="150,*" Margin="0,4,0,4">

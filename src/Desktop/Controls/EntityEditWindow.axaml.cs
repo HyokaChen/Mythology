@@ -16,6 +16,8 @@ namespace Desktop.Controls;
 /// </summary>
 public partial class EntityEditWindow : Window
 {
+    private int _lastTabIndex;
+    private bool _motionReady;
     private readonly INovelStore _store;
     private readonly EntityType _type;
     private readonly string _novelId;
@@ -189,6 +191,16 @@ public partial class EntityEditWindow : Window
                         },
                     },
                 }
+            );
+
+        // 切 Tab = 翻页：新内容从方向滑入 10px + 淡入（与设置页/关于对话框同一套原语）
+        _lastTabIndex = EntityTabControl.SelectedIndex;
+        Loaded += (_, _) => _motionReady = true;
+        EntityTabControl.SelectionChanged += (_, _) =>
+            _lastTabIndex = Desktop.Styles.Motion.AnimateTabSwitch(
+                EntityTabControl,
+                _lastTabIndex,
+                _motionReady
             );
     }
 

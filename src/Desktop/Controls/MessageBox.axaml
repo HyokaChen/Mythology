@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.MessageBox"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   x:Name="MessageBoxWindow"
   Width="420"
   Height="200"
@@ -10,6 +11,7 @@
   CanResize="False"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <!-- 文本顶置 · 动作钉在右下（StackPanel 根会让按钮随内容上浮，底部留空） -->
   <Grid RowDefinitions="*,Auto" Margin="24,20,24,20">

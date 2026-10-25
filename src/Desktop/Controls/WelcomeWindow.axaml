@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.WelcomeWindow"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Title="欢迎使用 Mythology"
   Width="480"
   Height="400"
@@ -10,6 +11,7 @@
   CanResize="False"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid Margin="32,32,32,24" RowSpacing="20" RowDefinitions="Auto,*,Auto">
     <!-- 品牌锚点：全窗唯一的衬线 display moment -->

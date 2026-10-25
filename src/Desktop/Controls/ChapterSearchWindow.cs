@@ -1,8 +1,10 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Core.Data;
 using Core.Novels;
 
@@ -46,6 +48,12 @@ public sealed class ChapterSearchWindow : Window
                 e.Handled = true;
             }
         };
+        // 行容器与逐项入场：与 XAML 侧的列表同一套（Adaline 扁平行 + Sage Mist 状态雾 + 错峰淡入）
+        _list.ItemContainerTheme = (ControlTheme)
+            Application.Current!.Resources["AdalineRowContainer"]!;
+        Desktop.Styles.Motion.SetStagger(_list, true);
+
+        // 窗口入场由 App 级 WindowOpened 处理器统一负责（淡入 + 上浮），此处无需重复挂。
 
         var hint = new TextBlock
         {

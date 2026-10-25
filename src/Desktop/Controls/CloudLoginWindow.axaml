@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Title="登录 Mythology Cloud"
   Width="480"
   Height="560"
@@ -11,6 +12,7 @@
   CanResize="False"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <StackPanel>
     <!-- ═══════ 登录表单面板（内容顶置 · 动作条钉在右下） ═══════ -->

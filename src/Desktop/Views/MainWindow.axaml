@@ -242,7 +242,9 @@
     <!-- ═══════════ 主体：对话流 | 右侧设定面板（UI.md 7:3） ═══════════ -->
     <Grid Grid.Row="2" x:Name="MainColumns" ColumnDefinitions="*,4,320">
       <views:ConversationView Grid.Column="0" DataContext="{Binding ActiveConversationVm}" />
-      <!-- 右栏列宽可拖（宽度写入 config.yaml 的 ui.outline-panel-width，重启保持） -->
+      <!-- 右栏列宽可拖（宽度写入 config.yaml 的 ui.outline-panel-width，重启保持）。
+           4px 透明热区在静止时几乎不可见，hover 时给出 Eucalyptus 薄雾 + 左右淡入的抓手提示，
+           否则用户根本不知道这里能拖（DESIGN.md：annotate rather than decorate，故不用图标）。 -->
       <GridSplitter
         Grid.Column="1"
         Name="SidePanelSplitter"
@@ -252,7 +254,22 @@
         Cursor="SizeWestEast"
         Background="Transparent"
         DragCompleted="SidePanelSplitter_OnDragCompleted"
-      />
+      >
+        <GridSplitter.Styles>
+          <Style Selector="GridSplitter:pointerover">
+            <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+          </Style>
+        </GridSplitter.Styles>
+        <GridSplitter.Transitions>
+          <Transitions>
+            <BrushTransition
+              Property="Background"
+              Duration="{x:Static motion:Motion.Fast}"
+              Easing="SineEaseOut"
+            />
+          </Transitions>
+        </GridSplitter.Transitions>
+      </GridSplitter>
       <Grid Grid.Column="2" RowDefinitions="*,Auto">
         <views:SetUpPanelView Grid.Row="0" DataContext="{Binding SetUpPanel}" />
         <views:TodoPanelView Grid.Row="1" DataContext="{Binding TodoPanel}" />

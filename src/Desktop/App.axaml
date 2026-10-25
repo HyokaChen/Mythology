@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="clr-namespace:Desktop"
+  xmlns:smooth="clr-namespace:SmoothScroll.Avalonia.Controls;assembly=SmoothScroll.Avalonia.Controls"
   xmlns:suki="https://github.com/kikipoulet/SukiUI"
   RequestedThemeVariant="Light"
 >
@@ -27,6 +28,11 @@
 
     <!-- 全局组件样式：PillButton / Card / Eyebrow / 输入框 / 消息气泡 -->
     <StyleInclude Source="avares://MythDesktop/Styles/MythologyStyles.axaml" />
+
+    <!-- 滚轮惯性滚动（SmoothScroll.Avalonia）：替换默认 ScrollViewer 模板，
+         长对话流 / 大纲 / 设置页的滚轮操作从「一跳一跳」变成连续平滑。
+         放在 SukiTheme 之后：同类型模板后来者胜。 -->
+    <smooth:ScrollViewerSmoothTheme />
 
     <!-- LiveMarkdown 流式 Markdown 样式 -->
     <StyleInclude Source="avares://LiveMarkdown.Avalonia/Styles.axaml" />

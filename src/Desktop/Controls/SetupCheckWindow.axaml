@@ -5,6 +5,7 @@
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
   xmlns:models="clr-namespace:Desktop.Models"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   x:DataType="vm:SetUpPanelViewModel"
   Title="设定检查"
   Width="560"
@@ -13,6 +14,7 @@
   MinHeight="420"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24,20,24,16">
     <!-- 标题 -->
@@ -30,7 +32,8 @@
           Foreground="{DynamicResource BrushSageGray}"
           TextWrapping="Wrap"
         />
-        <ItemsControl ItemsSource="{Binding Findings}">
+        <ItemsControl ItemsSource="{Binding Findings}"
+          motion:Motion.Stagger="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="models:SetupFindingItem">
               <Border Padding="0,0,0,6" Margin="0,0,0,4">

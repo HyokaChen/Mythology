@@ -2,12 +2,14 @@
   x:Class="Desktop.Controls.EntityFilterDialog"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   Width="380"
   SizeToContent="Height"
   MinWidth="340"
   CanResize="False"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <Grid RowDefinitions="Auto,Auto" Margin="24,20,24,16">
     <!-- 维度行（Eyebrow 标签 + Adaline 下拉；1~2 行，code-behind 构建） -->

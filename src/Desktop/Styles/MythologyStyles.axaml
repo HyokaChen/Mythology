@@ -208,7 +208,13 @@
          拉伸后的多行框（正文编辑器 / 长文本字段）会把文字竖直居中——书写必须从顶部起排 -->
     <Setter Property="VerticalContentAlignment" Value="Top" />
   </Style>
-  <Style Selector="TextBox.Adaline:focus /template/ Border#PART_Border">
+  <!-- 聚焦环：SukiUI 的 TextBox 模板没有 Border#PART_Border（真实元素是 GlassCard#PART_GlassBorder
+       与 Border#PART_ClipBorder），写 PART_Border 会静默不命中——聚焦时边框根本不变色。
+       GlassCard 是 SukiUI 类型、不在默认命名空间，选择器里写不了类型名，故用命名元素。 -->
+  <Style Selector="TextBox.Adaline:focus /template/ Border#PART_ClipBorder">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushOlivePress}" />
+  </Style>
+  <Style Selector="TextBox.Adaline:focus /template/ Border#PART_BorderCardLight">
     <Setter Property="BorderBrush" Value="{DynamicResource BrushOlivePress}" />
   </Style>
 
@@ -283,11 +289,10 @@
     <Setter Property="Padding" Value="20" />
   </Style>
 
-  <!-- ── 列表行状态（选中/悬停）由 AdalineRowContainer 容器主题统一负责 ──
-       不在这里写 /template/ ContentPresenter 的底色：那会在 ContentPresenter 上再画一层，
-       与容器主题画在 PART_Border 上的那层几何不同、还会叠加（选中行 33%+33% 变成深块）。
-       所有 ListBox 都挂 ItemContainerTheme="{StaticResource AdalineRowContainer}"，
-       唯一绘图面就是 PART_Border。ComboBoxItem 是独立类型，不冲突，仍走默认模板。 -->
+  <!-- ── 列表行状态（选中/悬停）───
+       ComboBoxItem 是独立类型、未被 SukiUI 注册类型键主题，仍走默认模板，
+       所以它的过渡/薄雾照旧挂在 /template/ ContentPresenter 上（唯一绘图面，不叠加）。
+       ListBoxItem 的规则见下一节：SukiUI 抢走了它的类型键主题，只能把雾设在行自身。 -->
   <Style Selector="ComboBoxItem /template/ ContentPresenter">
     <Setter Property="Transitions">
       <Transitions>
@@ -305,11 +310,86 @@
   <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
   </Style>
+  <!-- ── 列表行状态：hover / selected 的 Sage Mist 薄雾 ──
+       SukiUI 用 x:Key="{x:Type ListBoxItem}" 注册了自己的行主题（GlassCard 模板），
+       类型键主题优先级高于 ItemContainerTheme 与 Theme setter——运行时实测
+       ListBoxItem 始终渲染 SukiUI 模板，AdalineRowContainer 的 PART_Border 规则整条不生效。
+       而 GlassCard 模板的 Background 来自 TemplateBinding Background（即 ListBoxItem 自身），
+       所以把雾设在 ListBoxItem 自己身上，模板无需替换也能拿到同一层底色；
+       模板内 PART_ClipBorder 自带本地 Transitions（只过渡 BorderBrush），压不住 Background，
+       这就是「悬停硬跳」的直接原因。 -->
   <Style Selector="ListBoxItem">
     <Setter Property="Transitions">
       <Transitions>
         <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <BrushTransition
           Property="Foreground"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+    <!-- SukiUI 行主题自带 4,2,4,2 内边距与圆角高亮；行内边距由行模板自己出（见各窗口行模板
+         的 Margin），圆角高亮会与扁平列表的 1px 分隔线打架，故在这里归零。
+         这两个值随 AdalineRowContainer 一起构成「行是表里的一行」的扁平外观。 -->
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  </Style>
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+  </Style>
+  <Style Selector="ComboBox /template/ Border">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="BorderBrush"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <!-- SukiUI 自带的部分控件（ToggleButton / CheckBox / RadioButton / Slider / Expander）
+       没有 Adaline 模板，状态切换同样是硬跳；给它们补上最短档的边框/背景过渡。 -->
+  <Style Selector="ToggleButton, CheckBox, RadioButton">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="BorderBrush"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Slider">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Foreground"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
           Duration="{x:Static motion:Motion.Fast}"
           Easing="SineEaseOut"
         />
@@ -528,17 +608,10 @@
       </Transitions>
     </Setter>
   </Style>
-  <Style Selector="TextBox.Adaline /template/ Border#PART_Border">
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition
-          Property="BorderBrush"
-          Duration="{x:Static motion:Motion.Fast}"
-          Easing="SineEaseOut"
-        />
-      </Transitions>
-    </Setter>
-  </Style>
+  <!-- 输入框聚焦：SukiUI 的 GlassCard#PART_GlassBorder 自带 BorderBrush 过渡（0.15s），
+       聚焦环已经会淡入；这里不再重复声明（同属性上的 Transitions 会被后声明者整体覆盖，
+       重复写反而会把 SukiUI 那条挤掉）。PART_ClipBorder 同样只过渡 BorderBrush，
+       与聚焦环目标一致，无需额外声明。 -->
   <Style Selector="ProgressBar">
     <Setter Property="Transitions">
       <Transitions>

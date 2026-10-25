@@ -218,7 +218,6 @@ public sealed class MotionWiringTests
     [InlineData("TabItem /template/ ContentPresenter")]
     [InlineData("TreeViewItem /template/ ContentPresenter")]
     [InlineData("Border.OutlineRow")]
-    [InlineData("TextBox.Adaline /template/ Border#PART_Border")]
     [InlineData("ScrollBar Thumb")]
     [InlineData("ProgressBar")]
     public void GlobalStyles_DeclareTransitionsForKnownStateChanges(string selector)
@@ -233,6 +232,100 @@ public sealed class MotionWiringTests
             );
 
         Assert.True(match is not null, $"MythologyStyles.axaml 缺少 {selector} 的 Transitions");
+    }
+
+    [Fact]
+    public void ListRowItem_HasBackgroundTransitionAndStateWash()
+    {
+        // SukiUI 抢注了 {x:Type ListBoxItem} 主题，AdalineRowContainer 的 /template/ 规则整条不生效；
+        // 行的 hover/selected 薄雾必须挂在 ListBoxItem 自身（模板的 Background 由 TemplateBinding 来），
+        // 且行自身要有 Background 过渡，否则雾是硬跳的。
+        var styles = Load("Styles/MythologyStyles.axaml");
+
+        var item = styles
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.LocalName == "Style"
+                && AttrPlain(e, "Selector") == "ListBoxItem"
+                && e.Descendants()
+                    .Any(d =>
+                        d.Name.LocalName == "BrushTransition"
+                        && AttrPlain(d, "Property") == "Background"
+                    )
+            );
+        Assert.True(item is not null, "MythologyStyles.axaml 缺少 ListBoxItem 的 Background 过渡");
+
+        foreach (
+            var (selector, brush) in new[]
+            {
+                ("ListBoxItem:pointerover", "BrushSageMistWash"),
+                ("ListBoxItem:selected", "BrushSageMistSelected"),
+            }
+        )
+        {
+            var wash = styles
+                .Elements()
+                .FirstOrDefault(e =>
+                    e.Name.LocalName == "Style"
+                    && AttrPlain(e, "Selector") == selector
+                    && e.Elements()
+                        .Any(s =>
+                            AttrPlain(s, "Property") == "Background"
+                            && AttrPlain(s, "Value")!.Contains(brush, StringComparison.Ordinal)
+                        )
+                );
+            Assert.True(wash is not null, $"MythologyStyles.axaml 缺少 {selector} 的 {brush}");
+        }
+    }
+
+    [Fact]
+    public void ListRowItem_IsFlatWithoutPaddingOrRadius()
+    {
+        // SukiUI 行主题自带 4,2,4,2 内边距 + 圆角高亮块；扁平列表要求行自身 Padding/CornerRadius 归零
+        // （内边距由行模板的 Margin 出，分隔线由 AdalineRowContainer 的底边框出）。
+        var styles = Load("Styles/MythologyStyles.axaml");
+        var item = styles
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.LocalName == "Style" && AttrPlain(e, "Selector") == "ListBoxItem"
+            );
+
+        Assert.True(item is not null, "MythologyStyles.axaml 缺少 ListBoxItem 样式");
+        Assert.Contains(
+            item.Elements(),
+            s => AttrPlain(s, "Property") == "Padding" && AttrPlain(s, "Value") == "0"
+        );
+        Assert.Contains(
+            item.Elements(),
+            s => AttrPlain(s, "Property") == "CornerRadius" && AttrPlain(s, "Value") == "0"
+        );
+    }
+
+    [Fact]
+    public void ToggleLikeControls_DeclareStateTransitions()
+    {
+        // ToggleButton / CheckBox / RadioButton / Slider / Expander 没有 Adaline 模板，
+        // 状态切换原本是硬跳；全局样式必须给它们补上 Background/BorderBrush 过渡。
+        var styles = Load("Styles/MythologyStyles.axaml");
+
+        foreach (
+            var selector in new[]
+            {
+                "ToggleButton, CheckBox, RadioButton",
+                "Slider",
+                "Expander /template/ ToggleButton",
+            }
+        )
+        {
+            var match = styles
+                .Elements()
+                .FirstOrDefault(e =>
+                    e.Name.LocalName == "Style"
+                    && AttrPlain(e, "Selector") == selector
+                    && e.Descendants().Any(d => d.Name.LocalName == "Transitions")
+                );
+            Assert.True(match is not null, $"MythologyStyles.axaml 缺少 {selector} 的 Transitions");
+        }
     }
 
     [Fact]

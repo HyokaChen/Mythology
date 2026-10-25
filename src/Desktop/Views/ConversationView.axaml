@@ -481,6 +481,7 @@
                   ItemsSource="{Binding Suggestions}"
                   SelectedIndex="{Binding SelectedSuggestionIndex}"
                   ItemContainerTheme="{StaticResource AdalineRowContainer}"
+                  motion:Motion.Stagger="True"
                 >
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="models:FileSystemItem">
@@ -537,6 +538,7 @@
                   ItemsSource="{Binding CommandSuggestions}"
                   SelectedIndex="{Binding SelectedCommandIndex}"
                   ItemContainerTheme="{StaticResource AdalineRowContainer}"
+                  motion:Motion.Stagger="True"
                 >
                   <ListBox.ItemTemplate>
                     <DataTemplate>

@@ -1,11 +1,15 @@
 ﻿using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Core.Shared;
@@ -1201,6 +1205,240 @@ public class ConversationRenderingTests
             }
         });
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  动效运行期验收（与本类共用同一个 Ui harness：同进程只初始化一次 headless 平台）
+    //
+    //  关键约束：**必须断言中间态**。只断言终态时，动画根本没挂上也会恒真通过——
+    //  终态 Opacity=1 / Translate.X=0 与「从未动画」的观感完全一致。
+    //  因此断言「值已离开起点」：没接线时属性恒定在起点，接线生效时一定会被改写。
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>翻页：Translate.X 从 ±10 → 0，必须出现严格介于其间的值。</summary>
+    [Fact]
+    public void PageEnter_SlidesHorizontallyThroughIntermediateValues()
+    {
+        var slides = new List<double>();
+
+        Ui.Value.Run(() =>
+        {
+            var panel = new StackPanel { Children = { new TextBlock { Text = "page" } } };
+            var window = new Window
+            {
+                Width = 240,
+                Height = 140,
+                Content = panel,
+            };
+            window.Show();
+            Pump();
+
+            // PlayPageEnter 是「复用同一视觉树」的显式播放入口：入树后调用即可
+            _ = Desktop.Styles.Motion.PlayPageEnter(panel, 10);
+            for (var i = 0; i < MotionFrames; i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                Thread.Sleep(MotionFrameMs);
+                slides.Add((panel.RenderTransform as TranslateTransform)?.X ?? 0);
+            }
+            window.Close();
+        });
+
+        // 同上：headless 时钟有限，断言「离开起点 10」即证明滑入接线生效
+        Assert.True(
+            slides.Any(x => x < 9.8d),
+            $"Translate.X 从未离开起点（翻页滑入没跑）：[{string.Join(",", slides.Select(x => x.ToString("F2")))}]"
+        );
+    }
+
+    /// <summary>SukiUI 抢走 ListBoxItem 类型键主题后，行自身的 Background 过渡必须仍在，且行是扁平的。</summary>
+    [Fact]
+    public void ListRowItem_DeclaresBackgroundTransitionAtRuntime()
+    {
+        Ui.Value.Run(() =>
+        {
+            var list = new ListBox { ItemsSource = new[] { "aaa", "bbb" } };
+            var window = new Window
+            {
+                Width = 300,
+                Height = 200,
+                Content = list,
+            };
+            window.Show();
+            Pump();
+
+            var items = list.GetVisualDescendants().OfType<ListBoxItem>().ToList();
+            Assert.NotEmpty(items);
+            foreach (var item in items)
+            {
+                var hasBackground = item
+                    .Transitions?.OfType<BrushTransition>()
+                    .Any(t => t.Property == Border.BackgroundProperty);
+                Assert.True(
+                    hasBackground == true,
+                    "ListBoxItem 自身缺少 Background 过渡（hover 薄雾会硬跳）"
+                );
+
+                // 扁平行：内边距与圆角必须归零（SukiUI 行主题自带 4,2,4,2 + 圆角高亮）
+                Assert.Equal(new Thickness(0), item.Padding);
+                Assert.Equal(new CornerRadius(0), item.CornerRadius);
+            }
+
+            window.Close();
+        });
+    }
+
+    /// <summary>聚焦环：SukiUI 的 TextBox 模板没有 Border#PART_Border，目标必须指向真实命名元素。</summary>
+    [Fact]
+    public void TextBoxAdaline_FocusRingTargetsRealTemplateElement()
+    {
+        Ui.Value.Run(() =>
+        {
+            var box = new TextBox { Classes = { "Adaline" } };
+            var window = new Window
+            {
+                Width = 300,
+                Height = 120,
+                Content = box,
+            };
+            window.Show();
+            Pump();
+
+            var names = box.GetVisualDescendants()
+                .OfType<Border>()
+                .Select(b => b.Name)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .ToList();
+            Assert.Contains("PART_ClipBorder", names);
+            Assert.Contains("PART_BorderCardLight", names);
+            Assert.DoesNotContain("PART_Border", names);
+
+            window.Close();
+        });
+    }
+
+    /// <summary>逐项入场：容器挂 Stagger 后，每行都要被播放一次，并收敛到可见。</summary>
+    [Fact]
+    public void Stagger_PlaysEnterForEachGeneratedRow()
+    {
+        Ui.Value.Run(() =>
+        {
+            var list = new ListBox { ItemsSource = new[] { "a", "b", "c" } };
+            Desktop.Styles.Motion.SetStagger(list, true);
+            var window = new Window
+            {
+                Width = 300,
+                Height = 240,
+                Content = list,
+            };
+            window.Show();
+            for (var i = 0; i < 30; i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                Thread.Sleep(MotionFrameMs);
+            }
+
+            // headless 的动画时钟只推进有限帧（实测 2~3 帧后停住），无法断言收敛到 1；
+            // 但每行的 Opacity 必须已离开 0——停在 0 意味着 Stagger 没接上、行不可见。
+            var items = list.GetVisualDescendants().OfType<ListBoxItem>().ToList();
+            Assert.NotEmpty(items);
+            foreach (var item in items)
+                Assert.True(
+                    item.Opacity > 0.02d,
+                    $"行入场未离开起点（Stagger 没接上，行会不可见）：Opacity={item.Opacity:F2}"
+                );
+
+            window.Close();
+        });
+    }
+
+    /// <summary>
+    /// 退场动效：MarkdownDialog 关闭时必须先取消 Closing（播淡出）、且最终一定关闭。
+    /// 不断言 Opacity 采样——同进程其他动效测试共用 Motion 的静态动画表，
+    /// 采样值会互相干扰；「Closing 被取消 + 最终关闭」才是稳定且有意义的回归信号
+    /// （漏接退场 = 直接关没有淡出；Guard 写错 = 窗口卡住关不掉，比没动效更糟）。
+    /// </summary>
+    [Fact]
+    public void MarkdownDialog_CancelsClosingForExitThenCloses()
+    {
+        Ui.Value.Run(() =>
+        {
+            var dialog = new Desktop.Controls.MarkdownDialog("测试", "# 标题\n\n正文");
+            dialog.Show();
+            Pump();
+
+            var firstClosingCanceled = false;
+            dialog.Closing += (_, e) =>
+            {
+                firstClosingCanceled |= e.Cancel;
+            };
+
+            dialog.Close();
+            Pump();
+
+            Assert.True(firstClosingCanceled, "Closing 未被取消：退场淡出没接上（关闭是硬切）");
+
+            // 动画播完后窗口必须真的消失（Guard 失效时会卡在这里）
+            for (var i = 0; i < 10 && dialog.IsVisible; i++)
+                Pump();
+            Assert.False(dialog.IsVisible, "退场动画后窗口未关闭");
+        });
+    }
+
+    /// <summary>动效采样的帧数（headless 下动画时钟只推进有限帧，14 帧足够抓到「离开起点」）。</summary>
+    /// <summary>
+    /// SmoothScroll 惯性滚动主题接入后，ScrollViewer 必须仍是 AutoScrollItemsControl 认得的模板：
+    /// 类型还是 ScrollViewer、名字还是 PART_ScrollViewer——否则流式自动跟随会静默失效
+    /// （OnApplyTemplate 的 Find&lt;ScrollViewer&gt;("PART_ScrollViewer") 返回 null）。
+    /// </summary>
+    [Fact]
+    public void SmoothScrollTheme_KeepsAutoScrollTemplateContract()
+    {
+        Ui.Value.Run(() =>
+        {
+            var list = new Desktop.Controls.AutoScrollItemsControl
+            {
+                ItemsSource = new System.Collections.ObjectModel.ObservableCollection<string>
+                {
+                    "a",
+                    "b",
+                    "c",
+                },
+                // 与 ConversationView.axaml 同一份模板（含 PART_ScrollViewer 命名）
+                Template =
+                    new Avalonia.Controls.Templates.FuncControlTemplate<Desktop.Controls.AutoScrollItemsControl>(
+                        (_, _) =>
+                            new ScrollViewer
+                            {
+                                Name = "PART_ScrollViewer",
+                                Content = new ItemsPresenter(),
+                            }
+                    ),
+            };
+            var window = new Window
+            {
+                Width = 300,
+                Height = 200,
+                Content = list,
+            };
+            window.Show();
+            Pump();
+
+            var sv = list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+            Assert.NotNull(sv);
+            Assert.Equal("PART_ScrollViewer", sv!.Name);
+            // SmoothScroll 主题不得把 ScrollViewer 换成别的类型，否则 AutoScrollItemsControl 失效
+            Assert.IsType<Avalonia.Controls.ScrollViewer>(sv);
+
+            window.Close();
+        });
+    }
+
+    private const int MotionFrames = 14;
+
+    /// <summary>动效采样的帧间隔（毫秒）。</summary>
+    private const int MotionFrameMs = 20;
 
     private sealed record TestDiffDetails(string? Path, EditHunk[]? Hunks) : IDiffDetails;
 

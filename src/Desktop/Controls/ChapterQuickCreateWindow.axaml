@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.ChapterQuickCreateWindow"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
   x:Name="ChapterQuickCreateWindowRoot"
   Width="460"
   Height="300"
@@ -9,6 +10,7 @@
   CanResize="False"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
 >
   <!-- 表单顶置 · 动作条钉在右下（StackPanel 根会让按钮随内容上浮） -->
   <Grid RowDefinitions="*,Auto" Margin="24,20,24,20">
