@@ -3,6 +3,7 @@
 <ResourceDictionary
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
 >
   <!-- ══════════ Colors ══════════ -->
   <Color x:Key="ColorForestInk">#0a1d08</Color>
@@ -22,6 +23,11 @@
   <Color x:Key="ColorSurfaceGlow">#fdfefb</Color>
   <Color x:Key="ColorBlush">#e3c9d0</Color>
   <Color x:Key="ColorMistOnSlate">#F5F6F014</Color>
+  <!-- Diff 语义色（浅色纸感用暗色变体；深色主题在 DesktopThemeService 中换亮色） -->
+  <Color x:Key="ColorDiffDelete">#CC241D</Color>
+  <Color x:Key="ColorDiffInsert">#4E7E3E</Color>
+  <Color x:Key="ColorDiffDeleteWash">#1AFB4934</Color>
+  <Color x:Key="ColorDiffInsertWash">#1A8EC07C</Color>
 
   <!-- ══════════ Brushes ══════════ -->
   <SolidColorBrush x:Key="BrushForestInk" Color="{StaticResource ColorForestInk}" />
@@ -53,6 +59,12 @@
   <SolidColorBrush x:Key="BrushMistOnSlate" Color="{StaticResource ColorMistOnSlate}" />
   <!-- Amber 警示薄雾（13% 不透明度）：ProjectPicker 的 LLM 说明横幅 -->
   <SolidColorBrush x:Key="BrushAmberWash" Color="{StaticResource ColorAmberPin}" Opacity="0.13" />
+  <!-- Diff 行：语义红/绿（对齐 TUI diff 色板的暗色变体 #cc241d / #4e7e3e），
+       文本用可读实色，行背景用同色 10% 薄雾；深色主题由 DesktopThemeService 替换。 -->
+  <SolidColorBrush x:Key="BrushDiffDelete" Color="{StaticResource ColorDiffDelete}" />
+  <SolidColorBrush x:Key="BrushDiffInsert" Color="{StaticResource ColorDiffInsert}" />
+  <SolidColorBrush x:Key="BrushDiffDeleteWash" Color="{StaticResource ColorDiffDeleteWash}" />
+  <SolidColorBrush x:Key="BrushDiffInsertWash" Color="{StaticResource ColorDiffInsertWash}" />
 
   <!-- ══════════ Fonts（Akkurat → Inter；Newsreader 衬线标题；Fragment Mono 字段标签） ══════════ -->
   <!-- CJK 回退：Inter 无中文字形，缺省时由系统回退，中英混排处行高/基线漂移。
@@ -113,7 +125,7 @@
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
-    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="FontSize" Value="13" />
     <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
     <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
     <Setter Property="MaxDropDownHeight" Value="360" />
@@ -145,6 +157,8 @@
             MaxHeight="{TemplateBinding MaxDropDownHeight}"
             PlacementTarget="BackgroundBorder"
             IsLightDismissEnabled="True"
+            motion:Motion.PopupEnter="True"
+            motion:Motion.PopupEnterRise="-4"
           >
             <Border
               Background="{DynamicResource BrushSurfaceGlow}"
@@ -210,7 +224,7 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="10" />
     <Setter Property="Padding" Value="4" />
-    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="FontSize" Value="13" />
     <Setter Property="Template">
       <ControlTemplate>
         <Border Name="PART_LayoutTransform" RenderTransformOrigin="0,0">
@@ -236,20 +250,20 @@
         </Border>
       </ControlTemplate>
     </Setter>
-    <!-- 打开动画：缩放 + 渐显 -->
+    <!-- 打开动画：极轻微缩放 + 渐显（0.92 的放大在 Adaline 的印刷基调里过重） -->
     <Style Selector="^[IsOpen=True] /template/ Border#PART_LayoutTransform">
       <Style.Animations>
-        <Animation FillMode="Forward" Duration="0:0:0.2">
+        <Animation FillMode="Forward" Duration="0:0:0.14" Easing="CubicEaseOut">
           <KeyFrame Cue="0%">
-            <Setter Property="ScaleTransform.ScaleY" Value="0.92" />
-            <Setter Property="ScaleTransform.ScaleX" Value="0.92" />
+            <Setter Property="ScaleTransform.ScaleY" Value="0.97" />
+            <Setter Property="ScaleTransform.ScaleX" Value="0.97" />
           </KeyFrame>
           <KeyFrame Cue="100%">
             <Setter Property="ScaleTransform.ScaleY" Value="1" />
             <Setter Property="ScaleTransform.ScaleX" Value="1" />
           </KeyFrame>
         </Animation>
-        <Animation FillMode="Forward" Duration="0:0:0.15">
+        <Animation FillMode="Forward" Duration="0:0:0.11" Easing="CubicEaseOut">
           <KeyFrame Cue="0%">
             <Setter Property="Opacity" Value="0" />
           </KeyFrame>
@@ -282,6 +296,16 @@
           CornerRadius="0"
           Padding="{TemplateBinding Padding}"
         >
+          <!-- hover / selected 的 Sage Mist 雾面必须淡入：直接跳色是列表里最显眼的「生硬感」 -->
+          <Border.Transitions>
+            <Transitions>
+              <BrushTransition
+                Property="Background"
+                Duration="{x:Static motion:Motion.Fast}"
+                Easing="SineEaseOut"
+              />
+            </Transitions>
+          </Border.Transitions>
           <ContentPresenter
             Name="PART_ContentPresenter"
             Content="{TemplateBinding Content}"

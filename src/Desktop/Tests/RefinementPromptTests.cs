@@ -55,7 +55,10 @@ public sealed class RefinementPromptTests
         Assert.Contains("===== 探索类型 =====", prompt);
         Assert.Contains("plot", prompt);
         Assert.Contains("===== 选中的变体内容 =====", prompt);
-        Assert.Contains("变体正文内容", prompt);
+        Assert.Contains(
+            "<variant id=\"v1\" label=\"悲剧走向\" type=\"plot\">\n变体正文内容\n</variant>",
+            prompt
+        );
     }
 
     [Fact]
@@ -90,5 +93,6 @@ public sealed class RefinementPromptTests
         );
         Assert.Contains("===== 应用目标 =====", prompt);
         Assert.Contains("目标章节: 雪夜 (序号 3)", prompt);
+        Assert.Contains("target=\"第3章「雪夜」\"", prompt);
     }
 }

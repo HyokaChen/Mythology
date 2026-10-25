@@ -210,6 +210,7 @@ public partial class ProjectPickerWindow : Window
     private void ApplyListState(bool hasNovels)
     {
         EmptyNote.IsVisible = !hasNovels;
+        ListCard.IsVisible = hasNovels;
         NovelList.IsVisible = hasNovels;
         ActiveDirNote.Text =
             $"新建与拉取落到：{Shorten(_workspace.ActiveRoot) ?? _workspace.ActiveRoot}";

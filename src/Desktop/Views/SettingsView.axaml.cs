@@ -13,19 +13,42 @@ public partial class SettingsView : UserControl
     /// <summary>初始选中 Tab 索引（顺序：连接器0 / 嵌入1 / 上下文2 / MCP3 / 工具4 / 外观5 / 账号6 / 关于7）。</summary>
     public int InitialTab { get; set; }
 
+    private int _lastTabIndex;
+    private bool _motionReady;
+
     public SettingsView()
     {
         InitializeComponent();
+        _lastTabIndex = SettingsTabControl.SelectedIndex;
+        // 首次显示交给窗口淡入；此后切 tab 才有方向性翻页
+        Loaded += (_, _) => _motionReady = true;
         DataContextChanged += (_, _) =>
         {
             if (InitialTab > 0)
                 SettingsTabControl.SelectedIndex = InitialTab;
         };
-        SettingsTabControl.SelectionChanged += (_, _) =>
-        {
-            if (SettingsTabControl.SelectedContent is Avalonia.Visual content)
-                _ = Desktop.Styles.Motion.PlayEnter(content, rise: 6);
-        };
+        SettingsTabControl.SelectionChanged += (_, _) => AnimateTabChange();
+    }
+
+    /// <summary>页签切换：新页面从翻页方向滑入 10px 并淡入（不移动旧页面，避免双内容布局）。</summary>
+    private void AnimateTabChange()
+    {
+        var index = SettingsTabControl.SelectedIndex;
+        var offset = Desktop.Styles.Motion.PageEnterOffset(_lastTabIndex, index);
+        _lastTabIndex = index;
+        if (!_motionReady)
+            return;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (SettingsTabControl.SelectedIndex != index)
+                    return; // 快速连点时只让最后一页播
+                if (SettingsTabControl.SelectedContent is Avalonia.Visual content)
+                    _ = Desktop.Styles.Motion.PlayPageEnter(content, offset);
+            },
+            Avalonia.Threading.DispatcherPriority.Loaded
+        );
     }
 
     private SettingsViewModel? Vm => DataContext as SettingsViewModel;

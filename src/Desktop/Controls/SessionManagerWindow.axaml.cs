@@ -83,6 +83,7 @@ public partial class SessionManagerWindow : Window
             SessionList.ItemsSource = rows;
             CountNote.Text = $"共 {rows.Count} 条";
             EmptyNote.IsVisible = rows.Count == 0;
+            ListCard.IsVisible = rows.Count > 0;
             // 预选当前会话：打开按钮即时可用，回车即切回
             var currentIdx = rows.FindIndex(r => r.IsCurrent);
             if (currentIdx >= 0)
@@ -100,6 +101,7 @@ public partial class SessionManagerWindow : Window
             SessionList.ItemsSource = Array.Empty<SessionRow>();
             CountNote.Text = "共 0 条";
             EmptyNote.IsVisible = true;
+            ListCard.IsVisible = false;
         }
     }
 

@@ -35,11 +35,12 @@ public class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         // ── 全局窗口入场动效：所有 Window（含未来新增对话框）统一淡入 ──
+        // 内容自己挂了 Motion.Enter 时交给它播（否则同一 Opacity 上会有两个时钟抢值）
         Window.WindowOpenedEvent.AddClassHandler<Window>(
             static (window, args) =>
             {
                 _ = args;
-                if (window.Content is Visual content)
+                if (window.Content is Visual content && !Motion.GetEnter(content))
                     _ = Motion.FadeIn(content);
             }
         );

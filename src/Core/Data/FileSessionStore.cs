@@ -185,7 +185,13 @@ public sealed class FileSessionStore
                 var manifest = ReadManifest(manifestPath);
                 var sid = manifest?.SessionId;
                 if (sid is not null && !_sessionIndex.ContainsKey(sid))
-                    _sessionIndex[sid] = (novelId, sessionSubDir);
+                {
+                    // MANIFEST 是会话归属的权威来源；目录名可能是 id 或标题。
+                    var ownerId = string.IsNullOrWhiteSpace(manifest!.NovelId)
+                        ? novelId
+                        : manifest.NovelId;
+                    _sessionIndex[sid] = (ownerId, sessionSubDir);
+                }
             }
 
             // 再扫描旧格式：*.jsonl 文件（兼容迁移前数据，首次访问时自动迁移）
@@ -241,36 +247,41 @@ public sealed class FileSessionStore
     )
     {
         var result = new List<AgentSession>();
-        var baseDir = GetSessionDir(novelId);
-        if (!Directory.Exists(baseDir))
-            return result;
 
-        // 新格式：扫描子目录（会话分片目录）
-        foreach (var subDir in Directory.GetDirectories(baseDir))
+        // 目录键是小说 id（MythologyPaths.GetSessionDirName）。历史版本曾误用小说标题，
+        // 标题目录仍需可读，否则升级后旧会话会「消失」；扫描结果按会话 id 去重。
+        foreach (var baseDir in new[] { GetSessionDir(novelId), GetLegacySessionDir(novelId) })
         {
-            var dirName = Path.GetFileName(subDir);
-            if (dirName.StartsWith("audit_"))
+            if (baseDir is null || !Directory.Exists(baseDir))
                 continue;
-            var manifestPath = Path.Combine(subDir, "MANIFEST.json");
-            if (!File.Exists(manifestPath))
-                continue;
-            var session = BuildSessionFromManifest(dirName, novelId, subDir);
-            if (session is not null)
-                result.Add(session);
-        }
 
-        // 旧格式兼容：扫描 *.jsonl 文件（迁移前数据）
-        foreach (var jsonlPath in Directory.GetFiles(baseDir, "*.jsonl"))
-        {
-            var fileName = Path.GetFileNameWithoutExtension(jsonlPath);
-            if (fileName.StartsWith("audit_"))
-                continue;
-            // 避免与已添加的目录格式重复
-            if (result.Any(s => s.Id == fileName))
-                continue;
-            var session = await BuildSessionFromJsonlAsync(fileName, novelId, jsonlPath);
-            if (session is not null)
-                result.Add(session);
+            // 新格式：扫描子目录（会话分片目录）
+            foreach (var subDir in Directory.GetDirectories(baseDir))
+            {
+                var dirName = Path.GetFileName(subDir);
+                if (dirName.StartsWith("audit_"))
+                    continue;
+                var manifestPath = Path.Combine(subDir, "MANIFEST.json");
+                if (!File.Exists(manifestPath))
+                    continue;
+                var session = BuildSessionFromManifest(dirName, novelId, subDir);
+                if (session is not null && !result.Any(s => s.Id == session.Id))
+                    result.Add(session);
+            }
+
+            // 旧格式兼容：扫描 *.jsonl 文件（迁移前数据）
+            foreach (var jsonlPath in Directory.GetFiles(baseDir, "*.jsonl"))
+            {
+                var fileName = Path.GetFileNameWithoutExtension(jsonlPath);
+                if (fileName.StartsWith("audit_"))
+                    continue;
+                // 避免与已添加的目录格式重复
+                if (result.Any(s => s.Id == fileName))
+                    continue;
+                var session = await BuildSessionFromJsonlAsync(fileName, novelId, jsonlPath);
+                if (session is not null)
+                    result.Add(session);
+            }
         }
 
         return result.OrderByDescending(s => s.UpdatedAt).ToList();
@@ -2905,10 +2916,7 @@ public sealed class FileSessionStore
                             if (msg.Order > maxOrder)
                                 maxOrder = msg.Order;
                             if (title is null && msg.Role == "user")
-                            {
-                                var firstLine = msg.Content.Split('\n')[0].Trim();
-                                title = firstLine.Length <= 40 ? firstLine : firstLine[..40] + "…";
-                            }
+                                title = SessionInternalMessages.ExtractTitle(msg.Content);
                             if (DateTime.TryParse(msg.Timestamp, out var dt))
                             {
                                 if (dt < createdAt)
@@ -3218,9 +3226,9 @@ public sealed class FileSessionStore
         {
             if (entry.Type != JsonlEntryType.Message || entry.Role != "user")
                 continue;
-            var text = entry.Message?.Content ?? "";
-            var firstLine = text.Split('\n')[0].Trim();
-            return firstLine.Length <= 40 ? firstLine : firstLine[..40] + "…";
+            var title = SessionInternalMessages.ExtractTitle(entry.Message?.Content);
+            if (title is not null)
+                return title;
         }
         return null;
     }
@@ -3266,10 +3274,8 @@ public sealed class FileSessionStore
             if (entry.Type != JsonlEntryType.Message || entry.Role != "user")
                 continue;
 
-            // 取 content 的第一行作为 title
-            var text = entry.Message?.Content ?? "";
-            var firstLine = text.Split('\n')[0].Trim();
-            title = firstLine.Length <= 40 ? firstLine : firstLine[..40] + "…";
+            // 取 content 的第一行作为 title；系统注入消息不是作者原话，跳过
+            title = SessionInternalMessages.ExtractTitle(entry.Message?.Content);
         }
 
         if (createdAt == DateTime.MaxValue)
@@ -3323,7 +3329,7 @@ public sealed class FileSessionStore
             return new AgentSession
             {
                 Id = manifest.SessionId,
-                NovelId = novelId,
+                NovelId = string.IsNullOrWhiteSpace(manifest.NovelId) ? novelId : manifest.NovelId,
                 Title = title ?? "未命名会话",
                 CreatedAt = manifest.CreatedAt,
                 UpdatedAt = manifest.UpdatedAt,
@@ -3362,8 +3368,9 @@ public sealed class FileSessionStore
                     var msg = JsonSerializer.Deserialize<JsonlMessageEntry>(line, JsonOpts);
                     if (msg is null || msg.Role != "user")
                         continue;
-                    var firstLine = msg.Content.Split('\n')[0].Trim();
-                    return firstLine.Length <= 40 ? firstLine : firstLine[..40] + "…";
+                    var title = SessionInternalMessages.ExtractTitle(msg.Content);
+                    if (title is not null)
+                        return title;
                 }
                 catch { }
             }
@@ -3376,11 +3383,28 @@ public sealed class FileSessionStore
     //  路径/目录辅助
     // ═══════════════════════════════════════════════════════════
 
-    private string GetSessionDir(string novelId)
+    /// <summary>
+    /// 会话目录按小说 id 编码（<see cref="MythologyPaths.GetSessionDirName"/>）。
+    /// 不能用标题：标题可改、可重复、可含路径字符，改名后历史会话会全部失联。
+    /// </summary>
+    private string GetSessionDir(string novelId) =>
+        Path.Combine(_sessionsDir, MythologyPaths.GetSessionDirName(novelId));
+
+    /// <summary>历史版本误用小说标题编码的目录；只读兼容，新会话不再写入。</summary>
+    private string? GetLegacySessionDir(string novelId)
     {
-        var name = GetNovelTitle(novelId) ?? novelId;
-        var encoded = SanitizeFileName(name);
-        return Path.Combine(_sessionsDir, $"--novels-{encoded}--");
+        var title = GetNovelTitle(novelId);
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var legacy = Path.Combine(_sessionsDir, $"--novels-{SanitizeFileName(title)}--");
+        return string.Equals(
+            Path.GetFullPath(legacy),
+            Path.GetFullPath(GetSessionDir(novelId)),
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? null
+            : legacy;
     }
 
     private string? GetNovelTitle(string novelId)
@@ -3403,6 +3427,9 @@ public sealed class FileSessionStore
             EnsureNovelTitleCache();
             if (_sanitizedTitleToNovelId!.TryGetValue(encodedTitle, out var novelId))
                 return novelId;
+
+            // 新格式目录键就是小说 id；标题映射失败时直接返回解码后的键。
+            return encodedTitle;
         }
 
         return dirName;

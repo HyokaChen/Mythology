@@ -112,7 +112,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    /// <summary>忙碌态（写作中或压缩中）：驱动状态栏 spinner（压缩期同转,对齐 TUI）。</summary>
+    /// <summary>忙碌态（写作中或压缩中）：供更新弹窗避让；左下角状态栏展示 spinner + 诗词。</summary>
     public bool IsBusy => IsProcessing || _isCompacting;
 
     /// <summary>自动更新弹窗状态（宿主见 MainWindow.axaml 的 controls:UpdatePromptDialog）。</summary>
@@ -335,6 +335,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             services.GetService<ILogger<SetUpPanelViewModel>>()
         );
         SetUpPanel.EntityReferenceRequested += text => ActiveConversationVm?.AppendInput(text);
+        // 实体变更（AI 工具或用户手动编辑）统一落成对话里的系统状态行，
+        // 与 TUI 的「📝 新建/修改/删除…」一致；小说级变更不刷屏。
+        _store.OnEntityChanged += OnStoreEntityChangedAsync;
         // 面板内整本删除（大纲书级 ⋯「删除」，已弹确认）→ 重列小说并切换到剩余一本
         SetUpPanel.NovelDeleted += async deletedId =>
         {
@@ -396,7 +399,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 ActiveConversationVm?.HandleAgentEvent(evt);
             });
 
-        // 处理状态变更（活跃对话 SetProcessing 转发 + 状态栏：运行期随机古诗词，对齐 TUI StatusBar）
+        // 处理状态变更（活跃对话 SetProcessing 转发 + 状态栏：等待诗词已移入对话区）
         _bridge.OnProcessingChanged += processing =>
             Dispatcher.UIThread.Post(() =>
             {
@@ -404,16 +407,18 @@ public sealed class MainWindowViewModel : ViewModelBase
                 this.RaisePropertyChanged(nameof(IsBusy));
                 if (processing)
                 {
+                    // 左下角状态栏恢复 loading + 诗词；对话内等待行只保留 spinner + 执行中。
                     var poem = PickPoem();
                     StatusText = poem;
                     StatusTooltip = poem;
+                    ActiveConversationVm?.SetProcessing(true);
                 }
                 else
                 {
                     StatusText = IdleStatusText;
                     StatusTooltip = null;
+                    ActiveConversationVm?.SetProcessing(false);
                 }
-                ActiveConversationVm?.SetProcessing(processing);
 
                 // 回合结束补弹（忙时只亮红点；无更新/已稍后提醒时自身 no-op）
                 _updateState?.TryShowPrompt();
@@ -900,6 +905,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         await vm.Engine.PersistVariantSetAsync(explore);
 
         var window = new VariantReviewWindow(explore);
+        DialogTheme.FitToOwner(window, owner, 0.78, 720, 1400, 0.78, 480, 900);
         await window.ShowDialog(owner);
         var decision = window.Decision;
         if (decision is null || decision.Action == VariantReviewAction.Dismiss)
@@ -958,10 +964,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                     "outline" => "大纲",
                     _ => "创作内容",
                 };
+                var variantXml = VariantXml.Wrap(
+                    variantContent,
+                    decision.VariantId,
+                    variantLabel,
+                    explore.ExploreType
+                );
                 var extractPrompt =
                     $"用户从探索结果中选择了变体「{variantLabel}」——"
                     + $"一个{typeName}方案。\n\n"
-                    + variantContent
+                    + variantXml
                     + "\n\n请根据以上内容，使用相应的工具（如 batch_create_characters）创建结构化实体。"
                     + "如果内容为大纲/风格描述，直接将其作为参考存入上下文，不需要创建实体。";
                 vm.AddSystemNotice($"📋 已采用变体「{variantLabel}」，正在提取结构化数据…");
@@ -1897,6 +1909,27 @@ public sealed class MainWindowViewModel : ViewModelBase
         return lines.Length == 0 ? "写作中…" : lines[Random.Shared.Next(lines.Length)];
     }
 
+    /// <summary>实体变更 → 当前会话系统状态行。事件可能来自后台 Agent 线程，统一切回 UI 线程。</summary>
+    private Task OnStoreEntityChangedAsync(EntityChangeEvent evt)
+    {
+        if (!string.Equals(evt.NovelId, SelectedNovel?.Id, StringComparison.Ordinal))
+            return Task.CompletedTask;
+
+        var summary = EntityChangeSummary.Describe(evt);
+        if (summary is null)
+            return Task.CompletedTask;
+
+        var text = $"📝 {summary}";
+        var vm = ActiveConversationVm;
+        if (vm is null)
+            return Task.CompletedTask;
+        if (Dispatcher.UIThread.CheckAccess())
+            vm.AddSystemNotice(text);
+        else
+            Dispatcher.UIThread.Post(() => vm.AddSystemNotice(text));
+        return Task.CompletedTask;
+    }
+
     /// <summary>窗口关闭：结算预算 + 中断 Agent。</summary>
     public void Shutdown()
     {
@@ -1906,6 +1939,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             var settleNovelId = _agent.CurrentNovelId;
             if (Program.CloudScheduler is not null && !string.IsNullOrEmpty(settleNovelId))
                 Program.CloudScheduler.SettleSession(settleNovelId);
+            _store.OnEntityChanged -= OnStoreEntityChangedAsync;
             _cloudAuth.Dispose();
             TodoPanel.Dispose();
             _agent.Abort();

@@ -20,6 +20,7 @@
         x:Name="Subtitle"
         Text="作者随手记：候选确认后才参与远期推演"
         FontSize="14"
+        LineHeight="20"
         Foreground="{DynamicResource BrushSageGray}"
       />
       <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,0" />
@@ -35,29 +36,32 @@
           HorizontalAlignment="Stretch"
         />
         <Grid Grid.Row="1">
-          <Border Classes="Card" Padding="0">
+          <Border x:Name="ListCard" Classes="Card" Padding="0">
             <ListBox
               x:Name="NoteList"
-              FontSize="14"
+              FontSize="16"
               Background="Transparent"
               HorizontalAlignment="Stretch"
               ItemContainerTheme="{StaticResource AdalineRowContainer}"
             >
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="c:NoteRow">
-                  <Grid Margin="14,9">
-                    <StackPanel Spacing="2">
+                  <Grid Margin="16,12">
+                    <StackPanel Spacing="4">
                       <TextBlock
                         Text="{Binding Title}"
-                        FontSize="13.5"
+                        FontSize="16"
+                        LineHeight="24"
                         FontWeight="Medium"
                         Foreground="{DynamicResource BrushForestInk}"
                         TextTrimming="CharacterEllipsis"
                       />
                       <TextBlock
                         FontFamily="{StaticResource FontMono}"
-                        FontSize="10"
+                        FontSize="11"
+                        LineHeight="16"
                         Foreground="{DynamicResource BrushSageMist}"
+                        TextTrimming="CharacterEllipsis"
                         Text="{Binding Meta}"
                       />
                     </StackPanel>
@@ -76,16 +80,18 @@
             <StackPanel Spacing="6">
               <TextBlock
                 Text="还没有笔记"
-                FontSize="16"
+                FontSize="18"
+                LineHeight="26"
                 FontWeight="Medium"
                 Foreground="{DynamicResource BrushForestInk}"
               />
               <TextBlock
                 Text="点「新建」记下设定 / 桥段 / 伏笔；对话里说「记一下：…」也会自动落候选。"
-                FontSize="14"
+                FontSize="16"
+                LineHeight="24"
                 Foreground="{DynamicResource BrushSageGray}"
                 TextWrapping="Wrap"
-                MaxWidth="260"
+                HorizontalAlignment="Left"
               />
             </StackPanel>
           </Border>
@@ -104,7 +110,8 @@
           <TextBlock
             x:Name="DetailTitle"
             Grid.Row="1"
-            FontSize="17"
+            FontSize="18"
+            LineHeight="26"
             FontWeight="Medium"
             Foreground="{DynamicResource BrushForestInk}"
             TextWrapping="Wrap"
@@ -113,14 +120,16 @@
             x:Name="DetailMeta"
             Grid.Row="2"
             FontFamily="{StaticResource FontMono}"
-            FontSize="10.5"
+            FontSize="11"
+            LineHeight="16"
             Foreground="{DynamicResource BrushSageMist}"
             TextWrapping="Wrap"
           />
           <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
             <TextBlock
               x:Name="DetailBody"
-              FontSize="14"
+              FontSize="16"
+              LineHeight="24"
               Foreground="{DynamicResource BrushForestInk}"
               TextWrapping="Wrap"
             />
@@ -135,7 +144,8 @@
         x:Name="CountNote"
         Grid.Column="0"
         FontFamily="{StaticResource FontMono}"
-        FontSize="10.5"
+        FontSize="11"
+        LineHeight="16"
         Foreground="{DynamicResource BrushSageMist}"
         VerticalAlignment="Center"
       />

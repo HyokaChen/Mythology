@@ -19,6 +19,7 @@
       <TextBlock
         Text="最近更新在前 · 双击或回车打开"
         FontSize="14"
+        LineHeight="20"
         Foreground="{DynamicResource BrushSageGray}"
       />
       <Border Height="1" Background="{DynamicResource BrushMist}" Margin="0,6,0,0" />
@@ -28,29 +29,32 @@
          行表面按 DESIGN.md §Code Block Panel：「inner rows separated by 1px dividers」——
          列表是表，不是一摞卡片：行本身无边框无底色，状态雾与分隔线都由 ListBoxItem 出。 -->
     <Grid Grid.Row="1">
-      <Border Classes="Card" Padding="0">
+      <Border x:Name="ListCard" Classes="Card" Padding="0">
         <ListBox
           x:Name="SessionList"
-          FontSize="14"
+          FontSize="16"
           Background="Transparent"
           HorizontalAlignment="Stretch"
           ItemContainerTheme="{StaticResource AdalineRowContainer}"
         >
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="c:SessionRow">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="14,9">
-                <StackPanel Grid.Column="0" Spacing="2">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="16,12">
+                <StackPanel Grid.Column="0" Spacing="4">
                   <TextBlock
                     Text="{Binding Title}"
-                    FontSize="13.5"
+                    FontSize="16"
+                    LineHeight="24"
                     FontWeight="Medium"
                     Foreground="{DynamicResource BrushForestInk}"
                     TextTrimming="CharacterEllipsis"
                   />
                   <TextBlock
                     FontFamily="{StaticResource FontMono}"
-                    FontSize="10"
+                    FontSize="11"
+                    LineHeight="16"
                     Foreground="{DynamicResource BrushSageMist}"
+                    TextTrimming="CharacterEllipsis"
                     Text="{Binding Meta}"
                   />
                 </StackPanel>
@@ -78,16 +82,18 @@
         <StackPanel Spacing="6">
           <TextBlock
             Text="还没有会话记录"
-            FontSize="16"
+            FontSize="18"
+            LineHeight="26"
             FontWeight="Medium"
             Foreground="{DynamicResource BrushForestInk}"
           />
           <TextBlock
             Text="在主界面开始一段对话，之后就能从这里切回来。"
-            FontSize="14"
+            FontSize="16"
+            LineHeight="24"
             Foreground="{DynamicResource BrushSageGray}"
             TextWrapping="Wrap"
-            MaxWidth="360"
+            HorizontalAlignment="Left"
           />
         </StackPanel>
       </Border>
@@ -99,7 +105,8 @@
         x:Name="CountNote"
         Grid.Column="0"
         FontFamily="{StaticResource FontMono}"
-        FontSize="10.5"
+        FontSize="11"
+        LineHeight="16"
         Foreground="{DynamicResource BrushSageMist}"
         VerticalAlignment="Center"
       />

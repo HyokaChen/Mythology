@@ -54,7 +54,8 @@
               >
                 <Border.Transitions>
                   <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
+                    <!-- 与相邻 tab 的旧下划线交叉淡出：300ms 会让两条线同时半显，像重影 -->
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
                   </Transitions>
                 </Border.Transitions>
               </Border>

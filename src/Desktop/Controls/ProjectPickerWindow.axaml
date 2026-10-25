@@ -22,17 +22,19 @@
       RowDefinitions="Auto,Auto,*,Auto,Auto"
     >
       <StackPanel Grid.Row="0" Spacing="6">
-        <TextBlock Text="你的书房" Classes="Display" />
+        <TextBlock Text="你的书房" Classes="SectionHeading" />
         <TextBlock
           Text="最近更新在前 · 双击或回车打开 · 列表汇总所有已登记的项目目录"
           FontSize="14"
+          LineHeight="20"
           Foreground="{DynamicResource BrushSageGray}"
         />
         <!-- 当前写入目录（新建项目落盘处 / 云端拉取落盘处）-->
         <TextBlock
           x:Name="ActiveDirNote"
           FontFamily="{StaticResource FontMono}"
-          FontSize="10.5"
+          FontSize="11"
+          LineHeight="16"
           Foreground="{DynamicResource BrushSageMist}"
           TextTrimming="CharacterEllipsis"
         />
@@ -61,22 +63,23 @@
 
       <!-- 列表区：Card 列表 + 空状态 -->
       <Grid Grid.Row="2">
-        <Border Classes="Card" Padding="0">
+        <Border x:Name="ListCard" Classes="Card" Padding="0">
           <ListBox
             x:Name="NovelList"
-            FontSize="14"
+            FontSize="16"
             Background="Transparent"
             HorizontalAlignment="Stretch"
             ItemContainerTheme="{StaticResource AdalineRowContainer}"
           >
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="c:NovelItem">
-                <StackPanel Margin="14,9" Spacing="2">
+                <StackPanel Margin="16,12" Spacing="4">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                     <TextBlock
                       Grid.Column="0"
                       Text="{Binding Title}"
-                      FontSize="13.5"
+                      FontSize="16"
+                      LineHeight="24"
                       FontWeight="Medium"
                       Foreground="{DynamicResource BrushForestInk}"
                       TextTrimming="CharacterEllipsis"
@@ -92,7 +95,8 @@
                   </Grid>
                   <TextBlock
                     FontFamily="{StaticResource FontMono}"
-                    FontSize="10"
+                    FontSize="11"
+                    LineHeight="16"
                     Foreground="{DynamicResource BrushSageMist}"
                     TextTrimming="CharacterEllipsis"
                   >
@@ -118,24 +122,26 @@
         >
           <StackPanel Spacing="6">
             <TextBlock
-              Text="书房还是空的"
-              FontSize="16"
+              Text="还没有小说"
+              FontSize="18"
+              LineHeight="26"
               FontWeight="Medium"
               Foreground="{DynamicResource BrushForestInk}"
             />
             <TextBlock
-              Text="打开电脑上的小说文件夹，里面的书会自动加载进来；新建项目也会落在同一个文件夹。"
-              FontSize="14"
+              Text="已登记的目录里还没有小说。打开电脑上的小说文件夹，里面的小说会自动出现在这里；新建的小说也会落在同一目录。"
+              FontSize="16"
+              LineHeight="24"
               Foreground="{DynamicResource BrushSageGray}"
               TextWrapping="Wrap"
-              MaxWidth="360"
+              HorizontalAlignment="Left"
             />
             <Button
               x:Name="OpenEmptyFolderButton"
               Classes="Primary"
               Content="打开本地文件夹…"
-              HorizontalAlignment="Right"
-              Margin="0,8,0,0"
+              HorizontalAlignment="Left"
+              Margin="0,10,0,0"
             />
           </StackPanel>
         </Border>
@@ -148,7 +154,8 @@
           x:Name="CountNote"
           Grid.Column="0"
           FontFamily="{StaticResource FontMono}"
-          FontSize="10.5"
+          FontSize="11"
+          LineHeight="16"
           Foreground="{DynamicResource BrushSageMist}"
           VerticalAlignment="Center"
         />

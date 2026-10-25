@@ -55,7 +55,10 @@ public partial class VariantReviewWindow : Window
         _selectedIndex = 0;
 
         InitializeComponent();
-        DialogTheme.ApplyWindowStyle(this, "变体审阅", 720, 560);
+        DialogTheme.ApplyWindowStyle(this, "变体审阅", 960, 640);
+        CanResize = true;
+        MinWidth = 720;
+        MinHeight = 480;
 
         // 目标行文案（镜像 TUI：无目标=仅对话；无 ChapterId=新建；否则覆盖）
         var target = explore.ApplyTarget;
@@ -77,8 +80,8 @@ public partial class VariantReviewWindow : Window
             var btn = new Button
             {
                 Classes = { "NavPill" },
-                Padding = new Avalonia.Thickness(12, 5),
-                Content = new TextBlock { Text = label, FontSize = 12 },
+                Padding = new Avalonia.Thickness(16, 12),
+                Content = new TextBlock { Text = label, FontSize = 13 },
             };
             btn.Click += (_, _) => SelectIndex(idx);
             _tabButtons.Add(btn);
@@ -96,9 +99,12 @@ public partial class VariantReviewWindow : Window
 
     private void RefreshSelection()
     {
-        // Tab 选中态：选中的全不透明，未选中弱化（Adaline 无阴影原则，用透明度分层）
+        // Tab 选中态：Adaline Pill Tab 规范用 Sage Mist wash，不用透明度弱化。
         for (var i = 0; i < _tabButtons.Count; i++)
-            _tabButtons[i].Opacity = i == _selectedIndex ? 1.0 : 0.55;
+        {
+            _tabButtons[i].Opacity = 1.0;
+            _tabButtons[i].Classes.Set("Active", i == _selectedIndex);
+        }
 
         var builder = new ObservableStringBuilder();
         builder.Append(_variants[_selectedIndex].Content);

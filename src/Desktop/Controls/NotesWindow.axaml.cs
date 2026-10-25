@@ -116,6 +116,7 @@ public partial class NotesWindow : Window
         var inboxCount = _notes.Count(n => n.Status == NoteStatus.Inbox);
         CountNote.Text = $"共 {visible.Count} 条 · 候选 {inboxCount}";
         EmptyNote.IsVisible = rows.Count == 0;
+        ListCard.IsVisible = rows.Count > 0;
 
         var targetId = selectId ?? SelectedNoteId;
         var index = targetId is null ? -1 : rows.FindIndex(r => r.Id == targetId);

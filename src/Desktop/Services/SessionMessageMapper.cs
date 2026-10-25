@@ -14,8 +14,12 @@ namespace Desktop.Services;
 /// </summary>
 public static class SessionMessageMapper
 {
-    public static List<ChatMessage> MapUi(List<Core.Data.ChatMessage> msgs)
+    public static List<ChatMessage> MapUi(
+        List<Core.Data.ChatMessage> msgs,
+        ToolDisplayFormatter? toolDisplay = null
+    )
     {
+        var display = toolDisplay ?? new ToolDisplayFormatter();
         var result = new List<ChatMessage>(msgs.Count);
         // ToolCallId → 所属步骤（回填结果用）
         var stepsByCallId = new Dictionary<string, AgentStep>(StringComparer.Ordinal);
@@ -38,15 +42,33 @@ public static class SessionMessageMapper
                     break;
                 }
 
-                case MessageRole.User
-                    when text.StartsWith("**用户回复:**", StringComparison.Ordinal):
+                case MessageRole.User when SessionInternalMessages.IsAskUserReply(text):
                     // ask_user 回复：工具卡 Q&A 已展示完整信息，跳过气泡（对齐 TUI）
                     break;
 
                 case MessageRole.User:
                 {
+                    // 内部注入（harness/云端诊断/记忆/风格观察/人工裁决等）在实时链路本就静默，
+                    // 历史里也不应变成「你」的气泡；空消息同样不占位。
+                    if (
+                        string.IsNullOrWhiteSpace(text)
+                        || SessionInternalMessages.IsInjectedUserMessage(text)
+                    )
+                        break;
+
                     var msg = new ChatMessage(MessageSender.User);
                     msg.Content.Append(text);
+                    result.Add(msg);
+                    break;
+                }
+
+                case MessageRole.Assistant
+                    when SessionInternalMessages.IsSystemAssistantMessage(text):
+                {
+                    if (string.IsNullOrWhiteSpace(text))
+                        break;
+                    var msg = new ChatMessage(MessageSender.System);
+                    msg.Content.Append(SessionInternalMessages.NormalizeSystemText(text));
                     result.Add(msg);
                     break;
                 }
@@ -54,6 +76,17 @@ public static class SessionMessageMapper
                 case MessageRole.Assistant:
                 {
                     var msg = new ChatMessage(MessageSender.Agent);
+
+                    // 旧会话把中断提示写成 Markdown 引用块；历史恢复时还原为独立中断行，
+                    // 与实时停止一致，也避免引用块在消息卡里再套一层边框。
+                    const string interruptedMarker = "> ⏹ 已中断";
+                    var trimmedText = text.TrimEnd();
+                    if (trimmedText.EndsWith(interruptedMarker, StringComparison.Ordinal))
+                    {
+                        text = trimmedText[..^interruptedMarker.Length].TrimEnd();
+                        msg.IsInterrupted = true;
+                    }
+
                     if (!string.IsNullOrEmpty(m.ReasoningContent))
                     {
                         var thinking = new AgentStep
@@ -61,17 +94,33 @@ public static class SessionMessageMapper
                             Kind = StepKind.Thinking,
                             Title = "思考过程",
                             Status = AgentStepStatus.Completed,
+                            IsDetailsExpanded = true,
                         };
                         thinking.ThinkingBuilder.Append(m.ReasoningContent);
                         thinking.NotifyThinkingChanged();
                         msg.AgentSteps.Add(thinking);
                     }
-                    if (!string.IsNullOrEmpty(text))
-                        msg.Content.Append(text);
+                    var toolCalls = m.ToolCallsJson is { Length: > 0 } json
+                        ? DeserializeToolCalls(json)
+                        : [];
+                    var hasVisibleToolCall = toolCalls.Any(tc =>
+                        !Core.Tools.HiddenTools.IsHidden(tc.Name)
+                    );
 
-                    if (m.ToolCallsJson is { Length: > 0 } json)
+                    // 同一轮既有正文又有可见工具调用：正文发生在工具之前，必须落在
+                    // 工具步骤上方，不能留到消息末尾冒充最终答复。只有隐藏工具时不切段，
+                    // 与实时流一致（隐藏工具不影响可见时间线）。
+                    if (!string.IsNullOrWhiteSpace(text))
                     {
-                        foreach (var tc in DeserializeToolCalls(json))
+                        if (hasVisibleToolCall)
+                            msg.AgentSteps.Add(AgentStep.CreateContent(text.Trim()));
+                        else
+                            msg.AppendContent(text);
+                    }
+
+                    if (toolCalls.Count > 0)
+                    {
+                        foreach (var tc in toolCalls)
                         {
                             // 上下文接续机制对用户隐藏：隐藏工具不建步骤卡
                             if (Core.Tools.HiddenTools.IsHidden(tc.Name))
@@ -80,9 +129,11 @@ public static class SessionMessageMapper
                             var step = new AgentStep
                             {
                                 Kind = StepKind.ToolCall,
-                                Title = tc.Name ?? "tool",
+                                ToolName = tc.Name,
+                                Title = display.Label(tc.Name),
                                 Status = AgentStepStatus.Completed,
-                                ArgumentsSummary = Summarize(tc.Arguments, 60),
+                                ArgumentsSummary = ToolDisplayFormatter.Arguments(tc.Arguments),
+                                FullArguments = ToolDisplayFormatter.Detail(tc.Arguments),
                             };
                             if (!string.IsNullOrEmpty(tc.Id))
                                 stepsByCallId[tc.Id] = step;
@@ -108,17 +159,41 @@ public static class SessionMessageMapper
                             ? AgentStepStatus.Failed
                             : AgentStepStatus.Completed;
                         owner.IsError = m.IsError;
-                        owner.ResultSummary = Summarize(
-                            string.Equals(owner.Title, "tool_search", StringComparison.Ordinal)
-                                ? Core.Tools.HiddenTools.Redact(text)
-                                : text,
-                            120
-                        );
+                        var rawResult = string.Equals(
+                            owner.ToolName,
+                            "tool_search",
+                            StringComparison.Ordinal
+                        )
+                            ? Core.Tools.HiddenTools.Redact(text)
+                            : text;
+                        owner.FullResult = ToolDisplayFormatter.Detail(rawResult);
+                        owner.ResultSummary = ToolDisplayFormatter.Result(rawResult);
+
+                        // 历史消息不持久化工具 Details；edit 的 oldText/newText
+                        // 仍在参数里，可重建与 TUI 一致的结构化 diff。
+                        if (
+                            !m.IsError
+                            && string.Equals(owner.ToolName, "edit", StringComparison.Ordinal)
+                            && ToolDiffBuilder.CanRebuildEditDiff(rawResult)
+                        )
+                        {
+                            var diff = ToolDiffBuilder.BuildFromEditArguments(owner.FullArguments);
+                            if (diff is not null)
+                            {
+                                owner.ApplyDiff(diff.Lines, diff.Summary);
+                                owner.ResultSummary = diff.Summary;
+                            }
+                        }
+
+                        if (m.IsError && string.IsNullOrWhiteSpace(owner.ResultSummary))
+                            owner.ResultSummary = "失败";
                         break;
                     }
                     var msg = new ChatMessage(MessageSender.System);
+                    var summary = ToolDisplayFormatter.Result(text);
                     msg.Content.Append(
-                        $"{(m.IsError ? "✗" : "•")} {m.ToolName ?? "tool"}：{Summarize(text, 120)}"
+                        $"{(m.IsError ? "✗" : "•")} {display.Label(m.ToolName)}"
+                            + (summary.Length > 0 ? $"：{summary}" : "")
                     );
                     result.Add(msg);
                     break;
@@ -171,13 +246,5 @@ public static class SessionMessageMapper
     {
         var line = text.Split('\n')[0].Trim();
         return line.Length <= max ? line : line[..max] + "…";
-    }
-
-    private static string Summarize(string? text, int max)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "";
-        var single = text.Replace('\n', ' ').Trim();
-        return single.Length <= max ? single : single[..max] + "…";
     }
 }

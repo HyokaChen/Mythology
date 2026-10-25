@@ -3,29 +3,29 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   x:Name="AskUserWindowRoot"
-  Width="520"
-  Height="400"
-  MinWidth="460"
-  MinHeight="340"
-  CanResize="False"
+  Width="800"
+  MinWidth="560"
+  MinHeight="280"
+  CanResize="True"
+  SizeToContent="Height"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
 >
-  <!-- 选项卡吃满剩余高度（此前 MaxHeight=210：选项少时框不满、按钮上浮）；动作条钉在右下 -->
-  <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="24,20,24,20">
+  <!-- 选项 Card 按内容高度自适应；超过 360 才滚动。空余高度留给 Card 与动作条之间的留白，不让 Card 自己撑成空白板。 -->
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="24,20,24,20">
     <!-- 问题文本 -->
     <TextBlock
       x:Name="QuestionText"
       Grid.Row="0"
-      FontSize="14"
+      FontSize="16"
       FontWeight="Medium"
       Foreground="{DynamicResource BrushForestInk}"
       TextWrapping="Wrap"
     />
 
     <!-- 选项区（Card 包裹，填满可用高度） -->
-    <Border Grid.Row="1" Classes="Card" Padding="20" Margin="0,16,0,0">
-      <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Border Grid.Row="1" Classes="Card" Padding="20" Margin="0,16,0,0" MaxHeight="360">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel x:Name="OptionsPanel" Spacing="8" />
       </ScrollViewer>
     </Border>
@@ -44,7 +44,7 @@
     </StackPanel>
 
     <!-- 动作条（右下） -->
-    <StackPanel Grid.Row="3" Spacing="12" Margin="0,16,0,0">
+    <StackPanel Grid.Row="4" Spacing="12" Margin="0,16,0,0">
       <Border Height="1" Background="{DynamicResource BrushMist}" />
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CancelButton" Classes="Ghost" FontSize="14" Content="取消" />

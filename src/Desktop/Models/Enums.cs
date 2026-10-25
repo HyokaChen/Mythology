@@ -19,6 +19,9 @@ public enum StepKind
     /// <summary>思考。</summary>
     Thinking,
 
+    /// <summary>阶段正文（工具/思考之间的助手文本，按发生位置插入时间线）。</summary>
+    Content,
+
     /// <summary>工具调用。</summary>
     ToolCall,
 

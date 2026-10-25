@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Core.Shared;
 
 namespace Desktop.Controls;
@@ -60,8 +61,9 @@ public partial class AskUserWindow : Window
                 OptionsPanel.Children.Add(
                     new CheckBox
                     {
-                        Content = opt,
-                        FontSize = 13,
+                        Content = BuildOptionText(opt),
+                        Tag = opt,
+                        FontSize = 14,
                         Foreground = DialogTheme.ForestInk,
                         FontFamily = DialogTheme.FontSans,
                     }
@@ -76,8 +78,9 @@ public partial class AskUserWindow : Window
                 OptionsPanel.Children.Add(
                     new RadioButton
                     {
-                        Content = opt,
-                        FontSize = 13,
+                        Content = BuildOptionText(opt),
+                        Tag = opt,
+                        FontSize = 14,
                         GroupName = "ask",
                         Foreground = DialogTheme.ForestInk,
                         FontFamily = DialogTheme.FontSans,
@@ -88,8 +91,8 @@ public partial class AskUserWindow : Window
 
             _customRadio = new RadioButton
             {
-                Content = "自定义输入",
-                FontSize = 13,
+                Content = BuildOptionText("自定义输入"),
+                FontSize = 14,
                 GroupName = "ask",
                 Foreground = DialogTheme.ForestInk,
                 FontFamily = DialogTheme.FontSans,
@@ -114,7 +117,7 @@ public partial class AskUserWindow : Window
             answers.AddRange(
                 _checkOptions
                     .Where(c => c.IsChecked == true)
-                    .Select(c => c.Content?.ToString() ?? "")
+                    .Select(c => c.Tag as string ?? "")
                     .Where(s => s.Length > 0)
             );
             var custom = CustomInput.Text?.Trim();
@@ -124,8 +127,8 @@ public partial class AskUserWindow : Window
         else
         {
             var selected = _radioOptions.FirstOrDefault(r => r.IsChecked == true);
-            if (selected is not null)
-                answers.Add(selected.Content?.ToString() ?? "");
+            if (selected?.Tag is string selectedText && selectedText.Length > 0)
+                answers.Add(selectedText);
 
             if (_customRadio?.IsChecked == true)
             {
@@ -145,6 +148,17 @@ public partial class AskUserWindow : Window
         _store.Answer(_question.Id, answers.ToArray());
         Close();
     }
+
+    /// <summary>选项文本：占满选项宽度并换行，避免长选项在窄弹窗里被截断。</summary>
+    private static TextBlock BuildOptionText(string text) =>
+        new()
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 14,
+            Foreground = DialogTheme.ForestInk,
+            FontFamily = DialogTheme.FontSans,
+        };
 
     /// <summary>取消：写入「(已取消)」以解除阻塞（与 TUI 语义一致）。</summary>
     private void CancelAnswer()

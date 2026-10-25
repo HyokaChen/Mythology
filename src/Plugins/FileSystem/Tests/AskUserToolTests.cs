@@ -100,6 +100,43 @@ public class AskUserToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_MultiSelectAnswers_JoinedByEnglishComma()
+    {
+        var store = new UserQuestionStore();
+        var tool = new AskUserTool(store);
+        var pendingCreated = new TaskCompletionSource<IReadOnlyList<PendingQuestion>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        store.PendingQuestionsCreated += questions => pendingCreated.TrySetResult(questions);
+
+        var executeTask = tool.ExecuteAsync(
+            "call_1",
+            new AskUserParams
+            {
+                Questions =
+                [
+                    new AskQuestion
+                    {
+                        Header = "方向",
+                        Question = "选择要保留的线索",
+                        Options = ["身世", "师门", "旧案"],
+                        MultiSelect = true,
+                    },
+                ],
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        var pending = await pendingCreated.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.True(store.Answer(pending[0].Id, ["身世", "旧案"]));
+
+        var result = await executeTask;
+        var text = GetText(result);
+        Assert.False(result.IsError);
+        Assert.Equal("User answers:\n方向: [身世, 旧案]", text);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ValidQuestion_CreatesPendingQuestion()
     {
         var store = new UserQuestionStore();

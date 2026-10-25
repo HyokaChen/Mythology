@@ -57,10 +57,13 @@ public sealed class MotionWiringTests
         return FirstTemplateChild(owner);
     }
 
-    private static XElement TabContentTemplate(XElement root)
+    [Theory]
+    [InlineData(0, 1, 10d)]
+    [InlineData(3, 1, -10d)]
+    [InlineData(2, 2, 10d)]
+    public void PageEnterOffset_FollowsTabDirection(int fromIndex, int toIndex, double expected)
     {
-        var owner = Single(root, e => e.Name.LocalName == "TabControl.ContentTemplate");
-        return FirstTemplateChild(owner);
+        Assert.Equal(expected, Desktop.Styles.Motion.PageEnterOffset(fromIndex, toIndex));
     }
 
     [Fact]
@@ -135,10 +138,16 @@ public sealed class MotionWiringTests
     }
 
     [Fact]
-    public void SetUpPanelTabPane_PlaysEnter()
+    public void SetUpPanelTabPane_DoesNotAttachEnterAnimation()
     {
-        var pane = TabContentTemplate(Load("Views/SetUpPanelView.axaml"));
-        Assert.Equal("True", Attr(pane, "Motion.Enter"));
+        // 翻页由 SetUpPanelView.AnimateTabChange 统一负责；模板再挂 Enter 会让 Opacity 双动画打架
+        var owner = Single(
+            Load("Views/SetUpPanelView.axaml"),
+            e => e.Name.LocalName == "TabControl.ContentTemplate"
+        );
+        var template = owner.Elements().First(e => e.Name.LocalName == "DataTemplate");
+        var pane = template.Elements().First();
+        Assert.NotEqual("True", Attr(pane, "Motion.Enter"));
     }
 
     [Fact]
@@ -204,10 +213,13 @@ public sealed class MotionWiringTests
     [InlineData("Button")]
     [InlineData("Button /template/ ContentPresenter")]
     [InlineData("ListBoxItem")]
+    [InlineData("ComboBoxItem /template/ ContentPresenter")]
     [InlineData("MenuItem /template/ Border#root")]
     [InlineData("TabItem /template/ ContentPresenter")]
+    [InlineData("TreeViewItem /template/ ContentPresenter")]
     [InlineData("Border.OutlineRow")]
     [InlineData("TextBox.Adaline /template/ Border#PART_Border")]
+    [InlineData("ScrollBar Thumb")]
     [InlineData("ProgressBar")]
     public void GlobalStyles_DeclareTransitionsForKnownStateChanges(string selector)
     {

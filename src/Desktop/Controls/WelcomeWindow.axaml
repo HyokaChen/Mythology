@@ -31,6 +31,7 @@
       Foreground="{DynamicResource BrushSageGray}"
       TextWrapping="Wrap"
       MaxWidth="380"
+      HorizontalAlignment="Left"
       VerticalAlignment="Center"
       LineHeight="21"
     />

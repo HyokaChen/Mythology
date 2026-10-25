@@ -9,6 +9,7 @@
   <Style Selector="TextBlock.Eyebrow">
     <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
     <Setter Property="FontSize" Value="11" />
+    <Setter Property="LineHeight" Value="16" />
     <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
     <Setter Property="LetterSpacing" Value="0.4" />
   </Style>
@@ -17,6 +18,7 @@
   <Style Selector="TextBlock.Tag">
     <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
     <Setter Property="FontSize" Value="11" />
+    <Setter Property="LineHeight" Value="16" />
     <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
     <Setter Property="LetterSpacing" Value="0.4" />
   </Style>
@@ -219,6 +221,8 @@
     <Setter Property="SelectionBrush" Value="{DynamicResource BrushEucalyptus}" />
     <Setter Property="FontSize" Value="15" />
     <Setter Property="LineHeight" Value="22" />
+    <!-- 输入文字与消息正文左缘对齐：卡片负责 16px 内边距，TextBox 自身不再叠加 padding。 -->
+    <Setter Property="Padding" Value="0" />
     <!-- 多行输入顶对齐（默认 Center 会让拉伸后的编辑区把文字竖直居中） -->
     <Setter Property="VerticalContentAlignment" Value="Top" />
   </Style>
@@ -229,12 +233,13 @@
     <Setter Property="FontSize" Value="44" />
     <Setter Property="FontWeight" Value="Light" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
-    <Setter Property="LineHeight" Value="48" />
+    <Setter Property="LineHeight" Value="52" />
   </Style>
 
   <!-- ── 章节标题（Akkurat/Inter 400，紧排） ── -->
   <Style Selector="TextBlock.SectionHeading">
     <Setter Property="FontSize" Value="26" />
+    <Setter Property="LineHeight" Value="34" />
     <Setter Property="FontWeight" Value="Regular" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
     <Setter Property="LetterSpacing" Value="-0.5" />
@@ -243,6 +248,7 @@
   <!-- ── 对话框标题（中型窗口：Eyebrow 标签 + 本标题构成头部层级） ── -->
   <Style Selector="TextBlock.DialogTitle">
     <Setter Property="FontSize" Value="18" />
+    <Setter Property="LineHeight" Value="24" />
     <Setter Property="FontWeight" Value="Regular" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
@@ -253,7 +259,6 @@
     <Setter Property="Background" Value="{DynamicResource BrushOlivePress}" />
     <Setter Property="CornerRadius" Value="16" />
     <Setter Property="Padding" Value="16,10" />
-    <Setter Property="MaxWidth" Value="720" />
   </Style>
   <Style Selector="Border.UserBubble TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource BrushLinen}" />
@@ -267,7 +272,6 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{StaticResource RadiusCards}" />
     <Setter Property="Padding" Value="16,12" />
-    <Setter Property="MaxWidth" Value="860" />
   </Style>
 
   <!-- ── 空状态提示 ── -->
@@ -284,6 +288,17 @@
        与容器主题画在 PART_Border 上的那层几何不同、还会叠加（选中行 33%+33% 变成深块）。
        所有 ListBox 都挂 ItemContainerTheme="{StaticResource AdalineRowContainer}"，
        唯一绘图面就是 PART_Border。ComboBoxItem 是独立类型，不冲突，仍走默认模板。 -->
+  <Style Selector="ComboBoxItem /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
   <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
   </Style>
@@ -322,7 +337,7 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
     <Setter Property="Transitions">
       <Transitions>
-        <BrushTransition Property="Foreground" Duration="0:0:0.2" />
+        <BrushTransition Property="Foreground" Duration="{x:Static motion:Motion.Normal}" />
       </Transitions>
     </Setter>
   </Style>
@@ -354,7 +369,7 @@
   <!-- ══ MenuItem：覆盖 SukiUI 的 SukiMenuItemStyle（模板内 Border#root） ══ -->
   <Style Selector="MenuItem">
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
-    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="FontSize" Value="13" />
   </Style>
   <!-- hover → Adaline sage 高亮（仅悬浮项，不影响面板背景） -->
   <Style Selector="MenuItem:pointerover /template/ Border#root">
@@ -387,6 +402,15 @@
   </Style>
   <Style Selector="ScrollBar Thumb">
     <Setter Property="Background" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
   </Style>
   <Style Selector="ScrollBar Thumb:pointerover">
     <Setter Property="Background" Value="{DynamicResource BrushSageMist}" />
@@ -438,9 +462,10 @@
           Duration="{x:Static motion:Motion.Fast}"
           Easing="SineEaseOut"
         />
+        <!-- 按压反馈走最短档：120ms 会明显慢半拍，按下像「陷进棉花」 -->
         <TransformOperationsTransition
           Property="RenderTransform"
-          Duration="{x:Static motion:Motion.Fast}"
+          Duration="{x:Static motion:Motion.Micro}"
           Easing="CubicEaseOut"
         />
       </Transitions>
@@ -528,6 +553,22 @@
 
   <!-- 大纲 TreeView 悬停/选中：与列表行同一套 Sage Mist 薄雾，且不加边框
        （外层 Card 已有一条 Mist 边线，再画环就是双层边框） -->
+  <Style Selector="TreeViewItem /template/ ContentPresenter">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition
+          Property="Background"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+        <BrushTransition
+          Property="Foreground"
+          Duration="{x:Static motion:Motion.Fast}"
+          Easing="SineEaseOut"
+        />
+      </Transitions>
+    </Setter>
+  </Style>
   <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
   </Style>
@@ -536,10 +577,49 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
 
+  <!-- ── 工具详情结构化 diff：红删绿增，行背景用同色薄雾 ── -->
+  <Style Selector="Border.DiffRow">
+    <Setter Property="Padding" Value="4,1" />
+    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Border.DiffRow.DiffDelete">
+    <Setter Property="Background" Value="{DynamicResource BrushDiffDeleteWash}" />
+  </Style>
+  <Style Selector="Border.DiffRow.DiffInsert">
+    <Setter Property="Background" Value="{DynamicResource BrushDiffInsertWash}" />
+  </Style>
+  <Style Selector="TextBlock.DiffText">
+    <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+  </Style>
+  <Style Selector="TextBlock.DiffText.DiffDelete">
+    <Setter Property="Foreground" Value="{DynamicResource BrushDiffDelete}" />
+  </Style>
+  <Style Selector="TextBlock.DiffText.DiffInsert">
+    <Setter Property="Foreground" Value="{DynamicResource BrushDiffInsert}" />
+  </Style>
+  <Style Selector="TextBlock.DiffPrefix">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.DiffLineNumber">
+    <Setter Property="MinWidth" Value="24" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageMist}" />
+    <Setter Property="TextAlignment" Value="Right" />
+  </Style>
+  <Style Selector="TextBlock.DiffLineNumber.DiffDelete">
+    <Setter Property="Foreground" Value="{DynamicResource BrushDiffDelete}" />
+  </Style>
+  <Style Selector="TextBlock.DiffLineNumber.DiffInsert">
+    <Setter Property="Foreground" Value="{DynamicResource BrushDiffInsert}" />
+  </Style>
+
   <!-- 提示气泡：Style.Animations 每次附加播一次，故只在新实例时可见 -->
   <Style Selector="ToolTip">
     <Style.Animations>
-      <Animation Duration="0:0:0.12" FillMode="Forward">
+      <Animation Duration="0:0:0.09" FillMode="Forward" Easing="CubicEaseOut">
         <KeyFrame Cue="0%">
           <Setter Property="Opacity" Value="0" />
         </KeyFrame>

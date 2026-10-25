@@ -174,7 +174,9 @@
 
       <TabControl.ContentTemplate>
         <DataTemplate x:DataType="vm:EntityTab">
-          <Grid RowDefinitions="Auto,Auto,Auto,*" motion:Motion.Enter="True">
+          <!-- 入场由 SetUpPanelView.AnimateTabChange 统一负责（有方向的翻页）；
+               这里再挂 Motion.Enter 会让 Opacity 上出现两个动画时钟 -->
+          <Grid RowDefinitions="Auto,Auto,Auto,*">
             <!-- ① 工具带：**全宽搜索字段**（占满整行 + 右端内嵌图标按钮）。
                  搜索是即输即筛（magnifier = 聚焦；✕ 有词才出现），不再与计数/新建挤一行——
                  字段的左右缘即面板的左右缘，读起来才是一条「搜索栏」。 -->
@@ -279,7 +281,7 @@
               />
               <ComboBox
                 Grid.Column="2"
-                Width="104"
+                Width="136"
                 Theme="{StaticResource AdalineComboBox}"
                 ItemsSource="{Binding Parent.ChapterStatusOptions}"
                 SelectedItem="{Binding Parent.ChapterStatusFilter, Mode=TwoWay}"

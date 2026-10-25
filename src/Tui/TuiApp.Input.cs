@@ -35,6 +35,10 @@ public sealed partial class TuiApp
 
             var variantContent = decision.VariantContent ?? "";
             var variantLabel = decision.VariantLabel ?? "";
+            var targetText =
+                applyTarget is not null && !string.IsNullOrEmpty(applyTarget.Title)
+                    ? $"第{applyTarget.Order}章「{applyTarget.Title}」"
+                    : null;
             var modifiedText = text.StartsWith($"修改「{variantLabel}」版本：")
                 ? text[$"修改「{variantLabel}」版本：".Length..].Trim()
                 : text;
@@ -67,7 +71,15 @@ public sealed partial class TuiApp
             }
 
             sb.AppendLine("===== 选中的变体内容 =====\n");
-            sb.AppendLine(variantContent);
+            sb.AppendLine(
+                VariantXml.Wrap(
+                    variantContent,
+                    decision.VariantId,
+                    variantLabel,
+                    exploreType,
+                    targetText
+                )
+            );
             sb.AppendLine();
             sb.AppendLine("===== 用户修改要求 =====\n");
             sb.AppendLine(modifiedText);

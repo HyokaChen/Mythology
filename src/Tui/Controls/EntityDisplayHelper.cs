@@ -13,24 +13,7 @@ public static class EntityDisplayHelper
     /// <param name="entityType">实体类型。</param>
     /// <returns>中文显示名称。</returns>
     public static string DisplayName(EntityType entityType) =>
-        entityType switch
-        {
-            EntityType.Character => "角色",
-            EntityType.Faction => "组织",
-            EntityType.Location => "地点",
-            EntityType.Plotline => "情节线",
-            EntityType.Chapter => "章节",
-            EntityType.Item => "道具",
-            EntityType.TimelineEvent => "时间线事件",
-            EntityType.Relationship => "关系",
-            EntityType.FactionRelationship => "组织关系",
-            EntityType.Novel => "小说",
-            EntityType.Volume => "分卷",
-            EntityType.Scene => "场景",
-            EntityType.WorldRule => "世界规则",
-            EntityType.Note => "笔记",
-            _ => entityType.ToString(),
-        };
+        EntityChangeSummary.DisplayName(entityType);
 
     /// <summary>哈希显示类型列表。</summary>
     public static readonly string[] HashDisplayTypes =

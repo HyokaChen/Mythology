@@ -107,7 +107,8 @@ src/Desktop/
 ├── Models/
 │   ├── Enums.cs                          # MessageSender, StepKind, TagKind, AgentStepStatus
 │   ├── ChatMessage.cs                    # 对话消息 (ObservableStringBuilder Content)
-│   ├── AgentStep.cs                      # 智能体步骤 (StepKind, Status, ThinkingBuilder)
+│   ├── AgentStep.cs                      # 智能体步骤 (StepKind, Status, ThinkingBuilder, ContentText, DiffLines)
+│   ├── DiffLineView.cs                   # 详情区结构化 diff 行（前缀/行号/红绿类别）
 │   ├── ConversationSummary.cs            # 侧边栏对话摘要
 │   ├── EntityItem.cs                     # 设定面板实体项
 │   ├── FileSystemItem.cs                 # @ 路径补全建议
@@ -159,6 +160,8 @@ src/Desktop/
 └── Services/
     ├── DesktopAgentBridge.cs              # Agent 桥接 (单例, 事件推送)
     ├── StreamEventHandler.cs              # 流式事件分发 (去 SignalR)
+    ├── ToolDisplayFormatter.cs            # 工具中文名/语义摘要/完整详情
+    ├── ToolDiffBuilder.cs                 # 工具 Details → 结构化 diff（与 TUI 共用 DiffComputer）
     ├── ChatHistoryService.cs              # 对话历史 SQLite 持久化 (异步)
     ├── CloudAuthService.cs                # 云端账号门面 (OAuth/设备流/手动 Key + 心跳 + 吊销)
     ├── DesktopThemeService.cs             # 深/浅色主题切换 + 持久化
@@ -479,11 +482,12 @@ SukiTheme.GetInstance().ChangeColorTheme(brandTheme);
 | Card 卡片 | `Border.Card` | Bone 底, Mist 1px 边框, 10px 圆角, 无阴影 |
 | 亮面卡片 | `Border.Card.Glow` | SurfaceGlow 底 (高于 Bone 一级) |
 | Eyebrow 标签 | `TextBlock.Eyebrow` | FontMono 11px, 0.4 tracking |
+| 系统状态行 | `TextBlock.SystemNoticeText` | FontSans 13px/20, SageGray；中断、系统消息、实体变更共用 |
 | Mono 标签 | `TextBlock.Tag` | FontMono 11px, Olive Press 文字 |
 | 对话框标题 | `TextBlock.DialogTitle` | 18px Regular, Forest Ink（中型窗口头部层级） |
 | 大纲行 hover | `Border.OutlineRow` | hover 提亮为 Bone；`.Solid` 用于已用 SurfaceGlow 的章行 |
 | 用户气泡 | `Border.UserBubble` | Olive Press 填充, Linen 文字, 16px 圆角 |
-| 助手气泡 | `Border.AgentBubble` | Bone 底, Mist 1px 边框, 10px 圆角 |
+| 助手气泡 | `Border.AgentBubble` | Bone 底, Mist 1px 边框, 10px 圆角；铺满消息区宽度 |
 | 输入框 | `TextBox.Adaline` | 透明底, Mist 1px 边框, 4px 圆角 |
 | 会话输入框 | `TextBox.PromptBox` | 透明底, 无边框, 15px 字号 |
 | 滚动条 | `ScrollBar Thumb` | Lichen 色调, 窄条 |
@@ -576,7 +580,7 @@ public abstract class ViewModelBase : ReactiveObject;
 | `RecentConversations` | `ObservableCollection<ConversationSummary>` | 最近对话列表 (Header 下拉) |
 | `ActiveConversationVm` | `ConversationViewModel?` | 当前对话 VM |
 | `SetUpPanel` | `SetUpPanelViewModel` | 右侧设定面板 |
-| `StatusText` | `string` | 状态栏左侧 (idle/写作中...) |
+| `StatusText` | `string` | 状态栏左侧简短状态（idle/写作中…/错误提示） |
 | `TokenText` | `string` | 累计 Token 计数 |
 | `ModelText` | `string` | 当前模型名 |
 | `ToolsText` | `string` | 工具数 |
@@ -659,14 +663,22 @@ public sealed class DesktopAgentBridge
 
 | 事件类型 | 处理 |
 |---|---|
-| `StreamChunk { Text }` | `ChatMessage.Content.Append(chunk.Delta)` → LiveMarkdown 增量渲染 |
-| `StreamChunk { Thinking }` | 创建 `AgentStep(Kind=Thinking)`，追加 ThinkingBuilder |
-| `StreamChunk { ThinkingEnd }` | 标记 Thinking step 为 Completed |
-| `ToolExecutionStart` | 创建 `AgentStep(Kind=ToolCall)` |
-| `ToolExecutionUpdate` | 更新 `ResultSummary` |
-| `ToolExecutionEnd` | 标记步骤完成 |
-| `AgentError` | 追加错误文本到消息 |
+| `StreamChunk { Text }` | `ChatMessage.AppendContent(chunk.Delta)` → 先关闭当前思考阶段，再 LiveMarkdown 增量渲染；工具/下一轮思考开始时冻结为独立 `AgentStep(Kind=Content)`，用轻量 TextBlock 展示 |
+| `StreamChunk { Thinking }` | 每个思考阶段创建独立 `AgentStep(Kind=Thinking)` 并按事件顺序插入，追加 ThinkingBuilder；详情默认展开、可收起 |
+| `StreamChunk { ThinkingEnd }` | 标记当前 Thinking step 为 Completed，并结束该阶段 |
+| `ToolExecutionStart` | 创建 `AgentStep(Kind=ToolCall)`：中文标签 + 语义参数摘要 + 完整参数 |
+| `ToolExecutionUpdate` | 只保留 spinner，原始 partial 不进对话 |
+| `ToolExecutionEnd` | 语义结果摘要 + 结构化 diff + 完整结果（`tool_search` 先脱敏） |
+| `AgentError` | 清洗 provider JSON 后追加错误文本（含 HTTP 状态） |
 | `CircuitBreakerTriggered` | 添加断路器步骤 |
+
+思考、中间正文与工具严格按流事件顺序交错：`思考 → 正文 → 工具 → 思考 → 最终正文`。每次 `Thinking` 阶段都是独立 `AgentStep`，在 `ThinkingEnd`、工具开始或正文开始时收口；工具或下一轮思考开始前，当前流式正文冻结为独立 `AgentStep(Kind=Content)`，随后清空最终气泡。中间正文冻结为与最终流式正文同款的 Bone 卡（`Border.AgentBubble`，Mist 1px 边框、16/12 padding），文字用 14/24 普通 TextBlock，避免 Markdown 渲染器在工具边界卡一下；冻结前后底色一致，不再出现「黄色最终卡 → 无底色中间行」的闪变。冻结时 `Trim()` 首尾空行，避免 TextBlock 把 `\n\n` 撑成 24px 空行。最终答复仍用 LiveMarkdown（16/24）。因此工具前的说明不会跑到回合末尾冒充最终答复。正文气泡仅在出现非空白字符后渲染，流式首批换行/空格不会撑出空白卡片。
+
+中断提示不再写进 Markdown 引用块，也不再使用红色独立行：`ChatMessage.IsInterrupted` 渲染为与系统消息同一套「系统」状态行（Eyebrow「系统」+ 13/20 `SystemNoticeText`，SageGray），文案为「⏹ 中断生成」，无左引线、无边框；字号比旧 12px 大一档，仍小于旧 14px 红色提示。旧会话里的 `> ⏹ 已中断` 在历史映射时剥离并还原为同一标记。所有 `MessageSender.System` 消息（压缩、溢出重试、持久化故障、实体变更）共用这套 13/20 排版。Desktop 订阅 `INovelStore.OnEntityChanged`，按 `Core.Data.EntityChangeSummary` 生成 `📝 新建/修改/删除…` 系统行：字段更新带变更键，小说级变更不显示，事件从后台线程切回 UI 线程。普通 Markdown 引用块改为透明底、无边框，引用语义由 LiveMarkdown 的「▎」前缀承担，取消 Markdown 默认深灰底与卡片边框，避免深底深字和 `AgentBubble` 内的双层边框。输入卡左内边距为 11px，专门抵消 TextBox 模板在 `TextPresenter` 外固定的 5px 内缩，使输入文字与正文左缘（卡片 16px 内边距 + 1px 边框）对齐。
+
+结果摘要规则：成功消息／计数／列表优先；结果含统一 diff（裸文本或围栏）→ `文件 · +N -M`；Markdown 表格 → `表格 · 表头`；其他代码围栏 → `代码块（语言） · N 行`；原始 JSON／diff 只保留在详情。
+
+结构化 diff：工具 `Details` 实现 `IDiffDetails` 时，`ToolDiffBuilder` 把它交给 `Core.Shared.DiffComputer`（与 TUI `DiffComputer` 同一个 DiffPlex Myers 实现）逐 hunk 计算；多 hunk 用 `···` 分隔、折叠 5 行上下文，计数取 `DiffComputer.CountChanges`，详情区按删除红/插入绿渲染并隐藏原始结果文本。历史会话未持久化 `Details`，`edit` 仅在结果非错误且全部编辑已应用时从参数 `oldText/newText` 重建同一结构；部分应用/未应用与其他工具仍回退文本摘要。
 
 ### 9.3 ChatHistoryService
 
@@ -752,7 +764,7 @@ GitHub Releases 自动更新（仓库公开后生效；私有期匿名 404 → �
 ConversationViewModel.SendMessageCommand.Execute()
     ↓
 1. 创建对话 (CreateConversationAsync)
-2. 创建 User ChatMessage + Agent ChatMessage (Loading=true)
+2. 创建 User ChatMessage + Agent 占位 ChatMessage（IsWaiting=true，显示等待行）
 3. DesktopAgentBridge.SendAsync(text, cts.Token)
     → Agent.Prompt() → 流式事件推送
     ↓
@@ -761,7 +773,8 @@ HandleAgentEvent (UI 线程)
     → Content 追加 / 步骤更新 / 来源暂存
     ↓
 AgentEnd → FinalizeAgentMessage()
-    → Loading=false → 异步持久化 (SaveMessageAsync)
+    → IsWaiting=false / 空占位移除（首个可见活动到达时也会收起）
+    → 异步持久化 (SaveMessageAsync)
     → ConversationCompleted 事件 → 刷新侧边栏
 ```
 
@@ -784,15 +797,19 @@ Header 对话下拉选择
 
 | Agent 事件 | StreamEventHandler 处理 | UI 效果 |
 |---|---|---|
-| `StreamChunk { Text }` | `ChatMessage.Content.Append(delta)` | LiveMarkdown 增量渲染 |
-| `StreamChunk { Thinking }` | 创建 AgentStep(Kind=Thinking) | 步骤点出现 + 思考文本 |
-| `StreamChunk { ThinkingEnd }` | AgentStep.Status = Completed | 步骤点完成态 |
-| `ToolExecutionStart` | 创建 AgentStep(Kind=ToolCall) | 步骤点出现 |
-| `ToolExecutionUpdate` | 更新 ResultSummary | 步骤摘要更新 |
-| `ToolExecutionEnd` | 标记步骤完成 | 步骤状态刷新 |
-| `AgentError` | 追加错误文本 | 错误信息显示 |
+| `StreamChunk { Text }` | `ChatMessage.AppendContent(delta)` | 关闭当前思考阶段；非空白正文增量渲染，遇到工具/思考边界冻结为 Content 步骤 |
+| `StreamChunk { Thinking }` | 每轮创建独立 AgentStep(Kind=Thinking) | 步骤按事件顺序插入；思考正文默认展开（流式与完成后均可见，可收起） |
+| `StreamChunk { ThinkingEnd }` | 当前 AgentStep.Status = Completed | 步骤点完成态，下轮思考另起一卡 |
+| `ToolExecutionStart` | 创建 AgentStep(Kind=ToolCall) | 中文工具名 + 语义参数摘要 |
+| `ToolExecutionUpdate` | 只保留 spinner | 原始 partial 不刷进对话 |
+| `ToolExecutionEnd` | 语义摘要 + 结构化 diff + 完整结果 | 步骤状态刷新；红删绿增详情；原始 JSON 仅在无结构化 diff 时回退 |
+| `AgentError` | 清洗错误 JSON | 单行可读错误（HTTP 状态 + message） |
 | `CircuitBreakerTriggered` | 添加断路器步骤 | 断路器提示 |
 | `AgentEnd` | FinalizeAgentMessage + 持久化 | 消息完成，侧边栏刷新 |
+
+步骤详情（工具参数/结果、结构化 diff）不使用 Bone 卡片底色与 Mist 边框，直接落在页面背景上，且不设 MaxWidth；步骤头参数摘要改为铺满剩余列并换行。思考正文位于同一可折叠详情区顶部，创建时默认展开，流式与完成态都可见，点「收起」只折叠正文并保留步骤标题；每一轮思考独立成卡，中间正文冻结为与最终气泡同底色（Bone、Mist 1px）的无步骤头小卡，按事件顺序与工具步骤交错（`思考 → 正文 → 工具 → 思考 → 最终正文`），冻结前后不跳背景。工具原始参数/结果仍默认折叠。正文气泡只在 `HasVisibleContent` 为真（出现非空白字符）后渲染，避免空白 Bone 卡。首个正文/步骤到达前，助手消息内显示等待行（spinner +「执行中」）；回合结束或首个可见活动到达后收起。左下角状态栏在忙碌期显示 spinner + 随机古诗词（完整诗词放在 tooltip），空闲恢复 `idle`。消息列表左右留白与输入卡片一致（24px），助手正文气泡铺满消息区宽度；用户消息保持右对齐但去掉 720 宽度上限与 96px 左缩进，长回复同样可用满整行；系统提示改为铺满消息区、左对齐。Agent 正文仅在 `HasVisibleContent`（至少一个非空白字符）为真时渲染 `Border.AgentBubble`，首批换行/空格不会显示占位方块。
+
+`ask_user` / 变体审阅弹窗按主窗口尺寸放大（`DialogTheme.FitToOwner`，可调整大小）：ask_user 选项文本换行，避免长选项被截断；选项 Card 按内容高度自适应（上限 360px，超出滚动），选项少时窗口随内容收紧，不再把 Card 撑满整窗；ask_user 的 `User answers:` 结果块进入步骤结果摘要，按满宽换行展示每组问题与答案。变体审阅使用宽度优先的 WrapPanel Tab 条与满宽 Markdown 预览；Tab 激活态使用 `BrushEucalyptusWash`（不再用透明度弱化），预览卡片按 Card 规范 20px 内边距，标题/正文通过 `MarkdownTextBlock` 类型选择器落到 Adaline 的 26/18px、Olive Press/Forest Ink。
 
 ---
 

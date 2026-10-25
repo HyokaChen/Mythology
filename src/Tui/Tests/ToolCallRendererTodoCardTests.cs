@@ -85,6 +85,129 @@ public sealed class ToolCallRendererTodoCardTests
         Assert.Contains("暂无任务", content);
     }
 
+    [Fact]
+    public void AskUserNewReply_RendersSelectedAndUnselectedOptions()
+    {
+        var argsJson =
+            """{"questions":[{"header":"方向","question":"选择要保留的线索","options":["身世","师门","旧案"],"multiSelect":true}]}""";
+        var result = "User answers:\n方向: [身世, 旧案]";
+
+        var item = ToolCallRenderer.BuildToolCallResultItem(
+            ToolCategory.Generic,
+            null,
+            "ask_user",
+            "询问用户",
+            "",
+            isError: false,
+            result,
+            Dark,
+            argsJson: argsJson
+        );
+
+        var content = ExtractText(item.Content);
+        Assert.Contains("选择要保留的线索", content);
+        Assert.Contains("● 身世", content);
+        Assert.Contains("● 旧案", content);
+        Assert.Contains("○ 师门", content);
+    }
+
+    [Fact]
+    public void AskUserLegacyReply_StillRendersQaCard()
+    {
+        var argsJson =
+            """{"questions":[{"header":"方向","question":"选择要保留的线索","options":["身世","师门","旧案"],"multi_select":true}]}""";
+        var result = "用户回复:\n  [方向] 选择要保留的线索\n    → 身世, 旧案";
+
+        var item = ToolCallRenderer.BuildToolCallResultItem(
+            ToolCategory.Generic,
+            null,
+            "ask_user",
+            "询问用户",
+            "",
+            isError: false,
+            result,
+            Dark,
+            argsJson: argsJson
+        );
+
+        var content = ExtractText(item.Content);
+        Assert.Contains("● 身世", content);
+        Assert.Contains("○ 师门", content);
+    }
+
+    [Fact]
+    public void AskUserLegacyAsciiArrow_RendersSelectedOption()
+    {
+        var argsJson =
+            """{"questions":[{"header":"方向","question":"选择要保留的线索","options":["身世","师门","旧案"],"multiSelect":true}]}""";
+        var result = "用户回复:\n  [方向] 选择要保留的线索\n    -> 身世";
+
+        var item = ToolCallRenderer.BuildToolCallResultItem(
+            ToolCategory.Generic,
+            null,
+            "ask_user",
+            "询问用户",
+            "",
+            isError: false,
+            result,
+            Dark,
+            argsJson: argsJson
+        );
+
+        var content = ExtractText(item.Content);
+        Assert.Contains("● 身世", content);
+        Assert.Contains("○ 师门", content);
+    }
+
+    [Fact]
+    public void AskUserCancelled_ShowsStatusWithoutCustomLabel()
+    {
+        var argsJson =
+            """{"questions":[{"header":"方向","question":"选择要保留的线索","options":["身世","旧案"]}]}""";
+        var result = "User answers:\n方向: (已取消)";
+
+        var item = ToolCallRenderer.BuildToolCallResultItem(
+            ToolCategory.Generic,
+            null,
+            "ask_user",
+            "询问用户",
+            "",
+            isError: false,
+            result,
+            Dark,
+            argsJson: argsJson
+        );
+
+        var content = ExtractText(item.Content);
+        Assert.Contains("→ (已取消)", content);
+        Assert.DoesNotContain("(自定义)", content);
+    }
+
+    [Fact]
+    public void AskUserCustomAnswer_StaysMarkedCustom()
+    {
+        var argsJson =
+            """{"questions":[{"header":"视角","question":"用第几人称？","options":["第一人称","第三人称"]}]}""";
+        var result = "User answers:\n视角: 我叫「旧钟」，请这样称呼";
+
+        var item = ToolCallRenderer.BuildToolCallResultItem(
+            ToolCategory.Generic,
+            null,
+            "ask_user",
+            "询问用户",
+            "",
+            isError: false,
+            result,
+            Dark,
+            argsJson: argsJson
+        );
+
+        var content = ExtractText(item.Content);
+        Assert.Contains("我叫「旧钟」，请这样称呼", content);
+        Assert.Contains("(自定义)", content);
+        Assert.DoesNotContain("→ (已取消)", content);
+    }
+
     /// <summary>递归提取 FlowDocument 全部块中的纯文本（Markup/Paragraph/ContentVisual）。</summary>
     private static string ExtractText(IDocumentFlowContent content)
     {

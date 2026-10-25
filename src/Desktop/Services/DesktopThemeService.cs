@@ -53,6 +53,11 @@ public sealed class DesktopThemeService
         ["ColorLichen"] = Color.Parse("#5b6751"), // ghost 边框
         ["ColorCrimsonSpecimen"] = Color.Parse("#cf6689"),
         ["ColorAmberPin"] = Color.Parse("#cfa961"),
+        // Diff：暗底用 TUI 的亮红/亮绿，薄雾提高一档对比。
+        ["ColorDiffDelete"] = Color.Parse("#fb4934"),
+        ["ColorDiffInsert"] = Color.Parse("#8ec07c"),
+        ["ColorDiffDeleteWash"] = Color.Parse("#33fb4934"),
+        ["ColorDiffInsertWash"] = Color.Parse("#338ec07c"),
     };
 
     /// <summary>

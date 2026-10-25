@@ -3,28 +3,64 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
-  Width="720"
-  Height="560"
-  MinWidth="560"
-  MinHeight="420"
+  Width="960"
+  Height="640"
+  MinWidth="720"
+  MinHeight="480"
+  CanResize="True"
   WindowStartupLocation="CenterOwner"
   Background="{DynamicResource BrushLinen}"
 >
+  <Window.Styles>
+    <Style Selector="Button.NavPill.Active">
+      <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    </Style>
+    <Style Selector="Button.NavPill.Active TextBlock">
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <!-- LiveMarkdown 的节点样式优先级高于普通 TextBlock；用其类型选择器覆盖默认黑字/小字号。 -->
+    <Style Selector="md|MarkdownRenderer md|MarkdownTextBlock">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="LineHeight" Value="26" />
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer md|MarkdownTextBlock.Heading1">
+      <Setter Property="FontSize" Value="26" />
+      <Setter Property="LineHeight" Value="32" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer md|MarkdownTextBlock.ParagraphBlock">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="LineHeight" Value="26" />
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    </Style>
+  </Window.Styles>
+
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="24,20,24,16">
-    <!-- 目标行 -->
-    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
-      <TextBlock x:Name="TargetText" Classes="Tag" VerticalAlignment="Center" />
-    </StackPanel>
+    <!-- 目标行（占满弹窗宽度） -->
+    <TextBlock
+      x:Name="TargetText"
+      Grid.Row="0"
+      Classes="Tag"
+      TextWrapping="Wrap"
+      VerticalAlignment="Center"
+    />
 
     <!-- 变体 Tab 条（code-behind 构建） -->
-    <StackPanel
+    <WrapPanel
       x:Name="TabBar"
       Grid.Row="1"
       Orientation="Horizontal"
-      Spacing="6"
+      ItemSpacing="6"
+      LineSpacing="6"
       Margin="0,10,0,0"
     />
-    <Border Grid.Row="2" Classes="Card" Margin="0,10,0,0" Padding="16">
+    <Border Grid.Row="2" Classes="Card" Margin="0,10,0,0" Padding="20">
       <ScrollViewer VerticalScrollBarVisibility="Auto">
         <md:MarkdownRenderer x:Name="ContentMarkdown" CodeBlockColorTheme="LightPlus" />
       </ScrollViewer>

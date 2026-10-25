@@ -76,12 +76,9 @@ public sealed class MessageRestorer
                 case ChatMessageRoles.User:
                 // ── 用户消息：渲染为蓝色气泡 ──
                 {
-                    // 跳过 ask_user 回复消息（前缀 "**用户回复:**"），
+                    // 跳过 ask_user 回复消息（新 OMP 格式或历史 "**用户回复:**"），
                     // 因为 tool result 的 Q&A 卡片已经展示了完整信息
-                    var isAskUserAnswer = text.StartsWith(
-                        "**用户回复:**",
-                        StringComparison.Ordinal
-                    );
+                    var isAskUserAnswer = Core.Data.SessionInternalMessages.IsAskUserReply(text);
 
                     if (!isAskUserAnswer)
                     {

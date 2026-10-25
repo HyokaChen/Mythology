@@ -32,6 +32,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private readonly SessionEngine _engine;
     private readonly INovelStore _store;
     private readonly UserQuestionStore _questionStore;
+    private readonly ToolDisplayFormatter _toolDisplay;
     private readonly ILogger _log;
     private CancellationTokenSource? _cts;
     private StreamEventHandler? _handler;
@@ -608,6 +609,10 @@ public sealed class ConversationViewModel : ViewModelBase
             $"用户从 explore 工具的结果中选择了变体「{label}」（ID: {p.Decision.VariantId}），并要求基于此版本继续修改。"
         );
         sb.AppendLine();
+        var targetText =
+            p.ApplyTarget is { } t && !string.IsNullOrEmpty(t.Title)
+                ? $"第{t.Order}章「{t.Title}」"
+                : null;
 
         if (!string.IsNullOrEmpty(p.ExplorePrompt))
         {
@@ -631,7 +636,15 @@ public sealed class ConversationViewModel : ViewModelBase
         }
 
         sb.AppendLine("===== 选中的变体内容 =====\n");
-        sb.AppendLine(p.Decision.VariantContent ?? "");
+        sb.AppendLine(
+            VariantXml.Wrap(
+                p.Decision.VariantContent ?? "",
+                p.Decision.VariantId,
+                label,
+                p.ExploreType,
+                targetText
+            )
+        );
         sb.AppendLine();
         sb.AppendLine("===== 用户修改要求 =====\n");
         sb.AppendLine(modifiedText);
@@ -659,7 +672,9 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         await _engine.SwitchBranchAsync(branchPointEntryId, generateSummary);
         Messages.Clear();
-        foreach (var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync()))
+        foreach (
+            var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync(), _toolDisplay)
+        )
             Messages.Add(msg);
         _agentMessage = null;
         _handler = null;
@@ -1091,13 +1106,15 @@ public sealed class ConversationViewModel : ViewModelBase
         SessionEngine engine,
         INovelStore store,
         UserQuestionStore? questionStore = null,
-        ILogger<ConversationViewModel>? log = null
+        ILogger<ConversationViewModel>? log = null,
+        ToolRegistry? tools = null
     )
     {
         _bridge = bridge;
         _engine = engine;
         _store = store;
         _questionStore = questionStore ?? new UserQuestionStore();
+        _toolDisplay = new ToolDisplayFormatter(tools);
         _log =
             log
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ConversationViewModel>.Instance;
@@ -1140,7 +1157,12 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>主窗口把处理状态转发到活跃对话（后台对话不被转发）。</summary>
-    public void SetProcessing(bool processing) => IsProcessing = processing;
+    public void SetProcessing(bool processing)
+    {
+        IsProcessing = processing;
+        if (!processing && _agentMessage is { IsWaiting: true })
+            _agentMessage.IsWaiting = false;
+    }
 
     /// <summary>发送消息。</summary>
     private async Task SendMessageAsync()
@@ -1196,14 +1218,14 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 发送核心：用户气泡先行 + Loading 占位消息 + 流式 handler + 引擎编排（压缩预检/溢出重试）。
+    /// 发送核心：用户气泡先行 + Agent 占位消息 + 流式 handler + 引擎编排（压缩预检/溢出重试）。
     /// 普通消息、变体 refinement、结构化实体提取共用（提取路径变体时主窗口也调用）。
     /// <paramref name="displayText"/> 只影响用户气泡显示（# 引用内联后 LLM 收 ID、气泡留原文）。
     /// </summary>
     public async Task SendEnginePromptAsync(string text, string? displayText = null)
     {
         // 拒发守卫：变体提取等路径可能绕过输入框 Enter 守卫；此时 bridge.SendAsync
-        // 必抛 InvalidOperationException 且占位气泡永久卡 Loading，宁可不发。
+        // 必抛 InvalidOperationException 且占位气泡永久留在对话里，宁可不发。
         if (_bridge.IsProcessing)
         {
             AddSystemNotice("Agent 正在处理中，请等待当前回合结束后再发送");
@@ -1226,13 +1248,14 @@ public sealed class ConversationViewModel : ViewModelBase
         HasMessages = true;
         _pendingEchoText = text;
 
-        // 创建空白 Agent 消息占位（Loading 指示）
-        _agentMessage = new ChatMessageModel(MessageSender.Agent) { Loading = true };
+        // 创建空白 Agent 消息占位（流式内容落点）；首个正文/步骤到达前显示等待行。
+        _agentMessage = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
         var localAgentMessage = _agentMessage;
         _handler = new StreamEventHandler(
             localAgentMessage,
             onError: null,
-            onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed)
+            onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
+            toolDisplay: _toolDisplay
         );
         Messages.Add(localAgentMessage);
         HasMessages = true;
@@ -1248,7 +1271,7 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         _cts?.Cancel();
         _bridge.Stop();
-        FinalizeAgentMessage("\n\n> ⏹ 已中断");
+        FinalizeAgentMessage(null, interrupted: true);
     }
 
     /// <summary>新建对话。</summary>
@@ -1270,7 +1293,9 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         await _engine.SwitchToAsync(conversationId, CurrentNovelId ?? "");
         Messages.Clear();
-        foreach (var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync()))
+        foreach (
+            var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync(), _toolDisplay)
+        )
             Messages.Add(msg);
         _agentMessage = null;
         _handler = null;
@@ -1310,6 +1335,17 @@ public sealed class ConversationViewModel : ViewModelBase
                 var win = new AskUserWindow(_questionStore, q);
                 if (owner is not null)
                 {
+                    DialogTheme.FitToOwner(
+                        win,
+                        owner,
+                        0.68,
+                        640,
+                        1200,
+                        0.72,
+                        280,
+                        860,
+                        autoHeight: true
+                    );
                     await win.ShowDialog(owner);
                 }
                 else
@@ -1331,6 +1367,8 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>处理 Agent 事件（UI 线程，由主窗口转发）。</summary>
     public void HandleAgentEvent(AgentEvent evt)
     {
+        MarkAgentActivity(evt);
+
         switch (evt)
         {
             case AgentStart:
@@ -1343,7 +1381,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 break;
 
             case AgentInterrupted:
-                FinalizeAgentMessage("\n\n> ⏹ 已中断");
+                FinalizeAgentMessage(null, interrupted: true);
                 break;
 
             // 用户消息（含注入的审计/系统消息）→ 创建用户气泡
@@ -1377,14 +1415,38 @@ public sealed class ConversationViewModel : ViewModelBase
         }
     }
 
-    /// <summary>结束当前 Agent 消息（Loading=false，可选追加文本）。</summary>
-    private void FinalizeAgentMessage(string? append)
+    /// <summary>
+    /// 首个可见活动到达后收起等待行：正文/思考 token、可见工具步骤、错误/熔断。
+    /// 隐藏工具（上下文接续/历史检索）不产生步骤，继续保持等待指示。
+    /// </summary>
+    private void MarkAgentActivity(AgentEvent evt)
     {
         if (_agentMessage is null)
             return;
+
+        var hasVisibleActivity = evt switch
+        {
+            StreamChunk { ContentType: StreamContentType.Text or StreamContentType.Thinking } =>
+                true,
+            ToolExecutionStart tes => !Core.Tools.HiddenTools.IsHidden(tes.ToolName),
+            AgentError or CircuitBreakerTriggered => true,
+            _ => false,
+        };
+        if (hasVisibleActivity)
+            _agentMessage.IsWaiting = false;
+    }
+
+    /// <summary>结束当前 Agent 消息（可选追加文本/标记中断）。</summary>
+    private void FinalizeAgentMessage(string? append, bool interrupted = false)
+    {
+        if (_agentMessage is null)
+            return;
+        _agentMessage.IsWaiting = false;
+        if (interrupted)
+            _agentMessage.IsInterrupted = true;
         if (!string.IsNullOrEmpty(append))
-            _agentMessage.Content.Append(append);
-        _agentMessage.Loading = false;
+            _agentMessage.AppendContent(append);
+        _handler?.CompleteThinking();
         _handler?.CommitSources();
 
         // 空占位（Agent 未产出任何内容）移除，避免留下空气泡

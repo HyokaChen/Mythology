@@ -122,10 +122,16 @@ public sealed partial class TuiApp
                     "outline" => "大纲",
                     _ => "创作内容",
                 };
+                var variantXml = VariantXml.Wrap(
+                    variantContent,
+                    decision.VariantId,
+                    variantLabel,
+                    exploreType
+                );
                 var extractPrompt =
                     $"用户从探索结果中选择了变体「{variantLabel}」——"
                     + $"一个{typeName}方案。\n\n"
-                    + variantContent
+                    + variantXml
                     + "\n\n请根据以上内容，使用相应的工具（如 batch_create_characters）创建结构化实体。"
                     + "如果内容为大纲/风格描述，直接将其作为参考存入上下文，不需要创建实体。";
                 var ct3 = _appCts?.Token ?? CancellationToken.None;

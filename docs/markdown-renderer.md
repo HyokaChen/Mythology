@@ -191,12 +191,12 @@ public sealed record EditHunk
 }
 ```
 
-**DiffLine** — Diff 行模型：
+**DiffLine** — Diff 行模型（`src/Core/Shared/DiffComputer.cs`，TUI 与 Desktop 共用）：
 
 ```csharp
-internal enum DiffLineType { Context, Delete, Insert }
+public enum DiffLineType { Context, Delete, Insert }
 
-internal readonly record struct DiffLine(
+public readonly record struct DiffLine(
     DiffLineType Type,
     int? OldLineNum,
     int? NewLineNum,
@@ -205,6 +205,8 @@ internal readonly record struct DiffLine(
 ```
 
 ### 5.3 DiffComputer API
+
+实现位于 `src/Core/Shared/DiffComputer.cs`（Core 层），TUI 的 `ToolCallRenderer` 与 Desktop 的 `ToolDiffBuilder` 共用同一实现，避免两端算法漂移。
 
 | 方法 | 说明 |
 |------|------|

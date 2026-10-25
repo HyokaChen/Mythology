@@ -34,6 +34,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
+    <!-- DiffComputer：TUI 与 Desktop 共用的行级 Myers diff（结果展示） -->
+    <PackageReference Include="DiffPlex" Version="1.9.0" />
     <!-- 日志（双入口共用 CoreServiceExtensions 注册） -->
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />

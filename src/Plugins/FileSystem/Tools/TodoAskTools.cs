@@ -349,19 +349,15 @@ public sealed class AskUserTool(UserQuestionStore questionStore)
             };
         }
 
-        // 构建答案摘要供 LLM 使用
-        var sb = new StringBuilder();
-        sb.AppendLine("用户回复:");
-        for (var i = 0; i < pending.Count; i++)
-        {
-            var answers = answerTasks[i].Result;
-            sb.AppendLine($"  [{pending[i].Header}] {pending[i].Question}");
-            sb.AppendLine($"    → {string.Join(", ", answers)}");
-        }
+        // 构建答案摘要供 LLM 使用；与 TUI 追加的 user message 共用同一格式。
+        var answered = pending
+            .Select((q, i) => q with { SelectedAnswers = answerTasks[i].Result })
+            .ToArray();
+        var answerText = AskUserReplyFormatter.Format(answered);
 
         return new AgentToolResult<AskUserDetails>
         {
-            Content = [new TextContent(sb.ToString())],
+            Content = [new TextContent(answerText)],
             Details = new AskUserDetails
             {
                 QuestionIds = pending.Select(p => p.Id).ToArray(),

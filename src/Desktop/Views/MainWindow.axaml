@@ -270,10 +270,10 @@
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <controls:BusySpinner
-            x:Name="StatusSpinner"
-            IsActive="{Binding IsBusy}"
-            IsVisible="{Binding IsBusy}"
-            FontSize="11"
+            Name="StatusSpinner"
+            IsActive="{Binding IsProcessing}"
+            IsVisible="{Binding IsProcessing}"
+            FontSize="12"
             Foreground="{DynamicResource BrushSageLeaf}"
             VerticalAlignment="Center"
           />

@@ -108,7 +108,7 @@ public sealed class ConversationVmContractTests
         );
         Assert.Equal(3, vm.Messages.Count);
 
-        // 中断收尾：占位追加「已中断」标记后保留（Content 非空不满足移除条件）
+        // 中断收尾：占位标记 IsInterrupted 后保留（中断提示独立成行，不再写进 Content）
         vm.HandleAgentEvent(new AgentInterrupted());
         Assert.Equal(3, vm.Messages.Count);
 
@@ -125,6 +125,38 @@ public sealed class ConversationVmContractTests
             new MessageStart(new LlmChatMessage(ChatMessageRoles.User, "第一章大纲"))
         );
         Assert.Equal(6, vm.Messages.Count); // 新 flag 吞掉本轮回显
+    }
+
+    /// <summary>
+    /// 对话内等待行：发送后立即可见（spinner + 执行中）；首个思考/正文 token 到达即收起，
+    /// 回合结束（中断）后不再残留。诗词由左下角状态栏展示，不再进入等待行。
+    /// </summary>
+    [Fact]
+    public async Task WaitingRow_ClosesOnFirstActivity()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        vm.Engine.NewSession();
+
+        await vm.SendEnginePromptAsync("写一段雨中送别");
+
+        Assert.Equal(2, vm.Messages.Count);
+        var agent = vm.Messages[1];
+        Assert.True(agent.IsWaiting);
+
+        vm.SetProcessing(true);
+
+        vm.HandleAgentEvent(new StreamChunk("先分析", "", StreamContentType.Thinking));
+        Assert.False(agent.IsWaiting);
+        var step = Assert.Single(agent.AgentSteps);
+        Assert.True(step.HasThinking);
+        Assert.Equal("先分析", step.ThinkingText);
+
+        vm.HandleAgentEvent(new AgentInterrupted());
+        Assert.False(agent.IsWaiting);
+        Assert.True(agent.IsInterrupted);
+        Assert.DoesNotContain("已中断", agent.Content.ToString());
+        Assert.Equal(2, vm.Messages.Count);
     }
 
     /// <summary>

@@ -3274,12 +3274,9 @@ public sealed class FileNovelStore : INovelStore
         }
     }
 
-    private string GetSessionDir(string novelId)
-    {
-        var name = GetNovelTitle(novelId) ?? novelId;
-        var encoded = SanitizeFileName(name);
-        return Path.Combine(_sessionsDir, $"--novels-{encoded}--");
-    }
+    /// <summary>审计日志与会话同目录：按小说 id 编码（标题会改名/重复）。</summary>
+    private string GetSessionDir(string novelId) =>
+        Path.Combine(_sessionsDir, MythologyPaths.GetSessionDirName(novelId));
 
     // ═══════════════════════════════════════════════════════════
     //  Ontology journal（本体动作日志：追加式 ontology/actions.jsonl）
@@ -3723,31 +3720,6 @@ public sealed class FileNovelStore : INovelStore
         catch
         {
             // 日志是旁路：永不阻塞实体写入。
-        }
-    }
-
-    /// <summary>
-    /// 读取小说标题（直接读 novel.yaml，不再维护手写 title 缓存；Phase 5 清理）。
-    /// </summary>
-    private string? GetNovelTitle(string novelId)
-    {
-        var dir = FindNovelDirById(novelId);
-        if (dir is null)
-            return null;
-
-        var yamlPath = Path.Combine(dir, "novel.yaml");
-        if (!File.Exists(yamlPath))
-            return null;
-
-        try
-        {
-            var text = AtomicFile.ReadAllText(yamlPath);
-            var dict = YamlHelper.Deserialize(text);
-            return GetString(dict, "title");
-        }
-        catch
-        {
-            return null;
         }
     }
 

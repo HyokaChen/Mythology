@@ -20,8 +20,47 @@
     <conv:SenderToBoolConverter x:Key="IsSystem" />
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- 最终答复正文：LiveMarkdown 默认 14px/紧凑行高，统一到 DESIGN.md 的 16/24。 -->
+    <Style Selector="md|MarkdownRenderer.ConversationMarkdown md|MarkdownTextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="LineHeight" Value="24" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer.ConversationMarkdown md|MarkdownTextBlock.ParagraphBlock">
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <!-- 中间正文：只做时间线留痕，字号小于最终答复；外层复用 AgentBubble 的
+         Bone 卡片（16/12 padding），普通 TextBlock 渲染以避免 Markdown 渲染器卡顿。 -->
+    <Style Selector="TextBlock.StepContentText">
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="LineHeight" Value="24" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <!-- 引用块不再嵌套第二张卡片：Markdown 默认深灰底 + 本文件的深色正文会变成深底深字，
+         放进 AgentBubble 后还会形成双层边框。引用语义由 LiveMarkdown 的「▎」前缀承担，
+         这里只清掉底色和边框。 -->
+    <Style Selector="Border.QuoteBlock">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <!-- 系统状态行（中断/实体变更/压缩等）：13px，比正文小一档，但比旧 12px 更易读。
+         所有系统状态共用这一套排版，避免中断、实体变更各长一套。 -->
+    <Style Selector="TextBlock.SystemNoticeText">
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LineHeight" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid RowDefinitions="*,Auto">
-    <!-- ═══════════ 对话流（UI.md：用户右 65% / 助手左 Markdown / 步骤/来源） ═══════════ -->
+    <!-- ═══════════ 对话流（用户右对齐但无宽度上限 / 助手 Markdown 满宽 / 步骤与来源满宽） ═══════════ -->
     <Grid Grid.Row="0">
       <!--
         空状态（工作台引导区）。
@@ -40,7 +79,7 @@
           FontFamily="{StaticResource FontSerif}"
           FontSize="44"
           FontWeight="Light"
-          LineHeight="48"
+          LineHeight="52"
           Foreground="{DynamicResource BrushForestInk}"
           HorizontalAlignment="Center"
           TextAlignment="Center"
@@ -118,9 +157,9 @@
         <controls:AutoScrollItemsControl.ItemTemplate>
           <DataTemplate x:DataType="models:ChatMessage">
             <StackPanel Margin="0,0,0,12" motion:Motion.Enter="True">
-              <!-- 用户消息：右对齐 Forest Ink 气泡（UI.md 5.1） -->
+              <!-- 用户消息：右对齐 Forest Ink 气泡；不设左侧留白/宽度上限，长回复可用满整行 -->
               <StackPanel
-                Margin="96,2,0,0"
+                Margin="0,2,0,0"
                 HorizontalAlignment="Right"
                 Spacing="3"
                 IsVisible="{Binding Sender, Converter={StaticResource IsUser}, ConverterParameter=User}"
@@ -134,15 +173,29 @@
                 </Border>
               </StackPanel>
 
-              <!-- 助手消息：左对齐 Bone 卡 + LiveMarkdown（UI.md 5.2） -->
+              <!-- 助手消息：Bone 卡 + LiveMarkdown（UI.md 5.2）；正文铺满消息区宽度 -->
               <StackPanel
-                Margin="0,2,96,0"
+                Margin="0,2,0,0"
+                HorizontalAlignment="Stretch"
                 Spacing="6"
                 IsVisible="{Binding Sender, Converter={StaticResource IsAgent}, ConverterParameter=Agent}"
               >
-                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding Loading}">
-                  <TextBlock Classes="Eyebrow" Text="写作中" VerticalAlignment="Center" />
-                  <controls:BusySpinner IsActive="{Binding Loading}" FontSize="12" />
+                <!-- 用户消息后、首个 token/步骤前：只显示 spinner + 执行中。
+                     诗词与 loading 统一回到左下角状态栏。 -->
+                <StackPanel
+                  Orientation="Horizontal"
+                  Spacing="8"
+                  Margin="0,2,0,4"
+                  IsVisible="{Binding IsWaiting}"
+                  motion:Motion.Enter="True"
+                >
+                  <controls:BusySpinner
+                    IsActive="{Binding IsWaiting}"
+                    FontSize="12"
+                    Foreground="{DynamicResource BrushSageLeaf}"
+                    VerticalAlignment="Center"
+                  />
+                  <TextBlock Classes="Eyebrow" Text="执行中" VerticalAlignment="Center" />
                 </StackPanel>
 
                 <!-- Agent 步骤（思考/工具调用，UI.md 5.3-5.8） -->
@@ -157,63 +210,187 @@
                         motion:Motion.Enter="True"
                         motion:Motion.EnterRise="4"
                       >
-                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1,0,0">
-                          <controls:BusySpinner
-                            IsActive="{Binding IsProcessing}"
-                            IsVisible="{Binding IsProcessing}"
-                            FontSize="12"
-                            VerticalAlignment="Center"
-                          />
-                          <lucide:LucideIcon
-                            Kind="{Binding StatusIcon}"
-                            Size="11"
-                            StrokeWidth="1.6"
-                            IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
-                            VerticalAlignment="Center"
-                          />
+                        <!-- 阶段正文：与最终流式正文同一张 Bone 卡片，避免冻结到步骤列表时
+                             背景从黄色突然变成无底色；无步骤头，只保留正文。 -->
+                        <Border
+                          Classes="AgentBubble"
+                          IsVisible="{Binding IsContentStep}"
+                          Margin="0,4,0,4"
+                        >
+                          <TextBlock Classes="StepContentText" Text="{Binding ContentText}" />
+                        </Border>
+
+                        <StackPanel Spacing="2" IsVisible="{Binding IsNotContentStep}">
+                          <!-- 步骤头：图标/标题/参数与「详情」同一行；参数列吃满剩余宽度并换行 -->
+                          <Grid
+                            ColumnDefinitions="Auto,Auto,*,Auto"
+                            ColumnSpacing="6"
+                            Margin="0,1,0,0"
+                          >
+                            <Grid Grid.Column="0" Width="12" Height="12" VerticalAlignment="Center">
+                              <controls:BusySpinner
+                                IsActive="{Binding IsProcessing}"
+                                IsVisible="{Binding IsProcessing}"
+                                FontSize="12"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                              />
+                              <lucide:LucideIcon
+                                Kind="{Binding StatusIcon}"
+                                Size="11"
+                                StrokeWidth="1.6"
+                                IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                              />
+                            </Grid>
+                            <TextBlock
+                              Grid.Column="1"
+                              Text="{Binding Title}"
+                              Classes="Tag"
+                              VerticalAlignment="Center"
+                            />
+                            <TextBlock
+                              Grid.Column="2"
+                              Text="{Binding ArgumentsSummary}"
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageMist}"
+                              TextWrapping="Wrap"
+                              VerticalAlignment="Center"
+                            />
+                            <Button
+                              Grid.Column="3"
+                              Content="{Binding DetailsToggleLabel}"
+                              IsVisible="{Binding HasDetails}"
+                              Classes="IconButton"
+                              Padding="6,1"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageLeaf}"
+                              VerticalAlignment="Center"
+                              Click="StepDetails_OnClick"
+                            />
+                          </Grid>
                           <TextBlock
-                            Text="{Binding Title}"
-                            Classes="Tag"
-                            VerticalAlignment="Center"
-                          />
-                          <TextBlock
-                            Text="{Binding ArgumentsSummary}"
-                            FontFamily="{StaticResource FontMono}"
+                            Text="{Binding ResultSummary}"
+                            IsVisible="{Binding HasResult}"
                             FontSize="11"
-                            Foreground="{DynamicResource BrushSageMist}"
-                            TextTrimming="CharacterEllipsis"
-                            MaxWidth="420"
-                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource BrushSageGray}"
+                            TextWrapping="Wrap"
+                            Margin="18,0,0,0"
                           />
+                          <!-- 详情默认折叠：工具原始参数/结果与结构化 diff 不铺在对话里；
+                             思考正文在详情区默认展开（步骤创建时置 true），可点「收起」折叠。
+                             不使用卡片底色/边框，直接落在页面背景上，和输入卡片左缘对齐。 -->
+                          <StackPanel
+                            Classes="StepDetails"
+                            IsVisible="{Binding IsDetailsExpanded}"
+                            Spacing="4"
+                            Margin="18,2,0,0"
+                            HorizontalAlignment="Stretch"
+                          >
+                            <TextBlock
+                              Text="{Binding ThinkingText}"
+                              IsVisible="{Binding HasThinking}"
+                              FontSize="12"
+                              Foreground="{DynamicResource BrushSageGray}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Text="参数"
+                              Classes="Eyebrow"
+                              IsVisible="{Binding HasDetailArguments}"
+                            />
+                            <TextBlock
+                              Text="{Binding DetailArguments}"
+                              IsVisible="{Binding HasDetailArguments}"
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageGray}"
+                              TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                              Text="结果"
+                              Classes="Eyebrow"
+                              IsVisible="{Binding HasResultDetail}"
+                            />
+                            <TextBlock
+                              Text="{Binding DetailResult}"
+                              IsVisible="{Binding ShowRawResultDetail}"
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="11"
+                              Foreground="{DynamicResource BrushSageGray}"
+                              TextWrapping="Wrap"
+                            />
+                            <!-- 工具 Details 的结构化 diff：红删绿增，算法与 TUI 共用 -->
+                            <StackPanel IsVisible="{Binding HasDiff}" Spacing="2" Margin="0,2,0,0">
+                              <TextBlock Text="{Binding DiffSummary}" Classes="Eyebrow" />
+                              <ItemsControl ItemsSource="{Binding DiffLines}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate x:DataType="models:DiffLineView">
+                                    <Border
+                                      Classes="DiffRow"
+                                      Classes.DiffDelete="{Binding IsDelete}"
+                                      Classes.DiffInsert="{Binding IsInsert}"
+                                    >
+                                      <Grid ColumnDefinitions="Auto,Auto,*">
+                                        <TextBlock
+                                          Classes="DiffText DiffPrefix"
+                                          Classes.DiffDelete="{Binding IsDelete}"
+                                          Classes.DiffInsert="{Binding IsInsert}"
+                                          Text="{Binding Prefix}"
+                                        />
+                                        <TextBlock
+                                          Grid.Column="1"
+                                          Classes="DiffText DiffLineNumber"
+                                          Classes.DiffDelete="{Binding IsDelete}"
+                                          Classes.DiffInsert="{Binding IsInsert}"
+                                          Text="{Binding LineNumber}"
+                                        />
+                                        <TextBlock
+                                          Grid.Column="2"
+                                          Classes="DiffText"
+                                          Classes.DiffDelete="{Binding IsDelete}"
+                                          Classes.DiffInsert="{Binding IsInsert}"
+                                          Text="{Binding Text}"
+                                          TextWrapping="Wrap"
+                                        />
+                                      </Grid>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </StackPanel>
+                          </StackPanel>
                         </StackPanel>
-                        <TextBlock
-                          Text="{Binding ResultSummary}"
-                          IsVisible="{Binding HasResult}"
-                          FontSize="11"
-                          Foreground="{DynamicResource BrushSageGray}"
-                          TextWrapping="Wrap"
-                          Margin="18,0,0,0"
-                        />
-                        <TextBlock
-                          Text="{Binding ThinkingText}"
-                          IsVisible="{Binding HasThinking}"
-                          FontSize="11"
-                          Foreground="{DynamicResource BrushSageMist}"
-                          TextWrapping="Wrap"
-                          Margin="18,0,0,0"
-                        />
                       </StackPanel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- 流式 Markdown 正文 -->
-                <Border Classes="AgentBubble">
+                <!-- 流式 Markdown 正文（仅非空白正文渲染，避免先到的换行/空格撑出空白卡片） -->
+                <Border
+                  Classes="AgentBubble"
+                  HorizontalAlignment="Stretch"
+                  IsVisible="{Binding HasVisibleContent}"
+                >
                   <md:MarkdownRenderer
+                    Classes="ConversationMarkdown"
                     MarkdownBuilder="{Binding Content}"
                     CodeBlockColorTheme="LightPlus"
                   />
                 </Border>
+
+                <!-- 中断与系统消息同一套呈现：系统标签 + 13px 状态行，不再用红色独立卡片。 -->
+                <StackPanel
+                  HorizontalAlignment="Stretch"
+                  Spacing="3"
+                  Margin="0,2,0,0"
+                  IsVisible="{Binding IsInterrupted}"
+                >
+                  <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+                  <TextBlock Classes="SystemNoticeText" Text="⏹ 中断生成" />
+                </StackPanel>
 
                 <!-- 信息来源 -->
                 <ItemsControl
@@ -235,22 +412,19 @@
                 </ItemsControl>
               </StackPanel>
 
-              <!-- 系统提示：居中细注（压缩/溢出重试/持久化故障等,对齐 TUI 系统行语义） -->
+              <!-- 系统提示：铺满消息区的内联行（压缩/溢出重试/持久化故障等,对齐 TUI 系统行语义） -->
               <StackPanel
-                HorizontalAlignment="Center"
+                HorizontalAlignment="Stretch"
                 Spacing="3"
-                Margin="48,2,48,0"
+                Margin="0,2,0,0"
                 IsVisible="{Binding Sender, Converter={StaticResource IsSystem}, ConverterParameter=System}"
               >
-                <TextBlock Classes="Eyebrow" HorizontalAlignment="Center" Text="系统" />
+                <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
                 <TextBlock
+                  Classes="SystemNoticeText"
                   Text="{Binding Content, Converter={StaticResource StringBuilderToString}}"
-                  FontSize="12"
-                  Foreground="{DynamicResource BrushSageGray}"
-                  MaxWidth="640"
-                  TextWrapping="Wrap"
-                  TextAlignment="Center"
-                  HorizontalAlignment="Center"
+                  TextAlignment="Left"
+                  HorizontalAlignment="Stretch"
                 />
               </StackPanel>
             </StackPanel>
@@ -262,7 +436,7 @@
               x:Name="PART_ScrollViewer"
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto"
-              Padding="28,18,28,12"
+              Padding="24,18,24,12"
             >
               <ItemsPresenter />
             </ScrollViewer>
@@ -279,11 +453,13 @@
       Padding="24,10,24,14"
     >
       <StackPanel Spacing="8">
+        <!-- TextBox 模板在 TextPresenter 外还有固定 5px 内缩；卡片左侧用 11px
+             抵消，使输入文字与正文左缘（16px 卡片内边距 + 1px 边框）对齐。 -->
         <Border
           x:Name="InputCard"
           Classes="Card Glow"
           CornerRadius="{StaticResource RadiusCards}"
-          Padding="14,8"
+          Padding="11,8"
           MinHeight="60"
         >
           <Grid RowDefinitions="Auto,Auto">

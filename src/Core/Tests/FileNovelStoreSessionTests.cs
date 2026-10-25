@@ -248,6 +248,47 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>标题应跳过系统注入消息，取第一条作者输入。</summary>
+    public async Task GetSession_SkipsInjectedMessages_ForTitle()
+    {
+        await CreateTestNovelAsync();
+        var messages = new List<LlmChatMessage>
+        {
+            new(ChatMessageRoles.User, "[本体 harness] 上次会话以来的本体变化\n- 小说已创建"),
+            new(ChatMessageRoles.User, "[云端诊断] status=pass"),
+            new(ChatMessageRoles.Assistant, "收到"),
+            new(ChatMessageRoles.User, "帮我看看林月如的设定"),
+            new(ChatMessageRoles.Assistant, "她是女主。"),
+        };
+        await _store.SaveSessionMessages(TestSessionId, TestNovelId, messages, startOrder: 0);
+
+        var session = await _store.GetSession(TestSessionId);
+
+        Assert.NotNull(session);
+        Assert.Equal("帮我看看林月如的设定", session.Title);
+        Assert.DoesNotContain("[本体 harness]", session.Title);
+    }
+
+    [Fact]
+    /// <summary>全部是系统注入消息时，标题回退占位符，不暴露注入内容。</summary>
+    public async Task GetSession_AllInjectedMessages_FallsBackToUnnamed()
+    {
+        await CreateTestNovelAsync();
+        var messages = new List<LlmChatMessage>
+        {
+            new(ChatMessageRoles.User, "[本体 harness] 上次会话以来的本体变化"),
+            new(ChatMessageRoles.User, "[风格观察] 重复句式偏多"),
+            new(ChatMessageRoles.Assistant, "收到"),
+        };
+        await _store.SaveSessionMessages(TestSessionId, TestNovelId, messages, startOrder: 0);
+
+        var session = await _store.GetSession(TestSessionId);
+
+        Assert.NotNull(session);
+        Assert.Equal("未命名会话", session.Title);
+    }
+
+    [Fact]
     /// <summary>GetSession 对不存在的会话应返回 null。</summary>
     public async Task GetSession_ReturnsNull_ForNonExistentSession()
     {
@@ -1625,6 +1666,66 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
         Assert.All(sessions, s => Assert.Equal(TestNovelId, s.NovelId));
     }
 
+    [Fact]
+    /// <summary>会话目录必须按小说 id 编码：标题改名后历史仍可见，新数据不能写进标题目录。</summary>
+    public async Task GetSessions_UsesNovelIdDirectory_WhenTitleDiffers()
+    {
+        const string novelId = "novel-id-123";
+        const string title = "剑门";
+        await CreateTestNovelAsync(novelId, title);
+
+        await _store.SaveSessionMessages(
+            "sess-title-mismatch",
+            novelId,
+            CreateSimpleConversation("标题与会话目录无关", "好"),
+            startOrder: 0
+        );
+
+        var idDir = Path.Combine(_tempSessionsDir, $"--novels-{novelId}--");
+        var titleDir = Path.Combine(_tempSessionsDir, $"--novels-{title}--");
+        Assert.True(Directory.Exists(idDir));
+        Assert.False(Directory.Exists(titleDir));
+
+        var sessions = await _store.GetSessions(novelId);
+        var session = Assert.Single(sessions);
+        Assert.Equal(novelId, session.NovelId);
+        Assert.Equal("sess-title-mismatch", session.Id);
+    }
+
+    [Fact]
+    /// <summary>升级兼容：旧版本写在标题目录下的会话仍能被列出与读取，且不与 id 目录重复。</summary>
+    public async Task GetSessions_ReadsLegacyTitleDirectory()
+    {
+        const string novelId = "novel-id-legacy";
+        const string title = "旧标题";
+        const string sessionId = "sess-legacy";
+        await CreateTestNovelAsync(novelId, title);
+
+        await _store.SaveSessionMessages(
+            sessionId,
+            novelId,
+            CreateSimpleConversation("旧会话", "仍在"),
+            startOrder: 0
+        );
+
+        var idDir = Path.Combine(_tempSessionsDir, $"--novels-{novelId}--");
+        var legacyDir = Path.Combine(_tempSessionsDir, $"--novels-{title}--");
+        CopyDirectory(
+            Directory.GetDirectories(idDir).Single(),
+            Path.Combine(legacyDir, Path.GetFileName(Directory.GetDirectories(idDir).Single()))
+        );
+
+        var sessions = await _store.GetSessions(novelId);
+        Assert.Single(sessions);
+        Assert.Equal(sessionId, sessions[0].Id);
+
+        // 索引也要从 MANIFEST 读出正确的小说 id（目录名是标题时不能误判）。
+        var reopened = CreateStore();
+        var session = await reopened.GetSession(sessionId);
+        Assert.NotNull(session);
+        Assert.Equal(novelId, session.NovelId);
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  toolName 回填
     // ═══════════════════════════════════════════════════════════
@@ -1934,6 +2035,15 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
         // b2 可恢复（第 3 条 + 摘要消息本身？A3 过滤后 ids2 只含第 3 条真实消息）
         var rec2 = await _store.ReadCompactedMessagesAsync(TestSessionId, "b2");
         Assert.NotNull(rec2);
+    }
+
+    private static void CopyDirectory(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.GetFiles(source))
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+        foreach (var dir in Directory.GetDirectories(source))
+            CopyDirectory(dir, Path.Combine(target, Path.GetFileName(dir)));
     }
 }
 

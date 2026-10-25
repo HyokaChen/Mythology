@@ -48,4 +48,52 @@ public static class DialogTheme
         window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
         window.Background = WindowBackground;
     }
+
+    /// <summary>
+    /// 按主窗口尺寸放大对话框内容区（仍保留边距）；调用方须在 ShowDialog 前调用。
+    /// 用于 ask_user / 变体审阅这类内容型弹窗：宽屏下不缩成半宽小卡。
+    /// autoHeight=true 时只固定宽度，高度交给内容（ask_user 选项少时不留空白 Card）。
+    /// </summary>
+    public static void FitToOwner(
+        Window window,
+        Window owner,
+        double widthRatio,
+        double minWidth,
+        double maxWidth,
+        double heightRatio,
+        double minHeight,
+        double maxHeight,
+        bool autoHeight = false
+    )
+    {
+        if (!double.IsFinite(owner.Bounds.Width) || owner.Bounds.Width <= 0)
+            return;
+        if (!double.IsFinite(owner.Bounds.Height) || owner.Bounds.Height <= 0)
+            return;
+
+        var availableWidth = Math.Max(320, owner.Bounds.Width - 48);
+        var availableHeight = Math.Max(320, owner.Bounds.Height - 64);
+        window.Width = Math.Min(
+            availableWidth,
+            Math.Clamp(owner.Bounds.Width * widthRatio, minWidth, maxWidth)
+        );
+        var fittedHeight = Math.Min(
+            availableHeight,
+            Math.Clamp(owner.Bounds.Height * heightRatio, minHeight, maxHeight)
+        );
+        if (autoHeight)
+        {
+            window.SizeToContent = SizeToContent.Height;
+            window.Height = double.NaN;
+            window.MaxHeight = availableHeight;
+            window.MinHeight = minHeight;
+        }
+        else
+        {
+            window.Height = fittedHeight;
+            window.MinHeight = Math.Min(fittedHeight, minHeight);
+        }
+        window.MinWidth = Math.Min(window.Width, minWidth);
+        window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+    }
 }

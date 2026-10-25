@@ -92,7 +92,8 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
     internal TuiSlashTestHarness(
         string? novelId = null,
         string? sessionId = null,
-        UsageRestClient? cloudUsage = null
+        UsageRestClient? cloudUsage = null,
+        UserQuestionStore? questionStore = null
     )
     {
         TempDir = Path.Combine(Path.GetTempPath(), $"tui-slash-test-{Guid.NewGuid():N}");
@@ -144,6 +145,7 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
             SessionStore,
             Registry,
             TodoStore,
+            questionStore: questionStore,
             novelId: novelId,
             sessionId: sessionId,
             configStore: ConfigStore,

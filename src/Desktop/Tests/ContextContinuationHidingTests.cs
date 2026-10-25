@@ -93,7 +93,10 @@ public sealed class ContextContinuationHidingTests
         var ui = SessionMessageMapper.MapUi([assistant, hiddenResult, visibleResult]);
 
         var bubble = Assert.Single(ui);
-        var step = Assert.Single(bubble.AgentSteps);
+        Assert.Equal(2, bubble.AgentSteps.Count);
+        Assert.Equal(StepKind.Content, bubble.AgentSteps[0].Kind);
+        Assert.Equal("我先查一下历史。", bubble.AgentSteps[0].ContentText);
+        var step = bubble.AgentSteps[1];
         Assert.Equal(Visible, step.Title);
         Assert.Equal("第一章正文", step.ResultSummary);
 
@@ -110,6 +113,40 @@ public sealed class ContextContinuationHidingTests
         );
         Assert.DoesNotContain(Hidden, rendered);
         Assert.DoesNotContain("窗口 w0", rendered);
+    }
+
+    [Fact]
+    public void MapUi_HiddenToolOnly_DoesNotSplitAssistantText()
+    {
+        var assistant = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = "我先查一下历史。",
+            ToolCallsJson = JsonSerializer.Serialize(
+                new[]
+                {
+                    new
+                    {
+                        id = "c1",
+                        name = Hidden,
+                        arguments = """{"query":"上一页改过哪些文件"}""",
+                    },
+                }
+            ),
+        };
+        var hiddenResult = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Tool,
+            ToolCallId = "c1",
+            ToolName = Hidden,
+            Content = "[窗口 w0 | id 0193a4b7c012 | order 128 | user]",
+        };
+
+        var bubble = Assert.Single(SessionMessageMapper.MapUi([assistant, hiddenResult]));
+
+        Assert.Empty(bubble.AgentSteps);
+        Assert.Equal("我先查一下历史。", bubble.Content.ToString());
+        Assert.True(bubble.HasVisibleContent);
     }
 
     [Fact]

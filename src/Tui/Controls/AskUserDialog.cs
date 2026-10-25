@@ -12,12 +12,14 @@ namespace Tui.Controls;
 /// ask_user 工具的弹出对话框 — 渲染结构化问题，支持选择选项。
 ///
 /// 设计参考 Codex/Claude Code/OpenCode：
-/// - 每个单选问题最后都有一个 "Type something." 行，用户可以自定义输入
-/// - 多选问题没有自定义输入行（因为已有足够灵活性）
+/// - 单选问题用 radio 列表，最后一行是 "Type something." 自定义输入
+/// - 多选问题用 checkbox 列表（空格/Enter 勾选，确认后一次提交全部选中项）
 /// - 用户选择或输入后，答案追加到 ConversationLoop，继续 agent loop
 /// </summary>
 public static class AskUserDialog
 {
+    private const string CustomOption = "Type something.";
+
     /// <summary>
     /// 显示带问题的模态对话框。用户回答完所有问题后返回。
     /// </summary>
@@ -89,31 +91,30 @@ public static class AskUserDialog
     )
     {
         // 构建选项列表：原选项 + "Type something." （单选时）
-        var displayOptions = question.Options.ToList();
         var hasCustomInput = !question.MultiSelect;
+        var displayOptions = question.Options.ToList();
         if (hasCustomInput)
-            displayOptions.Add("Type something.");
+            displayOptions.Add(CustomOption);
+        var customIndex = hasCustomInput ? question.Options.Length : -1;
 
-        var list = new OptionList<string>()
-            .Items(displayOptions)
-            .ItemTemplate(
-                new DataTemplate<string>(
-                    Display: (value, in _) =>
-                    {
-                        var item = value.GetValue();
-                        // 选项来自 LLM（用户问题的候选项）：按数据处理，先转义再渲染
-                        return item == "Type something."
-                            ? new Markup("  [dim italic]Type something.[/]")
-                            : new Markup($"  {ToolCallRenderer.Escape(item)}");
-                    },
-                    Editor: null
-                )
-            )
-            .ActivateOnClick(true);
+        // 单选 = radio 列表（一次只能选一个），多选 = checkbox 列表（可勾选多项）。
+        SelectionList<string>? multiList = null;
+        RadioButtonList<string>? singleList = null;
+        Visual list;
+        if (question.MultiSelect)
+        {
+            multiList = BuildMultiSelectList(question);
+            list = multiList;
+        }
+        else
+        {
+            singleList = BuildSingleSelectList(displayOptions, customIndex);
+            list = singleList;
+        }
         list.HorizontalAlignment = Align.Stretch;
         list.AutoFocus = true;
 
-        // 自定义输入框（初始隐藏）
+        // 自定义输入框（单选时初始隐藏）
         var inputField = new MaskedInput { Template = "____________________" };
         var inputPanel = new Padder
         {
@@ -131,7 +132,13 @@ public static class AskUserDialog
             .IsDraggable(false)
             .IsModal(true)
             .Title(new Markup(title))
-            .BottomLeftText(new Markup("[#C7B299]↑↓ 选择 · Enter 确认 · Tab 输入 · Esc 取消[/]"))
+            .BottomLeftText(
+                new Markup(
+                    question.MultiSelect
+                        ? "[#C7B299]↑↓ 选择 · 空格/Enter 勾选 · Tab 确认 · Esc 取消[/]"
+                        : "[#C7B299]↑↓ 选择 · Enter 确认 · Tab 输入 · Esc 取消[/]"
+                )
+            )
             .Width(52)
             .MinHeight(12)
             .Padding(new Thickness(2, 1, 2, 1));
@@ -147,18 +154,36 @@ public static class AskUserDialog
         );
         confirmBtn.Click(() =>
         {
+            if (question.MultiSelect)
+            {
+                var answers = CollectMultiAnswers(question, multiList!);
+                if (answers.Length == 0)
+                    return;
+
+                store.Answer(question.Id, answers);
+                dialog.Close();
+                return;
+            }
+
             if (inputPanel.IsVisible)
             {
-                var customText = inputField.Value?.Trim();
-                if (!string.IsNullOrEmpty(customText))
-                {
-                    store.Answer(question.Id, [customText]);
-                    dialog.Close();
-                }
+                SubmitCustomAnswer();
+                return;
             }
-        });
 
-        list.ItemActivated(OnActivated);
+            var selected = GetSelectedSingleOption(singleList, displayOptions);
+            if (selected is null)
+                return;
+
+            if (selected == CustomOption)
+            {
+                ShowCustomInput();
+                return;
+            }
+
+            store.Answer(question.Id, [selected]);
+            dialog.Close();
+        });
 
         dialog.TopRightText(closeBtn);
         dialog.BottomRightText(confirmBtn);
@@ -182,28 +207,40 @@ public static class AskUserDialog
                         dialog.Close();
                         e.Handled = true;
                         break;
-                    case TerminalKey.Enter when inputPanel.IsVisible:
+                    case TerminalKey.Tab when question.MultiSelect:
+                        dialog.App?.Focus(confirmBtn);
+                        e.Handled = true;
+                        break;
+                    case TerminalKey.Enter when !question.MultiSelect && inputPanel.IsVisible:
+                        SubmitCustomAnswer();
+                        e.Handled = true;
+                        break;
+                    case TerminalKey.Enter when !question.MultiSelect:
                     {
-                        var customText = inputField.Value?.Trim();
-                        if (!string.IsNullOrEmpty(customText))
+                        var selected = GetSelectedSingleOption(singleList, displayOptions);
+                        if (selected is null)
+                            break;
+
+                        if (selected == CustomOption)
                         {
-                            store.Answer(question.Id, [customText]);
+                            ShowCustomInput();
+                        }
+                        else
+                        {
+                            store.Answer(question.Id, [selected]);
                             dialog.Close();
-                            e.Handled = true;
                         }
 
+                        e.Handled = true;
                         break;
                     }
-                    case TerminalKey.Tab:
-                    {
-                        if (inputPanel.IsVisible)
-                        {
-                            dialog.App?.Focus(inputField);
-                            e.Handled = true;
-                        }
-
+                    case TerminalKey.Tab
+                        when !question.MultiSelect
+                            && !inputPanel.IsVisible
+                            && GetSelectedSingleOption(singleList, displayOptions) == CustomOption:
+                        ShowCustomInput();
+                        e.Handled = true;
                         break;
-                    }
                 }
             }
         );
@@ -212,22 +249,84 @@ public static class AskUserDialog
         dialog.App?.Focus(list);
         return;
 
-        void OnActivated(object? _, ItemActivatedEventArgs e)
+        void ShowCustomInput()
         {
-            if (e.Index < 0 || e.Index >= displayOptions.Count)
+            if (inputPanel.IsVisible)
                 return;
 
-            var selected = displayOptions[e.Index];
+            inputPanel.IsVisible = true;
+            dialog.App?.Focus(inputField);
+        }
 
-            if (selected == "Type something.")
-            {
-                inputPanel.IsVisible = true;
-                dialog.App?.Focus(inputField);
+        void SubmitCustomAnswer()
+        {
+            var customText = inputField.Value?.Trim();
+            if (string.IsNullOrEmpty(customText))
                 return;
-            }
 
-            store.Answer(question.Id, [selected]);
+            store.Answer(question.Id, [customText]);
             dialog.Close();
         }
+    }
+
+    /// <summary>构建多选列表：每行一个 checkbox，空格/Enter 切换勾选状态。</summary>
+    private static SelectionList<string> BuildMultiSelectList(PendingQuestion question)
+    {
+        var list = new SelectionList<string>();
+        foreach (var option in question.Options)
+            list.AddItem(option);
+
+        list.ItemTemplate = new DataTemplate<string>(
+            Display: (value, in _) =>
+                // 选项来自 LLM（用户问题的候选项）：按数据处理，先转义再渲染
+                new Markup(ToolCallRenderer.Escape(value.GetValue())),
+            Editor: null
+        );
+        return list;
+    }
+
+    /// <summary>构建单选列表：每行一个 radio，最后一行用于自定义输入。</summary>
+    private static RadioButtonList<string> BuildSingleSelectList(
+        IReadOnlyList<string> displayOptions,
+        int customIndex
+    )
+    {
+        var list = new RadioButtonList<string>(displayOptions, 0);
+        list.ItemTemplate = new DataTemplate<string>(
+            Display: (value, in context) =>
+                context.Index == customIndex
+                    ? new Markup("[dim italic]Type something.[/]")
+                    : new Markup(ToolCallRenderer.Escape(value.GetValue())),
+            Editor: null
+        );
+        return list;
+    }
+
+    /// <summary>按选项原始顺序收集多选答案。</summary>
+    private static string[] CollectMultiAnswers(
+        PendingQuestion question,
+        SelectionList<string> list
+    )
+    {
+        var answers = new List<string>();
+        for (var i = 0; i < question.Options.Length; i++)
+        {
+            if (i < list.Checked.Count && list.Checked[i])
+                answers.Add(question.Options[i]);
+        }
+        return answers.ToArray();
+    }
+
+    /// <summary>读取单选列表当前选中的原始选项；索引无效时返回 null。</summary>
+    private static string? GetSelectedSingleOption(
+        RadioButtonList<string>? list,
+        IReadOnlyList<string> displayOptions
+    )
+    {
+        if (list is null)
+            return null;
+
+        var index = list.SelectedIndex;
+        return index >= 0 && index < displayOptions.Count ? displayOptions[index] : null;
     }
 }

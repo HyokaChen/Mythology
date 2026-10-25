@@ -97,16 +97,8 @@ public sealed partial class TuiApp
         {
             // 在对话面板显示变更摘要
             var label = EntityDisplayHelper.DisplayName(evt.EntityType);
-            var changeSummary = evt.Action switch
-            {
-                AuditAction.Create => $"新建{label}「{evt.EntityName}」",
-                AuditAction.Update => evt.FieldChanges is not null
-                    ? $"修改{label}「{evt.EntityName}」: {string.Join(", ", evt.FieldChanges.Keys)}"
-                    : $"修改{label}「{evt.EntityName}」",
-                AuditAction.Delete => $"删除{label}「{evt.EntityName}」",
-                _ => null,
-            };
-            if (changeSummary is not null && evt.EntityType != EntityType.Novel)
+            var changeSummary = EntityChangeSummary.Describe(evt);
+            if (changeSummary is not null)
                 _conversationPanel.AddSystemMessage($"📝 {changeSummary}");
 
             // 用户手动编辑时，向 Agent 发送 Steer 通知让 LLM 感知用户操作

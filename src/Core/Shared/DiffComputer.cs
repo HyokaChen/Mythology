@@ -1,12 +1,12 @@
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 
-namespace Tui.Controls;
+namespace Core.Shared;
 
 /// <summary>
-/// 差异行类型枚举。
+/// 差异行类型枚举。TUI 与 Desktop 共用同一套差异语义。
 /// </summary>
-internal enum DiffLineType
+public enum DiffLineType
 {
     /// <summary>未改变的上下文行。</summary>
     Context,
@@ -21,7 +21,7 @@ internal enum DiffLineType
 /// <summary>
 /// 差异输出中的单行，包含类型和可选行号。
 /// </summary>
-internal readonly record struct DiffLine(
+public readonly record struct DiffLine(
     DiffLineType Type,
     int? OldLineNum,
     int? NewLineNum,
@@ -30,9 +30,9 @@ internal readonly record struct DiffLine(
 
 /// <summary>
 /// 差异计算工具 — 使用 DiffPlex 的 Myers 差异算法计算统一差异风格的行序列。
-/// 与 git 和 Codex 使用相同的 O((N+M)D) 算法。
+/// 与 git 和 Codex 使用相同的 O((N+M)D) 算法；TUI 与 Desktop 共用，避免两端算法漂移。
 /// </summary>
-internal static class DiffComputer
+public static class DiffComputer
 {
     /// <summary>
     /// 计算旧文本和新文本之间的差异列表。
@@ -102,7 +102,7 @@ internal static class DiffComputer
     /// 对完整差异输出应用 GitHub 风格的上下文折叠。
     /// 保留每个变更周围的 <paramref name="contextLines"/> 行上下文，
     /// 将连续的未变更上下文行替换为跳过标记。
-    /// 确保所有差异块在 TUI 中可见，无需滚动数百行未变更内容。
+    /// 确保所有差异块在 TUI / Desktop 中可见，无需滚动数百行未变更内容。
     /// </summary>
     /// <param name="lines">差异行列表。</param>
     /// <param name="contextLines">上下文行数。</param>

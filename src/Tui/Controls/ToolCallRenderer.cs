@@ -251,7 +251,12 @@ public static class ToolCallRenderer
             {
                 var header = q.TryGetProperty("header", out var h) ? h.GetString() ?? "" : "";
                 var question = q.TryGetProperty("question", out var qu) ? qu.GetString() ?? "" : "";
-                var multiSelect = q.TryGetProperty("multi_select", out var ms) && ms.GetBoolean();
+                var multiSelect =
+                    (
+                        q.TryGetProperty("multiSelect", out var ms)
+                        || q.TryGetProperty("multi_select", out ms)
+                    )
+                    && ms.ValueKind == System.Text.Json.JsonValueKind.True;
                 string[] options = [];
                 if (
                     q.TryGetProperty("options", out var opts)
@@ -269,27 +274,72 @@ public static class ToolCallRenderer
         if (questions.Count == 0)
             return false;
 
-        // Parse selected answers from result text
-        // Format: "用户回复:\n  [Header] Question\n    → Answer1, Answer2"
-        var selectedAnswers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        // Parse selected answers from result text.
+        // 新格式： "User answers:\n方向: [身世, 旧案]\n视角: 第三人称"
+        // 旧格式： "用户回复:\n  [Header] Question\n    → Answer1, Answer2"
+        var selectedAnswers = new List<string[]>();
         try
         {
-            foreach (var line in result.Split('\n'))
+            var lines = result.Split('\n');
+            if (
+                result
+                    .TrimStart()
+                    .StartsWith(AskUserReplyFormatter.Header, StringComparison.Ordinal)
+            )
             {
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith('→') || trimmed.StartsWith("->"))
+                foreach (var line in lines)
                 {
-                    // This is an answer line — associate with the most recent header
-                    var answerText = trimmed[1..].Trim();
-                    // Find which question this belongs to by position
-                    var currentIdx = selectedAnswers.Count;
-                    if (currentIdx < questions.Count)
+                    var trimmed = line.Trim();
+                    if (
+                        trimmed.Length == 0
+                        || trimmed.Equals(AskUserReplyFormatter.Header, StringComparison.Ordinal)
+                    )
+                        continue;
+
+                    var colon = trimmed.IndexOf(':');
+                    if (colon <= 0)
+                        continue;
+
+                    var value = trimmed[(colon + 1)..].Trim();
+                    if (value.Length >= 2 && value[0] == '[' && value[^1] == ']')
                     {
-                        var answers = answerText
-                            .Split([", ", "、"], StringSplitOptions.None)
-                            .Select(a => a.Trim())
-                            .ToArray();
-                        selectedAnswers[questions[currentIdx].header] = answers;
+                        var inner = value[1..^1].Trim();
+                        selectedAnswers.Add(
+                            inner.Length == 0
+                                ? []
+                                : inner
+                                    .Split(", ", StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(a => a.Trim())
+                                    .ToArray()
+                        );
+                    }
+                    else
+                    {
+                        selectedAnswers.Add([value]);
+                    }
+                }
+            }
+            else
+            {
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith('→') || trimmed.StartsWith("->"))
+                    {
+                        // 旧格式：按出现顺序关联问题
+                        var answerText = (
+                            trimmed.StartsWith("->", StringComparison.Ordinal)
+                                ? trimmed[2..]
+                                : trimmed[1..]
+                        ).Trim();
+                        var currentIdx = selectedAnswers.Count;
+                        if (currentIdx < questions.Count)
+                            selectedAnswers.Add(
+                                answerText
+                                    .Split([", ", "、"], StringSplitOptions.None)
+                                    .Select(a => a.Trim())
+                                    .ToArray()
+                            );
                     }
                 }
             }
@@ -306,7 +356,7 @@ public static class ToolCallRenderer
 
         var sb = new StringBuilder();
 
-        foreach (var (header, question, options, _) in questions)
+        foreach (var (index, (header, question, options, _)) in questions.Select((q, i) => (i, q)))
         {
             sb.Append(
                 $"[bold #{questionColor.R:x2}{questionColor.G:x2}{questionColor.B:x2}]{Escape(header)}[/]"
@@ -316,7 +366,7 @@ public static class ToolCallRenderer
             sb.Append('\n');
 
             // Options with selection markers
-            var selected = selectedAnswers.GetValueOrDefault(header, []);
+            var selected = index < selectedAnswers.Count ? selectedAnswers[index] : [];
             var selectedSet = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
 
             foreach (var option in options)
@@ -348,12 +398,24 @@ public static class ToolCallRenderer
             if (selected.Length > 0 && options.Length > 0)
             {
                 var customAnswers = selected
-                    .Where(s => !options.Contains(s, StringComparer.OrdinalIgnoreCase))
+                    .Where(s =>
+                        !options.Contains(s, StringComparer.OrdinalIgnoreCase)
+                        && s is not ("(已取消)" or "(未回答)")
+                    )
                     .ToList();
                 if (customAnswers.Count > 0)
                 {
                     sb.Append(
                         $"  [#{answerColor.R:x2}{answerColor.G:x2}{answerColor.B:x2}]● {Escape(string.Join(", ", customAnswers))}[/] [dim italic](自定义)[/]\n"
+                    );
+                }
+
+                // 取消/未回答不是自定义答案，单独展示状态，避免被标成「(自定义)」。
+                var statusAnswers = selected.Where(s => s is "(已取消)" or "(未回答)").ToList();
+                if (statusAnswers.Count > 0)
+                {
+                    sb.Append(
+                        $"  [#{dimColor.R:x2}{dimColor.G:x2}{dimColor.B:x2}]→ {Escape(string.Join(", ", statusAnswers))}[/]\n"
                     );
                 }
             }

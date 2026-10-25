@@ -1,9 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Desktop.Controls;
+using Desktop.Models;
 using Desktop.ViewModels;
 using ReactiveUI.Primitives;
 
@@ -14,6 +16,9 @@ public partial class ConversationView : UserControl
     public ConversationView()
     {
         InitializeComponent();
+        // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
+        // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
+        AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
         // Avalonia 12：拖放事件通过附加事件路由注册
         AddHandler(DragDrop.DragOverEvent, InputBox_OnDragOver);
         AddHandler(DragDrop.DropEvent, InputBox_OnDrop);
@@ -27,6 +32,14 @@ public partial class ConversationView : UserControl
     }
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
+
+    /// <summary>展开/收起步骤详情（思考全文、完整参数与结果）。</summary>
+    private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: AgentStep step })
+            step.IsDetailsExpanded = !step.IsDetailsExpanded;
+        e.Handled = true;
+    }
 
     /// <summary>补全弹窗条目被点击：插入该项（仅当点击落在条目上,滚动条等不触发）。</summary>
     private void SuggestionList_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -77,13 +90,63 @@ public partial class ConversationView : UserControl
 
     // ── 输入区按键：Enter 发送 / Shift+Enter 换行 / Esc 中断 / @ 弹窗导航 ──
 
+    /// <summary>
+    /// 隧道阶段拦截 Enter：TextBox.AcceptsReturn=true 时，类处理器会先插入换行，
+    /// 冒泡的 KeyDown 再也收不到。这里先于 TextBox 处理，保证 Enter 发送、Shift+Enter 换行。
+    /// </summary>
+    private void InputBox_OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !InputBox.IsFocused)
+            return;
+
+        // 中文输入法组合中（拼音未上屏）Enter 属于输入法确认，不能发送
+        if (
+            InputBox
+                .GetVisualDescendants()
+                .OfType<TextPresenter>()
+                .Any(p => !string.IsNullOrEmpty(p.PreeditText))
+        )
+            return;
+
+        var vm = Vm;
+        if (vm is null)
+            return;
+
+        if (vm.IsCommandPopupVisible)
+        {
+            InsertSelectedCommand(vm);
+            e.Handled = true;
+            return;
+        }
+        if (vm.IsSuggestionPopupVisible)
+        {
+            InsertSelectedSuggestion(vm);
+            e.Handled = true;
+            return;
+        }
+
+        // 仅无修饰键发送；Shift/Ctrl/Alt+Enter 留给 TextBox 插入换行
+        if (e.KeyModifiers != KeyModifiers.None)
+            return;
+
+        // 处理中且没有待发变体：不发送，也不让 TextBox 插入空换行
+        if (vm.IsProcessing && !vm.HasPendingRefinement)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        vm.SendMessageCommand.Execute().Subscribe();
+        e.Handled = true;
+    }
+
     private void InputBox_OnKeyDown(object? sender, KeyEventArgs e)
     {
         var vm = Vm;
         if (vm is null)
             return;
 
-        // 斜杠命令补全弹窗打开时：方向键 / 回车 / Tab / Esc 由弹窗消费
+        // 斜杠命令补全弹窗打开时：方向键 / Tab / Esc 由弹窗消费（Enter 在隧道处理器中）
         if (vm.IsCommandPopupVisible)
         {
             switch (e.Key)
@@ -99,7 +162,6 @@ public partial class ConversationView : UserControl
                     vm.SelectedCommandIndex = Math.Max(vm.SelectedCommandIndex - 1, 0);
                     e.Handled = true;
                     return;
-                case Key.Enter:
                 case Key.Tab:
                     InsertSelectedCommand(vm);
                     e.Handled = true;
@@ -111,7 +173,7 @@ public partial class ConversationView : UserControl
             }
         }
 
-        // 输入补全弹窗打开时：方向键 / 回车 / Tab / Esc 由弹窗消费
+        // 输入补全弹窗打开时：方向键 / Tab / Esc 由弹窗消费（Enter 在隧道处理器中）
         if (vm.IsSuggestionPopupVisible)
         {
             switch (e.Key)
@@ -127,7 +189,6 @@ public partial class ConversationView : UserControl
                     vm.SelectedSuggestionIndex = Math.Max(vm.SelectedSuggestionIndex - 1, 0);
                     e.Handled = true;
                     return;
-                case Key.Enter:
                 case Key.Tab:
                     InsertSelectedSuggestion(vm);
                     e.Handled = true;
@@ -158,14 +219,6 @@ public partial class ConversationView : UserControl
 
         switch (e.Key)
         {
-            case Key.Enter
-                when e.KeyModifiers == KeyModifiers.None
-                    && (!vm.IsProcessing || vm.HasPendingRefinement):
-                // 命令弹窗打开时 Enter 选择命令（已在上方处理），此处仅处理普通输入；
-                // 变体修改要求待发时即便 Agent 处理中也放行（投递 SteeringQueue 排队）
-                vm.SendMessageCommand.Execute().Subscribe();
-                e.Handled = true;
-                break;
             case Key.Escape:
                 if (vm.IsProcessing)
                     vm.StopProcessingCommand.Execute().Subscribe();

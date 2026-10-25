@@ -1,4 +1,4 @@
-using Tui.Controls;
+using Core.Shared;
 using Xunit;
 
 namespace Tui.Tests;

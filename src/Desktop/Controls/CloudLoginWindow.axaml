@@ -67,7 +67,8 @@
             <TextBlock
               x:Name="VerificationUriText"
               Classes="Tag"
-              FontSize="9.5"
+              FontSize="10"
+              LineHeight="15"
               TextWrapping="Wrap"
               MaxWidth="320"
               HorizontalAlignment="Center"
@@ -75,7 +76,8 @@
             <TextBlock
               x:Name="DeviceStatusText"
               Classes="Tag"
-              FontSize="9.5"
+              FontSize="10"
+              LineHeight="15"
               TextWrapping="Wrap"
               MaxWidth="320"
               HorizontalAlignment="Center"

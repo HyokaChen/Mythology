@@ -90,7 +90,7 @@
         <TextBox
           x:Name="LabelInput"
           Classes="Adaline"
-          FontSize="12.5"
+          FontSize="13"
           Padding="10,5"
           PlaceholderText="标签文本（如：悲剧线）"
           MinWidth="220"

@@ -20,17 +20,54 @@ public partial class SetUpPanelView : UserControl
     private EntityType CurrentTabType =>
         SectionTypes[Math.Clamp(MainTabControl.SelectedIndex, 0, SectionTypes.Length - 1)];
 
+    private int _lastTabIndex;
+    private bool _motionReady;
+
     public SetUpPanelView()
     {
         InitializeComponent();
+        _lastTabIndex = MainTabControl.SelectedIndex;
         // 分区切换 → 回写 VM（搜索框占位文案按分区切换）
         MainTabControl.SelectionChanged += (_, _) =>
         {
             if (DataContext is ViewModels.SetUpPanelViewModel vm)
                 vm.ActiveSection = MainTabControl.SelectedIndex;
+            AnimateTabChange();
         };
+        // 首次显示交给窗口/面板自身入场；此后切分区才有方向性翻页
+        Loaded += (_, _) => _motionReady = true;
         // 附加到可视化树即自加载：不依赖外部调用方时序，避免“永久空白”
         Loaded += OnLoaded;
+    }
+
+    /// <summary>
+    /// 分区切换：新分区从翻页方向滑入 10px 并淡入。
+    /// 内容模板由 TabControl 重新实例化，Loaded 优先级下才能拿到已挂载的 ContentPresenter。
+    /// </summary>
+    private void AnimateTabChange()
+    {
+        var index = MainTabControl.SelectedIndex;
+        var offset = Desktop.Styles.Motion.PageEnterOffset(_lastTabIndex, index);
+        _lastTabIndex = index;
+        if (!_motionReady)
+            return;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (MainTabControl.SelectedIndex != index)
+                    return; // 快速连点时只让最后一页播
+                var host = MainTabControl
+                    .GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Presenters.ContentPresenter>()
+                    .FirstOrDefault(p =>
+                        ReferenceEquals(p.Content, MainTabControl.SelectedContent)
+                    );
+                if (host?.Child is Avalonia.Visual content)
+                    _ = Desktop.Styles.Motion.PlayPageEnter(content, offset);
+            },
+            Avalonia.Threading.DispatcherPriority.Loaded
+        );
     }
 
     /// <summary>附加后刷新面板（幂等：无当前小说时清空并返回）。</summary>

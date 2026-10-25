@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -21,7 +22,7 @@ public class AutoScrollItemsControl : ItemsControl
     private DispatcherTimer? _scrollTimer;
     private double _scrollFrom;
     private double _scrollTo;
-    private int _scrollElapsedMs;
+    private long _scrollStartTicks;
 
     static AutoScrollItemsControl()
     {
@@ -76,7 +77,7 @@ public class AutoScrollItemsControl : ItemsControl
     {
         if (_scrollViewer is null)
             return;
-        var target = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        var target = GetTargetOffset();
         var from = _scrollViewer.Offset.Y;
         var delta = target - from;
         if (delta <= 0.5)
@@ -87,14 +88,25 @@ public class AutoScrollItemsControl : ItemsControl
             return;
         }
 
-        StopScrollAnimation();
+        if (_scrollTimer is not null)
+        {
+            // 已在滚动（流式追加会连续触发）：只改目标，不重置 easing，避免每次都被拉回起点
+            _scrollTo = target;
+            return;
+        }
+
         _scrollFrom = from;
         _scrollTo = target;
-        _scrollElapsedMs = 0;
+        _scrollStartTicks = Stopwatch.GetTimestamp();
         _scrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ScrollTickMs) };
         _scrollTimer.Tick += OnScrollTick;
         _scrollTimer.Start();
     }
+
+    private double GetTargetOffset() =>
+        _scrollViewer is null
+            ? 0
+            : Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
 
     private void OnScrollTick(object? sender, EventArgs e)
     {
@@ -103,10 +115,14 @@ public class AutoScrollItemsControl : ItemsControl
             StopScrollAnimation();
             return;
         }
-        _scrollElapsedMs += ScrollTickMs;
-        var t = Math.Min(1d, _scrollElapsedMs / (double)ScrollAnimMs);
+
+        // 用真实经过时间而不是「定时器次数 × 16ms」：UI 忙时 tick 会被推迟，
+        // 固定步进会让 160ms 的动画实际拖成几百毫秒。
+        var elapsedMs = Stopwatch.GetElapsedTime(_scrollStartTicks).TotalMilliseconds;
+        var t = Math.Min(1d, elapsedMs / ScrollAnimMs);
         var eased = 1d - Math.Pow(1d - t, 3d); // CubicEaseOut
 
+        _scrollTo = GetTargetOffset(); // 流式正文仍在长高：每帧追当前底部
         _suppressAutoScroll = true;
         try
         {
@@ -151,6 +167,14 @@ public class AutoScrollItemsControl : ItemsControl
             return;
 
         var maxOffset = _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height;
+
+        // 流式输出让内容长高（没有新 item）：原本贴底时继续跟随，否则保持用户位置
+        if (
+            _autoFollow
+            && e.ExtentDelta.Y > 0
+            && _scrollViewer.Offset.Y + e.ExtentDelta.Y >= maxOffset - 8
+        )
+            Dispatcher.UIThread.Post(ScrollToEndSmooth, DispatcherPriority.Background);
 
         // 用户上滚（内容顶部露出）→ 停止跟随
         if (e.OffsetDelta.Y < 0 && _autoFollow && _scrollViewer.Offset.Y < maxOffset - 8)

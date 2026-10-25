@@ -44,6 +44,35 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Changed
+- **Desktop 对话加载与思考可见性**：思考正文默认展开在可折叠详情区（流式中与完成后都可见，
+  点「收起」只折叠正文，标题仍在）；每轮思考独立成卡，工具/思考之间的中间正文冻结为独立
+  Content 步骤，严格按 `思考 → 正文 → 工具 → 思考 → 最终正文` 的事件顺序插入，不再复用首轮思考卡
+  把后续推理堆在最上方，也不会把工具前的说明留到回合末尾冒充最终答复。中间正文使用与最终气泡
+  同款的 Bone 小卡（16/12 padding、Mist 1px 边框），卡内用 14/24 轻量 TextBlock 而非 Markdown
+  渲染器，避免工具边界新建渲染器造成卡顿，冻结前后底色一致，不会从黄色最终卡闪成无底色中间行。
+  冻结时 Trim 首尾空行，避免 TextBlock 把 `\n\n` 撑成 24px 空行。正文仅在出现非空白字符后渲染，
+  流式首批换行/空格不会撑出空白 Bone 卡。中断提示改用与系统消息同一套「系统」状态行
+  （Eyebrow「系统」+ 13/20 `SystemNoticeText`，SageGray），文案「⏹ 中断生成」，不再写进 Markdown
+  引用块、不再在 `AgentBubble` 内嵌套第二层边框，也不再使用 Crimson 文字 + 2px 红左引线；旧会话的
+  `> ⏹ 已中断` 在历史映射时还原为同一标记。13px 比旧 12px 大一档，仍小于旧 14px 红色提示。
+  所有系统消息（压缩/重试/持久化故障/实体变更）共用同一排版；Desktop 新增
+  `INovelStore.OnEntityChanged` 订阅，按 `Core.Data.EntityChangeSummary` 输出
+  `📝 新建/修改/删除…` 系统行（字段更新带变更键，小说级变更不显示）。输入卡左内边距按 TextBox
+  模板固定的 5px 内缩补偿为 11px，输入文字与正文左缘对齐。普通引用块改为透明底、无边框，
+  引用语义由「▎」前缀承担。
+  首个正文/步骤到达前，助手消息内显示 `spinner +「执行中」` 等待行，首个可见活动或回合结束时收起；
+  左下角状态栏恢复忙碌期 `spinner + 随机古诗词`（完整诗词进 tooltip），空闲恢复 `idle`。
+  回归：`ConversationRenderingTests`（思考流式/完成态、中间正文顺序与排版、空白正文隐藏、等待行渲染）、
+  `StreamEventHandlerThinkingTests`（跨轮/跨工具思考独立）、
+  `StreamEventHandlerContentBlockTests`（中间正文冻结/最终正文留在气泡）、
+  `ConversationVmContractTests`（等待行生命周期）、`ConversationDetailStructureTests` 与
+  `TuiInteractionParityTests` 结构锁。
+- **会话交互格式统一**：`ask_user` 工具结果与 TUI 追加的 user message 统一为 OMP 风格
+  `User answers:` + 每组一行（多选 `[a, b]`、取消 `(已取消)`、未回答 `(未回答)`/`[]`）；
+  新增 `009_SessionInteractionFormat` 迁移历史 `sessions/**/*.jsonl` 中的旧 `**用户回复:**`/
+  `用户回复:` 块与变体 refine/结构化 prompt 正文，迁移幂等、保留行尾并只重写实际变更行；
+  变体正文注入 prompt 统一用 `<variant ...>...</variant>` 包裹，章节写入/直接采用仍保留原文。
+  回归：Core 格式化与迁移、FileSystem `ask_user`、TUI 工具卡与答案追加、Desktop prompt 映射。
 - **云端计费口径调整（客户端）**：客户端同步术语与配置键（`DeepDenied/DeepUnits`、
   `DeepBudgetPerSession/DeepBudgetPerNovel`），鉴权/额度类失败按一次性降级处理；
   具体计费规则与套餐策略由云端私有契约维护。

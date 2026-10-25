@@ -1401,25 +1401,14 @@ public sealed partial class TuiApp : IDisposable
         // 等待一小段时间确保答案已写入 store
         await Task.Delay(50);
 
-        // 构建用户回复消息
-        var sb = new StringBuilder();
-        foreach (var q in questions)
-        {
-            if (q.SelectedAnswers is null || q.SelectedAnswers.Length == 0)
-                continue;
-
-            sb.AppendLine($"{q.Header}: {q.Question}");
-            sb.AppendLine($"  → {string.Join("、", q.SelectedAnswers)}");
-        }
-
-        var answerText = sb.ToString().TrimEnd();
+        // 重新从 store 读取：Show 期间 Answer 会替换记录，调用方持有的 pending 快照没有 SelectedAnswers。
+        var answered = questions.Select(q => _questionStore?.Get(q.Id) ?? q).ToArray();
+        var answerText = AskUserReplyFormatter.Format(answered);
         if (string.IsNullOrEmpty(answerText))
             return; // 没有有效答案
 
-        // 追加到 agent 的消息列表（LLM 需要看到，带 **用户回复:** 前缀以便 MessageRestorer 识别并跳过）
-        var llmMessage = $"**用户回复:**\n{answerText}";
-        _agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, llmMessage));
-
-        // 注意：UI 不需要单独渲染回复气泡，因为 tool result 的 Q&A 卡片已经展示了完整信息
+        // 追加到 agent 的消息列表；格式与 ask_user 工具结果完全一致，
+        // MessageRestorer / Desktop 历史映射据此跳过气泡（Q&A 卡片已展示完整信息）。
+        _agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, answerText));
     }
 }
