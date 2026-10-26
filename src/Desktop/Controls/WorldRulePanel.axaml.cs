@@ -32,8 +32,6 @@ public partial class WorldRulePanel : UserControl
     private readonly ComboBox _effectKind;
     private readonly ComboBox _effectTargetType;
 
-    private int _lastTabIndex;
-    private bool _motionReady;
     private readonly ComboBox _effectTargetId;
     private readonly ComboBox _effectAspect;
     private readonly TextBox _ruleDescription;
@@ -97,16 +95,6 @@ public partial class WorldRulePanel : UserControl
                     : null;
             RebuildSettingList();
         };
-
-        // 规则/设定切 Tab = 翻页：新内容从方向滑入 10px + 淡入（与设置页同一套原语）
-        _lastTabIndex = ViewTabs.SelectedIndex;
-        Loaded += (_, _) => _motionReady = true;
-        ViewTabs.SelectionChanged += (_, _) =>
-            _lastTabIndex = Desktop.Styles.Motion.AnimateTabSwitch(
-                ViewTabs,
-                _lastTabIndex,
-                _motionReady
-            );
 
         _ruleCategory = NewCombo(CategoryLabels());
         _ruleDescription = NewText("说明 / 地点距离时填 地点A>地点B");

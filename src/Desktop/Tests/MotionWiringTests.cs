@@ -58,12 +58,16 @@ public sealed class MotionWiringTests
     }
 
     [Theory]
-    [InlineData(0, 1, 10d)]
-    [InlineData(3, 1, -10d)]
-    [InlineData(2, 2, 10d)]
-    public void PageEnterOffset_FollowsTabDirection(int fromIndex, int toIndex, double expected)
+    [InlineData(0, 1, 1d)]
+    [InlineData(3, 1, -1d)]
+    [InlineData(2, 2, 1d)]
+    public void PageEnterOffset_FollowsTabDirection(int fromIndex, int toIndex, double sign)
     {
-        Assert.Equal(expected, Desktop.Styles.Motion.PageEnterOffset(fromIndex, toIndex));
+        // 位移量是 token（PageShift），这里只钉方向：前进向右、后退向左、原地也算前进
+        Assert.Equal(
+            sign * Desktop.Styles.Motion.PageShift,
+            Desktop.Styles.Motion.PageEnterOffset(fromIndex, toIndex)
+        );
     }
 
     [Fact]

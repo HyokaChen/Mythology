@@ -14,7 +14,13 @@
 >
   <Grid RowDefinitions="*,Auto,Auto">
     <!-- 动态 Tab 内容区（由代码构建） -->
-    <TabControl x:Name="EntityTabControl" Grid.Row="0" Padding="0" Background="Transparent" />
+    <TabControl
+      x:Name="EntityTabControl"
+      Grid.Row="0"
+      Padding="0"
+      Background="Transparent"
+      motion:Motion.TabSwitch="True"
+    />
 
     <!-- 章节「内容」作用域：无标签行、整块铺满的正文编辑器（对齐 TUI：内容直接全部铺满） -->
     <Panel x:Name="ContentFillHost" Grid.Row="0" IsVisible="False" />

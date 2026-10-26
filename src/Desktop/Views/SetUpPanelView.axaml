@@ -157,6 +157,7 @@
       Background="Transparent"
       ItemsSource="{Binding Tabs}"
       SelectedIndex="0"
+      motion:Motion.TabSwitch="True"
     >
       <!-- 单行 pill 带（内容宽度、放不下自动折行）：DESIGN.md「Pill Tab / Segment」——
            4×2 等宽网格会吃掉两行高度、读起来像仪表盘栅格而不是标签带 -->

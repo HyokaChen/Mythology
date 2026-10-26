@@ -34,16 +34,16 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // ── 全局窗口入场动效：所有 Window（含未来新增对话框）统一「淡入 + 6px 上浮」 ──
-        // 纯淡入在视觉上几乎读不出「动过」——用户反馈「改了没效果」的主要来源之一。
-        // 内容自己挂了 Motion.Enter 时交给它播（否则同一 Opacity 上会有两个时钟抢值）；
-        // 位移走 RenderTransform，不参与布局，窗口尺寸/定位不受影响。
+        // ── 全局窗口入场 / 退场动效：所有 Window（含未来新增对话框）统一 ──
+        // 入场：内容自己挂了 Motion.Enter 时交给它播（否则同一 Opacity 上会有两个时钟抢值）。
+        // 退场：首次 Closing 取消 → 淡出下沉 → 真正 Close（27 个窗口不再硬切）；
+        //       关机 / 退应用 / 随宿主关闭不播，见 AttachWindowMotion。
+        // 位移优先走渲染线程 Translation，不参与布局，窗口尺寸/定位不受影响。
         Window.WindowOpenedEvent.AddClassHandler<Window>(
             static (window, args) =>
             {
                 _ = args;
-                if (window.Content is Visual content && !Motion.GetEnter(content))
-                    _ = Motion.PlayEnter(content);
+                Motion.AttachWindowMotion(window);
             }
         );
 

@@ -14,7 +14,13 @@
   x:DataType="controls:AboutDialog"
   motion:Motion.Enter="True"
 >
-  <TabControl x:Name="AboutTabs" Padding="0" Background="Transparent" SelectedIndex="0">
+  <TabControl
+    x:Name="AboutTabs"
+    Padding="0"
+    Background="Transparent"
+    SelectedIndex="0"
+    motion:Motion.TabSwitch="True"
+  >
     <!-- ═════ 快捷键 ═════ -->
     <TabItem Header="快捷键">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

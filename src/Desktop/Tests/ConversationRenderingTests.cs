@@ -1214,11 +1214,63 @@ public class ConversationRenderingTests
     //  因此断言「值已离开起点」：没接线时属性恒定在起点，接线生效时一定会被改写。
     // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>翻页：Translate.X 从 ±10 → 0，必须出现严格介于其间的值。</summary>
+    /// <summary>翻页：Translate.X 从 ±10 → 0，必须出现严格介于其间的值（UI 线程回退分支）。</summary>
     [Fact]
     public void PageEnter_SlidesHorizontallyThroughIntermediateValues()
     {
         var slides = new List<double>();
+
+        Ui.Value.Run(() =>
+        {
+            // 关掉合成器通道，确定性地走 UI 线程 RenderTransform 分支
+            Desktop.Styles.Motion.CompositionMotionEnabled = false;
+            try
+            {
+                var panel = new StackPanel { Children = { new TextBlock { Text = "page" } } };
+                var window = new Window
+                {
+                    Width = 240,
+                    Height = 140,
+                    Content = panel,
+                };
+                window.Show();
+                Pump();
+
+                // PlayPageEnter 是「复用同一视觉树」的显式播放入口：入树后调用即可
+                _ = Desktop.Styles.Motion.PlayPageEnter(panel, 10);
+                for (var i = 0; i < MotionFrames; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(MotionFrameMs);
+                    slides.Add((panel.RenderTransform as TranslateTransform)?.X ?? 0);
+                }
+                window.Close();
+            }
+            finally
+            {
+                Desktop.Styles.Motion.CompositionMotionEnabled = true;
+            }
+        });
+
+        // 同上：headless 时钟有限，断言「离开起点 10」即证明滑入接线生效
+        Assert.True(
+            slides.Any(x => x < 9.8d),
+            $"Translate.X 从未离开起点（翻页滑入没跑）：[{string.Join(",", slides.Select(x => x.ToString("F2")))}]"
+        );
+    }
+
+    /// <summary>
+    /// 渲染线程通道契约：合成器可用时，位移只交给 Translation，绝不再建 RenderTransform
+    /// （两个通道同时跑会让位移翻倍、并出现两个时钟抢同一视觉）。
+    /// 无头绘制平台的合成器是空实现（连 Opacity 动画都不推进），位移过程值在此不可观测——
+    /// 真机（Metal）才有时钟，可见性由真机冒烟覆盖。
+    /// </summary>
+    [Fact]
+    public void PageEnter_CompositionChannel_DoesNotBuildRenderTransform()
+    {
+        var composited = false;
+        ITransform? renderTransform = null;
 
         Ui.Value.Run(() =>
         {
@@ -1232,23 +1284,194 @@ public class ConversationRenderingTests
             window.Show();
             Pump();
 
-            // PlayPageEnter 是「复用同一视觉树」的显式播放入口：入树后调用即可
-            _ = Desktop.Styles.Motion.PlayPageEnter(panel, 10);
-            for (var i = 0; i < MotionFrames; i++)
+            // 平台探测必须自己做（不能借生产的 TryRunTranslation：那样关掉生产通道就等于关掉本测试）
+            composited = ProbeComposition(panel);
+            if (composited)
             {
-                Dispatcher.UIThread.RunJobs();
-                AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
-                Thread.Sleep(MotionFrameMs);
-                slides.Add((panel.RenderTransform as TranslateTransform)?.X ?? 0);
+                _ = Desktop.Styles.Motion.PlayPageEnter(panel, 24);
+                for (var i = 0; i < 4; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(MotionFrameMs);
+                }
             }
+            // Visual 有线程亲和性：必须在 UI 线程内取属性，供 lambda 外断言
+            renderTransform = panel.RenderTransform;
             window.Close();
         });
 
-        // 同上：headless 时钟有限，断言「离开起点 10」即证明滑入接线生效
+        if (!composited)
+        {
+            _output.WriteLine(
+                "本平台没有可用合成器：渲染线程通道不可测（回退分支由 PageEnter_Slides… 覆盖）"
+            );
+            return;
+        }
+
+        Assert.Null(renderTransform);
+    }
+
+    /// <summary>读 TabControl 选中内容的横向 RenderTransform（无则以 0 计）。</summary>
+    private static double SlideX(TabControl tabs) =>
+        (tabs.SelectedContent as Visual)?.RenderTransform is TranslateTransform t ? t.X : 0;
+
+    /// <summary>平台探测：合成器能否接受 Translation 关键帧动画（与生产实现无关，避免自我失效）。</summary>
+    private static bool ProbeComposition(Visual visual)
+    {
+        try
+        {
+            var cv = Avalonia.Rendering.Composition.ElementComposition.GetElementVisual(visual);
+            if (cv is null)
+                return false;
+            var probe = cv.Compositor.CreateVector3DKeyFrameAnimation();
+            probe.Duration = TimeSpan.FromMilliseconds(1);
+            probe.InsertKeyFrame(0f, default);
+            probe.InsertKeyFrame(1f, default);
+            cv.StartAnimation("Translation", probe);
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>TabSwitch 附加属性：直接内容型 TabControl，翻页滑入必须真的播在选中内容上。</summary>
+    [Fact]
+    public void TabSwitch_DirectContent_SlidesResolvedVisual()
+    {
+        var slides = new List<double>();
+        var start = 0d;
+        var animated = false;
+
+        Ui.Value.Run(() =>
+        {
+            Desktop.Styles.Motion.CompositionMotionEnabled = false;
+            try
+            {
+                var tabs = new TabControl();
+                tabs.Items.Add(
+                    new TabItem
+                    {
+                        Header = "A",
+                        Content = new Border { Width = 40, Height = 16 },
+                    }
+                );
+                tabs.Items.Add(
+                    new TabItem
+                    {
+                        Header = "B",
+                        Content = new Border { Width = 40, Height = 16 },
+                    }
+                );
+                Desktop.Styles.Motion.SetTabSwitch(tabs, true);
+                var window = new Window
+                {
+                    Width = 240,
+                    Height = 140,
+                    Content = tabs,
+                };
+                window.Show();
+                Pump(); // Loaded → Ready
+
+                tabs.SelectedIndex = 1; // 0 → 1 前进，起点 +24
+                // 无头时钟会把整段动画在单个调度周期内跑完，起手值抓不到；
+                // 能确定抓到的证据是「选中内容上被创建了 TranslateTransform」（只可能来自翻页滑入）
+                Dispatcher.UIThread.RunJobs();
+                start = SlideX(tabs);
+                animated = (tabs.SelectedContent as Visual)?.RenderTransform is TranslateTransform;
+                for (var i = 0; i < MotionFrames; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(MotionFrameMs);
+                    slides.Add(SlideX(tabs));
+                }
+                window.Close();
+            }
+            finally
+            {
+                Desktop.Styles.Motion.CompositionMotionEnabled = true;
+            }
+        });
+
+        // 没接线则选中内容上不会出现任何 RenderTransform
         Assert.True(
-            slides.Any(x => x < 9.8d),
-            $"Translate.X 从未离开起点（翻页滑入没跑）：[{string.Join(",", slides.Select(x => x.ToString("F2")))}]"
+            animated,
+            $"Tab 翻页滑入没播（选中内容没有 TranslateTransform）：start={start:F2} samples=[{string.Join(",", slides.Select(x => x.ToString("F2")))}]"
         );
+        // 滑入必须收敛回原位（停在偏移上就是残影）
+        Assert.True(
+            Math.Abs(slides[^1]) < 0.1d,
+            $"Tab 翻页未收敛回 0：[{string.Join(",", slides.Select(x => x.ToString("F2")))}]"
+        );
+    }
+
+    /// <summary>TabSwitch 数据模板分支：SelectedContent 是 VM 对象，必须解析到承载它的 ContentPresenter.Child。</summary>
+    [Fact]
+    public void TabSwitch_ResolvesTemplatedContentToPresenterChild()
+    {
+        Ui.Value.Run(() =>
+        {
+            var tabs = new TabControl
+            {
+                ItemsSource = new object[] { "A", "B" },
+                SelectedIndex = 0,
+            };
+            var window = new Window
+            {
+                Width = 240,
+                Height = 140,
+                Content = tabs,
+            };
+            window.Show();
+            Pump();
+
+            var resolved = Desktop.Styles.Motion.ResolveTabContent(tabs);
+            Assert.NotNull(resolved);
+            Assert.IsAssignableFrom<Visual>(resolved);
+            Assert.Contains(resolved, tabs.GetVisualDescendants().OfType<Visual>());
+            // 必须命中内容宿主，而不是 TabItem 里的 Header 呈现器（后者会把动画播到标签文字上）
+            Assert.Null(resolved.FindAncestorOfType<TabItem>());
+
+            window.Close();
+        });
+    }
+
+    /// <summary>窗口退场：首次 Closing 必须被取消（播淡出），且动画后一定真正关闭。</summary>
+    [Fact]
+    public void WindowExit_CancelsClosingThenCloses()
+    {
+        Ui.Value.Run(() =>
+        {
+            var window = new Window
+            {
+                Width = 200,
+                Height = 120,
+                Content = new Border(),
+            };
+            window.Show();
+            Pump();
+
+            var canceled = false;
+            window.Closing += (_, e) => canceled |= e.Cancel;
+
+            Desktop.Styles.Motion.AttachWindowMotion(window);
+            window.Close();
+            Pump();
+
+            Assert.True(canceled, "Closing 未被取消：窗口退场淡出没接上（关闭是硬切）");
+            // 退场动画靠渲染时钟推进：必须 tick，且用墙钟兜底（固定 pump 次数会随机器负载抖动）
+            var deadline = DateTime.UtcNow.AddSeconds(3);
+            while (window.IsVisible && DateTime.UtcNow < deadline)
+            {
+                Dispatcher.UIThread.RunJobs();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                Thread.Sleep(10);
+            }
+            Assert.False(window.IsVisible, "退场动画后窗口未关闭");
+        });
     }
 
     /// <summary>SukiUI 抢走 ListBoxItem 类型键主题后，行自身的 Background 过渡必须仍在，且行是扁平的。</summary>

@@ -56,24 +56,11 @@ public partial class AboutDialog : Window
         new(":cloud sync", "云端同步 / 拉取（pull） / 状态（status）"),
     ];
 
-    private int _lastTabIndex;
-    private bool _motionReady;
-
     public AboutDialog(int initialTab = 0)
     {
         InitializeComponent();
         if (initialTab > 0)
             AboutTabs.SelectedIndex = initialTab;
-
-        // 切 Tab = 翻页：新内容从方向滑入 10px + 淡入（与设置页/设定面板同一套原语）
-        _lastTabIndex = AboutTabs.SelectedIndex;
-        Loaded += (_, _) => _motionReady = true;
-        AboutTabs.SelectionChanged += (_, _) =>
-            _lastTabIndex = Desktop.Styles.Motion.AnimateTabSwitch(
-                AboutTabs,
-                _lastTabIndex,
-                _motionReady
-            );
 
         KeyDown += (_, e) =>
         {

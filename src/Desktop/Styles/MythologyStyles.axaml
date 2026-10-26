@@ -417,7 +417,7 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
     <Setter Property="Transitions">
       <Transitions>
-        <BrushTransition Property="Foreground" Duration="{x:Static motion:Motion.Normal}" />
+        <BrushTransition Property="Foreground" Duration="{x:Static motion:Motion.Fast}" />
       </Transitions>
     </Setter>
   </Style>

@@ -90,6 +90,7 @@
       Padding="0"
       Background="Transparent"
       SelectedIndex="0"
+      motion:Motion.TabSwitch="True"
     >
       <!-- ── 连接器 Tab ── -->
       <TabItem Header="连接器">
