@@ -45,7 +45,8 @@
               Background="Transparent"
               HorizontalAlignment="Stretch"
               ItemContainerTheme="{StaticResource AdalineRowContainer}"
-          motion:Motion.Stagger="True">
+              motion:Motion.Stagger="True"
+            >
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="c:NoteRow">
                   <Grid Margin="16,12">

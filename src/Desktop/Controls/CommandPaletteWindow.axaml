@@ -33,7 +33,8 @@
         DoubleTapped="CommandList_OnDoubleTapped"
         KeyDown="CommandList_OnKeyDown"
         ItemContainerTheme="{StaticResource AdalineRowContainer}"
-          motion:Motion.Stagger="True">
+        motion:Motion.Stagger="True"
+      >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:PaletteCommand">
             <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">

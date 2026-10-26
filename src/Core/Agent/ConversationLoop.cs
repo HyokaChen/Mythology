@@ -1978,7 +1978,7 @@ public sealed class ConversationLoop(
     /// 执行单个 AgentTool（工具调用）。
     /// 包括参数解析、novel_id 注入、钩子调用和结果处理。
     /// </summary>
-    private async Task ExecuteFunctionCallAsync(
+    internal async Task ExecuteFunctionCallAsync(
         FunctionCall call,
         Func<AgentEvent, CancellationToken, Task> emit,
         CancellationToken ct
@@ -1989,6 +1989,12 @@ public sealed class ConversationLoop(
         var toolCallId = call.ToolCall?.Id ?? Guid.NewGuid().ToString("N")[..12];
         var toolName = call.Name;
         var arguments = call.Arguments ?? "{}";
+
+        // 工具调用一出现就先发 Start：前端靠它建卡并取得工具名。
+        // 未注册工具的 End 会带 IsError（下面那条分支），卡片据此渲染失败态。
+        // 若只在注册成功后发 Start，未注册工具就变成「只有 End 的孤儿」——
+        // Cli/Tui/Desktop 三端都会静默丢弃，用户看不到任何痕迹。
+        await emit(new ToolExecutionStart(toolCallId, toolName, arguments), ct);
 
         var tool = _toolRegistry.TryGet(toolName);
 
@@ -2005,7 +2011,6 @@ public sealed class ConversationLoop(
         }
 
         CoreLogger.ToolExecutionStart(logger.Safe(), toolName, toolCallId);
-        await emit(new ToolExecutionStart(toolCallId, toolName, arguments), ct);
 
         ct.ThrowIfCancellationRequested();
 

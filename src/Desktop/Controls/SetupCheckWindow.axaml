@@ -32,8 +32,7 @@
           Foreground="{DynamicResource BrushSageGray}"
           TextWrapping="Wrap"
         />
-        <ItemsControl ItemsSource="{Binding Findings}"
-          motion:Motion.Stagger="True">
+        <ItemsControl ItemsSource="{Binding Findings}" motion:Motion.Stagger="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="models:SetupFindingItem">
               <Border Padding="0,0,0,6" Margin="0,0,0,4">

@@ -21,7 +21,8 @@
         Background="Transparent"
         SelectionChanged="TreeList_OnSelectionChanged"
         ItemContainerTheme="{StaticResource AdalineRowContainer}"
-          motion:Motion.Stagger="True">
+        motion:Motion.Stagger="True"
+      >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:TreeWindow+TreeRow">
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="{Binding IndentMargin}">
@@ -61,7 +62,8 @@
                 ItemsSource="{Binding Labels}"
                 IsVisible="{Binding HasLabels}"
                 VerticalAlignment="Center"
-          motion:Motion.Stagger="True">
+                motion:Motion.Stagger="True"
+              >
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal" />

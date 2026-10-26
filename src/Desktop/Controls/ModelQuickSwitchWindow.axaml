@@ -32,7 +32,8 @@
         Background="Transparent"
         Tapped="ModelList_OnTapped"
         ItemContainerTheme="{StaticResource AdalineRowContainer}"
-          motion:Motion.Stagger="True">
+        motion:Motion.Stagger="True"
+      >
         <ListBox.ItemTemplate>
           <DataTemplate x:DataType="controls:QuickModelItem">
             <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">
