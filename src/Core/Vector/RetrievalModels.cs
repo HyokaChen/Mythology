@@ -41,6 +41,9 @@ public sealed record RetrievalDocument
     /// <summary>Embedding 维度。</summary>
     public int EmbeddingDimension { get; init; }
 
+    /// <summary>实体词典/分词版本（名称集合哈希；变化时触发重建）。</summary>
+    public string LexicalVersion { get; init; } = "";
+
     /// <summary>索引状态。</summary>
     public IndexStatus IndexStatus { get; init; } = IndexStatus.Pending;
 
@@ -102,5 +105,6 @@ public sealed record RetrievalChunk
 public readonly record struct RetrievalDocumentVersion(
     long SourceRevision,
     string ContentHash,
-    string EmbeddingModelId
+    string EmbeddingModelId,
+    string LexicalVersion
 );

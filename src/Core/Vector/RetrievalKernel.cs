@@ -422,6 +422,7 @@ public sealed class RetrievalKernel(
             IndexStatus = allSucceeded ? IndexStatus.Ready : IndexStatus.Failed,
             EmbeddingModelId = _embeddingService.ModelId,
             EmbeddingDimension = _embeddingService.Dimension,
+            LexicalVersion = NovelLexicon.GetVersion(document.NovelId),
             IndexedAt = allSucceeded ? DateTime.UtcNow : null,
         };
 

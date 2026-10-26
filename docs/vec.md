@@ -139,6 +139,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 | `source_revision` | 事实源版本（`UpdatedAt` 或等价单调版本），仅辅助 |
 | `content_hash` | 去重与增量判断；模型变更时不能跳过重 embedding |
 | `embedding_model_id` / `embedding_dimension` | 向量空间隔离；不一致禁止混搜；`embedding_model_id` 参与启动对账，模型变更触发该小说知识域重建 |
+| `lexical_version` | 实体词典（角色/组织/地点/道具/情节线/场景名）名称集合哈希；变化时触发该小说知识域重建 |
 | `index_status` | `pending/ready/failed/stale/deleted`；failed 不得参与召回 |
 | `created-at` / `indexed_at` | 审计；不替代实体修改时间 |
 
@@ -248,7 +249,9 @@ RetrievalKernel.SearchAsync(request)
 
 **降级链总表**：零向量查询 → 纯词法；批量 embedding 失败 → 逐条；sqlite 初始化失败 →
 InMemoryRetrievalStore。词法层始终使用 jieba 预分词后的 `tokens` 列；`simple` 原生扩展缺失只记日志，
-不再决定 FTS 分词质量。一致性 profile 用 AND（精确），暗线/写作 profile 用 OR（召回）。
+不再决定 FTS 分词质量。每个 novelId 使用独立的 jieba 用户词典（角色/组织/地点/道具/情节线/场景名
+经 `AddWord` 注册），名称集合哈希写入 `lexical_version`，变化时触发该小说知识域重建。
+一致性 profile 用 AND（精确），暗线/写作 profile 用 OR（召回）。
 实时索引（事件通道）与启动对账（补偿通道）双通道，崩溃/离线/队列失败由对账兜底。
 
 ### 2.8 排序 Profile 与重排信号（原 vec.md §7.3）
@@ -496,7 +499,7 @@ confidence = min(0.3 + 0.1 × observationCount, 0.6)
 | 组件 | 首选 | 降级 | 触发条件 |
 |---|---|---|---|
 | 检索存储 | SqliteRetrievalStore | InMemoryRetrievalStore | sqlite-vec 初始化失败 |
-| FTS 分词 | jieba 预分词 tokens（空格连接，unicode61 索引） | 旧库迁移时自动回填 tokens 并重建 FTS | 无（不再依赖 simple 原生扩展） |
+| FTS 分词 | 每部小说独立 jieba 用户词典 + 预分词 tokens（空格连接，unicode61 索引） | 旧库迁移时自动回填 tokens 并重建 FTS | 无（不再依赖 simple 原生扩展） |
 | Embedding | 云端 `CloudEmbeddingClient`（/v1/embedding，显式 opt-in：config.yaml `Embedding.Provider: cloud`）→ `EmbeddingService`（LlmTornado，复用聊天 Provider 或 config.yaml 独立 embedding 密钥） | `DummyEmbeddingService` | provider≠cloud 且未配置 embedding 模型名（显式 opt-in，不发远程请求） |
 | 记忆存储 | AgentMemoryStore（sqlite） | 不注册（kernel.AgentMemory=null） | 初始化失败 |
 | 本地判定（System One） | `SystemOneClient`（llama.cpp `/v1/systemone` 或托管 Jev） | 判定路径全部短路（零请求） | `system-one.enabled=false`、请求失败/超时 |

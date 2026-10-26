@@ -178,7 +178,8 @@ public sealed class InMemoryRetrievalStore : IRetrievalStore
                     d => new RetrievalDocumentVersion(
                         d.SourceRevision,
                         d.ContentHash,
-                        d.EmbeddingModelId
+                        d.EmbeddingModelId,
+                        d.LexicalVersion
                     )
                 )
         );

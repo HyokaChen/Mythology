@@ -61,6 +61,18 @@ public sealed class VectorSyncService(
     {
         logger.LogDebug("同步小说 '{NovelTitle}' 的检索索引", novel.Title);
 
+        // 实体词典变化（新增角色/地点/道具等）会改变分词结果；
+        // 先更新词典，变化时把该小说知识域标记 stale，强制重建。
+        var names = await CollectEntityNamesAsync(novel.Id, ct);
+        if (NovelLexicon.Update(novel.Id, names))
+        {
+            logger.LogInformation(
+                "小说 '{NovelId}' 实体词典已更新（{NameCount} 个名称），词法版本变化将触发必要重建",
+                novel.Id,
+                names.Count
+            );
+        }
+
         // 已索引实体 ID（用于清理已删除实体）
         var indexedIds = await retrievalStore.GetIndexedDocumentIdsAsync(novel.Id, ct);
         // 已索引文档版本快照（用于增量判断：revision + content hash）
@@ -491,6 +503,28 @@ public sealed class VectorSyncService(
         }
     }
 
+    /// <summary>收集该小说的实体名称，作为 jieba 用户词典的输入。</summary>
+    private async Task<HashSet<string>> CollectEntityNamesAsync(
+        string novelId,
+        CancellationToken ct
+    )
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var character in await store.GetCharacters(novelId, ct))
+            names.Add(character.Name);
+        foreach (var faction in await store.GetFactions(novelId, ct))
+            names.Add(faction.Name);
+        foreach (var location in await store.GetLocations(novelId, ct))
+            names.Add(location.Name);
+        foreach (var item in await store.GetItems(novelId, ct))
+            names.Add(item.Name);
+        foreach (var plotline in await store.GetPlotlines(novelId, ct))
+            names.Add(plotline.Name);
+        foreach (var scene in await store.GetScenesByNovel(novelId, ct))
+            names.Add(scene.Title);
+        return names;
+    }
+
     /// <summary>
     /// 检查文档是否已是最新：已就绪（Ready）且 source_revision / content_hash 与当前一致。
     /// revision 覆盖实体 updatedAt 变更；content hash 覆盖同 revision 下的内容变更；
@@ -503,5 +537,10 @@ public sealed class VectorSyncService(
         versions.TryGetValue(doc.DocumentId, out var v)
         && v.SourceRevision == doc.SourceRevision
         && v.ContentHash == doc.ContentHash
-        && string.Equals(v.EmbeddingModelId, kernel.EmbeddingModelId, StringComparison.Ordinal);
+        && string.Equals(v.EmbeddingModelId, kernel.EmbeddingModelId, StringComparison.Ordinal)
+        && string.Equals(
+            v.LexicalVersion,
+            NovelLexicon.GetVersion(doc.NovelId),
+            StringComparison.Ordinal
+        );
 }

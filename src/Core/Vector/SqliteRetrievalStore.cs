@@ -117,7 +117,7 @@ public sealed partial class SqliteRetrievalStore(
                 // 3. 写入新块
                 foreach (var chunk in chunks)
                 {
-                    await InsertChunkRowAsync(chunk, ct);
+                    await InsertChunkRowAsync(chunk, document.NovelId, ct);
                 }
 
                 await tx.CommitAsync(ct);
@@ -459,7 +459,7 @@ public sealed partial class SqliteRetrievalStore(
             var versions = new Dictionary<string, RetrievalDocumentVersion>();
             await using var cmd = _connection.CreateCommand();
             cmd.CommandText =
-                @"SELECT document_id, source_revision, content_hash, embedding_model_id
+                @"SELECT document_id, source_revision, content_hash, embedding_model_id, lexical_version
                   FROM retrieval_documents
                   WHERE novel_id = $novel_id AND index_status = $ready";
             cmd.Parameters.AddWithValue("$novel_id", novelId);
@@ -471,7 +471,8 @@ public sealed partial class SqliteRetrievalStore(
                 versions[reader.GetString(0)] = new RetrievalDocumentVersion(
                     reader.GetInt64(1),
                     reader.GetString(2),
-                    reader.GetString(3)
+                    reader.GetString(3),
+                    reader.GetString(4)
                 );
             }
             return versions;
@@ -509,6 +510,7 @@ public sealed partial class SqliteRetrievalStore(
                     request.Query,
                     candidateChunkIds,
                     request.LexicalTopK,
+                    request.NovelId,
                     ct,
                     // 一致性车道要精确（全部词项命中）；暗线/写作上下文用 OR 提高召回。
                     useOr: request.RankingProfile != RankingProfile.ConsistencyCheck
@@ -680,13 +682,23 @@ public sealed partial class SqliteRetrievalStore(
         IReadOnlySet<string> candidateChunkIds,
         int topK,
         CancellationToken ct = default
-    ) => LexicalSearchAsync(query, candidateChunkIds, topK, ct, useOr: true);
+    ) => LexicalSearchAsync(query, candidateChunkIds, topK, novelId: null, ct, useOr: true);
 
     /// <summary>词法检索（可指定 OR/AND 模式）。</summary>
+    public Task<List<(string ChunkId, double Score)>> LexicalSearchAsync(
+        string query,
+        IReadOnlySet<string> candidateChunkIds,
+        int topK,
+        CancellationToken ct,
+        bool useOr
+    ) => LexicalSearchAsync(query, candidateChunkIds, topK, novelId: null, ct, useOr);
+
+    /// <summary>词法检索（指定小说词典 + OR/AND 模式）。</summary>
     public async Task<List<(string ChunkId, double Score)>> LexicalSearchAsync(
         string query,
         IReadOnlySet<string> candidateChunkIds,
         int topK,
+        string? novelId,
         CancellationToken ct,
         bool useOr
     )
@@ -711,7 +723,7 @@ public sealed partial class SqliteRetrievalStore(
                   AND f.chunk_id IN (SELECT chunk_id FROM _search_candidates)
                   ORDER BY f.rank
                   LIMIT $topK";
-            var terms = LexicalText.GetQueryTerms(query);
+            var terms = LexicalText.GetQueryTerms(query, novelId);
             if (terms.Length == 0)
             {
                 // 没有可用实义词：保留旧的原始转义查询（单字/纯符号场景）。
@@ -725,7 +737,10 @@ public sealed partial class SqliteRetrievalStore(
             }
             else
             {
-                cmd.Parameters.AddWithValue("$query", LexicalText.BuildMatchQuery(query, useOr));
+                cmd.Parameters.AddWithValue(
+                    "$query",
+                    LexicalText.BuildMatchQuery(query, novelId, useOr)
+                );
             }
             cmd.Parameters.AddWithValue("$topK", topK);
 
@@ -873,6 +888,7 @@ public sealed partial class SqliteRetrievalStore(
                 content_hash      TEXT NOT NULL DEFAULT '',
                 embedding_model_id TEXT NOT NULL DEFAULT '',
                 embedding_dimension INTEGER NOT NULL DEFAULT 0,
+                lexical_version   TEXT NOT NULL DEFAULT '',
                 index_status      INTEGER NOT NULL DEFAULT 0,
                 created_at        TEXT NOT NULL,
                 indexed_at        TEXT,
@@ -929,6 +945,35 @@ public sealed partial class SqliteRetrievalStore(
     /// </summary>
     private async Task EnsureLexicalSchemaAsync(CancellationToken ct)
     {
+        // 0) 文档层 lexical_version 列（实体词典/分词版本）
+        var hasLexicalVersion = false;
+        await using (var docCmd = _connection.CreateCommand())
+        {
+            docCmd.CommandText = "PRAGMA table_info(retrieval_documents)";
+            await using var reader = await docCmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (
+                    string.Equals(
+                        reader.GetString(1),
+                        "lexical_version",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    hasLexicalVersion = true;
+                    break;
+                }
+            }
+        }
+        if (!hasLexicalVersion)
+        {
+            await using var alter = _connection.CreateCommand();
+            alter.CommandText =
+                "ALTER TABLE retrieval_documents ADD COLUMN lexical_version TEXT NOT NULL DEFAULT ''";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+
         // 1) tokens 列
         var hasTokens = false;
         await using (var cmd = _connection.CreateCommand())
@@ -1105,12 +1150,12 @@ public sealed partial class SqliteRetrievalStore(
         cmd.CommandText =
             @"INSERT OR REPLACE INTO retrieval_documents
               (document_id, domain, owner_id, novel_id, document_kind, source_entity_type, source_entity_id,
-               source_revision, content_hash, embedding_model_id, embedding_dimension, index_status,
-               created_at, indexed_at, metadata_json)
+               source_revision, content_hash, embedding_model_id, embedding_dimension, lexical_version,
+               index_status, created_at, indexed_at, metadata_json)
               VALUES
               ($document_id, $domain, $owner_id, $novel_id, $document_kind, $source_entity_type, $source_entity_id,
-               $source_revision, $content_hash, $embedding_model_id, $embedding_dimension, $index_status,
-               $created_at, $indexed_at, $metadata_json)";
+               $source_revision, $content_hash, $embedding_model_id, $embedding_dimension, $lexical_version,
+               $index_status, $created_at, $indexed_at, $metadata_json)";
         cmd.Parameters.AddWithValue("$document_id", doc.DocumentId);
         cmd.Parameters.AddWithValue("$domain", (int)doc.Domain);
         cmd.Parameters.AddWithValue("$owner_id", (object?)doc.OwnerId ?? DBNull.Value);
@@ -1128,6 +1173,7 @@ public sealed partial class SqliteRetrievalStore(
         cmd.Parameters.AddWithValue("$content_hash", doc.ContentHash);
         cmd.Parameters.AddWithValue("$embedding_model_id", doc.EmbeddingModelId);
         cmd.Parameters.AddWithValue("$embedding_dimension", doc.EmbeddingDimension);
+        cmd.Parameters.AddWithValue("$lexical_version", doc.LexicalVersion);
         cmd.Parameters.AddWithValue("$index_status", (int)doc.IndexStatus);
         cmd.Parameters.AddWithValue(
             "$created_at",
@@ -1144,7 +1190,11 @@ public sealed partial class SqliteRetrievalStore(
     }
 
     /// <summary>插入一块行，若有 embedding 同时写入 vec0。</summary>
-    private async Task InsertChunkRowAsync(RetrievalChunk chunk, CancellationToken ct)
+    private async Task InsertChunkRowAsync(
+        RetrievalChunk chunk,
+        string? novelId,
+        CancellationToken ct
+    )
     {
         // INSERT OR REPLACE 在部分 SQLite 配置下不会触发 DELETE trigger，
         // 会让 FTS 留下旧 rowid → "missing row from content table"。
@@ -1175,7 +1225,7 @@ public sealed partial class SqliteRetrievalStore(
         cmd.Parameters.AddWithValue("$document_id", chunk.DocumentId);
         cmd.Parameters.AddWithValue("$chunk_ordinal", chunk.ChunkOrdinal);
         cmd.Parameters.AddWithValue("$text", chunk.Text);
-        cmd.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(chunk.Text));
+        cmd.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(chunk.Text, novelId));
         cmd.Parameters.AddWithValue("$source_offset_start", chunk.SourceOffsetStart);
         cmd.Parameters.AddWithValue("$source_offset_end", chunk.SourceOffsetEnd);
         cmd.Parameters.AddWithValue("$content_hash", chunk.ContentHash);
@@ -1571,6 +1621,7 @@ public sealed partial class SqliteRetrievalStore(
             ContentHash = reader.GetString(reader.GetOrdinal("content_hash")),
             EmbeddingModelId = reader.GetString(reader.GetOrdinal("embedding_model_id")),
             EmbeddingDimension = reader.GetInt32(reader.GetOrdinal("embedding_dimension")),
+            LexicalVersion = reader.GetString(reader.GetOrdinal("lexical_version")),
             IndexStatus = (IndexStatus)reader.GetInt32(reader.GetOrdinal("index_status")),
             CreatedAt = DateTime.Parse(
                 reader.GetString(reader.GetOrdinal("created_at")),
