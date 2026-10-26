@@ -51,8 +51,10 @@
   trigger 造成的 FTS stale row、`PurgeDeletedAsync` 直接 DELETE external-content FTS 的问题，
   以及无章节实体被空 chapter key 一起限流的多样性误伤。`IEmbeddingService` 新增 `ModelId`，
   落库真实模型名并纳入 `VectorSyncService.IsUpToDate`，换 embedding 模型会自动重建该小说知识域。
-  每部小说使用独立 jieba 用户词典（角色/组织/地点/道具/情节线/场景名 `AddWord`），名称集合哈希
-  写入 `lexical_version`；名称变化自动重建，未变化时启动不重复 re-embed。
+  每部小说使用独立 jieba 用户词典（书名/卷名/章名 + 角色/组织/地点/道具/情节线/场景名 `AddWord`），
+  名称集合哈希写入 `lexical_version`；名称变化自动重建，未变化时启动不重复 re-embed。
+  TUI 实时实体变更（`EnqueueIndexTaskAsync`）先刷新词典：新增/删除或名称/标题字段变化时后台重建
+  该小说全部文档；正文/性格等非名称字段变化只索引变更实体。
   回归：Core 1514/1514；新增 `LexicalTextTests`、`NovelLexiconTests`、中文词法集成测试、diversity 两例。
 
 ### Changed

@@ -251,6 +251,9 @@ RetrievalKernel.SearchAsync(request)
 InMemoryRetrievalStore。词法层始终使用 jieba 预分词后的 `tokens` 列；`simple` 原生扩展缺失只记日志，
 不再决定 FTS 分词质量。每个 novelId 使用独立的 jieba 用户词典（角色/组织/地点/道具/情节线/场景名
 经 `AddWord` 注册），名称集合哈希写入 `lexical_version`，变化时触发该小说知识域重建。
+实时实体变更（TUI `EnqueueIndexTaskAsync`）会先刷新词典：新增/删除实体或名称/标题字段变化
+→ 后台按 `lexical_version` 重建该小说全部文档；仅正文/性格等非名称字段变化只索引变更实体。
+名称来源覆盖设定面板的大纲与实体：书名、卷名、章名、角色/组织/地点/情节线/场景/道具名。
 一致性 profile 用 AND（精确），暗线/写作 profile 用 OR（召回）。
 实时索引（事件通道）与启动对账（补偿通道）双通道，崩溃/离线/队列失败由对账兜底。
 

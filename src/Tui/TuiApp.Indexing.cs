@@ -1,5 +1,6 @@
 using Core.Data;
 using Core.Vector;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tui;
 
@@ -16,6 +17,12 @@ public sealed partial class TuiApp
 
         try
         {
+            // 实体名称/标题变化会改变 jieba 词典。先在当前回合更新词典，
+            // 再索引变更实体；名称真变化时后台重建该小说全部文档（lexical_version 对账）。
+            var lexiconChanged = await RefreshLexiconAsync(evt);
+            if (lexiconChanged)
+                _ = SyncNovelAfterLexiconChangeAsync(evt.NovelId);
+
             if (evt.Action == AuditAction.Delete)
             {
                 var sourceEntityType = EntityTypeToSourceType(evt.EntityType);
@@ -47,6 +54,68 @@ public sealed partial class TuiApp
         catch (Exception ex)
         {
             Services.TuiLogger.OperationFailed(_logger, ex, "enqueue indexing task");
+        }
+    }
+
+    /// <summary>名称/标题是否属于 jieba 词典来源。</summary>
+    private static bool ContributesLexiconNames(EntityType type) =>
+        type
+            is EntityType.Character
+                or EntityType.Faction
+                or EntityType.Location
+                or EntityType.Item
+                or EntityType.Plotline
+                or EntityType.Scene
+                or EntityType.Chapter
+                or EntityType.Volume
+                or EntityType.Novel;
+
+    /// <summary>更新事件是否包含名称/标题字段。</summary>
+    private static bool HasNameChange(EntityChangeEvent evt) =>
+        evt.FieldChanges?.Keys.Any(key =>
+            key.Equals("Name", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("Title", StringComparison.OrdinalIgnoreCase)
+        ) == true;
+
+    /// <summary>名称变化时重建该小说的 jieba 词典；未变化返回 false。</summary>
+    private async Task<bool> RefreshLexiconAsync(EntityChangeEvent evt)
+    {
+        if (_retrievalKernel is null || !ContributesLexiconNames(evt.EntityType))
+            return false;
+        if (evt.Action == AuditAction.Update && !HasNameChange(evt))
+            return false;
+
+        var names = await NovelLexiconCollector.CollectAsync(
+            _store,
+            evt.NovelId,
+            CancellationToken.None
+        );
+        return NovelLexicon.Update(evt.NovelId, names);
+    }
+
+    /// <summary>词典变化后后台重建该小说全部文档（旧 token 需要用新词典重新切分）。</summary>
+    private async Task SyncNovelAfterLexiconChangeAsync(string novelId)
+    {
+        if (_retrievalKernel is null)
+            return;
+        try
+        {
+            var sync = new VectorSyncService(
+                _store,
+                _retrievalKernel.Store,
+                _retrievalKernel,
+                _retrievalKernel.Builder,
+                NullLogger<VectorSyncService>.Instance
+            );
+            await sync.SyncNovelAsync(novelId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Services.TuiLogger.OperationFailed(
+                _logger,
+                ex,
+                "rebuild novel index after lexicon change"
+            );
         }
     }
 

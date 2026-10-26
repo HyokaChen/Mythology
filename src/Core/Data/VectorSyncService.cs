@@ -51,6 +51,15 @@ public sealed class VectorSyncService(
         logger.LogInformation("检索索引增量同步完成");
     }
 
+    /// <summary>按 novelId 同步单部小说（实时实体词典变化后调用）。</summary>
+    public async Task SyncNovelAsync(string novelId, CancellationToken ct = default)
+    {
+        var novel = await store.GetNovel(novelId, ct);
+        if (novel is null)
+            return;
+        await SyncNovelAsync(novel, ct);
+    }
+
     /// <summary>
     /// 同步单部小说的所有实体类型到检索索引。
     /// 并行处理各类实体（角色、章节、情节线等），最后清理已删除的实体。
@@ -61,9 +70,9 @@ public sealed class VectorSyncService(
     {
         logger.LogDebug("同步小说 '{NovelTitle}' 的检索索引", novel.Title);
 
-        // 实体词典变化（新增角色/地点/道具等）会改变分词结果；
-        // 先更新词典，变化时把该小说知识域标记 stale，强制重建。
-        var names = await CollectEntityNamesAsync(novel.Id, ct);
+        // 实体名称/标题变化（新增角色/地点/道具、改名、章节标题等）会改变分词结果；
+        // 先更新词典，lexical_version 变化会在下面的 IsUpToDate 中触发重建。
+        var names = await NovelLexiconCollector.CollectAsync(store, novel.Id, ct);
         if (NovelLexicon.Update(novel.Id, names))
         {
             logger.LogInformation(
@@ -501,28 +510,6 @@ public sealed class VectorSyncService(
                 await kernel.DeleteEntityAsync(novelId, entityType, id, ct);
             }
         }
-    }
-
-    /// <summary>收集该小说的实体名称，作为 jieba 用户词典的输入。</summary>
-    private async Task<HashSet<string>> CollectEntityNamesAsync(
-        string novelId,
-        CancellationToken ct
-    )
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var character in await store.GetCharacters(novelId, ct))
-            names.Add(character.Name);
-        foreach (var faction in await store.GetFactions(novelId, ct))
-            names.Add(faction.Name);
-        foreach (var location in await store.GetLocations(novelId, ct))
-            names.Add(location.Name);
-        foreach (var item in await store.GetItems(novelId, ct))
-            names.Add(item.Name);
-        foreach (var plotline in await store.GetPlotlines(novelId, ct))
-            names.Add(plotline.Name);
-        foreach (var scene in await store.GetScenesByNovel(novelId, ct))
-            names.Add(scene.Title);
-        return names;
     }
 
     /// <summary>
