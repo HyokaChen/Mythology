@@ -20,7 +20,8 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
     private Select<string>? _modelSelect;
     private TextBox? _modelTextBox;
     private string[] _availableModels = [];
-    private bool _modelSelectHandlerWired;
+    private bool _modelSelectVisible;
+    private int _modelLoadVersion;
 
     private readonly VStack _apiKeyCards = new() { Spacing = 1 };
     private readonly List<EmbeddingKeyCardState> _apiKeyEntries = [];
@@ -35,13 +36,16 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
     public EmbeddingConfig BuildEmbeddingConfig()
     {
         var (configKey, customName) = ResolveSelectedProvider();
+        // 下拉可见时它就是当前选择的可视来源；_model 仅作手动输入/兜底。
+        // 否则会出现「下拉显示模型 A，保存却写入空或旧模型」的错位。
+        var model = SelectedModel.Trim();
         return new EmbeddingConfig
         {
             // 云端 opt-in（config.yaml 显式字段）：面板不编辑，保存时原样保留。
             Provider = cfg.Embedding.Provider,
             Default = configKey,
-            DefaultModel = _model.Value ?? "text-embedding-3-small",
-            Model = _model.Value ?? "",
+            DefaultModel = string.IsNullOrEmpty(model) ? "text-embedding-3-small" : model,
+            Model = model,
             ApiKeys = _apiKeyEntries
                 .Select(e => new ApiKeyEntry
                 {
@@ -54,6 +58,23 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
                 })
                 .ToList(),
         };
+    }
+
+    /// <summary>
+    /// 当前可见的模型选择：下拉显示时以下拉为准，否则取手动输入值。
+    /// </summary>
+    private string SelectedModel
+    {
+        get
+        {
+            if (_modelSelectVisible && _modelSelect is not null && _availableModels.Length > 0)
+            {
+                var index = Math.Clamp(_modelSelect.SelectedIndex, 0, _availableModels.Length - 1);
+                return _availableModels[index];
+            }
+
+            return _model.Value ?? "";
+        }
     }
 
     /// <summary>
@@ -82,6 +103,7 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
         _modelSelect = new Select<string>().Style(SelectStyle.NoBorder);
         _modelSelect.IsVisible = false;
         _modelSelect.HorizontalAlignment = Align.Stretch;
+        _modelSelect.SelectionChanged((_, _) => SyncModelFromSelection());
         var modelCell = new VStack(_modelSelect, _modelTextBox).Spacing(1);
 
         // 预设按钮
@@ -163,7 +185,33 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
 
     private Button CreatePresetBtn(string model, string label)
     {
-        return new Button(new Markup($"[dim]{label}[/]")).Click(() => _model.Value = model);
+        return new Button(new Markup($"[dim]{label}[/]")).Click(() => SetPresetModel(model));
+    }
+
+    /// <summary>
+    /// 应用预设模型：下拉里存在则同步选中；不存在则切回手动输入，
+    /// 避免「按钮改了 _model，但下拉仍显示旧值」导致保存与界面不一致。
+    /// </summary>
+    private void SetPresetModel(string model)
+    {
+        _model.Value = model;
+        if (_modelSelect is null || _modelTextBox is null)
+            return;
+
+        var index = Array.FindIndex(
+            _availableModels,
+            m => string.Equals(m, model, StringComparison.OrdinalIgnoreCase)
+        );
+        if (_modelSelectVisible && index >= 0)
+        {
+            _modelSelect.SelectedIndex = index;
+            SyncModelFromSelection();
+            return;
+        }
+
+        _modelSelectVisible = false;
+        _modelSelect.IsVisible = false;
+        _modelTextBox.IsVisible = true;
     }
 
     // ── 密钥卡片 ──
@@ -284,6 +332,7 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
         if (_modelSelect is null || _modelTextBox is null)
             return;
 
+        var loadVersion = ++_modelLoadVersion;
         var (configKey, customName) = ResolveSelectedProvider();
 
         // 从当前密钥卡片中找激活的条目（与 RefreshProviderDropdown 同一映射逻辑）
@@ -324,7 +373,27 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
             entry,
             def.LlmProvider is not null ? def : null
         );
+
+        // Provider/密钥可能已再次切换；丢弃过期结果，避免旧请求覆盖新选择。
+        if (loadVersion != _modelLoadVersion)
+            return;
+
         if (models.Count == 0)
+        {
+            SetModelFallback();
+            return;
+        }
+
+        ApplyDiscoveredModels(models);
+    }
+
+    /// <summary>
+    /// 应用一次模型发现结果：优先保留当前模型，否则选中列表首项，
+    /// 并立即同步 <see cref="_model"/>，确保保存值与下拉显示一致。
+    /// </summary>
+    internal void ApplyDiscoveredModels(IReadOnlyList<string> models)
+    {
+        if (_modelSelect is null || _modelTextBox is null || models.Count == 0)
         {
             SetModelFallback();
             return;
@@ -334,35 +403,35 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
         _modelSelect.Items.Clear();
         _modelSelect.Items.AddRange(models);
 
-        // 尝试选中当前保存的模型
         var currentModel = _model.Value;
-        var matchIdx = models.FindIndex(m =>
-            string.Equals(m, currentModel, StringComparison.OrdinalIgnoreCase)
-        );
-        _modelSelect.SelectedIndex = matchIdx >= 0 ? matchIdx : 0;
-
-        // 下拉选中 → 同步到 _model State（保存时取得到）
-        if (!_modelSelectHandlerWired)
+        var matchIndex = -1;
+        for (var i = 0; i < models.Count; i++)
         {
-            _modelSelect.SelectionChanged(
-                (_, _) =>
-                {
-                    if (_modelSelect is not null && _availableModels.Length > 0)
-                    {
-                        var idx = Math.Clamp(
-                            _modelSelect.SelectedIndex,
-                            0,
-                            _availableModels.Length - 1
-                        );
-                        _model.Value = _availableModels[idx];
-                    }
-                }
-            );
-            _modelSelectHandlerWired = true;
+            if (string.Equals(models[i], currentModel, StringComparison.OrdinalIgnoreCase))
+            {
+                matchIndex = i;
+                break;
+            }
         }
 
+        _modelSelect.SelectedIndex = matchIndex >= 0 ? matchIndex : 0;
+        SyncModelFromSelection();
+
+        _modelSelectVisible = true;
         _modelSelect.IsVisible = true;
         _modelTextBox.IsVisible = false;
+    }
+
+    /// <summary>
+    /// 下拉选中项 → <see cref="_model"/>。选中事件与程序化赋值都走这里。
+    /// </summary>
+    private void SyncModelFromSelection()
+    {
+        if (_modelSelect is null || _availableModels.Length == 0)
+            return;
+
+        var index = Math.Clamp(_modelSelect.SelectedIndex, 0, _availableModels.Length - 1);
+        _model.Value = _availableModels[index];
     }
 
     /// <summary>
@@ -372,6 +441,7 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
     {
         if (_modelSelect is null || _modelTextBox is null)
             return;
+        _modelSelectVisible = false;
         _modelSelect.IsVisible = false;
         _modelTextBox.IsVisible = true;
         _availableModels = [];

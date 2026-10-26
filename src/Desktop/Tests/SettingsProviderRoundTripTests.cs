@@ -138,6 +138,41 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
     }
 
     [Fact]
+    public async Task SelectedEmbeddingModel_IsPersistedToDefaultModel()
+    {
+        var store = new ConfigStore(_dir);
+        await store.SaveAsync(
+            new ConfigData
+            {
+                Providers = new ProviderConfig
+                {
+                    Default = "openai",
+                    DefaultModel = "gpt-4o-mini",
+                    ApiKeys = [new ApiKeyEntry { Provider = "openai", ApiKey = "sk-test" }],
+                },
+                Embedding = new EmbeddingConfig
+                {
+                    Default = "openai",
+                    DefaultModel = "old-embedding",
+                    Model = "old-embedding",
+                    ApiKeys = [new ApiKeyEntry { Provider = "openai", ApiKey = "sk-test" }],
+                },
+            }
+        );
+
+        var vm = new SettingsViewModel(store, null, null).Refresh();
+        Assert.Equal("old-embedding", vm.EmbeddingModel);
+
+        // 下拉选择通过 Mode=TwoWay 写回 EmbeddingModel；保存应同时写新字段和遗留字段。
+        vm.EmbeddingModel = "new-embedding";
+        vm.SaveCommand.Execute().Subscribe();
+
+        var saved = await WaitForAsync(store, c => c.Embedding.DefaultModel == "new-embedding");
+
+        Assert.Equal("new-embedding", saved.Embedding.DefaultModel);
+    }
+
+    [Fact]
     public async Task McpAuth_ResolvesTransportHeaderAndPersists()
     {
         var store = new ConfigStore(_dir);

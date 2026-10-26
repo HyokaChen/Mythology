@@ -28,6 +28,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly ToolRegistry? _registry;
     private readonly RetrievalKernel? _retrievalKernel;
     private ConfigData? _config;
+    private int _chatModelDiscoveryVersion;
+    private int _embeddingModelDiscoveryVersion;
 
     /// <summary>提供商下拉选项（显示名）。</summary>
     public ObservableCollection<string> ProviderOptions { get; } = [];
@@ -343,8 +345,10 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>
     /// 从当前聊天提供商 API 发现可用模型（对齐 TUI ProviderTab.LoadModelsAsync）。
     /// </summary>
-    public Task DiscoverModelsAsync() =>
-        DiscoverAsync(
+    public Task DiscoverModelsAsync()
+    {
+        var version = ++_chatModelDiscoveryVersion;
+        return DiscoverAsync(
             ProviderDisplay,
             ApiKeys,
             ModelOptions,
@@ -352,15 +356,19 @@ public sealed class SettingsViewModel : ViewModelBase
             isListVisible: v => IsModelListVisible = v,
             status: v => ModelDiscoverStatus = v,
             currentModel: () => Model,
-            setModel: v => Model = v
+            setModel: v => Model = v,
+            isCurrent: () => version == _chatModelDiscoveryVersion
         );
+    }
 
     /// <summary>
     /// 从当前 embedding 提供商 API 发现可用模型（对齐 TUI EmbeddingTab.LoadModelsAsync，
     /// 与聊天连接器共用同一发现逻辑与 ModelDiscoveryService）。
     /// </summary>
-    public Task DiscoverEmbeddingModelsAsync() =>
-        DiscoverAsync(
+    public Task DiscoverEmbeddingModelsAsync()
+    {
+        var version = ++_embeddingModelDiscoveryVersion;
+        return DiscoverAsync(
             EmbeddingProviderDisplay,
             EmbeddingApiKeys,
             EmbeddingModelOptions,
@@ -368,15 +376,17 @@ public sealed class SettingsViewModel : ViewModelBase
             isListVisible: v => IsEmbeddingModelListVisible = v,
             status: v => EmbeddingModelDiscoverStatus = v,
             currentModel: () => EmbeddingModel,
-            setModel: v => EmbeddingModel = v
+            setModel: v => EmbeddingModel = v,
+            isCurrent: () => version == _embeddingModelDiscoveryVersion
         );
+    }
 
     /// <summary>
     /// 发现共享实现（聊天 / embedding 两处调用）：
     /// 自定义提供商不支持（无 per-custom 选择，取首行会错配 BaseUrl）→ 状态提示手动输入；
     /// 无该提供商密钥 → 提示先填密钥；空结果 → 手动输入回退；成功 → 填下拉并保留当前模型（IgnoreCase）。
     /// </summary>
-    private static async Task DiscoverAsync(
+    private async Task DiscoverAsync(
         string providerDisplay,
         IReadOnlyList<ApiKeyRow> rows,
         ObservableCollection<string> options,
@@ -384,9 +394,13 @@ public sealed class SettingsViewModel : ViewModelBase
         Action<bool> isListVisible,
         Action<string> status,
         Func<string> currentModel,
-        Action<string> setModel
+        Action<string> setModel,
+        Func<bool> isCurrent
     )
     {
+        // 新请求开始时先归零上一次请求的进行中状态；旧请求返回后会被 isCurrent() 丢弃。
+        isDiscovering(false);
+
         var configKey = ResolveProviderConfigKey(providerDisplay, rows);
         var isCustom = ProviderDefinition.IsCustom(configKey);
         var def = isCustom ? null : ProviderDefinition.FindByConfigKey(configKey);
@@ -428,6 +442,11 @@ public sealed class SettingsViewModel : ViewModelBase
             BaseUrl = string.IsNullOrWhiteSpace(row.BaseUrl) ? null : row.BaseUrl.Trim(),
         };
         var models = await ModelDiscoveryService.GetModelsAsync(entry, def);
+
+        // Provider 已切换，或已发起更新的发现请求：旧响应不得覆盖当前下拉/模型状态。
+        if (!isCurrent())
+            return;
+
         isDiscovering(false);
 
         if (models.Count == 0)
@@ -437,17 +456,53 @@ public sealed class SettingsViewModel : ViewModelBase
             return;
         }
 
+        // 必须在清空 options 前读取当前模型：ComboBox 双向绑定在 Clear() 时会先把 Model 写回 null。
+        var current = currentModel();
         options.Clear();
         foreach (var m in models)
             options.Add(m);
         // 优先保留当前已填模型（IgnoreCase 匹配），否则选首个（镜像 TUI ProviderTab）
-        var current = currentModel();
         var match = models.FirstOrDefault(m =>
             string.Equals(m, current, StringComparison.OrdinalIgnoreCase)
         );
         setModel(match ?? models[0]);
         isListVisible(true);
         status($"发现 {models.Count} 个模型");
+    }
+
+    /// <summary>
+    /// 聊天提供商变化后，旧模型列表不再对应当前连接，必须退回手动输入。
+    /// 保留 Model 作为手动兜底；版本号自增使在途请求结果失效。
+    /// </summary>
+    private void ResetChatModelDiscovery()
+    {
+        _chatModelDiscoveryVersion++;
+        IsDiscoveringModels = false;
+
+        if (ModelOptions.Count == 0 && !IsModelListVisible)
+        {
+            ModelDiscoverStatus = "";
+            return;
+        }
+
+        IsModelListVisible = false;
+        ModelDiscoverStatus = "提供商已更改，请重新发现模型";
+    }
+
+    /// <summary>embedding 提供商变化后的旧列表失效逻辑（同聊天连接器）。</summary>
+    private void ResetEmbeddingModelDiscovery()
+    {
+        _embeddingModelDiscoveryVersion++;
+        IsDiscoveringEmbeddingModels = false;
+
+        if (EmbeddingModelOptions.Count == 0 && !IsEmbeddingModelListVisible)
+        {
+            EmbeddingModelDiscoverStatus = "";
+            return;
+        }
+
+        IsEmbeddingModelListVisible = false;
+        EmbeddingModelDiscoverStatus = "embedding 提供商已更改，请重新发现模型";
     }
 
     public SettingsViewModel(
@@ -473,6 +528,11 @@ public sealed class SettingsViewModel : ViewModelBase
         EmbeddingApiKeys.CollectionChanged += (_, _) => SyncProviderOptions();
         RebuildProviderOptions(ProviderOptions, ApiKeys);
         RebuildProviderOptions(EmbeddingProviderOptions, EmbeddingApiKeys);
+
+        // 切换提供商后，旧下拉列表不再对应当前连接；退出手动输入并废弃在途发现结果。
+        this.WhenAnyValue(x => x.ProviderDisplay).Subscribe(_ => ResetChatModelDiscovery());
+        this.WhenAnyValue(x => x.EmbeddingProviderDisplay)
+            .Subscribe(_ => ResetEmbeddingModelDiscovery());
     }
 
     /// <summary>微信通道（Host 未接线时为 null，卡片随之隐藏）。</summary>

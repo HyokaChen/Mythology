@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Desktop.ViewModels;
 using Xunit;
 
@@ -44,5 +45,68 @@ public sealed class SettingsModelDiscoveryTests
 
         Assert.Equal("自定义提供商需先填写 Base URL 才能发现模型", vm.ModelDiscoverStatus);
         Assert.False(vm.IsModelListVisible);
+    }
+
+    [Fact]
+    public void ChatProviderChange_HidesDiscoveredListAndKeepsManualFallback()
+    {
+        var vm = new SettingsViewModel { Model = "old-model", IsModelListVisible = true };
+        vm.ModelOptions.Add("old-model");
+
+        vm.ProviderDisplay = "DeepSeek";
+
+        Assert.False(vm.IsModelListVisible);
+        Assert.Equal("old-model", vm.Model);
+        Assert.Contains("重新发现", vm.ModelDiscoverStatus);
+    }
+
+    [Fact]
+    public void EmbeddingProviderChange_HidesDiscoveredListAndKeepsManualFallback()
+    {
+        var vm = new SettingsViewModel
+        {
+            EmbeddingModel = "old-embedding",
+            IsEmbeddingModelListVisible = true,
+        };
+        vm.EmbeddingModelOptions.Add("old-embedding");
+
+        vm.EmbeddingProviderDisplay = "DeepSeek";
+
+        Assert.False(vm.IsEmbeddingModelListVisible);
+        Assert.Equal("old-embedding", vm.EmbeddingModel);
+        Assert.Contains("重新发现", vm.EmbeddingModelDiscoverStatus);
+    }
+
+    [Fact]
+    public void SettingsView_ModelDropdowns_BindSelectedItemTwoWay()
+    {
+        var bindings = LoadSettingsView()
+            .Descendants()
+            .Where(e => e.Name.LocalName == "ComboBox")
+            .Select(e => e.Attribute("SelectedItem")?.Value)
+            .OfType<string>()
+            .ToList();
+
+        Assert.Contains("{Binding Model, Mode=TwoWay}", bindings);
+        Assert.Contains("{Binding EmbeddingModel, Mode=TwoWay}", bindings);
+    }
+
+    private static XElement LoadSettingsView()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(
+                dir.FullName,
+                "src",
+                "Desktop",
+                "Views",
+                "SettingsView.axaml"
+            );
+            if (File.Exists(candidate))
+                return XDocument.Load(candidate).Root!;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException("未找到 src/Desktop/Views/SettingsView.axaml");
     }
 }

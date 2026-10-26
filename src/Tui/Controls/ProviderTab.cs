@@ -29,7 +29,7 @@ internal sealed class ProviderTab
     private TextBox? _modelTextBox; // 模型手动输入框
     private string[] _availableModels = []; // 可用模型列表
     private bool _modelSelectVisible = true; // 模型下拉是否可见
-    private bool _modelSelectHandlerWired; // 模型选择事件是否已绑定
+    private int _modelLoadVersion; // 模型发现请求版本（丢弃过期结果）
 
     // ── 密钥卡片 ──
     private readonly VStack _apiKeyCards = new() { Spacing = 1 }; // 密钥卡片容器
@@ -159,6 +159,7 @@ internal sealed class ProviderTab
             .SelectedIndex(new State<int>(0))
             .Style(SelectStyle.NoBorder);
         _modelSelect.HorizontalAlignment = Align.Stretch;
+        _modelSelect.SelectionChanged((_, _) => SyncModelFromSelection());
 
         // 模型手动输入（回退）
         _modelTextBox = new TextBox()
@@ -383,6 +384,7 @@ internal sealed class ProviderTab
     /// </summary>
     private async Task LoadModelsAsync()
     {
+        var loadVersion = ++_modelLoadVersion;
         var (configKey, customName) = ResolveSelectedProvider();
 
         // 找到对应的 ApiKeyEntry
@@ -411,50 +413,68 @@ internal sealed class ProviderTab
             def.LlmProvider is not null ? def : null
         );
 
+        // Provider 可能已再次切换；丢弃过期结果，避免旧请求覆盖新选择。
+        if (loadVersion != _modelLoadVersion)
+            return;
+
         if (models.Count == 0)
         {
             SetModelFallback();
             return;
         }
 
-        _availableModels = [.. models];
+        ApplyDiscoveredModels(models, def.DefaultModelHint);
+    }
 
-        if (_modelSelect is null || _modelTextBox is null)
+    /// <summary>
+    /// 应用一次模型发现结果：优先保留当前模型，否则选中列表首项，
+    /// 并立即同步 <see cref="_defaultModelState"/>，确保回退手动输入时显示值正确。
+    /// </summary>
+    internal void ApplyDiscoveredModels(IReadOnlyList<string> models, string? fallbackModel = null)
+    {
+        if (_modelSelect is null || _modelTextBox is null || models.Count == 0)
+        {
+            SetModelFallback();
             return;
+        }
 
+        _availableModels = [.. models];
         _modelSelect.Items.Clear();
         _modelSelect.Items.AddRange(models);
 
-        // 尝试选中当前保存的模型
-        var currentModel = _defaultModelState.Value ?? def.DefaultModelHint ?? models[0];
-        var matchIdx = models.FindIndex(m =>
-            string.Equals(m, currentModel, StringComparison.OrdinalIgnoreCase)
-        );
-        _modelSelect.SelectedIndex = matchIdx >= 0 ? matchIdx : 0;
+        // 尝试选中当前保存的模型；空值用提供商默认提示，仍无匹配则选首项。
+        var currentModel = _defaultModelState.Value;
+        if (string.IsNullOrWhiteSpace(currentModel))
+            currentModel = fallbackModel ?? models[0];
 
-        // 同步 State，确保 Save 时能拿到下拉选中的值（只绑定一次）
-        if (!_modelSelectHandlerWired)
+        var matchIndex = -1;
+        for (var i = 0; i < models.Count; i++)
         {
-            _modelSelect.SelectionChanged(
-                (_, _) =>
-                {
-                    if (_modelSelect is not null && _availableModels.Length > 0)
-                    {
-                        var idx = Math.Clamp(
-                            _modelSelect.SelectedIndex,
-                            0,
-                            _availableModels.Length - 1
-                        );
-                        _defaultModelState.Value = _availableModels[idx];
-                    }
-                }
-            );
-            _modelSelectHandlerWired = true;
+            if (string.Equals(models[i], currentModel, StringComparison.OrdinalIgnoreCase))
+            {
+                matchIndex = i;
+                break;
+            }
         }
 
+        _modelSelect.SelectedIndex = matchIndex >= 0 ? matchIndex : 0;
+        SyncModelFromSelection();
+
+        _modelSelectVisible = true;
         _modelSelect.IsVisible = true;
         _modelTextBox.IsVisible = false;
-        _modelSelectVisible = true;
+    }
+
+    /// <summary>
+    /// 下拉选中项 → <see cref="_defaultModelState"/>。选中事件与程序化赋值都走这里。
+    /// </summary>
+    private void SyncModelFromSelection()
+    {
+        if (_modelSelect is null || _availableModels.Length == 0)
+            return;
+
+        var index = Math.Clamp(_modelSelect.SelectedIndex, 0, _availableModels.Length - 1);
+        _defaultModelState.Value = _availableModels[index];
     }
 
     /// <summary>

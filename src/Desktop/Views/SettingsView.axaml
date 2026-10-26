@@ -134,7 +134,7 @@
               <ComboBox
                 Theme="{StaticResource AdalineComboBox}"
                 ItemsSource="{Binding ModelOptions}"
-                SelectedItem="{Binding Model}"
+                SelectedItem="{Binding Model, Mode=TwoWay}"
                 HorizontalAlignment="Stretch"
                 IsVisible="{Binding IsModelListVisible}"
               />
@@ -360,7 +360,7 @@
               <ComboBox
                 Theme="{StaticResource AdalineComboBox}"
                 ItemsSource="{Binding EmbeddingModelOptions}"
-                SelectedItem="{Binding EmbeddingModel}"
+                SelectedItem="{Binding EmbeddingModel, Mode=TwoWay}"
                 HorizontalAlignment="Stretch"
                 IsVisible="{Binding IsEmbeddingModelListVisible}"
               />
