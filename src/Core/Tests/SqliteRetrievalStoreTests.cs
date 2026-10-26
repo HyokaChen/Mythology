@@ -137,6 +137,46 @@ public sealed class SqliteRetrievalStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task LexicalSearch_FindsChineseWordInsideSentence()
+    {
+        await using var store = new SqliteRetrievalStore(_dbPath, dimension: 4);
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await store.UpsertDocumentAsync(
+            MakeDoc("doc-lex", "lex-1"),
+            [MakeChunk("chunk-lex", "doc-lex", "对过往有着近乎固执的眷恋，灵魂仍在共鸣。", 4)],
+            TestContext.Current.CancellationToken
+        );
+
+        var candidates = new HashSet<string> { "chunk-lex" };
+        var affection = await store.LexicalSearchAsync(
+            "眷恋",
+            candidates,
+            10,
+            TestContext.Current.CancellationToken
+        );
+        var soul = await store.LexicalSearchAsync(
+            "灵魂 不存在的词",
+            candidates,
+            10,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains(affection, hit => hit.ChunkId == "chunk-lex");
+        Assert.Contains(soul, hit => hit.ChunkId == "chunk-lex");
+
+        // 精确车道：唯一词项是 2 字泛词（“关系”）时不做 AND，避免把全部关系文档拉进来。
+        var generic = await store.LexicalSearchAsync(
+            "关系",
+            candidates,
+            10,
+            TestContext.Current.CancellationToken,
+            useOr: false
+        );
+        Assert.Empty(generic);
+    }
+
     private static RetrievalDocument MakeDoc(string documentId, string sourceEntityId)
     {
         return new RetrievalDocument

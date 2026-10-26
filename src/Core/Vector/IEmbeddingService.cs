@@ -21,4 +21,10 @@ public interface IEmbeddingService
     /// 表示每个文本被转换成的向量长度。
     /// </summary>
     int Dimension { get; }
+
+    /// <summary>
+    /// 模型标识（写入检索文档，用于换模型后触发重建）。
+    /// 默认实现保留旧测试替身兼容；真实服务应覆盖为具体模型名。
+    /// </summary>
+    string ModelId => "unknown";
 }

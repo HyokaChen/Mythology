@@ -99,4 +99,8 @@ public sealed record RetrievalChunk
 /// 文档版本快照（增量同步用）：事实源版本（实体 UpdatedAt ticks）+ 内容哈希。
 /// 一致 ⇒ 索引内容未变，可跳过重索引。
 /// </summary>
-public readonly record struct RetrievalDocumentVersion(long SourceRevision, string ContentHash);
+public readonly record struct RetrievalDocumentVersion(
+    long SourceRevision,
+    string ContentHash,
+    string EmbeddingModelId
+);

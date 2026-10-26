@@ -50,6 +50,9 @@ public sealed class RetrievalKernel(
     /// <summary>嵌入服务实例。</summary>
     public IEmbeddingService EmbeddingService => _embeddingService;
 
+    /// <summary>当前嵌入模型标识（用于索引版本比较）。</summary>
+    public string EmbeddingModelId => _embeddingService.ModelId;
+
     /// <summary>
     /// 冷重配置 embedding 服务（仅在 ConversationLoop 停止时由 SettingsDialog 调用）。
     /// - 维度一致：同步替换 kernel 与 AgentMemory 的 embedding，返回 SameDimension。
@@ -417,7 +420,7 @@ public sealed class RetrievalKernel(
         var finalDoc = document with
         {
             IndexStatus = allSucceeded ? IndexStatus.Ready : IndexStatus.Failed,
-            EmbeddingModelId = _embeddingService is DummyEmbeddingService ? "dummy" : "tornado",
+            EmbeddingModelId = _embeddingService.ModelId,
             EmbeddingDimension = _embeddingService.Dimension,
             IndexedAt = allSucceeded ? DateTime.UtcNow : null,
         };

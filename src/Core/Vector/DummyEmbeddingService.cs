@@ -17,6 +17,9 @@ public sealed class DummyEmbeddingService : IEmbeddingService, IBatchEmbeddingSe
     /// <summary>向量维度（与 VectorDefaults 对齐）。</summary>
     public int Dimension => VectorDefaults.Dimension;
 
+    /// <summary>测试/占位标识。</summary>
+    public string ModelId => "dummy";
+
     /// <summary>
     /// 生成指定文本的向量嵌入。
     /// 注意：此处为占位实现，实际返回的是随机向量，仅用于测试或演示。

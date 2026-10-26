@@ -35,6 +35,9 @@ public sealed class HashEmbedder : IEmbeddingService
     /// <summary>向量维度。</summary>
     public int Dimension { get; }
 
+    /// <summary>模型标识。</summary>
+    public string ModelId => $"hash-{Dimension}";
+
     /// <summary>
     /// 生成文本的确定性向量。
     /// 空文本返回零向量。

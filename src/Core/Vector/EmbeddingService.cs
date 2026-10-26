@@ -21,6 +21,9 @@ public sealed class EmbeddingService : IEmbeddingService, IBatchEmbeddingService
     /// <summary>使用的模型名称。</summary>
     public string ModelName { get; }
 
+    /// <summary>模型标识（写入检索文档，用于换模型后触发重建）。</summary>
+    public string ModelId => ModelName;
+
     /// <summary>
     /// 创建 LlmTornado embedding 服务。
     /// </summary>

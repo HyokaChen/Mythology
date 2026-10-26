@@ -239,16 +239,14 @@ public sealed partial class SqliteRetrievalStore(
                 await delVecCmd.ExecuteNonQueryAsync(ct);
             }
 
-            // 删除 FTS 条目
+            // FTS 是 external-content 表，不能直接 DELETE；先按 content 表重建一次，
+            // 保证随后 DELETE 块的 delete-trigger 能正确移除 FTS 条目。
             if (deletedChunkIds.Count > 0)
             {
-                await using var delFtsCmd = _connection.CreateCommand();
-                var placeholders = string.Join(",", deletedChunkIds.Select((_, i) => $"$id{i}"));
-                delFtsCmd.CommandText =
-                    $"DELETE FROM retrieval_chunks_fts WHERE chunk_id IN ({placeholders})";
-                for (var i = 0; i < deletedChunkIds.Count; i++)
-                    delFtsCmd.Parameters.AddWithValue($"$id{i}", deletedChunkIds[i]);
-                await delFtsCmd.ExecuteNonQueryAsync(ct);
+                await using var rebuildFts = _connection.CreateCommand();
+                rebuildFts.CommandText =
+                    "INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts) VALUES('rebuild')";
+                await rebuildFts.ExecuteNonQueryAsync(ct);
             }
 
             // 删除块和文档行
@@ -461,7 +459,7 @@ public sealed partial class SqliteRetrievalStore(
             var versions = new Dictionary<string, RetrievalDocumentVersion>();
             await using var cmd = _connection.CreateCommand();
             cmd.CommandText =
-                @"SELECT document_id, source_revision, content_hash
+                @"SELECT document_id, source_revision, content_hash, embedding_model_id
                   FROM retrieval_documents
                   WHERE novel_id = $novel_id AND index_status = $ready";
             cmd.Parameters.AddWithValue("$novel_id", novelId);
@@ -472,7 +470,8 @@ public sealed partial class SqliteRetrievalStore(
             {
                 versions[reader.GetString(0)] = new RetrievalDocumentVersion(
                     reader.GetInt64(1),
-                    reader.GetString(2)
+                    reader.GetString(2),
+                    reader.GetString(3)
                 );
             }
             return versions;
@@ -506,7 +505,14 @@ public sealed partial class SqliteRetrievalStore(
         var fused = await GetFusedResultsAsync(
             DenseSearchAsync(queryEmbedding, candidateChunkIds, request.DenseTopK, ct),
             request.Query is not null
-                ? LexicalSearchAsync(request.Query, candidateChunkIds, request.LexicalTopK, ct)
+                ? LexicalSearchAsync(
+                    request.Query,
+                    candidateChunkIds,
+                    request.LexicalTopK,
+                    ct,
+                    // 一致性车道要精确（全部词项命中）；暗线/写作上下文用 OR 提高召回。
+                    useOr: request.RankingProfile != RankingProfile.ConsistencyCheck
+                )
                 : Task.FromResult<List<(string ChunkId, double Score)>>([]),
             config
         );
@@ -669,11 +675,20 @@ public sealed partial class SqliteRetrievalStore(
     /// FTS rank 返回值为负（BM25 分数取负），取负后作为正分数。
     /// 查询失败时返回空列表（不降级为全表扫描）。
     /// </summary>
-    public async Task<List<(string ChunkId, double Score)>> LexicalSearchAsync(
+    public Task<List<(string ChunkId, double Score)>> LexicalSearchAsync(
         string query,
         IReadOnlySet<string> candidateChunkIds,
         int topK,
         CancellationToken ct = default
+    ) => LexicalSearchAsync(query, candidateChunkIds, topK, ct, useOr: true);
+
+    /// <summary>词法检索（可指定 OR/AND 模式）。</summary>
+    public async Task<List<(string ChunkId, double Score)>> LexicalSearchAsync(
+        string query,
+        IReadOnlySet<string> candidateChunkIds,
+        int topK,
+        CancellationToken ct,
+        bool useOr
     )
     {
         await _lock.WaitAsync(ct);
@@ -696,7 +711,22 @@ public sealed partial class SqliteRetrievalStore(
                   AND f.chunk_id IN (SELECT chunk_id FROM _search_candidates)
                   ORDER BY f.rank
                   LIMIT $topK";
-            cmd.Parameters.AddWithValue("$query", EscapeFtsQuery(query));
+            var terms = LexicalText.GetQueryTerms(query);
+            if (terms.Length == 0)
+            {
+                // 没有可用实义词：保留旧的原始转义查询（单字/纯符号场景）。
+                cmd.Parameters.AddWithValue("$query", EscapeFtsQuery(query));
+            }
+            else if (!useOr && terms.Length == 1 && terms[0].Length <= 2)
+            {
+                // 精确车道里唯一词项只剩「关系/场景」这类 2 字泛词时，
+                // AND 查询没有区分度，直接让词法通道留空，交给 dense。
+                return [];
+            }
+            else
+            {
+                cmd.Parameters.AddWithValue("$query", LexicalText.BuildMatchQuery(query, useOr));
+            }
             cmd.Parameters.AddWithValue("$topK", topK);
 
             try
@@ -861,6 +891,7 @@ public sealed partial class SqliteRetrievalStore(
                 document_id       TEXT NOT NULL,
                 chunk_ordinal     INTEGER NOT NULL DEFAULT 0,
                 text              TEXT NOT NULL DEFAULT '',
+                tokens            TEXT NOT NULL DEFAULT '',
                 source_offset_start INTEGER NOT NULL DEFAULT 0,
                 source_offset_end   INTEGER NOT NULL DEFAULT 0,
                 content_hash      TEXT NOT NULL DEFAULT '',
@@ -887,43 +918,142 @@ public sealed partial class SqliteRetrievalStore(
               );";
         await vecCmd.ExecuteNonQueryAsync(ct);
 
-        // 4. retrieval_chunks_fts：FTS5 虚拟表，存储 chunk 文本，支持 BM25 词法检索和中文分词
-        // 使用 simple tokenizer（基于 jieba 的中文分词）提升中文召回质量
-        // 若 simple 扩展未加载，回退到默认的 unicode61 tokenizer
-        await using var ftsCmd = _connection.CreateCommand();
-        var ftsTokenizer = _simpleAvailable ? "simple" : "unicode61";
-        ftsCmd.CommandText =
-            $@"CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts USING fts5(
-                chunk_id,
-                text,
-                tokenize='{ftsTokenizer}',
-                content='retrieval_chunks',
-                content_rowid='rowid'
-              );";
-        await ftsCmd.ExecuteNonQueryAsync(ct);
+        // 4. 词法层：tokens 列 + 预分词 FTS5 + 同步触发器（含旧 text 索引迁移）
+        await EnsureLexicalSchemaAsync(ct);
+    }
 
-        // 5. FTS5 同步触发器：在 retrieval_chunks 插入/删除/更新时自动同步内容到 FTS5 表，无需手动维护
-        await using var trigInsertCmd = _connection.CreateCommand();
-        trigInsertCmd.CommandText =
-            @"CREATE TRIGGER IF NOT EXISTS fts_chunk_insert AFTER INSERT ON retrieval_chunks BEGIN
-                INSERT INTO retrieval_chunks_fts(rowid, chunk_id, text) VALUES (new.rowid, new.chunk_id, new.text);
-              END;";
-        await trigInsertCmd.ExecuteNonQueryAsync(ct);
+    /// <summary>
+    /// 确保 retrieval_chunks.tokens 与 retrieval_chunks_fts(tokens) 就绪。
+    /// 旧库使用 text 列 + unicode61，中文整句会被当成一个 token；这里一次性重建为
+    /// jieba 预分词后的词级 FTS，并回填既有 chunk。
+    /// </summary>
+    private async Task EnsureLexicalSchemaAsync(CancellationToken ct)
+    {
+        // 1) tokens 列
+        var hasTokens = false;
+        await using (var cmd = _connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info(retrieval_chunks)";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (
+                    string.Equals(reader.GetString(1), "tokens", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    hasTokens = true;
+                    break;
+                }
+            }
+        }
+        if (!hasTokens)
+        {
+            await using var alter = _connection.CreateCommand();
+            alter.CommandText =
+                "ALTER TABLE retrieval_chunks ADD COLUMN tokens TEXT NOT NULL DEFAULT ''";
+            await alter.ExecuteNonQueryAsync(ct);
+        }
 
-        await using var trigDeleteCmd = _connection.CreateCommand();
-        trigDeleteCmd.CommandText =
-            @"CREATE TRIGGER IF NOT EXISTS fts_chunk_delete AFTER DELETE ON retrieval_chunks BEGIN
-                INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, text) VALUES('delete', old.rowid, old.chunk_id, old.text);
-              END;";
-        await trigDeleteCmd.ExecuteNonQueryAsync(ct);
+        // 2) FTS 表是否已是 tokens 版
+        string? ftsSql;
+        await using (var inspect = _connection.CreateCommand())
+        {
+            inspect.CommandText =
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='retrieval_chunks_fts'";
+            ftsSql = await inspect.ExecuteScalarAsync(ct) as string;
+        }
+        var needsRebuild =
+            ftsSql is null || !ftsSql.Contains("tokens", StringComparison.OrdinalIgnoreCase);
 
-        await using var trigUpdateCmd = _connection.CreateCommand();
-        trigUpdateCmd.CommandText =
-            @"CREATE TRIGGER IF NOT EXISTS fts_chunk_update AFTER UPDATE ON retrieval_chunks BEGIN
-                INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, text) VALUES('delete', old.rowid, old.chunk_id, old.text);
-                INSERT INTO retrieval_chunks_fts(rowid, chunk_id, text) VALUES (new.rowid, new.chunk_id, new.text);
-              END;";
-        await trigUpdateCmd.ExecuteNonQueryAsync(ct);
+        // 3) 旧 FTS/触发器先移除，避免回填时写入旧结构
+        if (needsRebuild)
+        {
+            foreach (
+                var trigger in new[] { "fts_chunk_insert", "fts_chunk_delete", "fts_chunk_update" }
+            )
+            {
+                await using var drop = _connection.CreateCommand();
+                drop.CommandText = $"DROP TRIGGER IF EXISTS {trigger}";
+                await drop.ExecuteNonQueryAsync(ct);
+            }
+            await using var dropFts = _connection.CreateCommand();
+            dropFts.CommandText = "DROP TABLE IF EXISTS retrieval_chunks_fts";
+            await dropFts.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var createFts = _connection.CreateCommand())
+        {
+            createFts.CommandText =
+                @"CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts USING fts5(
+                    chunk_id UNINDEXED,
+                    tokens,
+                    content='retrieval_chunks',
+                    content_rowid='rowid'
+                  );";
+            await createFts.ExecuteNonQueryAsync(ct);
+        }
+
+        // 4) 回填 tokens（旧库/中断迁移）
+        var emptyTokens = 0L;
+        await using (var countCmd = _connection.CreateCommand())
+        {
+            countCmd.CommandText =
+                "SELECT COUNT(*) FROM retrieval_chunks WHERE tokens = '' AND text <> ''";
+            emptyTokens = (long)(await countCmd.ExecuteScalarAsync(ct) ?? 0L);
+        }
+        if (needsRebuild || emptyTokens > 0)
+        {
+            var rows = new List<(long RowId, string Text)>();
+            await using (var select = _connection.CreateCommand())
+            {
+                select.CommandText = "SELECT rowid, text FROM retrieval_chunks";
+                await using var reader = await select.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                    rows.Add((reader.GetInt64(0), reader.GetString(1)));
+            }
+
+            foreach (var (rowId, text) in rows)
+            {
+                await using var update = _connection.CreateCommand();
+                update.CommandText =
+                    "UPDATE retrieval_chunks SET tokens = $tokens WHERE rowid = $rowid";
+                update.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(text));
+                update.Parameters.AddWithValue("$rowid", rowId);
+                await update.ExecuteNonQueryAsync(ct);
+            }
+
+            await using var rebuild = _connection.CreateCommand();
+            rebuild.CommandText =
+                "INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts) VALUES('rebuild')";
+            await rebuild.ExecuteNonQueryAsync(ct);
+        }
+
+        // 5) 触发器（始终 IF NOT EXISTS）
+        await using (var insert = _connection.CreateCommand())
+        {
+            insert.CommandText =
+                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_insert AFTER INSERT ON retrieval_chunks BEGIN
+                    INSERT INTO retrieval_chunks_fts(rowid, chunk_id, tokens) VALUES (new.rowid, new.chunk_id, new.tokens);
+                  END;";
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+        await using (var delete = _connection.CreateCommand())
+        {
+            delete.CommandText =
+                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_delete AFTER DELETE ON retrieval_chunks BEGIN
+                    INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, tokens) VALUES('delete', old.rowid, old.chunk_id, old.tokens);
+                  END;";
+            await delete.ExecuteNonQueryAsync(ct);
+        }
+        await using (var update = _connection.CreateCommand())
+        {
+            update.CommandText =
+                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_update AFTER UPDATE ON retrieval_chunks BEGIN
+                    INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, tokens) VALUES('delete', old.rowid, old.chunk_id, old.tokens);
+                    INSERT INTO retrieval_chunks_fts(rowid, chunk_id, tokens) VALUES (new.rowid, new.chunk_id, new.tokens);
+                  END;";
+            await update.ExecuteNonQueryAsync(ct);
+        }
     }
 
     /// <summary>
@@ -1016,6 +1146,16 @@ public sealed partial class SqliteRetrievalStore(
     /// <summary>插入一块行，若有 embedding 同时写入 vec0。</summary>
     private async Task InsertChunkRowAsync(RetrievalChunk chunk, CancellationToken ct)
     {
+        // INSERT OR REPLACE 在部分 SQLite 配置下不会触发 DELETE trigger，
+        // 会让 FTS 留下旧 rowid → "missing row from content table"。
+        // 显式 DELETE 先把旧块（含 FTS 条目）清掉，再插入新 rowid。
+        await using (var delete = _connection.CreateCommand())
+        {
+            delete.CommandText = "DELETE FROM retrieval_chunks WHERE chunk_id = $chunk_id";
+            delete.Parameters.AddWithValue("$chunk_id", chunk.ChunkId);
+            await delete.ExecuteNonQueryAsync(ct);
+        }
+
         // 获取自增 rowid
         await using var rowidCmd = _connection.CreateCommand();
         rowidCmd.CommandText = "SELECT COALESCE(MAX(rowid), 0) + 1 FROM retrieval_chunks";
@@ -1025,16 +1165,17 @@ public sealed partial class SqliteRetrievalStore(
 
         await using var cmd = _connection.CreateCommand();
         cmd.CommandText =
-            @"INSERT OR REPLACE INTO retrieval_chunks
-              (chunk_id, document_id, chunk_ordinal, text, source_offset_start, source_offset_end,
+            @"INSERT INTO retrieval_chunks
+              (chunk_id, document_id, chunk_ordinal, text, tokens, source_offset_start, source_offset_end,
                content_hash, boundary_quality, prev_chunk_id, next_chunk_id, index_status, rowid)
               VALUES
-              ($chunk_id, $document_id, $chunk_ordinal, $text, $source_offset_start, $source_offset_end,
+              ($chunk_id, $document_id, $chunk_ordinal, $text, $tokens, $source_offset_start, $source_offset_end,
                $content_hash, $boundary_quality, $prev_chunk_id, $next_chunk_id, $index_status, $rowid)";
         cmd.Parameters.AddWithValue("$chunk_id", chunk.ChunkId);
         cmd.Parameters.AddWithValue("$document_id", chunk.DocumentId);
         cmd.Parameters.AddWithValue("$chunk_ordinal", chunk.ChunkOrdinal);
         cmd.Parameters.AddWithValue("$text", chunk.Text);
+        cmd.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(chunk.Text));
         cmd.Parameters.AddWithValue("$source_offset_start", chunk.SourceOffsetStart);
         cmd.Parameters.AddWithValue("$source_offset_end", chunk.SourceOffsetEnd);
         cmd.Parameters.AddWithValue("$content_hash", chunk.ContentHash);

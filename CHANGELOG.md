@@ -43,6 +43,16 @@
   下载落盘与不留 `.part`）/ `UpdateStateTests`（Phase 迁移、单飞闸、忙探针、稍后提醒、校验失败删文件）/
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
+### Fixed
+- **中文词法检索 + embedding 模型版本对账**：FTS5 `unicode61` 会把整句中文当成一个 token
+  （`眷恋`/`灵魂` 命中 0）。`retrieval_chunks` 新增 jieba 预分词 `tokens` 列，FTS 改为
+  `tokens` + `chunk_id UNINDEXED`，旧库启动时自动回填并重建；查询按 profile 用 OR（暗线/写作）
+  或 AND（一致性），单字泛词在精确车道直接跳过。同步修复 `INSERT OR REPLACE` 不触发 DELETE
+  trigger 造成的 FTS stale row、`PurgeDeletedAsync` 直接 DELETE external-content FTS 的问题，
+  以及无章节实体被空 chapter key 一起限流的多样性误伤。`IEmbeddingService` 新增 `ModelId`，
+  落库真实模型名并纳入 `VectorSyncService.IsUpToDate`，换 embedding 模型会自动重建该小说知识域。
+  回归：Core 1513/1513；新增 `LexicalTextTests`、中文词法集成测试、diversity 两例。
+
 ### Changed
 - **Desktop 对话加载与思考可见性**：思考正文默认展开在可折叠详情区（流式中与完成后都可见，
   点「收起」只折叠正文，标题仍在）；每轮思考独立成卡，工具/思考之间的中间正文冻结为独立

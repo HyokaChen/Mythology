@@ -175,7 +175,11 @@ public sealed class InMemoryRetrievalStore : IRetrievalStore
                 .Values.Where(d => d.NovelId == novelId && d.IndexStatus == IndexStatus.Ready)
                 .ToDictionary(
                     d => d.DocumentId,
-                    d => new RetrievalDocumentVersion(d.SourceRevision, d.ContentHash)
+                    d => new RetrievalDocumentVersion(
+                        d.SourceRevision,
+                        d.ContentHash,
+                        d.EmbeddingModelId
+                    )
                 )
         );
 

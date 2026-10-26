@@ -77,23 +77,37 @@ public static class RetrievalPostProcessor
         return results
             .Where(r =>
             {
-                var chapterKey = r.ChapterId ?? "";
+                // 无章节/无情节线的实体（角色档案、关系陈述等）不属于同一“章节”，
+                // 不能被空 key 聚合后一起限流，否则 MaxPerChapter=5 会误伤第 6 条之后的结果。
+                var chapterKey = r.ChapterId;
+                var hasChapter = !string.IsNullOrEmpty(chapterKey);
                 var plotlineKey =
                     r.MetadataSummary?.TryGetValue("plotline-ids", out var plids) == true
                         ? string.Join(",", (plids as List<object?>)?.Cast<string?>() ?? [])
                         : "";
+                var hasPlotline = !string.IsNullOrEmpty(plotlineKey);
 
-                var chapterCount = chapterCounts.GetValueOrDefault(chapterKey);
-                var plotlineCount = plotlineCounts.GetValueOrDefault(plotlineKey);
+                var chapterCount = hasChapter ? chapterCounts.GetValueOrDefault(chapterKey!) : 0;
+                var plotlineCount = hasPlotline ? plotlineCounts.GetValueOrDefault(plotlineKey) : 0;
 
-                if (config.MaxPerChapter is { } maxChapter && chapterCount >= maxChapter)
+                if (
+                    hasChapter
+                    && config.MaxPerChapter is { } maxChapter
+                    && chapterCount >= maxChapter
+                )
                     return false;
 
-                if (config.MaxPerPlotline is { } maxPlotline && plotlineCount >= maxPlotline)
+                if (
+                    hasPlotline
+                    && config.MaxPerPlotline is { } maxPlotline
+                    && plotlineCount >= maxPlotline
+                )
                     return false;
 
-                chapterCounts[chapterKey] = chapterCount + 1;
-                plotlineCounts[plotlineKey] = plotlineCount + 1;
+                if (hasChapter)
+                    chapterCounts[chapterKey!] = chapterCount + 1;
+                if (hasPlotline)
+                    plotlineCounts[plotlineKey] = plotlineCount + 1;
                 return true;
             })
             .ToList();

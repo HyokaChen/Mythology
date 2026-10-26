@@ -48,6 +48,9 @@ public sealed class CloudEmbeddingClient : IEmbeddingService, IBatchEmbeddingSer
     /// <summary>向量维度（须与服务端 VectorDimension 一致；默认 VectorDefaults.Dimension）。</summary>
     public int Dimension { get; }
 
+    /// <summary>模型标识（云端 embedding）。</summary>
+    public string ModelId => "cloud-embedding";
+
     /// <summary>单条 embedding（内部走批量端点，一次 HTTP 往返）。</summary>
     public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
     {

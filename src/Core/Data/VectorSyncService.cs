@@ -496,11 +496,12 @@ public sealed class VectorSyncService(
     /// revision 覆盖实体 updatedAt 变更；content hash 覆盖同 revision 下的内容变更；
     /// 版本快照仅收录 Ready → 上次索引失败/部分索引的文档必然重跑。
     /// </summary>
-    private static bool IsUpToDate(
+    private bool IsUpToDate(
         Dictionary<string, RetrievalDocumentVersion> versions,
         RetrievalDocument doc
     ) =>
         versions.TryGetValue(doc.DocumentId, out var v)
         && v.SourceRevision == doc.SourceRevision
-        && v.ContentHash == doc.ContentHash;
+        && v.ContentHash == doc.ContentHash
+        && string.Equals(v.EmbeddingModelId, kernel.EmbeddingModelId, StringComparison.Ordinal);
 }
