@@ -31,7 +31,10 @@
   <Project Path="Plugins/WritingTools/Tests/WritingTools.Tests.csproj" />
   <Project Path="StabilityHarness/StabilityHarness.csproj" />
   <Project Path="StabilityHarness/Tests/StabilityHarness.Tests.csproj" />
+  <Project Path="RetrievalEval/RetrievalEval.csproj" />
   <Project Path="Host/Host.csproj" />
+  <Project Path="Cli/Cli.csproj" />
+  <Project Path="Cli/Tests/Cli.Tests.csproj" />
   <Project Path="Host/Tests/Host.Tests.csproj" />
   <Project Path="ClientPlatform/ClientPlatform.csproj" />
   <Project Path="ClientPlatform/Tests/ClientPlatform.Tests.csproj" />

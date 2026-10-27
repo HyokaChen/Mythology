@@ -409,7 +409,7 @@ UPDATE retrieval_fts_partitions SET lexical_version=$v, chunk_count=$count, rebu
 | `LexicalTextSearchModeTests` | 索引侧用 `CutForSearch`（长词与已知子词同时发出）、AND 车道用 `Cut`（不含子词）、OR 车道用 `CutForSearch` |
 | `NovelLexiconDictionaryContentTests` | 注册后 `WordDictionary` 只新增 UNKNOWN/DROP 的名字（不含 COMPOSED 名字，防回归到「按类型全注册」） |
 
-**golden 口径 A/B（`StabilityHarness retrieval-eval`，54 条查询，strict / loose）**：
+**golden 口径 A/B（`RetrievalEval retrieval-eval`，54 条查询，strict / loose）**：
 
 | 口径 | A 基线 | **B 现行** | C 二轮扩展 | D 文档级 MMR | E 判定重排上限 |
 |---|---|---|---|---|---|

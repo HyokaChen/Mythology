@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>StabilityHarness</RootNamespace>
+    <AssemblyName>RetrievalEval</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StabilityHarness\StabilityHarness.csproj" />
+  </ItemGroup>
+  <!-- 评测需要 jieba 词典资源 -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(JiebaResourceFiles)" DestinationFolder="$(JiebaResourcesDest)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

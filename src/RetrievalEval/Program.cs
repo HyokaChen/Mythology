@@ -6,7 +6,7 @@ namespace StabilityHarness;
 /// 命令行入口（默认无参数时打印用法）。
 ///
 /// <code>
-/// dotnet run --project src/StabilityHarness -- retrieval-eval \
+/// dotnet run --project src/RetrievalEval -c Release -- retrieval-eval \
 ///     --db ~/.mythology/vectors.db --novel 2c2410d54e08 [--gold strict|loose] [--candidate 100] [--verbose]
 /// </code>
 ///
@@ -40,7 +40,7 @@ public static class Program
     {
         Console.WriteLine("用法：");
         Console.WriteLine(
-            "  dotnet run --project src/StabilityHarness -- retrieval-eval "
+            "  dotnet run --project src/RetrievalEval -c Release -- retrieval-eval "
                 + "--db <vectors.db> --novel <novelId> [--gold strict|loose] [--candidate 100] [--verbose]"
         );
         Console.WriteLine();

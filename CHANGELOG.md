@@ -26,7 +26,7 @@
   回归：Core 1522/1522；新增分区隔离、重分词幂等、搜索模式发射、词典归一化等用例。
 
 ### Added
-- **检索评测命令（`StabilityHarness retrieval-eval`）**：gold 从库本身推导（档案文档前缀 → 实体名与档案），
+- **检索评测命令（`RetrievalEval retrieval-eval`，评测库在 `StabilityHarness/Retrieval`）**：gold 从库本身推导（档案文档前缀 → 实体名与档案），
   对比「基线 / 现行 / 二轮词项扩展」三臂的 R@5、R@10、AE@5、MRR，只读打开库、不碰正式数据。
   实测（54 条查询，strict/loose）：R@5 74%/76% → 94%/96%，AE@5 65%/54% → 83%/72%，MRR 0.605/0.665 → 0.778/0.835；
   另测两臂作为取舍依据：SAG2 式二轮词项扩展（C）与文档级 MMR（D）在本语料无收益；
@@ -39,7 +39,7 @@
 - **判定重排判据可配**（`SystemOneRerankConfig.Criteria`，默认 `answers`；`JudgeRerank.CriteriaFor(profile)` 按档位回落：
   ConsistencyCheck → answers，其余 → relevant）。实测同一端点：strict R@5 80%→91%、AE@5 67%→76%，
   loose 81%→93% / 52%→61%。并修正评测臂候选分（原用 `1/(i+1)` 导致重排永远翻不动顺序，改为产品一致的 RRF 量级）。
-  结论未变：600M 判定模型整体仍不如不重排（strict 91% vs 94%），JEV 维持默认关。回归：`StabilityHarness.Tests` 50/50、Core 1531/1531。
+  结论未变：600M 判定模型整体仍不如不重排（strict 91% vs 94%），JEV 维持默认关。回归：`StabilityHarness.Tests` 50/50、Core 1531/1531、Core 1531/1531。
 - **`edit_entities`：设定面板全字段批量编辑工具**（NovelTools）：一次 tool call 跨小说/分卷/章节细纲/
   角色/组织/地点/情节/场景/道具/关系批量修改字段，字段白名单复用 `Core.Data.EntityFieldRegistry`
   （从 Desktop 下沉，编辑窗与工具同源），补齐 `manage_*` 的 12 处字段缺口（角色 status/tags/abilities/notes、

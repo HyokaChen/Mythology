@@ -72,7 +72,7 @@
 里是另一部小说（`2c2410d54e08`，76 块）的索引，gold chunk id 全部不存在。实测 40 条里只有 5 条能在当前语料上评估，
 且两臂都排第 1 —— **无区分度**。
 
-因此把评测固化成一条命令（`src/StabilityHarness`），gold 从**库本身**推导，不依赖外部标注：
+因此把评测固化成一条命令（`src/RetrievalEval` 命令行 + `src/StabilityHarness/Retrieval` 评测库），gold 从**库本身**推导，不依赖外部标注：
 
 ```bash
 dotnet build src/StabilityHarness -c Release
@@ -153,7 +153,7 @@ gold 规则：
 命令：
 
 ```bash
-./src/StabilityHarness/bin/Release/net10.0/StabilityHarness retrieval-eval \
+dotnet run --project src/RetrievalEval -c Release -- retrieval-eval \
   --db /tmp/v.db --novel 2c2410d54e08 --gold strict \
   --emb-url http://10.1.44.242 --emb-key <key> \
   --jev-url http://10.1.44.46:8009 --jev-key local --jev-candidates 6 --jev-maxstate 800
