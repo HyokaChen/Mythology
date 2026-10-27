@@ -42,6 +42,9 @@ public sealed partial class SqliteRetrievalStore(
     /// <summary>中文分词扩展 simple（wangfenjin/simple）是否可用。</summary>
     private bool _simpleAvailable;
 
+    /// <summary>每部小说一个 FTS 分区：novel_id → fts 表名。空串键代表 novel_id 为空的默认分区。</summary>
+    private readonly Dictionary<string, string> _partitions = new(StringComparer.Ordinal);
+
     /// <summary>
     /// 初始化 SQLite 连接，加载 vec0 和 simple 分词扩展。
     /// 线程安全，仅首次调用实际执行；后续调用直接返回。
@@ -211,6 +214,87 @@ public sealed partial class SqliteRetrievalStore(
     /// <summary>
     /// 物理清理所有已标记为 Deleted 的文档和块：依次清理 vec0 条目、FTS 条目、块行、文档行。
     /// </summary>
+    /// <summary>
+    /// 仅按当前实体词典重建该小说的 FTS 分区（不重算 embedding）。
+    /// 分区记录的版本已是目标版本时返回 0（启动对账幂等）。
+    /// </summary>
+    public async Task<int> RetokenizeNovelAsync(
+        string novelId,
+        string lexicalVersion,
+        CancellationToken ct = default
+    )
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            await EnsureInitializedAsync(ct);
+            var key = PartitionKey(novelId);
+            var table = await EnsurePartitionAsync(key, ct);
+
+            await using (var gate = _connection.CreateCommand())
+            {
+                gate.CommandText =
+                    "SELECT lexical_version FROM retrieval_fts_partitions WHERE novel_id = $key";
+                gate.Parameters.AddWithValue("$key", key);
+                var current = await gate.ExecuteScalarAsync(ct) as string;
+                if (string.Equals(current, lexicalVersion, StringComparison.Ordinal))
+                    return 0;
+            }
+
+            var rows = new List<(string ChunkId, string Text)>();
+            await using (var select = _connection.CreateCommand())
+            {
+                select.CommandText =
+                    @"SELECT c.chunk_id, c.text
+                        FROM retrieval_chunks c
+                        JOIN retrieval_documents d ON d.document_id = c.document_id
+                       WHERE d.novel_id = $novel AND d.index_status <> $deleted
+                         AND c.index_status NOT IN ($stale)";
+                select.Parameters.AddWithValue("$novel", novelId);
+                select.Parameters.AddWithValue("$deleted", (int)IndexStatus.Deleted);
+                select.Parameters.AddWithValue("$stale", (int)IndexStatus.Stale);
+                await using var reader = await select.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                    rows.Add((reader.GetString(0), reader.GetString(1)));
+            }
+
+            await using (var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(ct))
+            {
+                foreach (var (chunkId, text) in rows)
+                {
+                    await using var update = _connection.CreateCommand();
+                    update.Transaction = tx;
+                    update.CommandText =
+                        "UPDATE retrieval_chunks SET tokens = $tokens WHERE chunk_id = $chunk_id";
+                    update.Parameters.AddWithValue(
+                        "$tokens",
+                        LexicalText.ToIndexText(text, novelId)
+                    );
+                    update.Parameters.AddWithValue("$chunk_id", chunkId);
+                    await update.ExecuteNonQueryAsync(ct);
+                }
+                await tx.CommitAsync(ct);
+            }
+
+            await RebuildPartitionAsync(table, ct);
+            await ExecuteAsync(
+                @"UPDATE retrieval_fts_partitions
+                     SET lexical_version = $version, chunk_count = $count, rebuilt_at = $now
+                   WHERE novel_id = $key",
+                ct,
+                ("$version", lexicalVersion),
+                ("$count", await CountPartitionChunksAsync(key, ct)),
+                ("$now", DateTime.UtcNow.ToString("O", CultureInfoInvariant)),
+                ("$key", key)
+            );
+            return rows.Count;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     public async Task PurgeDeletedAsync(CancellationToken ct = default)
     {
         await _lock.WaitAsync(ct);
@@ -218,20 +302,23 @@ public sealed partial class SqliteRetrievalStore(
         {
             await EnsureInitializedAsync(ct);
 
-            // 获取所有 deleted 的 chunk_id，用于清理 vec0 和 FTS
-            var deletedChunkIds = new List<string>();
+            // 收集待清理的块（chunk_id + 所属小说），用于清 vec0 与对应 FTS 分区
+            var deletedChunks = new List<(string ChunkId, string NovelKey)>();
             await using (var selCmd = _connection.CreateCommand())
             {
                 selCmd.CommandText =
-                    "SELECT chunk_id FROM retrieval_chunks WHERE index_status = $status";
+                    @"SELECT c.chunk_id, COALESCE(d.novel_id, '')
+                        FROM retrieval_chunks c
+                        JOIN retrieval_documents d ON d.document_id = c.document_id
+                       WHERE c.index_status = $status";
                 selCmd.Parameters.AddWithValue("$status", (int)IndexStatus.Deleted);
                 await using var reader = await selCmd.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
-                    deletedChunkIds.Add(reader.GetString(0));
+                    deletedChunks.Add((reader.GetString(0), reader.GetString(1)));
             }
 
             // 删除 vec0 条目
-            foreach (var chunkId in deletedChunkIds)
+            foreach (var (chunkId, _) in deletedChunks)
             {
                 await using var delVecCmd = _connection.CreateCommand();
                 delVecCmd.CommandText = "DELETE FROM vec_chunks WHERE rowid = $rowid";
@@ -239,21 +326,25 @@ public sealed partial class SqliteRetrievalStore(
                 await delVecCmd.ExecuteNonQueryAsync(ct);
             }
 
-            // FTS 是 external-content 表，不能直接 DELETE；先按 content 表重建一次，
-            // 保证随后 DELETE 块的 delete-trigger 能正确移除 FTS 条目。
-            if (deletedChunkIds.Count > 0)
-            {
-                await using var rebuildFts = _connection.CreateCommand();
-                rebuildFts.CommandText =
-                    "INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts) VALUES('rebuild')";
-                await rebuildFts.ExecuteNonQueryAsync(ct);
-            }
-
-            // 删除块和文档行
+            // 删除块和文档行（FTS 在其后按受影响分区 rebuild，external-content 因此保持一致）
             await using var delChunksCmd = _connection.CreateCommand();
             delChunksCmd.CommandText = "DELETE FROM retrieval_chunks WHERE index_status = $status";
             delChunksCmd.Parameters.AddWithValue("$status", (int)IndexStatus.Deleted);
             await delChunksCmd.ExecuteNonQueryAsync(ct);
+
+            foreach (
+                var key in deletedChunks.Select(x => x.NovelKey).Distinct(StringComparer.Ordinal)
+            )
+            {
+                var table = await EnsurePartitionAsync(key, ct);
+                await RebuildPartitionAsync(table, ct);
+                await ExecuteAsync(
+                    "UPDATE retrieval_fts_partitions SET chunk_count = $count WHERE novel_id = $key",
+                    ct,
+                    ("$count", await CountPartitionChunksAsync(key, ct)),
+                    ("$key", key)
+                );
+            }
 
             await using var delDocsCmd = _connection.CreateCommand();
             delDocsCmd.CommandText = "DELETE FROM retrieval_documents WHERE index_status = $status";
@@ -459,7 +550,7 @@ public sealed partial class SqliteRetrievalStore(
             var versions = new Dictionary<string, RetrievalDocumentVersion>();
             await using var cmd = _connection.CreateCommand();
             cmd.CommandText =
-                @"SELECT document_id, source_revision, content_hash, embedding_model_id, lexical_version
+                @"SELECT document_id, source_revision, content_hash, embedding_model_id
                   FROM retrieval_documents
                   WHERE novel_id = $novel_id AND index_status = $ready";
             cmd.Parameters.AddWithValue("$novel_id", novelId);
@@ -471,8 +562,7 @@ public sealed partial class SqliteRetrievalStore(
                 versions[reader.GetString(0)] = new RetrievalDocumentVersion(
                     reader.GetInt64(1),
                     reader.GetString(2),
-                    reader.GetString(3),
-                    reader.GetString(4)
+                    reader.GetString(3)
                 );
             }
             return versions;
@@ -715,15 +805,17 @@ public sealed partial class SqliteRetrievalStore(
 
             await CreateTempCandidatesTableAsync(candidateChunkIds, ct);
 
+            // 分区隔离：只在该小说的 FTS 分区上 MATCH，BM25 统计不再被别的书稀释
+            var ftsTable = await EnsurePartitionAsync(PartitionKey(novelId), ct);
             await using var cmd = _connection.CreateCommand();
             cmd.CommandText =
-                @"SELECT f.chunk_id, f.rank
-                  FROM retrieval_chunks_fts f
-                  WHERE f.retrieval_chunks_fts MATCH $query
-                  AND f.chunk_id IN (SELECT chunk_id FROM _search_candidates)
-                  ORDER BY f.rank
-                  LIMIT $topK";
-            var terms = LexicalText.GetQueryTerms(query, novelId);
+                $@"SELECT f.chunk_id, f.rank
+                   FROM {ftsTable} f
+                   WHERE {ftsTable} MATCH $query
+                   AND f.chunk_id IN (SELECT chunk_id FROM _search_candidates)
+                   ORDER BY f.rank
+                   LIMIT $topK";
+            var terms = LexicalText.GetQueryTerms(query, novelId, useOr);
             if (terms.Length == 0)
             {
                 // 没有可用实义词：保留旧的原始转义查询（单字/纯符号场景）。
@@ -945,160 +1037,233 @@ public sealed partial class SqliteRetrievalStore(
     /// </summary>
     private async Task EnsureLexicalSchemaAsync(CancellationToken ct)
     {
-        // 0) 文档层 lexical_version 列（实体词典/分词版本）
-        var hasLexicalVersion = false;
-        await using (var docCmd = _connection.CreateCommand())
+        // 1) tokens 列（老库补列）
+        if (!await ColumnExistsAsync("retrieval_chunks", "tokens", ct))
         {
-            docCmd.CommandText = "PRAGMA table_info(retrieval_documents)";
-            await using var reader = await docCmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                if (
-                    string.Equals(
-                        reader.GetString(1),
-                        "lexical_version",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    hasLexicalVersion = true;
-                    break;
-                }
-            }
-        }
-        if (!hasLexicalVersion)
-        {
-            await using var alter = _connection.CreateCommand();
-            alter.CommandText =
-                "ALTER TABLE retrieval_documents ADD COLUMN lexical_version TEXT NOT NULL DEFAULT ''";
-            await alter.ExecuteNonQueryAsync(ct);
+            await ExecuteAsync(
+                "ALTER TABLE retrieval_chunks ADD COLUMN tokens TEXT NOT NULL DEFAULT ''",
+                ct
+            );
+            // 老库的 tokens 为空：用当前词典回填一遍（版本门之后仍会按小说词典重算）
+            await BackfillTokensAsync(ct);
         }
 
-        // 1) tokens 列
-        var hasTokens = false;
-        await using (var cmd = _connection.CreateCommand())
-        {
-            cmd.CommandText = "PRAGMA table_info(retrieval_chunks)";
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                if (
-                    string.Equals(reader.GetString(1), "tokens", StringComparison.OrdinalIgnoreCase)
-                )
-                {
-                    hasTokens = true;
-                    break;
-                }
-            }
-        }
-        if (!hasTokens)
-        {
-            await using var alter = _connection.CreateCommand();
-            alter.CommandText =
-                "ALTER TABLE retrieval_chunks ADD COLUMN tokens TEXT NOT NULL DEFAULT ''";
-            await alter.ExecuteNonQueryAsync(ct);
-        }
+        // 2) 分区元数据表
+        await ExecuteAsync(
+            @"CREATE TABLE IF NOT EXISTS retrieval_fts_partitions (
+                novel_id        TEXT PRIMARY KEY,
+                table_name      TEXT NOT NULL UNIQUE,
+                chunk_count     INTEGER NOT NULL DEFAULT 0,
+                lexical_version TEXT NOT NULL DEFAULT '',
+                rebuilt_at      TEXT
+              )",
+            ct
+        );
 
-        // 2) FTS 表是否已是 tokens 版
-        string? ftsSql;
-        await using (var inspect = _connection.CreateCommand())
-        {
-            inspect.CommandText =
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='retrieval_chunks_fts'";
-            ftsSql = await inspect.ExecuteScalarAsync(ct) as string;
-        }
-        var needsRebuild =
-            ftsSql is null || !ftsSql.Contains("tokens", StringComparison.OrdinalIgnoreCase);
-
-        // 3) 旧 FTS/触发器先移除，避免回填时写入旧结构
-        if (needsRebuild)
+        // 3) 旧版全局 FTS 迁移：先删触发器（顺序不可反，否则 fts5 'delete' 会对不存在的行报 malformed），
+        //    再按小说建分区并逐个 rebuild，最后删掉全局表。
+        if (await TableExistsAsync("retrieval_chunks_fts", ct))
         {
             foreach (
                 var trigger in new[] { "fts_chunk_insert", "fts_chunk_delete", "fts_chunk_update" }
             )
-            {
-                await using var drop = _connection.CreateCommand();
-                drop.CommandText = $"DROP TRIGGER IF EXISTS {trigger}";
-                await drop.ExecuteNonQueryAsync(ct);
-            }
-            await using var dropFts = _connection.CreateCommand();
-            dropFts.CommandText = "DROP TABLE IF EXISTS retrieval_chunks_fts";
-            await dropFts.ExecuteNonQueryAsync(ct);
-        }
+                await ExecuteAsync($"DROP TRIGGER IF EXISTS {trigger}", ct);
 
-        await using (var createFts = _connection.CreateCommand())
-        {
-            createFts.CommandText =
-                @"CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts USING fts5(
-                    chunk_id UNINDEXED,
-                    tokens,
-                    content='retrieval_chunks',
-                    content_rowid='rowid'
-                  );";
-            await createFts.ExecuteNonQueryAsync(ct);
-        }
-
-        // 4) 回填 tokens（旧库/中断迁移）
-        var emptyTokens = 0L;
-        await using (var countCmd = _connection.CreateCommand())
-        {
-            countCmd.CommandText =
-                "SELECT COUNT(*) FROM retrieval_chunks WHERE tokens = '' AND text <> ''";
-            emptyTokens = (long)(await countCmd.ExecuteScalarAsync(ct) ?? 0L);
-        }
-        if (needsRebuild || emptyTokens > 0)
-        {
-            var rows = new List<(long RowId, string Text)>();
-            await using (var select = _connection.CreateCommand())
+            foreach (var key in await DistinctNovelKeysAsync(ct))
             {
-                select.CommandText = "SELECT rowid, text FROM retrieval_chunks";
-                await using var reader = await select.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct))
-                    rows.Add((reader.GetInt64(0), reader.GetString(1)));
+                var table = await EnsurePartitionAsync(key, ct);
+                await RebuildPartitionAsync(table, ct);
             }
 
-            foreach (var (rowId, text) in rows)
-            {
-                await using var update = _connection.CreateCommand();
-                update.CommandText =
-                    "UPDATE retrieval_chunks SET tokens = $tokens WHERE rowid = $rowid";
-                update.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(text));
-                update.Parameters.AddWithValue("$rowid", rowId);
-                await update.ExecuteNonQueryAsync(ct);
-            }
-
-            await using var rebuild = _connection.CreateCommand();
-            rebuild.CommandText =
-                "INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts) VALUES('rebuild')";
-            await rebuild.ExecuteNonQueryAsync(ct);
+            await ExecuteAsync("DROP TABLE IF EXISTS retrieval_chunks_fts", ct);
         }
 
-        // 5) 触发器（始终 IF NOT EXISTS）
-        await using (var insert = _connection.CreateCommand())
+        // 4) 仍在用旧触发器的库：清掉残留触发器（分区由 C# 显式维护）
+        foreach (
+            var trigger in new[] { "fts_chunk_insert", "fts_chunk_delete", "fts_chunk_update" }
+        )
+            await ExecuteAsync($"DROP TRIGGER IF EXISTS {trigger}", ct);
+
+        // 5) 文档级 lexical_version 列已被分区级版本取代（老库移除，避免死字段）
+        if (await ColumnExistsAsync("retrieval_documents", "lexical_version", ct))
+            await ExecuteAsync("ALTER TABLE retrieval_documents DROP COLUMN lexical_version", ct);
+
+        // 6) 分区自愈：记录块数与实际不一致时按 tokens 重建
+        await HealPartitionsAsync(ct);
+    }
+
+    /// <summary>分区键：null/空 → 默认分区。</summary>
+    private static string PartitionKey(string? novelId) =>
+        string.IsNullOrEmpty(novelId) ? "" : novelId;
+
+    /// <summary>分区后缀：稳定哈希，SQL 安全。</summary>
+    private static string PartitionSuffix(string key)
+    {
+        if (key.Length == 0)
+            return "default";
+        var hash = System.Security.Cryptography.SHA1.HashData(
+            System.Text.Encoding.UTF8.GetBytes(key)
+        );
+        return Convert.ToHexString(hash)[..12].ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// 确保该分区存在（view + external-content FTS 表 + 元数据行），返回 FTS 表名。
+    /// view 用 novel_id 字面量过滤：SQLite 视图不能带参数，novel_id 做单引号转义。
+    /// </summary>
+    private async Task<string> EnsurePartitionAsync(string key, CancellationToken ct)
+    {
+        if (_partitions.TryGetValue(key, out var cached))
+            return cached;
+
+        var suffix = PartitionSuffix(key);
+        var view = $"chunks_p_{suffix}";
+        var table = $"fts_p_{suffix}";
+        var filter =
+            key.Length == 0 ? "d.novel_id IS NULL" : $"d.novel_id = '{key.Replace("'", "''")}'";
+
+        // view 的 rowid 必须显式列出，external-content 需要 content_rowid
+        await ExecuteAsync(
+            $@"CREATE VIEW IF NOT EXISTS {view} AS
+                 SELECT c.rowid AS rowid, c.chunk_id AS chunk_id, c.tokens AS tokens
+                   FROM retrieval_chunks c
+                   JOIN retrieval_documents d ON d.document_id = c.document_id
+                  WHERE {filter}",
+            ct
+        );
+        await ExecuteAsync(
+            $@"CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(
+                 chunk_id UNINDEXED, tokens, content='{view}', content_rowid='rowid')",
+            ct
+        );
+        await ExecuteAsync(
+            @"INSERT INTO retrieval_fts_partitions(novel_id, table_name, chunk_count, lexical_version)
+              VALUES($key, $table, 0, '')
+              ON CONFLICT(novel_id) DO UPDATE SET table_name = excluded.table_name",
+            ct,
+            ("$key", key),
+            ("$table", table)
+        );
+
+        _partitions[key] = table;
+        return table;
+    }
+
+    /// <summary>按 tokens 列重建该分区索引（分区级，成本随该小说块数线性）。</summary>
+    private async Task RebuildPartitionAsync(string table, CancellationToken ct)
+    {
+        await ExecuteAsync($"INSERT INTO {table}({table}) VALUES('rebuild')", ct);
+    }
+
+    /// <summary>统计该分区应有块数（join 文档，排除已删除文档）。</summary>
+    private async Task<long> CountPartitionChunksAsync(string key, CancellationToken ct)
+    {
+        var filter =
+            key.Length == 0 ? "d.novel_id IS NULL" : $"d.novel_id = '{key.Replace("'", "''")}'";
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText =
+            $@"SELECT COUNT(*) FROM retrieval_chunks c
+                 JOIN retrieval_documents d ON d.document_id = c.document_id
+                WHERE {filter} AND d.index_status <> $deleted";
+        cmd.Parameters.AddWithValue("$deleted", (int)IndexStatus.Deleted);
+        return (long)(await cmd.ExecuteScalarAsync(ct) ?? 0L);
+    }
+
+    /// <summary>分区自愈：记录块数与实际不符时重建，并刷新计数。</summary>
+    private async Task HealPartitionsAsync(CancellationToken ct)
+    {
+        var partitions = new List<(string Key, string Table, long Count)>();
+        await using (var cmd = _connection.CreateCommand())
         {
-            insert.CommandText =
-                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_insert AFTER INSERT ON retrieval_chunks BEGIN
-                    INSERT INTO retrieval_chunks_fts(rowid, chunk_id, tokens) VALUES (new.rowid, new.chunk_id, new.tokens);
-                  END;";
-            await insert.ExecuteNonQueryAsync(ct);
+            cmd.CommandText =
+                "SELECT novel_id, table_name, chunk_count FROM retrieval_fts_partitions";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                partitions.Add((reader.GetString(0), reader.GetString(1), reader.GetInt64(2)));
         }
-        await using (var delete = _connection.CreateCommand())
+
+        foreach (var (key, table, count) in partitions)
         {
-            delete.CommandText =
-                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_delete AFTER DELETE ON retrieval_chunks BEGIN
-                    INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, tokens) VALUES('delete', old.rowid, old.chunk_id, old.tokens);
-                  END;";
-            await delete.ExecuteNonQueryAsync(ct);
+            _partitions[key] = table;
+            var actual = await CountPartitionChunksAsync(key, ct);
+            if (actual == count)
+                continue;
+            await RebuildPartitionAsync(table, ct);
+            await ExecuteAsync(
+                "UPDATE retrieval_fts_partitions SET chunk_count = $count WHERE novel_id = $key",
+                ct,
+                ("$count", actual),
+                ("$key", key)
+            );
         }
-        await using (var update = _connection.CreateCommand())
+    }
+
+    /// <summary>库中出现的所有小说键（含默认分区）。</summary>
+    private async Task<List<string>> DistinctNovelKeysAsync(CancellationToken ct)
+    {
+        var keys = new List<string>();
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText =
+            @"SELECT DISTINCT COALESCE(novel_id, '') FROM retrieval_documents WHERE index_status <> $deleted";
+        cmd.Parameters.AddWithValue("$deleted", (int)IndexStatus.Deleted);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            keys.Add(reader.GetString(0));
+        return keys;
+    }
+
+    /// <summary>老库 tokens 回填（默认词典；版本门之后会按小说词典重算）。</summary>
+    private async Task BackfillTokensAsync(CancellationToken ct)
+    {
+        var rows = new List<(long RowId, string Text)>();
+        await using (var select = _connection.CreateCommand())
         {
-            update.CommandText =
-                @"CREATE TRIGGER IF NOT EXISTS fts_chunk_update AFTER UPDATE ON retrieval_chunks BEGIN
-                    INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts, rowid, chunk_id, tokens) VALUES('delete', old.rowid, old.chunk_id, old.tokens);
-                    INSERT INTO retrieval_chunks_fts(rowid, chunk_id, tokens) VALUES (new.rowid, new.chunk_id, new.tokens);
-                  END;";
-            await update.ExecuteNonQueryAsync(ct);
+            select.CommandText = "SELECT rowid, text FROM retrieval_chunks WHERE text <> ''";
+            await using var reader = await select.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                rows.Add((reader.GetInt64(0), reader.GetString(1)));
         }
+        foreach (var (rowId, text) in rows)
+        {
+            await ExecuteAsync(
+                "UPDATE retrieval_chunks SET tokens = $tokens WHERE rowid = $rowid",
+                ct,
+                ("$tokens", LexicalText.ToIndexText(text)),
+                ("$rowid", rowId)
+            );
+        }
+    }
+
+    private async Task<bool> TableExistsAsync(string name, CancellationToken ct)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name";
+        cmd.Parameters.AddWithValue("$name", name);
+        return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
+    private async Task<bool> ColumnExistsAsync(string table, string column, CancellationToken ct)
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    private async Task ExecuteAsync(
+        string sql,
+        CancellationToken ct,
+        params (string Name, object? Value)[] parameters
+    )
+    {
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>
@@ -1150,11 +1315,11 @@ public sealed partial class SqliteRetrievalStore(
         cmd.CommandText =
             @"INSERT OR REPLACE INTO retrieval_documents
               (document_id, domain, owner_id, novel_id, document_kind, source_entity_type, source_entity_id,
-               source_revision, content_hash, embedding_model_id, embedding_dimension, lexical_version,
+               source_revision, content_hash, embedding_model_id, embedding_dimension,
                index_status, created_at, indexed_at, metadata_json)
               VALUES
               ($document_id, $domain, $owner_id, $novel_id, $document_kind, $source_entity_type, $source_entity_id,
-               $source_revision, $content_hash, $embedding_model_id, $embedding_dimension, $lexical_version,
+               $source_revision, $content_hash, $embedding_model_id, $embedding_dimension,
                $index_status, $created_at, $indexed_at, $metadata_json)";
         cmd.Parameters.AddWithValue("$document_id", doc.DocumentId);
         cmd.Parameters.AddWithValue("$domain", (int)doc.Domain);
@@ -1173,7 +1338,6 @@ public sealed partial class SqliteRetrievalStore(
         cmd.Parameters.AddWithValue("$content_hash", doc.ContentHash);
         cmd.Parameters.AddWithValue("$embedding_model_id", doc.EmbeddingModelId);
         cmd.Parameters.AddWithValue("$embedding_dimension", doc.EmbeddingDimension);
-        cmd.Parameters.AddWithValue("$lexical_version", doc.LexicalVersion);
         cmd.Parameters.AddWithValue("$index_status", (int)doc.IndexStatus);
         cmd.Parameters.AddWithValue(
             "$created_at",
@@ -1196,9 +1360,36 @@ public sealed partial class SqliteRetrievalStore(
         CancellationToken ct
     )
     {
-        // INSERT OR REPLACE 在部分 SQLite 配置下不会触发 DELETE trigger，
-        // 会让 FTS 留下旧 rowid → "missing row from content table"。
-        // 显式 DELETE 先把旧块（含 FTS 条目）清掉，再插入新 rowid。
+        // FTS 分区由 C# 显式维护（触发器无法按小说路由到动态表名）。
+        // 先按旧行的 (rowid, tokens) 发 fts5 'delete' 命令，再删内容行，最后插入新行与新索引项。
+        var ftsTable = await EnsurePartitionAsync(PartitionKey(novelId), ct);
+        long? oldRowId = null;
+        string? oldTokens = null;
+        await using (var oldCmd = _connection.CreateCommand())
+        {
+            oldCmd.CommandText =
+                "SELECT rowid, tokens FROM retrieval_chunks WHERE chunk_id = $chunk_id";
+            oldCmd.Parameters.AddWithValue("$chunk_id", chunk.ChunkId);
+            await using var reader = await oldCmd.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                oldRowId = reader.GetInt64(0);
+                oldTokens = reader.GetString(1);
+            }
+        }
+
+        if (oldRowId is { } rowIdToDelete)
+        {
+            await ExecuteAsync(
+                $@"INSERT INTO {ftsTable}({ftsTable}, rowid, chunk_id, tokens)
+                   VALUES('delete', $rowid, $chunk_id, $tokens)",
+                ct,
+                ("$rowid", rowIdToDelete),
+                ("$chunk_id", chunk.ChunkId),
+                ("$tokens", oldTokens ?? "")
+            );
+        }
+
         await using (var delete = _connection.CreateCommand())
         {
             delete.CommandText = "DELETE FROM retrieval_chunks WHERE chunk_id = $chunk_id";
@@ -1225,7 +1416,8 @@ public sealed partial class SqliteRetrievalStore(
         cmd.Parameters.AddWithValue("$document_id", chunk.DocumentId);
         cmd.Parameters.AddWithValue("$chunk_ordinal", chunk.ChunkOrdinal);
         cmd.Parameters.AddWithValue("$text", chunk.Text);
-        cmd.Parameters.AddWithValue("$tokens", LexicalText.ToIndexText(chunk.Text, novelId));
+        var tokens = LexicalText.ToIndexText(chunk.Text, novelId);
+        cmd.Parameters.AddWithValue("$tokens", tokens);
         cmd.Parameters.AddWithValue("$source_offset_start", chunk.SourceOffsetStart);
         cmd.Parameters.AddWithValue("$source_offset_end", chunk.SourceOffsetEnd);
         cmd.Parameters.AddWithValue("$content_hash", chunk.ContentHash);
@@ -1235,6 +1427,14 @@ public sealed partial class SqliteRetrievalStore(
         cmd.Parameters.AddWithValue("$index_status", (int)status);
         cmd.Parameters.AddWithValue("$rowid", rowid);
         await cmd.ExecuteNonQueryAsync(ct);
+
+        await ExecuteAsync(
+            $@"INSERT INTO {ftsTable}(rowid, chunk_id, tokens) VALUES($rowid, $chunk_id, $tokens)",
+            ct,
+            ("$rowid", rowid),
+            ("$chunk_id", chunk.ChunkId),
+            ("$tokens", tokens)
+        );
 
         // 如果有 embedding，写入 vec0
         if (chunk.Embedding is not null)
@@ -1621,7 +1821,6 @@ public sealed partial class SqliteRetrievalStore(
             ContentHash = reader.GetString(reader.GetOrdinal("content_hash")),
             EmbeddingModelId = reader.GetString(reader.GetOrdinal("embedding_model_id")),
             EmbeddingDimension = reader.GetInt32(reader.GetOrdinal("embedding_dimension")),
-            LexicalVersion = reader.GetString(reader.GetOrdinal("lexical_version")),
             IndexStatus = (IndexStatus)reader.GetInt32(reader.GetOrdinal("index_status")),
             CreatedAt = DateTime.Parse(
                 reader.GetString(reader.GetOrdinal("created_at")),

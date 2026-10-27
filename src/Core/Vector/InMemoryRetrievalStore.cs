@@ -18,6 +18,9 @@ public sealed class InMemoryRetrievalStore : IRetrievalStore
     /// <summary>embedding 存储（内存字典）。</summary>
     private readonly ConcurrentDictionary<string, float[]> _embeddings = new();
 
+    /// <summary>小说级词典版本（内存实现没有 FTS，只用于跳过重复重分词）。</summary>
+    private readonly ConcurrentDictionary<string, string> _lexicalVersions = new();
+
     /// <summary>内存存储无需初始化。</summary>
     public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
 
@@ -178,11 +181,23 @@ public sealed class InMemoryRetrievalStore : IRetrievalStore
                     d => new RetrievalDocumentVersion(
                         d.SourceRevision,
                         d.ContentHash,
-                        d.EmbeddingModelId,
-                        d.LexicalVersion
+                        d.EmbeddingModelId
                     )
                 )
         );
+
+    /// <summary>
+    /// 内存实现没有 FTS，只记录该小说的词典版本（供上层跳过重复重分词）。
+    /// </summary>
+    public Task<int> RetokenizeNovelAsync(
+        string novelId,
+        string lexicalVersion,
+        CancellationToken ct = default
+    )
+    {
+        _lexicalVersions[novelId] = lexicalVersion;
+        return Task.FromResult(0);
+    }
 
     /// <summary>
     /// 执行混合检索：按过滤条件筛出候选块 → 余弦相似度排序 → 取 topK。

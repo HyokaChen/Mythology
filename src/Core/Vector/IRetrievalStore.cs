@@ -55,6 +55,17 @@ public interface IRetrievalStore : IAsyncDisposable
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// 仅按当前实体词典重建该小说的 FTS 分区（不重算 embedding）。
+    /// 该分区记录的版本已是 <paramref name="lexicalVersion"/> 时返回 0，保证对账幂等。
+    /// </summary>
+    /// <returns>重分词的块数。</returns>
+    Task<int> RetokenizeNovelAsync(
+        string novelId,
+        string lexicalVersion,
+        CancellationToken ct = default
+    );
+
     // ── 读取 ──
 
     /// <summary>

@@ -1,6 +1,5 @@
 using Core.Data;
 using Core.Vector;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tui;
 
@@ -17,11 +16,11 @@ public sealed partial class TuiApp
 
         try
         {
-            // 实体名称/标题变化会改变 jieba 词典。先在当前回合更新词典，
-            // 再索引变更实体；名称真变化时后台重建该小说全部文档（lexical_version 对账）。
+            // 实体名变化会改变 jieba 词典。先更新词典，再索引变更实体；
+            // 词典真变化时后台按小说重分词（只重建该小说的 FTS 分区，不重嵌入）。
             var lexiconChanged = await RefreshLexiconAsync(evt);
             if (lexiconChanged)
-                _ = SyncNovelAfterLexiconChangeAsync(evt.NovelId);
+                QueueRetokenize(evt.NovelId);
 
             if (evt.Action == AuditAction.Delete)
             {
@@ -93,29 +92,63 @@ public sealed partial class TuiApp
         return NovelLexicon.Update(evt.NovelId, names);
     }
 
-    /// <summary>词典变化后后台重建该小说全部文档（旧 token 需要用新词典重新切分）。</summary>
-    private async Task SyncNovelAfterLexiconChangeAsync(string novelId)
+    /// <summary>单飞闸门：保护重分词队列的读写。</summary>
+    private readonly object _retokenizeGate = new();
+
+    /// <summary>正在重分词的小说。</summary>
+    private readonly HashSet<string> _runningRetokenize = new(StringComparer.Ordinal);
+
+    /// <summary>运行期间又被改过词典的小说（合并成再跑一次）。</summary>
+    private readonly HashSet<string> _pendingRetokenize = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 词典变化后后台只重分词该小说（不再全量重建文档、不再重嵌入）。
+    /// per-novel 单飞 + dirty 合并：连续改名最多排队一次重跑。
+    /// </summary>
+    private void QueueRetokenize(string novelId)
     {
         if (_retrievalKernel is null)
             return;
-        try
+        lock (_retokenizeGate)
         {
-            var sync = new VectorSyncService(
-                _store,
-                _retrievalKernel.Store,
-                _retrievalKernel,
-                _retrievalKernel.Builder,
-                NullLogger<VectorSyncService>.Instance
-            );
-            await sync.SyncNovelAsync(novelId, CancellationToken.None);
+            if (!_runningRetokenize.Add(novelId))
+            {
+                _pendingRetokenize.Add(novelId);
+                return;
+            }
         }
-        catch (Exception ex)
+        _ = RunRetokenizeAsync(novelId);
+    }
+
+    private async Task RunRetokenizeAsync(string novelId)
+    {
+        while (true)
         {
-            Services.TuiLogger.OperationFailed(
-                _logger,
-                ex,
-                "rebuild novel index after lexicon change"
-            );
+            try
+            {
+                if (_retrievalKernel is { } kernel)
+                    await kernel.Store.RetokenizeNovelAsync(
+                        novelId,
+                        NovelLexicon.GetVersion(novelId),
+                        CancellationToken.None
+                    );
+            }
+            catch (Exception ex)
+            {
+                Services.TuiLogger.OperationFailed(
+                    _logger,
+                    ex,
+                    "retokenize novel after lexicon change"
+                );
+            }
+
+            lock (_retokenizeGate)
+            {
+                if (_pendingRetokenize.Remove(novelId))
+                    continue;
+                _runningRetokenize.Remove(novelId);
+                return;
+            }
         }
     }
 

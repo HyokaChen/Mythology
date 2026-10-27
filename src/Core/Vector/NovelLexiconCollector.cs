@@ -3,9 +3,11 @@ using Core.Data;
 namespace Core.Vector;
 
 /// <summary>
-/// 从 INovelStore 收集 jieba 用户词典的名称来源。
-/// 覆盖设定面板的实体集合：角色、组织、地点、情节线、场景、道具、关系端点，
-/// 以及大纲里的书名/卷名/章名。只取“名字/标题”，不取描述/性格等自由文本。
+/// 从 INovelStore 收集 jieba 用户词典的候选名：**只收实体名**（角色/组织/地点/道具/情节线/场景）。
+///
+/// 书名/卷名/章名刻意不收（实测依据见 docs/lexical-retokenize-plan.md §1.2(b5)）：
+/// 标题是描述性短语，注册成整词会掉召回（「转学生」9/9 → 8/9），且标题本身已有独立文档
+/// （ChapterSummary / NovelProfile）承担“标题命中”的排序优势，部分查询靠词项匹配即可。
 /// </summary>
 public static class NovelLexiconCollector
 {
@@ -16,15 +18,6 @@ public static class NovelLexiconCollector
     )
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
-
-        var novel = await store.GetNovel(novelId, ct);
-        if (novel is not null)
-            names.Add(novel.Title);
-
-        foreach (var chapter in await store.GetChapters(novelId, ct))
-            names.Add(chapter.Title);
-        foreach (var volume in await store.GetVolumes(novelId, ct))
-            names.Add(volume.Name);
 
         foreach (var character in await store.GetCharacters(novelId, ct))
             names.Add(character.Name);

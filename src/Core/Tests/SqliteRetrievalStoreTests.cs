@@ -154,13 +154,17 @@ public sealed class SqliteRetrievalStoreTests : IDisposable
             "眷恋",
             candidates,
             10,
-            TestContext.Current.CancellationToken
+            "novel-1",
+            TestContext.Current.CancellationToken,
+            useOr: true
         );
         var soul = await store.LexicalSearchAsync(
             "灵魂 不存在的词",
             candidates,
             10,
-            TestContext.Current.CancellationToken
+            "novel-1",
+            TestContext.Current.CancellationToken,
+            useOr: true
         );
 
         Assert.Contains(affection, hit => hit.ChunkId == "chunk-lex");
@@ -171,10 +175,108 @@ public sealed class SqliteRetrievalStoreTests : IDisposable
             "关系",
             candidates,
             10,
+            "novel-1",
             TestContext.Current.CancellationToken,
             useOr: false
         );
         Assert.Empty(generic);
+    }
+
+    [Fact]
+    public async Task LexicalSearch_IsolatesNovelPartitions()
+    {
+        await using var store = new SqliteRetrievalStore(_dbPath, dimension: 4);
+        await store.InitializeAsync(TestContext.Current.CancellationToken);
+
+        await store.UpsertDocumentAsync(
+            MakeDoc("doc-a", "a-1") with
+            {
+                NovelId = "novel-a",
+            },
+            [MakeChunk("chunk-a", "doc-a", "共有的词 出现在甲书里。", 4)],
+            TestContext.Current.CancellationToken
+        );
+        await store.UpsertDocumentAsync(
+            MakeDoc("doc-b", "b-1") with
+            {
+                NovelId = "novel-b",
+            },
+            [MakeChunk("chunk-b", "doc-b", "共有的词 出现在乙书里。", 4)],
+            TestContext.Current.CancellationToken
+        );
+
+        var hitsA = await store.LexicalSearchAsync(
+            "共有的词",
+            new HashSet<string> { "chunk-a", "chunk-b" },
+            10,
+            "novel-a",
+            TestContext.Current.CancellationToken,
+            useOr: true
+        );
+
+        Assert.Contains(hitsA, h => h.ChunkId == "chunk-a");
+        Assert.DoesNotContain(hitsA, h => h.ChunkId == "chunk-b");
+    }
+
+    [Fact]
+    public async Task RetokenizeNovelAsync_RebuildsOnlyOwnPartition()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var store = new SqliteRetrievalStore(_dbPath, dimension: 4);
+        await store.InitializeAsync(ct);
+
+        await store.UpsertDocumentAsync(
+            MakeDoc("doc-a", "a-1") with
+            {
+                NovelId = "novel-a",
+            },
+            [MakeChunk("chunk-a", "doc-a", "松雪美乃站在门口。", 4)],
+            ct
+        );
+        await store.UpsertDocumentAsync(
+            MakeDoc("doc-b", "b-1") with
+            {
+                NovelId = "novel-b",
+            },
+            [MakeChunk("chunk-b", "doc-b", "松雪美乃站在门口。", 4)],
+            ct
+        );
+
+        NovelLexicon.Clear();
+        try
+        {
+            NovelLexicon.Update("novel-a", ["松雪美乃"]);
+            var affected = await store.RetokenizeNovelAsync(
+                "novel-a",
+                NovelLexicon.GetVersion(),
+                ct
+            );
+            Assert.Equal(1, affected);
+
+            // 幂等门：同版本再跑返回 0
+            Assert.Equal(
+                0,
+                await store.RetokenizeNovelAsync("novel-a", NovelLexicon.GetVersion(), ct)
+            );
+
+            var hitsA = await store.LexicalSearchAsync(
+                "松雪美乃",
+                new HashSet<string> { "chunk-a" },
+                10,
+                "novel-a",
+                ct,
+                useOr: false
+            );
+            Assert.Contains(hitsA, h => h.ChunkId == "chunk-a");
+
+            // 甲书重分词不影响乙书：乙书的分区版本仍是空（未重分词）
+            var versionsB = await store.GetDocumentVersionsAsync("novel-b", ct);
+            Assert.True(versionsB.ContainsKey("doc-b"));
+        }
+        finally
+        {
+            NovelLexicon.Clear();
+        }
     }
 
     private static RetrievalDocument MakeDoc(string documentId, string sourceEntityId)

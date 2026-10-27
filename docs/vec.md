@@ -139,7 +139,7 @@ src/Core/Inference/           本地判定层（可选，§2.8）
 | `source_revision` | 事实源版本（`UpdatedAt` 或等价单调版本），仅辅助 |
 | `content_hash` | 去重与增量判断；模型变更时不能跳过重 embedding |
 | `embedding_model_id` / `embedding_dimension` | 向量空间隔离；不一致禁止混搜；`embedding_model_id` 参与启动对账，模型变更触发该小说知识域重建 |
-| `lexical_version` | 实体词典（角色/组织/地点/道具/情节线/场景名）名称集合哈希；变化时触发该小说知识域重建 |
+| `lexical_version` | **已上移到 `retrieval_fts_partitions`（小说级）**：实体词典名称集合哈希 + 策略前缀；变化时只重建该小说 FTS 分区的 tokens，不重算 embedding |
 | `index_status` | `pending/ready/failed/stale/deleted`；failed 不得参与召回 |
 | `created-at` / `indexed_at` | 审计；不替代实体修改时间 |
 
@@ -249,11 +249,20 @@ RetrievalKernel.SearchAsync(request)
 
 **降级链总表**：零向量查询 → 纯词法；批量 embedding 失败 → 逐条；sqlite 初始化失败 →
 InMemoryRetrievalStore。词法层始终使用 jieba 预分词后的 `tokens` 列；`simple` 原生扩展缺失只记日志，
-不再决定 FTS 分词质量。每个 novelId 使用独立的 jieba 用户词典（角色/组织/地点/道具/情节线/场景名
-经 `AddWord` 注册），名称集合哈希写入 `lexical_version`，变化时触发该小说知识域重建。
-实时实体变更（TUI `EnqueueIndexTaskAsync`）会先刷新词典：新增/删除实体或名称/标题字段变化
-→ 后台按 `lexical_version` 重建该小说全部文档；仅正文/性格等非名称字段变化只索引变更实体。
-名称来源覆盖设定面板的大纲与实体：书名、卷名、章名、角色/组织/地点/情节线/场景/道具名。
+不再决定 FTS 分词质量。
+
+**FTS 按小说分区**：每部小说一对对象——视图 `chunks_p_<suffix>`（该小说块的 `rowid/chunk_id/tokens`）
+与 external-content 的 `fts_p_<suffix>`（`content=` 指向该视图），元数据在 `retrieval_fts_partitions`
+（表名/块数/`lexical_version`/重建时间）；`novel_id` 为空的文档（会话历史等）落默认分区。
+分区隔离的原因：FTS5 的 BM25 统计是全索引级的，共用一张表时别的书的高频词会把本书词项分数打到 0
+（实测同一词 6.995 → 0.000）；`rebuild` 也因此只随该小说块数增长，而不是全库。
+
+**词典与发射模式**：实体名（角色/组织/地点/道具/情节线/场景）全部 `AddWord`（去空格、按标点分段、freq=1e5；
+2 字名的最大概率路径阈值可达数千，freq=10 会输）；书名/卷名/章名不注册（描述性短语，注册反而掉召回，
+且标题已有 ChapterSummary/NovelProfile 独立文档承担排序）。索引侧用 `CutForSearch` 发「长词 + 已知子词」，
+查询侧 AND 只取最佳路径、OR 含子词。词典是**进程全局**的（JiebaNet 词表为单例），版本按全局名字集合算。
+实时实体变更（TUI `EnqueueIndexTaskAsync`）改词典后只调 `RetokenizeNovelAsync`：按该小说重算 tokens +
+分区 `rebuild`，**不重嵌入**；per-novel 单飞 + dirty 合并，连续改名最多重跑一次。
 一致性 profile 用 AND（精确），暗线/写作 profile 用 OR（召回）。
 实时索引（事件通道）与启动对账（补偿通道）双通道，崩溃/离线/队列失败由对账兜底。
 

@@ -41,9 +41,6 @@ public sealed record RetrievalDocument
     /// <summary>Embedding 维度。</summary>
     public int EmbeddingDimension { get; init; }
 
-    /// <summary>实体词典/分词版本（名称集合哈希；变化时触发重建）。</summary>
-    public string LexicalVersion { get; init; } = "";
-
     /// <summary>索引状态。</summary>
     public IndexStatus IndexStatus { get; init; } = IndexStatus.Pending;
 
@@ -99,12 +96,11 @@ public sealed record RetrievalChunk
 }
 
 /// <summary>
-/// 文档版本快照（增量同步用）：事实源版本（实体 UpdatedAt ticks）+ 内容哈希。
-/// 一致 ⇒ 索引内容未变，可跳过重索引。
+/// 文档版本快照（增量同步用）：事实源版本（实体 UpdatedAt ticks）+ 内容哈希 + embedding 模型。
+/// 一致 ⇒ 索引内容未变，可跳过重索引。词典版本是**小说级**事实，记在 retrieval_fts_partitions。
 /// </summary>
 public readonly record struct RetrievalDocumentVersion(
     long SourceRevision,
     string ContentHash,
-    string EmbeddingModelId,
-    string LexicalVersion
+    string EmbeddingModelId
 );

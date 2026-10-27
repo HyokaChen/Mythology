@@ -26,6 +26,23 @@ public sealed class VectorSyncService(
         logger.LogInformation("开始检索索引增量同步...");
 
         var novels = await store.GetAllNovels(ct);
+
+        // 阶段一：先把**所有**小说的实体名注册进全局词典。
+        // jieba 词表是进程全局的：若先同步 A 再注册 B 的名字，A 的 tokens 立刻就不一致了。
+        foreach (var novel in novels)
+        {
+            try
+            {
+                var names = await NovelLexiconCollector.CollectAsync(store, novel.Id, ct);
+                NovelLexicon.Update(novel.Id, names);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "收集小说 '{NovelId}' 实体词典时出错", novel.Id);
+            }
+        }
+
+        // 阶段二：逐部同步（词典已稳定）
         foreach (var novel in novels)
         {
             try
@@ -51,15 +68,6 @@ public sealed class VectorSyncService(
         logger.LogInformation("检索索引增量同步完成");
     }
 
-    /// <summary>按 novelId 同步单部小说（实时实体词典变化后调用）。</summary>
-    public async Task SyncNovelAsync(string novelId, CancellationToken ct = default)
-    {
-        var novel = await store.GetNovel(novelId, ct);
-        if (novel is null)
-            return;
-        await SyncNovelAsync(novel, ct);
-    }
-
     /// <summary>
     /// 同步单部小说的所有实体类型到检索索引。
     /// 并行处理各类实体（角色、章节、情节线等），最后清理已删除的实体。
@@ -70,21 +78,25 @@ public sealed class VectorSyncService(
     {
         logger.LogDebug("同步小说 '{NovelTitle}' 的检索索引", novel.Title);
 
-        // 实体名称/标题变化（新增角色/地点/道具、改名、章节标题等）会改变分词结果；
-        // 先更新词典，lexical_version 变化会在下面的 IsUpToDate 中触发重建。
+        // 实体名变化会改变分词结果。词典是全局的，先注册再重建该小说的 FTS 分区；
+        // 重分词**必须在取版本快照之前**完成，否则快照会把词典变化误判成「文档过期」而触发重嵌入。
         var names = await NovelLexiconCollector.CollectAsync(store, novel.Id, ct);
-        if (NovelLexicon.Update(novel.Id, names))
-        {
+        NovelLexicon.Update(novel.Id, names);
+        var retokenized = await retrievalStore.RetokenizeNovelAsync(
+            novel.Id,
+            NovelLexicon.GetVersion(novel.Id),
+            ct
+        );
+        if (retokenized > 0)
             logger.LogInformation(
-                "小说 '{NovelId}' 实体词典已更新（{NameCount} 个名称），词法版本变化将触发必要重建",
+                "小说 '{NovelId}' 词典版本变化，重分词 {Count} 块（未重嵌入）",
                 novel.Id,
-                names.Count
+                retokenized
             );
-        }
 
         // 已索引实体 ID（用于清理已删除实体）
         var indexedIds = await retrievalStore.GetIndexedDocumentIdsAsync(novel.Id, ct);
-        // 已索引文档版本快照（用于增量判断：revision + content hash）
+        // 已索引文档版本快照（revision + content hash + embedding 模型；不含词典版本）
         var versions = await retrievalStore.GetDocumentVersionsAsync(novel.Id, ct);
 
         // 并行同步各类实体
@@ -524,10 +536,5 @@ public sealed class VectorSyncService(
         versions.TryGetValue(doc.DocumentId, out var v)
         && v.SourceRevision == doc.SourceRevision
         && v.ContentHash == doc.ContentHash
-        && string.Equals(v.EmbeddingModelId, kernel.EmbeddingModelId, StringComparison.Ordinal)
-        && string.Equals(
-            v.LexicalVersion,
-            NovelLexicon.GetVersion(doc.NovelId),
-            StringComparison.Ordinal
-        );
+        && string.Equals(v.EmbeddingModelId, kernel.EmbeddingModelId, StringComparison.Ordinal);
 }

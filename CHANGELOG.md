@@ -6,6 +6,25 @@
 
 ## [Unreleased]
 
+### Changed
+- **词法与 FTS 重建：词典变化只重分词，且 FTS 按小说分区**（`docs/lexical-retokenize-plan.md`）。
+  `NovelLexicon` 改为**全局**名字注册表（JiebaNet 词表是进程单例，之前「每部小说独立词典」不成立）：
+  实体名（角色/组织/地点/道具/情节线/场景）去空格、按标点分段后以 `freq=100_000` 注册——
+  2 字名的最大概率路径阈值可达数千（善我 31.9、有我 2318.6），`freq=10` 会被 DAG 否决；
+  书名/卷名/章名**不再注册**（描述性短语，实测注册后「转学生」9/9 → 8/9）。
+  `LexicalText` 索引侧改用 `CutForSearch`（长词 + 已知子词，潮音堂书店 → 潮音/书店/潮音堂书店），
+  查询侧 AND 只取最佳路径、OR 含子词。
+  `SqliteRetrievalStore` 把单一全局 `retrieval_chunks_fts` 拆成**每部小说一个分区**
+  （视图 `chunks_p_*` + external-content FTS `fts_p_*` + `retrieval_fts_partitions` 元数据，
+  `novel_id` 为空的文档落默认分区），写路径改为 C# 显式维护、启动按分区 `COUNT` 自愈；
+  分区隔离了 BM25 统计（实测共用一张表时同一词分数可从 6.995 被邻书稀释到 0.000），
+  `rebuild` 成本从「全库」降到「该小说」。
+  新增 `IRetrievalStore.RetokenizeNovelAsync`（幂等门 + 分区 rebuild，实测真实库 76 块 30 ms、零 embedding），
+  `VectorSyncService` 改为两阶段（先注册所有小说名字、再逐部同步）并删掉只为全量重建服务的 `SyncNovelAsync(novelId)`；
+  文档级 `lexical_version` 列移除（版本上移到分区），`IsUpToDate` 不再因词典变化判定文档过期。
+  TUI 实时路径用 per-novel 单飞 + dirty 合并的 `QueueRetokenize` 取代原来的全量重建。
+  回归：Core 1522/1522；新增分区隔离、重分词幂等、搜索模式发射、词典归一化等用例。
+
 ### Added
 - **`edit_entities`：设定面板全字段批量编辑工具**（NovelTools）：一次 tool call 跨小说/分卷/章节细纲/
   角色/组织/地点/情节/场景/道具/关系批量修改字段，字段白名单复用 `Core.Data.EntityFieldRegistry`
