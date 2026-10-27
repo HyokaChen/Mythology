@@ -38,12 +38,14 @@ public sealed class RetrievalEvalTests : IAsyncLifetime
             GoldMode.Strict
         );
 
-        Assert.Equal(3, metrics.Count);
+        Assert.Equal(5, metrics.Count);
         Assert.All(metrics, m => Assert.True(m.Queries > 0));
         Assert.NotEmpty(details);
 
         var baseline = metrics[0];
         var current = metrics[1];
+        Assert.Contains(metrics, m => m.Arm.Contains("MMR"));
+        Assert.Contains(metrics, m => m.Arm.Contains("oracle"));
         Assert.True(
             current.Recall5 >= baseline.Recall5,
             $"现行 R@5 ({current.Recall5:P0}) 不应低于基线 ({baseline.Recall5:P0})"

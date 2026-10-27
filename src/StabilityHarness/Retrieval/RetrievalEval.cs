@@ -30,12 +30,16 @@ public enum QueryKind
 /// <summary>一条查询及其 gold。</summary>
 public sealed record EvalQuery(string Id, QueryKind Kind, string Text, IReadOnlyList<int> Gold);
 
-/// <summary>单条查询在某个方案下的结果。</summary>
-public sealed record QueryResult(int FirstGoldRank, int GoldFound, int GoldTotal)
+/// <summary>
+/// 单条查询在某个方案下的结果。
+/// <paramref name="FoundAt5"/> / <paramref name="FoundAt10"/> 是**前 k 条内**命中的 gold 数，
+/// AE@k（找齐全部证据）必须按它们判断——早期实现误用「全程命中数」，把 AE 抬虚了。
+/// </summary>
+public sealed record QueryResult(int FirstGoldRank, int FoundAt5, int FoundAt10, int GoldTotal)
 {
     public bool HitAt(int k) => FirstGoldRank is > 0 && FirstGoldRank <= k;
 
-    public bool AllAt(int k) => GoldTotal > 0 && GoldFound == GoldTotal;
+    public bool AllAt5 => GoldTotal > 0 && FoundAt5 == GoldTotal;
 
     public double ReciprocalRank => FirstGoldRank > 0 ? 1.0 / FirstGoldRank : 0;
 }
@@ -112,6 +116,7 @@ public static class RetrievalEval
             )
             .ToList();
         var expansion = new TwoRoundExpansion(current);
+        var mmr = new MmrSelector(docs);
 
         var armRankings = new List<List<List<int>>>
         {
@@ -125,12 +130,30 @@ public static class RetrievalEval
                     )
                 )
                 .ToList(),
+            queries
+                .Select(q => mmr.Select(Bm25(current, QueryTerms(q.Text, novelId)), 10))
+                .ToList(),
+            queries
+                .Select(q =>
+                {
+                    var ranking = Bm25(current, QueryTerms(q.Text, novelId));
+                    var gold = q.Gold.ToHashSet();
+                    var window = ranking.Take(20).ToList();
+                    return window
+                        .Where(gold.Contains)
+                        .Concat(window.Where(i => !gold.Contains(i)))
+                        .Concat(ranking.Skip(window.Count))
+                        .ToList();
+                })
+                .ToList(),
         };
         string[] armNames =
         [
             "A 基线（默认词典·最佳路径）",
             "B 现行（实体注册 + 2/3 字片段）",
             "C 现行 + 词项扩展二轮（SAG2 式）",
+            "D 现行 + 文档级 MMR（多样性，DPP 近似）",
+            "E 现行 + 完美判定重排（JEV 上限，oracle）",
         ];
 
         var metrics = new List<ArmMetrics>();
@@ -155,6 +178,8 @@ public static class RetrievalEval
                     $"A=#{ranks[0], -3}",
                     $"B=#{ranks[1], -3}",
                     $"C=#{ranks[2], -3}",
+                    $"D=#{ranks[3], -3}",
+                    $"E=#{ranks[4], -3}",
                     queries[i].Text
                 )
             );
@@ -165,7 +190,7 @@ public static class RetrievalEval
 
     // ── 语料与 gold ────────────────────────────────────────────────
 
-    private sealed record Chunk(int Index, string Id, int Kind, string Text);
+    private sealed record Chunk(int Index, string Id, string DocumentId, int Kind, string Text);
 
     private static async Task<List<Chunk>> LoadDocsAsync(
         string dbPath,
@@ -182,7 +207,7 @@ public static class RetrievalEval
         var docs = new List<Chunk>();
         await using var cmd = db.CreateCommand();
         cmd.CommandText =
-            @"SELECT c.chunk_id, d.document_kind, c.text
+            @"SELECT c.chunk_id, c.document_id, d.document_kind, c.text
                 FROM retrieval_chunks c
                 JOIN retrieval_documents d ON d.document_id = c.document_id
                WHERE d.novel_id = $novel AND d.index_status <> $deleted
@@ -193,7 +218,13 @@ public static class RetrievalEval
         var index = 0;
         while (await reader.ReadAsync(ct))
             docs.Add(
-                new Chunk(index++, reader.GetString(0), reader.GetInt32(1), reader.GetString(2))
+                new Chunk(
+                    index++,
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetInt32(2),
+                    reader.GetString(3)
+                )
             );
         return docs;
     }
@@ -358,6 +389,67 @@ public static class RetrievalEval
         }
     }
 
+    /// <summary>
+    /// 文档级 MMR（DPP 的便宜近似）：每步选「相关度 − 与已选项最大相似度」最高的，
+    /// 相似度 = 同文档 1.0 / 否则两个块 token 的 Jaccard。用来回答「topK 里是否被同一段挤满」。
+    /// </summary>
+    private sealed class MmrSelector(List<Chunk> docs)
+    {
+        private readonly Dictionary<int, HashSet<string>> _tokens = new();
+
+        public List<int> Select(List<int> ranked, int take, double lambda = 0.7)
+        {
+            var selected = new List<int>(take);
+            var pool = ranked.Take(200).ToList();
+            if (pool.Count == 0)
+                return pool;
+
+            while (selected.Count < take && pool.Count > 0)
+            {
+                var best = pool[0];
+                var bestScore = double.MinValue;
+                foreach (var candidate in pool)
+                {
+                    var relevance = 1.0 / (1 + pool.IndexOf(candidate));
+                    var similarity =
+                        selected.Count == 0 ? 0 : selected.Max(s => Similarity(candidate, s));
+                    var score = lambda * relevance - (1 - lambda) * similarity;
+                    if (score <= bestScore)
+                        continue;
+                    bestScore = score;
+                    best = candidate;
+                }
+                selected.Add(best);
+                pool.Remove(best);
+            }
+            return selected.Concat(ranked.Where(i => !selected.Contains(i))).ToList();
+        }
+
+        private double Similarity(int a, int b)
+        {
+            if (docs[a].DocumentId == docs[b].DocumentId)
+                return 1.0;
+            var ta = Tokens(a);
+            var tb = Tokens(b);
+            if (ta.Count == 0 || tb.Count == 0)
+                return 0;
+            var inter = ta.Count(tb.Contains);
+            return inter / (double)(ta.Count + tb.Count - inter);
+        }
+
+        private HashSet<string> Tokens(int index)
+        {
+            if (!_tokens.TryGetValue(index, out var set))
+            {
+                set = LexicalText
+                    .ToBestPathTokens(docs[index].Text)
+                    .ToHashSet(StringComparer.Ordinal);
+                _tokens[index] = set;
+            }
+            return set;
+        }
+    }
+
     /// <summary>SAG2 的「交错合并」：两轮结果轮流取，先取首轮。</summary>
     private static List<int> Interleave(List<int> first, List<int> second)
     {
@@ -378,16 +470,20 @@ public static class RetrievalEval
         var gold = query.Gold.ToHashSet();
         var limit = Math.Min(ranking.Count, candidateK);
         var firstRank = 0;
-        var found = 0;
+        var found5 = 0;
+        var found10 = 0;
         for (var i = 0; i < limit; i++)
         {
             if (!gold.Contains(ranking[i]))
                 continue;
-            found++;
             if (firstRank == 0)
                 firstRank = i + 1;
+            if (i < 5)
+                found5++;
+            if (i < 10)
+                found10++;
         }
-        return new QueryResult(firstRank, found, gold.Count);
+        return new QueryResult(firstRank, found5, found10, gold.Count);
     }
 
     private static ArmMetrics Summarize(string arm, List<QueryResult> results)
@@ -397,7 +493,7 @@ public static class RetrievalEval
             arm,
             results.Count(r => r.HitAt(5)) / (double)n,
             results.Count(r => r.HitAt(10)) / (double)n,
-            results.Count(r => r.AllAt(5)) / (double)n,
+            results.Count(r => r.AllAt5) / (double)n,
             results.Average(r => r.ReciprocalRank),
             n
         );
