@@ -75,13 +75,40 @@ public static class LexicalText
     /// <summary>FTS5 词项加引号（内部双引号转义）。</summary>
     public static string Quote(string term) => "\"" + term.Replace("\"", "\"\"") + "\"";
 
+    /// <summary>
+    /// 切词。搜索模式**只为已注册的实体名补发其子词**（词典里认识的 2/3 字片段），
+    /// 不给正文里的普通长词补——实测后者让 token 膨胀 +9.3% 却没有可测收益，
+    /// 而实体名注册成整词后必须补，否则「体育馆」这类组成词查询会失效。
+    /// </summary>
     private static List<string> Tokenize(string text, bool searchMode)
     {
         if (string.IsNullOrWhiteSpace(text))
             return [];
 
-        var tokens = new List<string>(text.Length / 2);
-        foreach (var token in NovelLexicon.Cut(text, searchMode))
+        var tokens = Clean(NovelLexicon.Cut(text, searchMode: false));
+        if (!searchMode || tokens.Count == 0)
+            return tokens;
+
+        var entityTokens = tokens.Where(NovelLexicon.IsRegistered).ToArray();
+        if (entityTokens.Length == 0)
+            return tokens;
+
+        var existing = tokens.ToHashSet(StringComparer.Ordinal);
+        foreach (var extra in Clean(NovelLexicon.Cut(text, searchMode: true)))
+        {
+            if (existing.Contains(extra))
+                continue;
+            if (entityTokens.Any(name => name.Contains(extra, StringComparison.Ordinal)))
+                tokens.Add(extra);
+        }
+        return tokens;
+    }
+
+    /// <summary>去标点/空白/停用词，统一小写。</summary>
+    private static List<string> Clean(IEnumerable<string> raw)
+    {
+        var tokens = new List<string>();
+        foreach (var token in raw)
         {
             var trimmed = token.Trim();
             if (trimmed.Length == 0)

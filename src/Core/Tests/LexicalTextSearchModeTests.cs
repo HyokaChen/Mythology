@@ -32,6 +32,24 @@ public sealed class LexicalTextSearchModeTests
     }
 
     [Fact]
+    public void IndexText_DoesNotExpandOrdinaryLongWords()
+    {
+        NovelLexicon.Clear();
+        try
+        {
+            // 未注册的普通长词（体育馆）不补子词：索引 token 更省，查询「体育馆」仍可达
+            var tokens = Tokens(LexicalText.ToIndexText("他去了体育馆", "mode-novel"));
+
+            Assert.Contains("体育馆", tokens);
+            Assert.DoesNotContain("体育", tokens);
+        }
+        finally
+        {
+            NovelLexicon.Clear();
+        }
+    }
+
+    [Fact]
     public void QueryTerms_AndLaneHasNoSubwords_OrLaneHasThem()
     {
         NovelLexicon.Clear();

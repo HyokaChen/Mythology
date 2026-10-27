@@ -24,7 +24,7 @@ public static class NovelLexicon
     public const int WordFrequency = 100_000;
 
     /// <summary>分词策略版本：改动词频、归一化或发射模式时递增，令旧 tokens 全部失效。</summary>
-    private const string PolicyVersion = "v7|select=entity|emit=cutforsearch|freq=100000";
+    private const string PolicyVersion = "v8|select=entity|emit=entity-subwords|freq=100000";
 
     /// <summary>词表是进程全局的，注册与切词共用同一把锁（AddWord 写 Dictionary，Cut 在读）。</summary>
     private static readonly object Gate = new();
@@ -78,6 +78,13 @@ public static class NovelLexicon
 
     /// <summary>全局词典版本（名称集合 + 策略前缀的哈希）。未注册任何名字时返回初始版本。</summary>
     public static string GetVersion(string? novelId = null) => _version;
+
+    /// <summary>该词是否为已注册的实体名（决定是否补发它的子词）。</summary>
+    public static bool IsRegistered(string token)
+    {
+        lock (Gate)
+            return Registered.Contains(token);
+    }
 
     /// <summary>切词（持锁）。<paramref name="searchMode"/> = 长词与其已知子词都发（索引侧与 OR 查询用）。</summary>
     internal static List<string> Cut(string text, bool searchMode)
