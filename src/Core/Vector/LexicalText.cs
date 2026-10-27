@@ -49,23 +49,26 @@ public static class LexicalText
         return string.Join(useOr ? " OR " : " AND ", terms.Select(Quote));
     }
 
-    /// <summary>查询分词（默认词典，召回车道）。</summary>
+    /// <summary>查询分词（默认词典）。</summary>
     public static string[] GetQueryTerms(string query) => GetQueryTerms(query, novelId: null);
 
-    /// <summary>查询分词（召回车道：含子词）。</summary>
+    /// <summary>查询分词（使用全局实体词典）。</summary>
     public static string[] GetQueryTerms(string query, string? novelId) =>
-        GetQueryTerms(query, novelId, searchMode: true);
+        GetQueryTerms(query, novelId, searchMode: false);
 
     /// <summary>
     /// 查询分词（长度 ≥2、去重、最多 40 项）。
-    /// <paramref name="searchMode"/>=true 含子词（OR 车道）；false 只取最佳路径（AND 车道）。
+    /// **查询侧永远不展开子词**：索引侧已经为实体名补了 2/3 字片段，查询再展开只会把
+    /// 「陈折花」稀释成「陈折/折花」，让只提到片段的正文块挤掉档案（实测档案排名 #2 → #11）。
+    /// <paramref name="searchMode"/> 仅为兼容保留。
     /// </summary>
     public static string[] GetQueryTerms(string query, string? novelId, bool searchMode)
     {
+        _ = searchMode;
         if (string.IsNullOrWhiteSpace(query))
             return [];
 
-        return Tokenize(query, searchMode)
+        return Tokenize(query, searchMode: false)
             .Where(term => term.Length >= 2)
             .Distinct(StringComparer.Ordinal)
             .Take(MaxQueryTerms)

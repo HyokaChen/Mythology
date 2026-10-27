@@ -94,18 +94,26 @@ public sealed class LexicalTextSearchModeTests
     }
 
     [Fact]
-    public void QueryTerms_AndLaneHasNoSubwords_OrLaneHasThem()
+    public void QueryTerms_NeverExpandSubwords()
     {
         NovelLexicon.Clear();
         try
         {
             NovelLexicon.Update("mode-novel", ["潮音堂书店"]);
 
-            var andTerms = LexicalText.GetQueryTerms("潮音堂书店", "mode-novel", searchMode: false);
-            var orTerms = LexicalText.GetQueryTerms("潮音堂书店", "mode-novel", searchMode: true);
+            // 索引侧已补子词；查询侧再展开会把「陈折花」稀释成「陈折/折花」，
+            // 让只提到片段的正文挤掉档案（实测档案排名 #2 → #11），故查询永远只取最佳路径。
+            Assert.Equal(
+                ["潮音堂书店"],
+                LexicalText.GetQueryTerms("潮音堂书店", "mode-novel", searchMode: false)
+            );
+            Assert.Equal(
+                ["潮音堂书店"],
+                LexicalText.GetQueryTerms("潮音堂书店", "mode-novel", searchMode: true)
+            );
 
-            Assert.Equal(["潮音堂书店"], andTerms);
-            Assert.Contains("书店", orTerms);
+            // 用户直接搜片段时，片段本身仍是查询词项（索引里有它就能命中）
+            Assert.Equal(["书店"], LexicalText.GetQueryTerms("书店", "mode-novel"));
         }
         finally
         {
@@ -124,9 +132,10 @@ public sealed class LexicalTextSearchModeTests
                 "\"潮音堂书店\"",
                 LexicalText.BuildMatchQuery("潮音堂书店", "mode-novel", useOr: false)
             );
+            // 单术语查询没有 OR 可言；两个术语时 OR/AND 才体现差异
             Assert.Contains(
                 " OR ",
-                LexicalText.BuildMatchQuery("潮音堂书店", "mode-novel", useOr: true)
+                LexicalText.BuildMatchQuery("潮音堂书店 位置", "mode-novel", useOr: true)
             );
         }
         finally
