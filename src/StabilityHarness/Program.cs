@@ -59,6 +59,12 @@ public static class Program
         var gold = GoldMode.Strict;
         var candidateK = 100;
         var verbose = false;
+        string? jevUrl = null;
+        var jevKey = "local";
+        var jevModel = "d1-omni";
+        var jevCandidates = 12;
+        var jevMaxState = 1200;
+        var jevWeight = 0.5;
 
         for (var i = 0; i < args.Length; i++)
             switch (args[i])
@@ -83,6 +89,24 @@ public static class Program
                 case "--verbose":
                     verbose = true;
                     break;
+                case "--jev-url":
+                    jevUrl = args[++i];
+                    break;
+                case "--jev-key":
+                    jevKey = args[++i];
+                    break;
+                case "--jev-model":
+                    jevModel = args[++i];
+                    break;
+                case "--jev-candidates":
+                    jevCandidates = int.Parse(args[++i]);
+                    break;
+                case "--jev-maxstate":
+                    jevMaxState = int.Parse(args[++i]);
+                    break;
+                case "--jev-weight":
+                    jevWeight = double.Parse(args[++i]);
+                    break;
                 default:
                     Console.Error.WriteLine($"未知参数：{args[i]}");
                     return 1;
@@ -97,7 +121,17 @@ public static class Program
 
         try
         {
-            var (metrics, details) = await RetrievalEval.RunAsync(db, novel, gold, candidateK);
+            var jev = string.IsNullOrWhiteSpace(jevUrl)
+                ? null
+                : new JevOptions(
+                    jevUrl,
+                    jevKey,
+                    jevModel,
+                    MaxStateChars: jevMaxState,
+                    MaxCandidates: jevCandidates,
+                    Weight: jevWeight
+                );
+            var (metrics, details) = await RetrievalEval.RunAsync(db, novel, gold, candidateK, jev);
 
             Console.WriteLine($"语料：{db}  novel={novel}  gold={gold}  candidateK={candidateK}");
             Console.WriteLine();

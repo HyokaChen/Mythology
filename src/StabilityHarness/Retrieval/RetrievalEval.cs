@@ -14,6 +14,19 @@ public enum GoldMode
     Loose,
 }
 
+/// <summary>真实 JEV（SystemOne `noul` 判定）重排选项；为 null 时该臂不跑。</summary>
+public sealed record JevOptions(
+    string BaseUrl,
+    string ApiKey,
+    string Model = "d1-omni",
+    string Path = "/v1/systemone",
+    int TimeoutMs = 15_000,
+    int MaxStateChars = 1200,
+    int MaxCandidates = 12,
+    int Overfetch = 1,
+    double Weight = 0.5
+);
+
 /// <summary>查询类别。</summary>
 public enum QueryKind
 {
@@ -89,6 +102,7 @@ public static class RetrievalEval
         string novelId,
         GoldMode mode = GoldMode.Strict,
         int candidateK = 100,
+        JevOptions? jev = null,
         CancellationToken ct = default
     )
     {
@@ -155,6 +169,41 @@ public static class RetrievalEval
             "D 现行 + 文档级 MMR（多样性，DPP 近似）",
             "E 现行 + 完美判定重排（JEV 上限，oracle）",
         ];
+
+        using var jevClient = jev is null
+            ? null
+            : new Core.Inference.SystemOneClient(
+                new Core.Data.SystemOneConfig
+                {
+                    Enabled = true,
+                    BaseUrl = jev.BaseUrl,
+                    Path = jev.Path,
+                    ApiKey = jev.ApiKey,
+                    Model = jev.Model,
+                    TimeoutMs = jev.TimeoutMs,
+                    MaxStateChars = jev.MaxStateChars,
+                    Rerank = new Core.Data.SystemOneRerankConfig
+                    {
+                        Enabled = true,
+                        Overfetch = jev.Overfetch,
+                        Weight = jev.Weight,
+                        PassageChars = jev.MaxStateChars / 4,
+                        MaxCandidates = jev.MaxCandidates,
+                    },
+                }
+            );
+
+        if (jev is not null && jevClient is not null)
+        {
+            var realRerank = new List<List<int>>(queries.Count);
+            foreach (var q in queries)
+            {
+                var ranking = Bm25(current, QueryTerms(q.Text, novelId));
+                realRerank.Add(await RerankWithJevAsync(ranking, q.Text, docs, jevClient, ct));
+            }
+            armRankings.Add(realRerank);
+            armNames = [.. armNames, "F 现行 + 真实 JEV 判定重排"];
+        }
 
         var metrics = new List<ArmMetrics>();
         for (var arm = 0; arm < armRankings.Count; arm++)
@@ -319,6 +368,46 @@ public static class RetrievalEval
 
     private static string[] QueryTerms(string query, string novelId) =>
         LexicalText.GetQueryTerms(query, novelId);
+
+    /// <summary>真实 JEV 重排：BM25 前 N 条交给 JudgeRerank（SystemOne noul），按重排结果还原序号。</summary>
+    private static async Task<List<int>> RerankWithJevAsync(
+        List<int> ranking,
+        string query,
+        List<Chunk> docs,
+        Core.Inference.ISystemOneClient client,
+        CancellationToken ct
+    )
+    {
+        var max = client.Options.Rerank.MaxCandidates;
+        var window = ranking.Take(Math.Clamp(max, 1, Math.Max(1, ranking.Count))).ToList();
+        if (window.Count <= 1)
+            return ranking;
+
+        var candidates = new List<RetrievalSearchResult>(window.Count);
+        for (var i = 0; i < window.Count; i++)
+            candidates.Add(
+                new RetrievalSearchResult
+                {
+                    ChunkId = $"#{window[i]}",
+                    DocumentId = docs[window[i]].DocumentId,
+                    Domain = RetrievalDomain.NovelKnowledge,
+                    DocumentKind = (DocumentKind)docs[window[i]].Kind,
+                    Text = docs[window[i]].Text,
+                    Score = 1.0 / (i + 1),
+                    JudgeProbability = null,
+                }
+            );
+
+        var outcome = await JudgeRerank.ApplyAsync(client, query, candidates, ct);
+        if (outcome.Aborted || outcome.Judged == 0)
+            return ranking;
+
+        var reordered = outcome
+            .Results.Select(r => int.Parse(r.ChunkId[1..]))
+            .Concat(ranking.Where(i => !window.Contains(i)))
+            .ToList();
+        return reordered;
+    }
 
     /// <summary>BM25 排序（k1=1.2, b=0.75），返回按分数降序的文档序号。</summary>
     private static List<int> Bm25(List<List<string>> docs, IEnumerable<string> terms)

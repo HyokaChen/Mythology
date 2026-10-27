@@ -420,8 +420,11 @@ UPDATE retrieval_fts_partitions SET lexical_version=$v, chunk_count=$count, rebu
 二轮词项扩展（C）与文档级 MMR（D）在本语料上都没有超过现行方案 B：单小说小语料首轮已覆盖证据，
 C 只带噪声；D 无同源冗余可去（76 块 / 69 篇文档 ≈ 一块一篇）。
 E 是**判定重排的上限**：把 top-20 里的 gold 提到最前，MRR 0.778 → 0.981、AE@5 83% → 89% ——
-说明剩余的损失在**排序**而不是召回，而 `JudgeRerank`（SystemOne `noul` 判定，等价 SAG2 的 JEV）
-已经在查询链路里、设置页可开，默认关；本仓无 SystemOne 端点，故只测上限。
+说明剩余的损失在**排序**而不是召回。
+F 臂把 `JudgeRerank`（SystemOne `noul` 判定，等价 SAG2 的 JEV）接到真实端点（`10.1.44.46:8009`，d1-omni-600M）实测：
+**F ≈ B（MRR 0.779 vs 0.778）但每条查询 2–9 s**（54 条 3 分 21 秒）——判定有区分度但与 strict gold 定义不一致
+（把关系陈述判得和角色档案一样相关），故 JEV 保持**可选、默认关**；它的回本场景是「没有 embedding 模型」或「大语料噪声多」。
+详见 `docs/retrieval-golden-set.md`。
 详见 `docs/retrieval-golden-set.md`。
 
 （早前一次性脚本的 57 条口径数据一并废弃，以上面这张为准。）
