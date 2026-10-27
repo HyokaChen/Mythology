@@ -279,6 +279,56 @@ public sealed class SqliteRetrievalStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task LexicalSearch_AndLane_AllowsTwoCharNameFragment()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        NovelLexicon.Clear();
+        try
+        {
+            NovelLexicon.Update("novel-nf", ["海野天音"]);
+
+            await using var store = new SqliteRetrievalStore(_dbPath, dimension: 4);
+            await store.InitializeAsync(ct);
+            await store.UpsertDocumentAsync(
+                MakeDoc("doc-nf", "nf-1") with
+                {
+                    NovelId = "novel-nf",
+                },
+                [MakeChunk("chunk-nf", "doc-nf", "海野天音站在门口。", 4)],
+                ct
+            );
+
+            var candidates = new HashSet<string> { "chunk-nf" };
+
+            // 实体名的 2 字片段是稀有词项：精确车道必须照常查（否则「海野是谁」查不到）
+            var nameFragment = await store.LexicalSearchAsync(
+                "海野",
+                candidates,
+                10,
+                "novel-nf",
+                ct,
+                useOr: false
+            );
+            Assert.Contains(nameFragment, h => h.ChunkId == "chunk-nf");
+
+            // 泛词仍然被守卫拦掉，交给 dense
+            var generic = await store.LexicalSearchAsync(
+                "关系",
+                candidates,
+                10,
+                "novel-nf",
+                ct,
+                useOr: false
+            );
+            Assert.Empty(generic);
+        }
+        finally
+        {
+            NovelLexicon.Clear();
+        }
+    }
+
     private static RetrievalDocument MakeDoc(string documentId, string sourceEntityId)
     {
         return new RetrievalDocument

@@ -70,6 +70,30 @@ public sealed class LexicalTextSearchModeTests
     }
 
     [Fact]
+    public void IndexText_EmitsAllNgramsOfRegisteredEntityNames()
+    {
+        NovelLexicon.Clear();
+        try
+        {
+            // 实体名的 2 字片段几乎都是 jieba 未登录词（陈折/海野/小森…），
+            // 只补“词典认识的”等于没补：部分名查询会落空（实测 12/17）。
+            NovelLexicon.Update("mode-novel", ["海野天音"]);
+            var tokens = Tokens(LexicalText.ToIndexText("海野天音站在门口", "mode-novel"));
+
+            Assert.Contains("海野天音", tokens);
+            Assert.Contains("海野", tokens);
+            Assert.Contains("天音", tokens);
+
+            var terms = LexicalText.GetQueryTerms("海野", "mode-novel", searchMode: false);
+            Assert.True(terms.Length > 0 && terms.All(tokens.Contains));
+        }
+        finally
+        {
+            NovelLexicon.Clear();
+        }
+    }
+
+    [Fact]
     public void QueryTerms_AndLaneHasNoSubwords_OrLaneHasThem()
     {
         NovelLexicon.Clear();

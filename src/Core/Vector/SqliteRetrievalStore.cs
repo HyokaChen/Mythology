@@ -821,10 +821,15 @@ public sealed partial class SqliteRetrievalStore(
                 // 没有可用实义词：保留旧的原始转义查询（单字/纯符号场景）。
                 cmd.Parameters.AddWithValue("$query", EscapeFtsQuery(query));
             }
-            else if (!useOr && terms.Length == 1 && terms[0].Length <= 2)
+            else if (
+                !useOr
+                && terms.Length == 1
+                && terms[0].Length <= 2
+                && !NovelLexicon.IsNameFragment(terms[0])
+            )
             {
-                // 精确车道里唯一词项只剩「关系/场景」这类 2 字泛词时，
-                // AND 查询没有区分度，直接让词法通道留空，交给 dense。
+                // 精确车道里唯一词项只剩「关系/场景」这类 2 字泛词时，AND 没有区分度，交给 dense。
+                // 例外：实体名的 2 字片段（海野/木戸/折花）是稀有词项，必须照常查。
                 return [];
             }
             else

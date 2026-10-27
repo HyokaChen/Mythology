@@ -37,6 +37,9 @@ public static class NovelLexicon
     /// <summary>已注册词集合（全局并集），决定版本与是否重复注册。</summary>
     private static readonly HashSet<string> Registered = new(StringComparer.Ordinal);
 
+    /// <summary>实体名及其 2/3 字片段：用于「2 字精确车道是否值得查」的判断。</summary>
+    private static readonly HashSet<string> NameFragments = new(StringComparer.Ordinal);
+
     private static string _version = "i0";
 
     /// <summary>名字内部的标点视为边界（整名不会以带标点的形式出现在正文里）。空白不是边界——先压掉。</summary>
@@ -68,7 +71,13 @@ public static class NovelLexicon
             foreach (var name in normalized)
             {
                 if (Registered.Add(name))
+                {
                     Shared.AddWord(name, WordFrequency, "nz");
+                    NameFragments.Add(name);
+                    for (var len = 2; len <= 3; len++)
+                    for (var i = 0; i + len <= name.Length; i++)
+                        NameFragments.Add(name.Substring(i, len));
+                }
             }
 
             _version = ComputeVersion();
@@ -78,6 +87,13 @@ public static class NovelLexicon
 
     /// <summary>全局词典版本（名称集合 + 策略前缀的哈希）。未注册任何名字时返回初始版本。</summary>
     public static string GetVersion(string? novelId = null) => _version;
+
+    /// <summary>该词是否为实体名或其 2/3 字片段（2 字精确查询是否值得发 MATCH）。</summary>
+    public static bool IsNameFragment(string token)
+    {
+        lock (Gate)
+            return NameFragments.Contains(token);
+    }
 
     /// <summary>该词是否为已注册的实体名（决定是否补发它的子词）。</summary>
     public static bool IsRegistered(string token)
@@ -103,6 +119,7 @@ public static class NovelLexicon
         {
             ByNovel.Clear();
             Registered.Clear();
+            NameFragments.Clear();
             _version = "i0";
         }
     }
