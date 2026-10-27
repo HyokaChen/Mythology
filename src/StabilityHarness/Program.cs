@@ -65,6 +65,9 @@ public static class Program
         var jevCandidates = 12;
         var jevMaxState = 1200;
         var jevWeight = 0.5;
+        string? embUrl = null;
+        var embKey = "";
+        var embModel = "wemm-embedding";
 
         for (var i = 0; i < args.Length; i++)
             switch (args[i])
@@ -107,6 +110,15 @@ public static class Program
                 case "--jev-weight":
                     jevWeight = double.Parse(args[++i]);
                     break;
+                case "--emb-url":
+                    embUrl = args[++i];
+                    break;
+                case "--emb-key":
+                    embKey = args[++i];
+                    break;
+                case "--emb-model":
+                    embModel = args[++i];
+                    break;
                 default:
                     Console.Error.WriteLine($"未知参数：{args[i]}");
                     return 1;
@@ -131,7 +143,17 @@ public static class Program
                     MaxCandidates: jevCandidates,
                     Weight: jevWeight
                 );
-            var (metrics, details) = await RetrievalEval.RunAsync(db, novel, gold, candidateK, jev);
+            var emb = string.IsNullOrWhiteSpace(embUrl)
+                ? null
+                : new EmbeddingOptions(embUrl, embKey, embModel);
+            var (metrics, details) = await RetrievalEval.RunAsync(
+                db,
+                novel,
+                gold,
+                candidateK,
+                jev,
+                emb
+            );
 
             Console.WriteLine($"语料：{db}  novel={novel}  gold={gold}  candidateK={candidateK}");
             Console.WriteLine();

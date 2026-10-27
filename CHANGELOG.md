@@ -32,7 +32,10 @@
   另测两臂作为取舍依据：SAG2 式二轮词项扩展（C）与文档级 MMR（D）在本语料无收益；
   **完美判定重排上限（E）MRR 0.981、AE@5 89%**，说明剩余损失在排序——对应既有的 `JudgeRerank`（SystemOne `noul` 判定，默认关、设置页可开）。
   修正 AE@k 口径（原实现误把「全程命中」当成前 k 命中）。评测新增 F 臂接入**真实 JEV**（`--jev-url`，SystemOne `noul` 判定）：
-  用 `10.1.44.46:8009` 实测 54 条，F ≈ B（MRR 0.779 vs 0.778）但每条 2–9 s，故保持可选、默认关。回归：`StabilityHarness.Tests` 50/50。
+  用 `10.1.44.46:8009` 实测 54 条，F ≈ B（MRR 0.778）但每条 2–9 s，故保持可选、默认关。
+  另接入真实 embedding（`--emb-url`）新增 G 纯 dense / H 混合 RRF / I 混合+JEV 三臂：
+  G 61%、H 93%（MRR 0.803，最高）、I 91%（4 min 09 s）——JEV 在单小说语料上仍是净负，
+  根因是判定判据（“部分相关也算”）与 strict gold（只认档案）不同；降候选数不改善延迟。回归：`StabilityHarness.Tests` 50/50。
 - **`edit_entities`：设定面板全字段批量编辑工具**（NovelTools）：一次 tool call 跨小说/分卷/章节细纲/
   角色/组织/地点/情节/场景/道具/关系批量修改字段，字段白名单复用 `Core.Data.EntityFieldRegistry`
   （从 Desktop 下沉，编辑窗与工具同源），补齐 `manage_*` 的 12 处字段缺口（角色 status/tags/abilities/notes、

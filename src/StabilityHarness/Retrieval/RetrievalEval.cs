@@ -103,6 +103,7 @@ public static class RetrievalEval
         GoldMode mode = GoldMode.Strict,
         int candidateK = 100,
         JevOptions? jev = null,
+        EmbeddingOptions? embedding = null,
         CancellationToken ct = default
     )
     {
@@ -203,6 +204,39 @@ public static class RetrievalEval
             }
             armRankings.Add(realRerank);
             armNames = [.. armNames, "F 现行 + 真实 JEV 判定重排"];
+        }
+
+        if (embedding is not null)
+        {
+            using var embClient = new OpenAiEmbeddingClient(embedding);
+            var docVectors = await embClient.EmbedAsync(docs.Select(d => d.Text).ToList(), ct);
+            var queryVectors = await embClient.EmbedAsync(queries.Select(q => q.Text).ToList(), ct);
+            var dense = queries
+                .Select((_, i) => DenseRanking(docVectors, queryVectors[i]))
+                .ToList();
+            var hybrid = queries
+                .Select(
+                    (_, i) =>
+                        Rrf(
+                            armRankings[1][i], // B 现行词法
+                            dense[i],
+                            60
+                        )
+                )
+                .ToList();
+            armRankings.Add(dense);
+            armNames = [.. armNames, $"G 纯 dense（{embClient.Dimension} 维）"];
+            armRankings.Add(hybrid);
+            armNames = [.. armNames, "H 混合 RRF（B 词法 + G dense）"];
+
+            if (jev is not null && jevClient is not null)
+            {
+                var hybridJev = new List<List<int>>(queries.Count);
+                foreach (var (q, i) in queries.Select((q, i) => (q, i)))
+                    hybridJev.Add(await RerankWithJevAsync(hybrid[i], q.Text, docs, jevClient, ct));
+                armRankings.Add(hybridJev);
+                armNames = [.. armNames, "I 混合 + 真实 JEV（低候选）"];
+            }
         }
 
         var metrics = new List<ArmMetrics>();
@@ -368,6 +402,37 @@ public static class RetrievalEval
 
     private static string[] QueryTerms(string query, string novelId) =>
         LexicalText.GetQueryTerms(query, novelId);
+
+    /// <summary>余弦相似度排序（全部为归一化向量时等价点积）。</summary>
+    private static List<int> DenseRanking(IReadOnlyList<float[]> docs, float[] query)
+    {
+        var scored = new List<(int Index, double Score)>(docs.Count);
+        for (var i = 0; i < docs.Count; i++)
+        {
+            double dot = 0;
+            var v = docs[i];
+            var n = Math.Min(v.Length, query.Length);
+            for (var k = 0; k < n; k++)
+                dot += v[k] * query[k];
+            if (dot > 0)
+                scored.Add((i, dot));
+        }
+        return scored.OrderByDescending(x => x.Score).Select(x => x.Index).ToList();
+    }
+
+    /// <summary>倒数排名融合（与产品链路一致：score = Σ 1/(k + rank)）。</summary>
+    private static List<int> Rrf(List<int> a, List<int> b, int k = 60)
+    {
+        var scores = new Dictionary<int, double>();
+        void Add(List<int> ranking)
+        {
+            for (var i = 0; i < ranking.Count; i++)
+                scores[ranking[i]] = scores.GetValueOrDefault(ranking[i]) + 1.0 / (k + i + 1);
+        }
+        Add(a);
+        Add(b);
+        return scores.OrderByDescending(kv => kv.Value).Select(kv => kv.Key).ToList();
+    }
 
     /// <summary>真实 JEV 重排：BM25 前 N 条交给 JudgeRerank（SystemOne noul），按重排结果还原序号。</summary>
     private static async Task<List<int>> RerankWithJevAsync(
