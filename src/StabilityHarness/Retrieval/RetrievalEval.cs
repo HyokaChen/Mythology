@@ -24,7 +24,8 @@ public sealed record JevOptions(
     int MaxStateChars = 1200,
     int MaxCandidates = 12,
     int Overfetch = 1,
-    double Weight = 0.5
+    double Weight = 0.5,
+    string Criteria = "relevant"
 );
 
 /// <summary>查询类别。</summary>
@@ -190,6 +191,7 @@ public static class RetrievalEval
                         Weight = jev.Weight,
                         PassageChars = jev.MaxStateChars / 4,
                         MaxCandidates = jev.MaxCandidates,
+                        Criteria = jev.Criteria,
                     },
                 }
             );
@@ -458,7 +460,9 @@ public static class RetrievalEval
                     Domain = RetrievalDomain.NovelKnowledge,
                     DocumentKind = (DocumentKind)docs[window[i]].Kind,
                     Text = docs[window[i]].Text,
-                    Score = 1.0 / (i + 1),
+                    // 与产品链路一致：融合分是 RRF 量级（1/(k+rank)），分数差很小，
+                    // 这样 JudgeRerank 的乘性调节才有机会改变顺序；用 1/(i+1) 会让重排永远翻不动。
+                    Score = 1.0 / (60 + i + 1),
                     JudgeProbability = null,
                 }
             );

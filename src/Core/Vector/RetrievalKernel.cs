@@ -161,7 +161,13 @@ public sealed class RetrievalKernel(
         if (!useJudge || SystemOne is null)
             return results;
 
-        var outcome = await JudgeRerank.ApplyAsync(SystemOne, request.Query!, results, ct);
+        var outcome = await JudgeRerank.ApplyAsync(
+            SystemOne,
+            request.Query!,
+            results,
+            ct,
+            JudgeRerank.CriteriaFor(request.RankingProfile)
+        );
         if (outcome.Aborted)
             _logger?.LogWarning("SystemOne 判定失败，跳过重排（结果保持原排序）");
         else

@@ -967,6 +967,15 @@ public sealed record SystemOneRerankConfig
     /// <summary>每次检索最多判定的候选数。</summary>
     public int MaxCandidates { get; init; } = 20;
 
+    /// <summary>
+    /// 判定口径：
+    /// <c>relevant</c>（默认）= 该段落与检索意图相关的程度（部分相关也算）；
+    /// <c>answers</c> = 该段落**本身**是否直接回答检索意图（仅提及实体、相邻线索不算）。
+    /// 实测（真实端点，strict/loose 两种 gold）后者在 R@5/AE@5 上稳定更好 ~10pp，故设为默认；
+    /// 联想类查询由 <c>JudgeRerank.CriteriaFor(profile)</c> 按档位改回 relevant。
+    /// </summary>
+    public string Criteria { get; init; } = "answers";
+
     public Dictionary<string, object?> ToDict() =>
         new()
         {
@@ -975,6 +984,7 @@ public sealed record SystemOneRerankConfig
             ["weight"] = Weight,
             ["passage-chars"] = PassageChars,
             ["max-candidates"] = MaxCandidates,
+            ["criteria"] = Criteria,
         };
 
     public static SystemOneRerankConfig FromDict(Dictionary<string, object?> dict)
@@ -987,6 +997,7 @@ public sealed record SystemOneRerankConfig
             Weight = SystemOneConfig.Double(dict, "weight", defaults.Weight),
             PassageChars = SystemOneConfig.Int(dict, "passage-chars", defaults.PassageChars),
             MaxCandidates = SystemOneConfig.Int(dict, "max-candidates", defaults.MaxCandidates),
+            Criteria = SystemOneConfig.Str(dict, "criteria", defaults.Criteria),
         };
     }
 }

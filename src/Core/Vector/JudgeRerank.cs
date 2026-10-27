@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Data;
 using Core.Inference;
 
 namespace Core.Vector;
@@ -24,9 +25,31 @@ public readonly record struct JudgeRerankOutcome(
 /// </summary>
 public static class JudgeRerank
 {
-    private const string YesCriteria =
+    /// <summary>判定口径：相关（默认）。</summary>
+    private const string RelevantYes =
         "该段落含有与检索意图直接相关的具体内容（设定/事件/对白/描写/事实）；部分相关也算。";
-    private const string NoCriteria = "与检索意图无关，或仅有无关紧要的字面词重叠。";
+
+    private const string RelevantNo = "与检索意图无关，或仅有无关紧要的字面词重叠。";
+
+    /// <summary>判定口径：直接回答（仅提及实体不算）。</summary>
+    private const string AnswersYes =
+        "该段落**本身**直接给出了检索意图所需的内容（属性/事实/定义/原话），读完即可回答；只是提到相关实体、或只提供相邻线索不算。";
+
+    private const string AnswersNo =
+        "只是提到相关实体或仅有字面重叠，或给出的是相邻但并非所需的信息。";
+
+    /// <summary>按配置口径取判据文本。</summary>
+    private static (string Yes, string No) Criteria(string mode) =>
+        string.Equals(mode, "answers", StringComparison.OrdinalIgnoreCase)
+            ? (AnswersYes, AnswersNo)
+            : (RelevantYes, RelevantNo);
+
+    /// <summary>
+    /// 按检索档位选判据：一致性检查（找“该实体自己的档案/事实”）用 answers，
+    /// 其余（写作上下文/伏笔联想/偏好召回）用 relevant——联想类查询里“提到即可”本来就是正确的。
+    /// </summary>
+    public static string CriteriaFor(RankingProfile profile) =>
+        profile == RankingProfile.ConsistencyCheck ? "answers" : "relevant";
 
     /// <summary>判定是否适用于当前请求。</summary>
     public static bool Applies(ISystemOneClient? client, RetrievalSearchRequest request) =>
@@ -45,7 +68,8 @@ public static class JudgeRerank
         ISystemOneClient client,
         string query,
         List<RetrievalSearchResult> results,
-        CancellationToken ct
+        CancellationToken ct,
+        string? criteriaOverride = null
     )
     {
         if (results.Count <= 1)
@@ -75,7 +99,7 @@ public static class JudgeRerank
         foreach (var batch in batches)
         {
             var response = await client.AskAsync(
-                BuildState(query, batch),
+                BuildState(query, batch, client.Options.Rerank, criteriaOverride),
                 BuildQuestions(batch),
                 ct
             );
@@ -115,8 +139,14 @@ public static class JudgeRerank
         );
     }
 
-    private static Dictionary<string, object?> BuildState(string query, List<Passage> batch)
+    private static Dictionary<string, object?> BuildState(
+        string query,
+        List<Passage> batch,
+        SystemOneRerankConfig options,
+        string? criteriaOverride
+    )
     {
+        var criteria = Criteria(criteriaOverride ?? options.Criteria);
         var passages = new Dictionary<string, object?>(batch.Count, StringComparer.Ordinal);
         foreach (var passage in batch)
         {
@@ -132,8 +162,8 @@ public static class JudgeRerank
             ["task"] = query,
             ["criteria"] = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["yes"] = YesCriteria,
-                ["no"] = NoCriteria,
+                ["yes"] = criteria.Yes,
+                ["no"] = criteria.No,
             },
             ["passages"] = passages,
         };

@@ -68,6 +68,7 @@ public static class Program
         string? embUrl = null;
         var embKey = "";
         var embModel = "wemm-embedding";
+        var jevCriteria = "relevant";
 
         for (var i = 0; i < args.Length; i++)
             switch (args[i])
@@ -110,6 +111,9 @@ public static class Program
                 case "--jev-weight":
                     jevWeight = double.Parse(args[++i]);
                     break;
+                case "--jev-criteria":
+                    jevCriteria = args[++i];
+                    break;
                 case "--emb-url":
                     embUrl = args[++i];
                     break;
@@ -141,7 +145,8 @@ public static class Program
                     jevModel,
                     MaxStateChars: jevMaxState,
                     MaxCandidates: jevCandidates,
-                    Weight: jevWeight
+                    Weight: jevWeight,
+                    Criteria: jevCriteria
                 );
             var emb = string.IsNullOrWhiteSpace(embUrl)
                 ? null

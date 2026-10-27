@@ -35,7 +35,11 @@
   用 `10.1.44.46:8009` 实测 54 条，F ≈ B（MRR 0.778）但每条 2–9 s，故保持可选、默认关。
   另接入真实 embedding（`--emb-url`）新增 G 纯 dense / H 混合 RRF / I 混合+JEV 三臂：
   G 61%、H 93%（MRR 0.803，最高）、I 91%（4 min 09 s）——JEV 在单小说语料上仍是净负，
-  根因是判定判据（“部分相关也算”）与 strict gold（只认档案）不同；降候选数不改善延迟。回归：`StabilityHarness.Tests` 50/50。
+  根因是判定判据（“部分相关也算”）与 strict gold（只认档案）不同；降候选数不改善延迟。
+- **判定重排判据可配**（`SystemOneRerankConfig.Criteria`，默认 `answers`；`JudgeRerank.CriteriaFor(profile)` 按档位回落：
+  ConsistencyCheck → answers，其余 → relevant）。实测同一端点：strict R@5 80%→91%、AE@5 67%→76%，
+  loose 81%→93% / 52%→61%。并修正评测臂候选分（原用 `1/(i+1)` 导致重排永远翻不动顺序，改为产品一致的 RRF 量级）。
+  结论未变：600M 判定模型整体仍不如不重排（strict 91% vs 94%），JEV 维持默认关。回归：`StabilityHarness.Tests` 50/50、Core 1531/1531。
 - **`edit_entities`：设定面板全字段批量编辑工具**（NovelTools）：一次 tool call 跨小说/分卷/章节细纲/
   角色/组织/地点/情节/场景/道具/关系批量修改字段，字段白名单复用 `Core.Data.EntityFieldRegistry`
   （从 Desktop 下沉，编辑窗与工具同源），补齐 `manage_*` 的 12 处字段缺口（角色 status/tags/abilities/notes、

@@ -87,6 +87,14 @@ public sealed class JudgeRerankTests
     //  适用范围（Applies）
     // ══════════════════════════════════════════════════════
 
+    [Theory]
+    [InlineData(RankingProfile.ConsistencyCheck, "answers")]
+    [InlineData(RankingProfile.WriteContext, "relevant")]
+    [InlineData(RankingProfile.ForeshadowingSearch, "relevant")]
+    [InlineData(RankingProfile.PreferenceRecall, "relevant")]
+    public void CriteriaFor_FollowsRankingProfile(RankingProfile profile, string expected) =>
+        Assert.Equal(expected, JudgeRerank.CriteriaFor(profile));
+
     [Fact]
     public void Applies_NullClient_False() => Assert.False(JudgeRerank.Applies(null, Request()));
 
