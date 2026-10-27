@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DefaultItemExcludes>$(DefaultItemExcludes);Tests\**</DefaultItemExcludes>
@@ -16,4 +17,16 @@
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
   </ItemGroup>
+
+  <!-- jieba.NET 词典资源：检索评测需要分词，与 Core 同款拷贝（NuGet 包内的 Resources/ → 输出目录） -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(JiebaResourceFiles)" DestinationFolder="$(JiebaResourcesDest)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

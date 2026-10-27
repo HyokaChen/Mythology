@@ -19,4 +19,15 @@
   <ItemGroup>
     <ProjectReference Include="..\StabilityHarness.csproj" />
   </ItemGroup>
+  <!-- 评测用 jieba 需要词典资源 -->
+  <Target Name="CopyJiebaResources" AfterTargets="Build">
+    <PropertyGroup>
+      <JiebaResourcesSource>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', 'jieba.net', '0.42.2', 'Resources'))</JiebaResourcesSource>
+      <JiebaResourcesDest>$([MSBuild]::NormalizeDirectory('$(OutputPath)', 'Resources'))</JiebaResourcesDest>
+    </PropertyGroup>
+    <ItemGroup>
+      <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(JiebaResourceFiles)" DestinationFolder="$(JiebaResourcesDest)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

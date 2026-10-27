@@ -409,7 +409,19 @@ UPDATE retrieval_fts_partitions SET lexical_version=$v, chunk_count=$count, rebu
 | `LexicalTextSearchModeTests` | 索引侧用 `CutForSearch`（长词与已知子词同时发出）、AND 车道用 `Cut`（不含子词）、OR 车道用 `CutForSearch` |
 | `NovelLexiconDictionaryContentTests` | 注册后 `WordDictionary` 只新增 UNKNOWN/DROP 的名字（不含 COMPOSED 名字，防回归到「按类型全注册」） |
 
-**golden 口径 A/B（当前语料自带的 27 个真实实体，57 条查询）**：
+**golden 口径 A/B（`StabilityHarness retrieval-eval`，54 条查询，strict / loose）**：
+
+| 口径 | A 基线 | **B 现行** | C 二轮扩展（SAG2 式） |
+|---|---|---|---|
+| R@5 | 74% / 76% | **94% / 96%** | 91% / 94% |
+| AE@5 | 72% / 70% | **98% / 98%** | 98% / 98% |
+| MRR | 0.605 / 0.665 | **0.778 / 0.835** | 0.774 / 0.837 |
+
+二轮词项扩展（首轮 BM25 挖词项 → 二轮 → 交错合并）在本语料上**没有超过**现行方案：
+单小说小语料的首轮已覆盖证据，扩展引入的噪声抵消了收益，故不接入产品链路（SAG2 的收益来自多跳/大语料）。
+详见 `docs/retrieval-golden-set.md` 的可复现性说明。
+
+（早前一次性脚本的 57 条口径数据一并废弃，以上面这张为准。）
 R@5 47% → **95%**、R@10 49% → **98%**、MRR 0.379 → **0.817**、部分名 R@5 17/23 → **23/23**
 （原 40 条 golden 的语料 `22b30e6861e5` 本机不存在，见 `docs/retrieval-golden-set.md` 的可复现性说明）。
 

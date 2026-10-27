@@ -26,6 +26,10 @@
   回归：Core 1522/1522；新增分区隔离、重分词幂等、搜索模式发射、词典归一化等用例。
 
 ### Added
+- **检索评测命令（`StabilityHarness retrieval-eval`）**：gold 从库本身推导（档案文档前缀 → 实体名与档案），
+  对比「基线 / 现行 / 二轮词项扩展」三臂的 R@5、R@10、AE@5、MRR，只读打开库、不碰正式数据。
+  实测（54 条查询）：R@5 74%→94%、AE@5 72%→98%、MRR 0.605→0.778（strict）；
+  SAG2 式二轮扩展在本语料上无收益，未接入产品链路。回归：`StabilityHarness.Tests` 50/50。
 - **`edit_entities`：设定面板全字段批量编辑工具**（NovelTools）：一次 tool call 跨小说/分卷/章节细纲/
   角色/组织/地点/情节/场景/道具/关系批量修改字段，字段白名单复用 `Core.Data.EntityFieldRegistry`
   （从 Desktop 下沉，编辑窗与工具同源），补齐 `manage_*` 的 12 处字段缺口（角色 status/tags/abilities/notes、

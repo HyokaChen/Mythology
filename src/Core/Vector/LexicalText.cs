@@ -138,6 +138,10 @@ public static class LexicalText
             yield return word.Substring(i, len);
     }
 
+    /// <summary>最佳路径分词（不补子词）：基线对照与「查询侧」共用同一套过滤规则。</summary>
+    public static string[] ToBestPathTokens(string text) =>
+        Clean(NovelLexicon.Cut(text, searchMode: false)).Where(t => t.Length >= 2).ToArray();
+
     /// <summary>去标点/空白/停用词，统一小写。</summary>
     private static List<string> Clean(IEnumerable<string> raw)
     {
