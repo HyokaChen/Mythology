@@ -406,6 +406,10 @@ UPDATE retrieval_fts_partitions SET lexical_version=$v, chunk_count=$count, rebu
 | `LexicalTextSearchModeTests` | 索引侧用 `CutForSearch`（长词与已知子词同时发出）、AND 车道用 `Cut`（不含子词）、OR 车道用 `CutForSearch` |
 | `NovelLexiconDictionaryContentTests` | 注册后 `WordDictionary` 只新增 UNKNOWN/DROP 的名字（不含 COMPOSED 名字，防回归到「按类型全注册」） |
 
+**golden 口径 A/B（当前语料自带的 27 个真实实体，57 条查询）**：
+R@5 47% → **95%**、R@10 49% → **98%**、MRR 0.379 → **0.817**、部分名 R@5 17/23 → **23/23**
+（原 40 条 golden 的语料 `22b30e6861e5` 本机不存在，见 `docs/retrieval-golden-set.md` 的可复现性说明）。
+
 真机：`cp ~/.mythology/vectors.db /tmp/` 副本上跑迁移 + 重分词，记录块数/毫秒/库体积；TUI 改角色名观察日志与检索；
 反向对照：改章节正文仍发生一次 embedding。
 
