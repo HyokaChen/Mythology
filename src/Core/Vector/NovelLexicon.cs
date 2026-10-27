@@ -24,7 +24,7 @@ public static class NovelLexicon
     public const int WordFrequency = 100_000;
 
     /// <summary>分词策略版本：改动词频、归一化或发射模式时递增，令旧 tokens 全部失效。</summary>
-    private const string PolicyVersion = "v8|select=entity|emit=entity-subwords|freq=100000";
+    private const string PolicyVersion = "v9|select=entity|emit=long+entity-subwords|freq=100000";
 
     /// <summary>词表是进程全局的，注册与切词共用同一把锁（AddWord 写 Dictionary，Cut 在读）。</summary>
     private static readonly object Gate = new();

@@ -76,9 +76,13 @@ public static class LexicalText
     public static string Quote(string term) => "\"" + term.Replace("\"", "\"\"") + "\"";
 
     /// <summary>
-    /// 切词。搜索模式**只为已注册的实体名补发其子词**（词典里认识的 2/3 字片段），
-    /// 不给正文里的普通长词补——实测后者让 token 膨胀 +9.3% 却没有可测收益，
-    /// 而实体名注册成整词后必须补，否则「体育馆」这类组成词查询会失效。
+    /// 切词。搜索模式下为两类词补发子词（jieba 认识的 2/3 字片段）：
+    /// <list type="bullet">
+    /// <item>**长度 ≥4 的词**：它们会吞掉有意义的组成词——「中国人民大学」整词进索引后，
+    /// 搜「大学」「中国」「人民」「中国人民」全都会落空（实测 A 方案 0~1 块，补发后 4 块）。</item>
+    /// <item>**已注册的实体名**（任意长度）：名字注册成整词后，「体育馆」这类组成词查询同样会失效。</item>
+    /// </list>
+    /// 2–3 字的普通词不补：它们吞掉的信息量极小，补了只增索引（全局补发的实测代价是 9.7% vs 2.2%）。
     /// </summary>
     private static List<string> Tokenize(string text, bool searchMode)
     {
@@ -89,8 +93,8 @@ public static class LexicalText
         if (!searchMode || tokens.Count == 0)
             return tokens;
 
-        var entityTokens = tokens.Where(NovelLexicon.IsRegistered).ToArray();
-        if (entityTokens.Length == 0)
+        var expandable = tokens.Where(t => t.Length >= 4 || NovelLexicon.IsRegistered(t)).ToArray();
+        if (expandable.Length == 0)
             return tokens;
 
         var existing = tokens.ToHashSet(StringComparer.Ordinal);
@@ -98,7 +102,7 @@ public static class LexicalText
         {
             if (existing.Contains(extra))
                 continue;
-            if (entityTokens.Any(name => name.Contains(extra, StringComparison.Ordinal)))
+            if (expandable.Any(word => word.Contains(extra, StringComparison.Ordinal)))
                 tokens.Add(extra);
         }
         return tokens;

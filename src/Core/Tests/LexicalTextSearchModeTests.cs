@@ -32,12 +32,32 @@ public sealed class LexicalTextSearchModeTests
     }
 
     [Fact]
-    public void IndexText_DoesNotExpandOrdinaryLongWords()
+    public void IndexText_ExpandsSubwordsOfLongWords()
     {
         NovelLexicon.Clear();
         try
         {
-            // 未注册的普通长词（体育馆）不补子词：索引 token 更省，查询「体育馆」仍可达
+            // 长词会吞掉组成词：整词进索引后，搜「大学」「中国」「人民」「中国人民」本来都会落空
+            var tokens = Tokens(LexicalText.ToIndexText("他考上了中国人民大学。", "mode-novel"));
+
+            Assert.Contains("中国人民大学", tokens);
+            Assert.Contains("大学", tokens);
+            Assert.Contains("中国", tokens);
+            Assert.Contains("人民", tokens);
+        }
+        finally
+        {
+            NovelLexicon.Clear();
+        }
+    }
+
+    [Fact]
+    public void IndexText_DoesNotExpandShortOrdinaryWords()
+    {
+        NovelLexicon.Clear();
+        try
+        {
+            // 3 字普通词（未注册）不补子词：体育馆保持整词，索引不为此多付成本
             var tokens = Tokens(LexicalText.ToIndexText("他去了体育馆", "mode-novel"));
 
             Assert.Contains("体育馆", tokens);
