@@ -12,7 +12,7 @@
   实体名（角色/组织/地点/道具/情节线/场景）去空格、按标点分段后以 `freq=100_000` 注册——
   2 字名的最大概率路径阈值可达数千（善我 31.9、有我 2318.6），`freq=10` 会被 DAG 否决；
   书名/卷名/章名**不再注册**（描述性短语，实测注册后「转学生」9/9 → 8/9）。
-  `LexicalText` 索引侧改用 `CutForSearch`（长词 + 已知子词，潮音堂书店 → 潮音/书店/潮音堂书店），
+  `LexicalText` 索引侧改用 `CutForSearch`（长词 + 已知子词，潮音堂书店 → 潮音/书店/潮音堂书店；真实语料 token +8.8%、索引体积 +9.5%），
   查询侧 AND 只取最佳路径、OR 含子词。
   `SqliteRetrievalStore` 把单一全局 `retrieval_chunks_fts` 拆成**每部小说一个分区**
   （视图 `chunks_p_*` + external-content FTS `fts_p_*` + `retrieval_fts_partitions` 元数据，
