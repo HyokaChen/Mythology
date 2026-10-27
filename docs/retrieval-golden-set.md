@@ -66,6 +66,27 @@
 | q39 | negative | 火山岩的分类 | — | 应低分/无结果 |
 | q40 | negative | 咖啡豆的烘焙曲线 | — | 应低分/无结果 |
 
+## 本机可复现性说明（2026-10）
+
+原 40 条查询指向 `22b30e6861e5`（《恋爱吧！折花君》）的实体库索引，本机 `~/.mythology/vectors.db`
+里是另一部小说（`2c2410d54e08`，76 块）的索引，gold chunk id 全部不存在。实测：
+40 条里只有 5 条能在当前语料上评估（其余因语料无对应实体而跳过），且这 5 条基线/现行两臂都排第 1 —— **无区分度**。
+
+因此另做了一组「同口径、本机可复现」的评估，用当前语料自带的 27 个真实实体构造 57 条查询
+（fact 全名 / fact 部分名 / relation），gold = 语料中含该实体的文档（fact 排除正文块、relation 只取关系陈述），
+对「基线（默认词典 + `Cut`）」与「现行（注册词典 + 实体 2/3 字片段）」做 A/B：
+
+| 指标 | 基线 | 现行（v9） |
+|---|---|---|
+| R@5 | 47% | **95%** |
+| R@10 | 49% | **98%** |
+| MRR | 0.379 | **0.817** |
+| 部分名 R@5（23 条） | 17/23 | **23/23** |
+
+复现方法（一次性脚本，不落库）：导出 `retrieval_chunks`（chunk_id / document_kind / text）→
+`NovelLexicon.Update(novelId, 实体名)` → 两条臂分别用 `LexicalText.ToIndexText(text, novelId)` 与
+`default(Cut)` 生成 token 集 → BM25 排序 → 统计 gold 的排名。
+
 ## 判定规则
 
 - `fact` / `alias` / `relation` 走 **P 车道**：`ConsistencyCheck` 或 `WriteContext`，不做扩展。
