@@ -10,9 +10,9 @@ namespace Core.Vector;
 ///
 /// 发射模式（实测依据见 docs/lexical-retokenize-plan.md §A0）：
 /// <list type="bullet">
-/// <item>索引侧用 <see cref="JiebaNet.Segmenter.JiebaSegmenter.CutForSearch"/>：实体名作为整词命中，
-/// 同时补发它在词典里的子词（潮音堂书店 → 潮音/书店/潮音堂书店），部分查询不会因为“长词优先”而消失。</item>
-/// <item>查询侧 AND（一致性车道）用最佳路径（<c>Cut</c>）保持精确；OR（召回车道）用搜索模式放宽到子词。</item>
+/// <item>索引侧：长度 ≥4 的词与已注册实体名，除自身外再补发它在 jieba 词典里的 2/3 字片段
+/// （中国人民大学 → +中国/人民/大学；潮音堂书店 → +潮音/书店），避免「长词优先」把组成词吞掉。</item>
+/// <item>查询侧 AND（一致性车道）只取最佳路径保持精确；OR（召回车道）用同一套补子词规则放宽召回。</item>
 /// </list>
 /// 传入 novelId 时使用全局实体词典（<see cref="NovelLexicon"/>）。
 /// </summary>
