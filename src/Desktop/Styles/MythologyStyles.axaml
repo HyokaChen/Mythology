@@ -218,6 +218,17 @@
     <Setter Property="BorderBrush" Value="{DynamicResource BrushOlivePress}" />
   </Style>
 
+  <!-- ── 搜索字段（侧栏工具带） ──
+       侧栏底色是 Bone，而 Adaline 的 Mist hairline 在 Bone 上只有 1.12:1 ——
+       输入框与面板几乎同色，用户看不出这里能输入（截图报障）。按 DESIGN.md 的表面
+       分层（Linen → Bone → Eucalyptus）把它抬高一级：SurfaceGlow 底 + Lichen 描边
+       （Lichen = outlined-border token；Bone 上 1.46:1，是可见的 hairline）。
+       只作用于搜索框：对话框里的输入框仍在 Linen 上，保持原 Mist 细线。 -->
+  <Style Selector="TextBox.Adaline.SearchField">
+    <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+  </Style>
+
   <!-- ── 会话输入框（无边框，仅底部 hairline） ── -->
   <Style Selector="TextBox.PromptBox">
     <Setter Property="Background" Value="Transparent" />

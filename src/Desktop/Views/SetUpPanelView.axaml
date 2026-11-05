@@ -183,7 +183,7 @@
                  字段的左右缘即面板的左右缘，读起来才是一条「搜索栏」。 -->
             <Grid Grid.Row="0" Margin="14,8,14,4">
               <TextBox
-                Classes="Adaline"
+                Classes="Adaline SearchField"
                 HorizontalAlignment="Stretch"
                 Padding="10,4,34,4"
                 PlaceholderText="{Binding Parent.SearchPlaceholder}"

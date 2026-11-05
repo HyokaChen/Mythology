@@ -77,6 +77,13 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **桌面端侧栏搜索框「看不出是输入框」**：`TextBox.Adaline` 是透明底 + `Mist` hairline，
+  而侧栏底板正是 `Bone` —— 两者对比度只有 **1.12:1**（实测渲染帧里边框与面板同色），
+  搜索框退化成一排浅色文字。新增 `TextBox.Adaline.SearchField` 样式（仅挂侧栏工具带那一个
+  搜索框）：底改 `SurfaceGlow`、描边改 `Lichen`（Bone 上 1.46:1；深色调色板下 2.39:1），
+  按 DESIGN.md 的表面分层把输入区抬高一级；对话框输入框仍在 Linen 上，保持原 Mist 细线。
+  验证：Avalonia headless 合成帧前后对比 + 模板元素实际画笔探针（`GlassCard`/`PART_BorderCardLight`
+  均解析到新色）；`Desktop.Tests` 515/515。
 - **中文词法检索 + embedding 模型版本对账**：FTS5 `unicode61` 会把整句中文当成一个 token
   （`眷恋`/`灵魂` 命中 0）。`retrieval_chunks` 新增 jieba 预分词 `tokens` 列，FTS 改为
   `tokens` + `chunk_id UNINDEXED`，旧库启动时自动回填并重建；查询按 profile 用 OR（暗线/写作）
