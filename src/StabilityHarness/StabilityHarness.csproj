@@ -26,6 +26,10 @@
     <ItemGroup>
       <JiebaResourceFiles Include="$(JiebaResourcesSource)*.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(JiebaResourceFiles)" DestinationFolder="$(JiebaResourcesDest)" SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="@(JiebaResourceFiles)"
+      DestinationFolder="$(JiebaResourcesDest)"
+      SkipUnchangedFiles="true"
+    />
   </Target>
 </Project>

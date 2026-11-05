@@ -43,7 +43,10 @@ public sealed class OpenAiEmbeddingClient : IDisposable
         CancellationToken ct = default
     )
     {
-        var missing = texts.Where(t => !_cache.ContainsKey(t)).Distinct(StringComparer.Ordinal).ToList();
+        var missing = texts
+            .Where(t => !_cache.ContainsKey(t))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         for (var i = 0; i < missing.Count; i += _options.BatchSize)
         {
             var batch = missing.Skip(i).Take(_options.BatchSize).ToList();
@@ -52,9 +55,7 @@ public sealed class OpenAiEmbeddingClient : IDisposable
                 .PostAsJsonAsync(
                     url,
                     new RequestBody(_options.Model, batch, "float"),
-                    CancellationTokenSource
-                        .CreateLinkedTokenSource(ct)
-                        .Token
+                    CancellationTokenSource.CreateLinkedTokenSource(ct).Token
                 )
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
@@ -91,7 +92,5 @@ public sealed class OpenAiEmbeddingClient : IDisposable
         [property: JsonPropertyName("data")] List<ResponseItem> Data
     );
 
-    private sealed record ResponseItem(
-        [property: JsonPropertyName("embedding")] float[] Embedding
-    );
+    private sealed record ResponseItem([property: JsonPropertyName("embedding")] float[] Embedding);
 }
