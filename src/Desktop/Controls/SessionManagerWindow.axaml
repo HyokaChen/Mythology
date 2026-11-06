@@ -102,8 +102,12 @@
       </Border>
     </Grid>
 
-    <!-- ═══════ 底部：计数（左，上下文元数据） + 动作（右，唯一 Primary） ═══════ -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+    <!-- ═══════ 底部：计数 + 破坏性动作（左） · 主 CTA 独占右下角（右） ═══════
+         原先 [删除][打开] 相邻、同高同形、间距只有 12px，鼠标奔向右下角时极易滑到删除上
+         （用户报障「老是习惯性点到删除」）。破坏性动作现在贴左边、与主 CTA 隔开整个空白列；
+         主 CTA 独占角落并加宽到 96px（Fitts：角落目标越大越好命中）。
+         删除仍需二次确认（ConfirmDeleteWindow），文案改成「删除所选」明确作用对象。 -->
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
       <TextBlock
         x:Name="CountNote"
         Grid.Column="0"
@@ -113,22 +117,25 @@
         Foreground="{DynamicResource BrushSageMist}"
         VerticalAlignment="Center"
       />
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
-        <Button
-          x:Name="DeleteButton"
-          Classes="Ghost"
-          FontSize="14"
-          Content="删除"
-          IsEnabled="False"
-        />
-        <Button
-          x:Name="OpenButton"
-          Classes="Primary"
-          FontSize="14"
-          Content="打开"
-          IsEnabled="False"
-        />
-      </StackPanel>
+      <Button
+        x:Name="DeleteButton"
+        Grid.Column="1"
+        Classes="Ghost"
+        FontSize="14"
+        Content="删除所选"
+        ToolTip.Tip="删除选中的会话（会二次确认）"
+        VerticalAlignment="Center"
+        IsEnabled="False"
+      />
+      <Button
+        x:Name="OpenButton"
+        Grid.Column="3"
+        Classes="Primary"
+        FontSize="14"
+        Content="打开"
+        MinWidth="96"
+        IsEnabled="False"
+      />
     </Grid>
   </Grid>
 </Window>

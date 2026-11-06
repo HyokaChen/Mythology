@@ -77,6 +77,11 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **会话窗口「删除」紧挨主 CTA，极易误点**：底部动作条原本是 `[删除][打开]` 相邻、同高同形、
+  只隔 12px，且都在右下角——鼠标奔着角落的主按钮去时会滑到删除上（用户报障「老是习惯性点到删除」）。
+  现在计数与**删除所选**贴左侧，主 CTA「打开」独占右下角（实测两者间距 12px → **279px**，
+  主按钮宽度 96px 更好命中）；文案改成「删除所选」明确作用对象，并保留二次确认
+  （`ConfirmDeleteWindow`）。新增 `SessionManagerLayoutTests` 锁几何距离（≥120px / 主 CTA ≥90px）。
 - **所有单行输入的文字都不竖直居中（含 8 个分区共用的侧栏搜索框）**：`.Adaline` 统一把
   `VerticalContentAlignment` 设成 `Top`（那是给多行正文输入用的），于是命令面板、模型切换、
   设置页、新建项目、实体编辑、云登录等**全部单行输入**的文字都贴住上沿。现改为：
