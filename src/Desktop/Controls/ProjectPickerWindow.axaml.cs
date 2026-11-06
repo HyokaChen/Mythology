@@ -209,8 +209,9 @@ public partial class ProjectPickerWindow : Window
     /// <summary>列表是否有内容 → 切换空状态提示（打开按钮可用性由选中项决定）。</summary>
     private void ApplyListState(bool hasNovels)
     {
+        // 卡片始终可见：它的第一行是「新建小说」——没有小说时更需要这个入口
         EmptyNote.IsVisible = !hasNovels;
-        ListCard.IsVisible = hasNovels;
+        ListCard.IsVisible = true;
         NovelList.IsVisible = hasNovels;
         ActiveDirNote.Text =
             $"新建与拉取落到：{Shorten(_workspace.ActiveRoot) ?? _workspace.ActiveRoot}";

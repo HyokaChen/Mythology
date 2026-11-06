@@ -16,23 +16,27 @@ public partial class SessionManagerWindow : Window
     private readonly Func<Task<List<AgentSession>>> _loader;
     private readonly Action<AgentSession> _onOpen;
     private readonly Func<AgentSession, Task> _onDelete;
+    private readonly Action? _onNewSession;
     private readonly string? _currentSessionId;
     private List<AgentSession> _items = [];
 
     /// <summary>
     /// 创建会话管理器。
     /// </summary>
+    /// <param name="onNewSession">列表首行「新建对话」：关闭本窗后立刻开一段新对话。</param>
     /// <param name="currentSessionId">当前会话：列表标「当前」并预选（回车即切回）。</param>
     public SessionManagerWindow(
         Func<Task<List<AgentSession>>> loader,
         Action<AgentSession> onOpen,
         Func<AgentSession, Task> onDelete,
-        string? currentSessionId = null
+        string? currentSessionId = null,
+        Action? onNewSession = null
     )
     {
         _loader = loader;
         _onOpen = onOpen;
         _onDelete = onDelete;
+        _onNewSession = onNewSession;
         _currentSessionId = currentSessionId;
 
         InitializeComponent();
@@ -41,6 +45,7 @@ public partial class SessionManagerWindow : Window
         SessionList.DoubleTapped += (_, _) => OpenSelected();
         OpenButton.Click += (_, _) => OpenSelected();
         DeleteButton.Click += async (_, _) => await DeleteSelectedAsync();
+        NewSessionButton.Click += (_, _) => StartNewSession();
 
         KeyDown += (_, e) =>
         {
@@ -51,6 +56,15 @@ public partial class SessionManagerWindow : Window
         };
 
         _ = LoadAsync();
+    }
+
+    /// <summary>「新建对话」：先关闭本窗，再切到新对话（防模态层叠加，与其他窗口同一时序）。</summary>
+    private void StartNewSession()
+    {
+        if (_onNewSession is not { } onNew)
+            return;
+        Close();
+        onNew();
     }
 
     private void UpdateButtons()
@@ -82,8 +96,9 @@ public partial class SessionManagerWindow : Window
                 .ToList();
             SessionList.ItemsSource = rows;
             CountNote.Text = $"共 {rows.Count} 条";
+            // 列表卡片始终可见：它的第一行是「新建对话」——没有会话时更需要这个入口
             EmptyNote.IsVisible = rows.Count == 0;
-            ListCard.IsVisible = rows.Count > 0;
+            ListCard.IsVisible = true;
             // 预选当前会话：打开按钮即时可用，回车即切回
             var currentIdx = rows.FindIndex(r => r.IsCurrent);
             if (currentIdx >= 0)
@@ -101,7 +116,7 @@ public partial class SessionManagerWindow : Window
             SessionList.ItemsSource = Array.Empty<SessionRow>();
             CountNote.Text = "共 0 条";
             EmptyNote.IsVisible = true;
-            ListCard.IsVisible = false;
+            ListCard.IsVisible = true;
         }
     }
 

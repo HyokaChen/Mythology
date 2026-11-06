@@ -66,87 +66,121 @@
       <!-- 列表区：Card 列表 + 空状态 -->
       <Grid Grid.Row="2">
         <Border x:Name="ListCard" Classes="Card" Padding="0">
-          <ListBox
-            x:Name="NovelList"
-            FontSize="16"
-            Background="Transparent"
-            HorizontalAlignment="Stretch"
-            ItemContainerTheme="{StaticResource AdalineRowContainer}"
-            motion:Motion.Stagger="True"
-          >
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="c:NovelItem">
-                <StackPanel Margin="16,12" Spacing="4">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                    <TextBlock
-                      Grid.Column="0"
-                      Text="{Binding Title}"
-                      FontSize="16"
-                      LineHeight="24"
-                      FontWeight="Medium"
-                      Foreground="{DynamicResource BrushForestInk}"
-                      TextTrimming="CharacterEllipsis"
-                    />
-                    <Border
-                      Grid.Column="1"
-                      Classes="TagPillSolid"
-                      IsVisible="{Binding IsCurrent}"
-                      VerticalAlignment="Center"
-                    >
-                      <TextBlock Classes="Tag" Text="当前" />
-                    </Border>
-                  </Grid>
-                  <TextBlock
-                    FontFamily="{StaticResource FontMono}"
-                    FontSize="11"
-                    LineHeight="16"
-                    Foreground="{DynamicResource BrushSageMist}"
-                    TextTrimming="CharacterEllipsis"
-                  >
-                    <Run Text="{Binding Genre, Mode=OneWay}" />
-                    <Run Text=" · " />
-                    <Run Text="{Binding Chapters, Mode=OneWay}" />
-                    <Run Text=" 章 · 更新 " />
-                    <Run Text="{Binding Date, Mode=OneWay}" />
-                    <Run Text=" · " />
-                    <Run Text="{Binding Directory, Mode=OneWay}" />
-                  </TextBlock>
-                </StackPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </Border>
-        <Border
-          x:Name="EmptyNote"
-          Classes="EmptyNote"
-          IsVisible="False"
-          VerticalAlignment="Top"
-          Margin="0,4,0,0"
-        >
-          <StackPanel Spacing="6">
-            <TextBlock
-              Text="还没有小说"
-              FontSize="18"
-              LineHeight="26"
-              FontWeight="Medium"
-              Foreground="{DynamicResource BrushForestInk}"
-            />
-            <TextBlock
-              Text="已登记的目录里还没有小说。打开电脑上的小说文件夹，里面的小说会自动出现在这里；新建的小说也会落在同一目录。"
-              FontSize="16"
-              LineHeight="24"
-              Foreground="{DynamicResource BrushSageGray}"
-              TextWrapping="Wrap"
-              HorizontalAlignment="Left"
-            />
+          <Grid RowDefinitions="Auto,Auto,*">
+            <!-- 列表首行 = 「新建小说」：与会话弹窗同一模式——
+                 新建入口在列表显眼处，不再只挂在底部动作条。 -->
             <Button
-              x:Name="OpenEmptyFolderButton"
-              Classes="Primary"
-              Content="打开本地文件夹…"
-              HorizontalAlignment="Left"
-              Margin="0,10,0,0"
-            />
-          </StackPanel>
+              x:Name="NewButton"
+              Grid.Row="0"
+              Classes="ListActionRow"
+              ToolTip.Tip="新建一本小说（打开表单）"
+            >
+              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <lucide:LucideIcon
+                  Kind="Plus"
+                  Size="14"
+                  StrokeWidth="2"
+                  Foreground="{DynamicResource BrushSageLeaf}"
+                  VerticalAlignment="Center"
+                />
+                <TextBlock
+                  Text="新建小说"
+                  FontSize="14"
+                  FontWeight="Medium"
+                  Foreground="{DynamicResource BrushForestInk}"
+                  VerticalAlignment="Center"
+                />
+                <TextBlock
+                  Text="书名 / 作者 / 题材"
+                  FontFamily="{StaticResource FontMono}"
+                  FontSize="10"
+                  Foreground="{DynamicResource BrushSageMist}"
+                  VerticalAlignment="Center"
+                />
+              </StackPanel>
+            </Button>
+            <Border Grid.Row="1" Height="1" Background="{DynamicResource BrushMist}" />
+
+            <Panel Grid.Row="2">
+              <ListBox
+                x:Name="NovelList"
+                FontSize="16"
+                Background="Transparent"
+                HorizontalAlignment="Stretch"
+                ItemContainerTheme="{StaticResource AdalineRowContainer}"
+                motion:Motion.Stagger="True"
+              >
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="c:NovelItem">
+                    <StackPanel Margin="16,12" Spacing="4">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <TextBlock
+                          Grid.Column="0"
+                          Text="{Binding Title}"
+                          FontSize="16"
+                          LineHeight="24"
+                          FontWeight="Medium"
+                          Foreground="{DynamicResource BrushForestInk}"
+                          TextTrimming="CharacterEllipsis"
+                        />
+                        <Border
+                          Grid.Column="1"
+                          Classes="TagPillSolid"
+                          IsVisible="{Binding IsCurrent}"
+                          VerticalAlignment="Center"
+                        >
+                          <TextBlock Classes="Tag" Text="当前" />
+                        </Border>
+                      </Grid>
+                      <TextBlock
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="11"
+                        LineHeight="16"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        TextTrimming="CharacterEllipsis"
+                      >
+                        <Run Text="{Binding Genre, Mode=OneWay}" />
+                        <Run Text=" · " />
+                        <Run Text="{Binding Chapters, Mode=OneWay}" />
+                        <Run Text=" 章 · 更新 " />
+                        <Run Text="{Binding Date, Mode=OneWay}" />
+                        <Run Text=" · " />
+                        <Run Text="{Binding Directory, Mode=OneWay}" />
+                      </TextBlock>
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <!-- 空态：没有小说时列表区仍保留首行「新建小说」，文案不再让用户去别处找入口 -->
+              <Border x:Name="EmptyNote" IsVisible="False" Padding="16,12">
+                <StackPanel Spacing="6">
+                  <TextBlock
+                    Text="还没有小说"
+                    FontSize="18"
+                    LineHeight="26"
+                    FontWeight="Medium"
+                    Foreground="{DynamicResource BrushForestInk}"
+                  />
+                  <TextBlock
+                    Text="点上面的「新建小说」开始；打开电脑上的小说文件夹，里面的书也会自动出现在这里。"
+                    FontSize="14"
+                    LineHeight="22"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextWrapping="Wrap"
+                    HorizontalAlignment="Left"
+                  />
+                  <Button
+                    x:Name="OpenEmptyFolderButton"
+                    Classes="Primary"
+                    Content="打开本地文件夹…"
+                    HorizontalAlignment="Left"
+                    Margin="0,10,0,0"
+                  />
+                </StackPanel>
+              </Border>
+            </Panel>
+          </Grid>
         </Border>
       </Grid>
 
@@ -170,8 +204,7 @@
             Content="打开其他目录…"
             ToolTip.Tip="把电脑上的另一个小说目录加入项目列表（不会移动或删除任何文件）"
           />
-          <!-- DESIGN.md：填充 CTA 每屏至多一个 → 新建小说为次级动作（描边），打开保持唯一 Primary -->
-          <Button x:Name="NewButton" Classes="Ghost" FontSize="14" Content="新建小说" />
+          <!-- 「新建小说」已上移到列表首行（与会话弹窗同一模式）：底部只留导航 + 唯一 Primary -->
           <Button
             x:Name="OpenButton"
             Classes="Primary"

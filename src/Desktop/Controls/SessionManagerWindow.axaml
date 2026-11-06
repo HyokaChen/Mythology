@@ -3,6 +3,7 @@
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:c="clr-namespace:Desktop.Controls"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
   xmlns:motion="clr-namespace:Desktop.Styles"
   Title="会话"
   Width="560"
@@ -29,76 +30,110 @@
 
     <!-- ═══════ 列表区：Card 列表 + 空状态提示（叠加） ═══════
          行表面按 DESIGN.md §Code Block Panel：「inner rows separated by 1px dividers」——
-         列表是表，不是一摞卡片：行本身无边框无底色，状态雾与分隔线都由 ListBoxItem 出。 -->
+         列表是表，不是一摞卡片：行本身无边框无底色，状态雾与分隔线都由 ListBoxItem 出。
+         列表第一行是「新建对话」——与 TUI SessionPickerDialog 的「新建会话」同构：
+         新建入口就该在列表里显眼处，而不是只留在窗口外的头部工具条。 -->
     <Grid Grid.Row="1">
       <Border x:Name="ListCard" Classes="Card" Padding="0">
-        <ListBox
-          x:Name="SessionList"
-          FontSize="16"
-          Background="Transparent"
-          HorizontalAlignment="Stretch"
-          ItemContainerTheme="{StaticResource AdalineRowContainer}"
-          motion:Motion.Stagger="True"
-        >
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="c:SessionRow">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="16,12">
-                <StackPanel Grid.Column="0" Spacing="4">
-                  <TextBlock
-                    Text="{Binding Title}"
-                    FontSize="16"
-                    LineHeight="24"
-                    FontWeight="Medium"
-                    Foreground="{DynamicResource BrushForestInk}"
-                    TextTrimming="CharacterEllipsis"
-                  />
-                  <TextBlock
-                    FontFamily="{StaticResource FontMono}"
-                    FontSize="11"
-                    LineHeight="16"
-                    Foreground="{DynamicResource BrushSageMist}"
-                    TextTrimming="CharacterEllipsis"
-                    Text="{Binding Meta}"
-                  />
-                </StackPanel>
-                <!-- 当前标记：实心 Sage Leaf 徽标 + Linen 字（DESIGN.md §Tokens "badge fills"） -->
-                <Border
-                  Grid.Column="1"
-                  Classes="TagPillSolid"
-                  IsVisible="{Binding IsCurrent}"
-                  VerticalAlignment="Center"
-                >
-                  <TextBlock Classes="Tag" Text="当前" />
-                </Border>
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </Border>
-      <Border
-        x:Name="EmptyNote"
-        Classes="EmptyNote"
-        IsVisible="False"
-        VerticalAlignment="Top"
-        Margin="0,4,0,0"
-      >
-        <StackPanel Spacing="6">
-          <TextBlock
-            Text="还没有会话记录"
-            FontSize="18"
-            LineHeight="26"
-            FontWeight="Medium"
-            Foreground="{DynamicResource BrushForestInk}"
-          />
-          <TextBlock
-            Text="在主界面开始一段对话，之后就能从这里切回来。"
-            FontSize="16"
-            LineHeight="24"
-            Foreground="{DynamicResource BrushSageGray}"
-            TextWrapping="Wrap"
-            HorizontalAlignment="Left"
-          />
-        </StackPanel>
+        <Grid RowDefinitions="Auto,Auto,*">
+          <Button
+            x:Name="NewSessionButton"
+            Grid.Row="0"
+            Classes="ListActionRow"
+            ToolTip.Tip="用当前设定开一段新对话"
+          >
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <lucide:LucideIcon
+                Kind="Plus"
+                Size="14"
+                StrokeWidth="2"
+                Foreground="{DynamicResource BrushSageLeaf}"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                Text="新建对话"
+                FontSize="14"
+                FontWeight="Medium"
+                Foreground="{DynamicResource BrushForestInk}"
+                VerticalAlignment="Center"
+              />
+              <TextBlock
+                Text="从当前设定开始"
+                FontFamily="{StaticResource FontMono}"
+                FontSize="10"
+                Foreground="{DynamicResource BrushSageMist}"
+                VerticalAlignment="Center"
+              />
+            </StackPanel>
+          </Button>
+          <Border Grid.Row="1" Height="1" Background="{DynamicResource BrushMist}" />
+
+          <Panel Grid.Row="2">
+            <ListBox
+              x:Name="SessionList"
+              FontSize="16"
+              Background="Transparent"
+              HorizontalAlignment="Stretch"
+              ItemContainerTheme="{StaticResource AdalineRowContainer}"
+              motion:Motion.Stagger="True"
+            >
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="c:SessionRow">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="16,12">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                      <TextBlock
+                        Text="{Binding Title}"
+                        FontSize="16"
+                        LineHeight="24"
+                        FontWeight="Medium"
+                        Foreground="{DynamicResource BrushForestInk}"
+                        TextTrimming="CharacterEllipsis"
+                      />
+                      <TextBlock
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="11"
+                        LineHeight="16"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        TextTrimming="CharacterEllipsis"
+                        Text="{Binding Meta}"
+                      />
+                    </StackPanel>
+                    <!-- 当前标记：实心 Sage Leaf 徽标 + Linen 字（DESIGN.md §Tokens "badge fills"） -->
+                    <Border
+                      Grid.Column="1"
+                      Classes="TagPillSolid"
+                      IsVisible="{Binding IsCurrent}"
+                      VerticalAlignment="Center"
+                    >
+                      <TextBlock Classes="Tag" Text="当前" />
+                    </Border>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- 空态：没有会话时列表区仍然保留「新建对话」这一行，空态文案不再指导用户去主界面 -->
+            <Border x:Name="EmptyNote" IsVisible="False" Padding="16,12">
+              <StackPanel Spacing="6">
+                <TextBlock
+                  Text="还没有会话记录"
+                  FontSize="18"
+                  LineHeight="26"
+                  FontWeight="Medium"
+                  Foreground="{DynamicResource BrushForestInk}"
+                />
+                <TextBlock
+                  Text="点上面的「新建对话」就能开始写；主界面里的对话也会出现在这里。"
+                  FontSize="14"
+                  LineHeight="22"
+                  Foreground="{DynamicResource BrushSageGray}"
+                  TextWrapping="Wrap"
+                  HorizontalAlignment="Left"
+                />
+              </StackPanel>
+            </Border>
+          </Panel>
+        </Grid>
       </Border>
     </Grid>
 

@@ -1724,7 +1724,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 RefreshRecentConversations();
             },
             onDelete: async session => await DeleteSessionAsync(session),
-            currentSessionId: ActiveConversationVm?.CurrentConversationId // 「当前」标记 + 预选
+            currentSessionId: ActiveConversationVm?.CurrentConversationId, // 「当前」标记 + 预选
+            onNewSession: NewConversation // 列表首行「新建对话」：关窗后开新对话
         );
         window.ShowDialog(owner);
     }

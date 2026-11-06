@@ -188,6 +188,25 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
 
+  <!-- ── 列表首行动作（「新建对话」）：形如列表行——整宽、无边框、无圆角、hover 薄雾 ──
+       放在 Card 内的第一行，读起来就是列表的第一项（与 TUI SessionPickerDialog 的
+       「新建会话」同构）；行高与 ListBox 行一致（16,12 内边距 + 14px 正文）。 -->
+  <Style Selector="Button.ListActionRow">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.ListActionRow:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  </Style>
+  <Style Selector="Button.ListActionRow:focus-visible">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  </Style>
+
   <!-- ── 输入框（透明底 · hairline Mist 边框 · 焦点 Forest Ink） ── -->
   <Style Selector="TextBox.Adaline">
     <Setter Property="Background" Value="Transparent" />

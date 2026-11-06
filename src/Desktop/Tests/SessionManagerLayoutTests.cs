@@ -79,4 +79,102 @@ public sealed class SessionManagerLayoutTests
             );
         });
     }
+
+    /// <summary>
+    /// 列表首行 = 「新建对话」：位于 ListBox 之上、在可见区域内，点击即回调并关窗。
+    /// 用户诉求：新建入口要在列表里显眼处，不能只留在窗口外的头部工具条。
+    /// </summary>
+    [Fact]
+    public void NewSession_Row_Sits_Above_List_And_Invokes_Callback()
+    {
+        Ui.Run(() =>
+        {
+            var calls = 0;
+            var window = new SessionManagerWindow(
+                loader: () =>
+                    Task.FromResult(
+                        new List<AgentSession>
+                        {
+                            new() { Id = "s1", Title = "第一条会话" },
+                        }
+                    ),
+                onOpen: _ => { },
+                onDelete: _ => Task.CompletedTask,
+                currentSessionId: "s1",
+                onNewSession: () => calls++
+            );
+            window.Show();
+            Pump(window);
+
+            var newRow = window.FindControl<Button>("NewSessionButton");
+            var list = window.GetVisualDescendants().OfType<ListBox>().FirstOrDefault();
+            Assert.NotNull(newRow);
+            Assert.NotNull(list);
+            Assert.True(newRow!.IsEffectivelyVisible, "「新建对话」行不可见");
+            Assert.Contains("新建对话", Texts(newRow), StringComparison.Ordinal);
+
+            var rowPos = newRow.TranslatePoint(new Point(0, 0), window);
+            var listPos = list!.TranslatePoint(new Point(0, 0), window);
+            Assert.NotNull(rowPos);
+            Assert.NotNull(listPos);
+            Assert.True(
+                rowPos!.Value.Y < listPos!.Value.Y,
+                $"「新建对话」应在列表之上（rowY={rowPos.Value.Y:F0}, listY={listPos.Value.Y:F0}）"
+            );
+
+            newRow.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(1, calls);
+
+            // Close() 之后还有退场动画帧：泵到窗口真正不可见
+            for (var i = 0; i < 40 && window.IsVisible; i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                Thread.Sleep(10);
+            }
+            Assert.False(window.IsVisible, "点「新建对话」后应先关闭本窗再开新对话");
+        });
+    }
+
+    /// <summary>没有会话时列表卡片仍保留「新建对话」入口（空态文案指向它）。</summary>
+    [Fact]
+    public void Empty_List_Still_Shows_NewSession_Row()
+    {
+        Ui.Run(() =>
+        {
+            var window = new SessionManagerWindow(
+                loader: () => Task.FromResult(new List<AgentSession>()),
+                onOpen: _ => { },
+                onDelete: _ => Task.CompletedTask,
+                onNewSession: () => { }
+            );
+            window.Show();
+            Pump(window);
+
+            var newRow = window.FindControl<Button>("NewSessionButton");
+            var empty = window
+                .GetVisualDescendants()
+                .OfType<Border>()
+                .FirstOrDefault(b => b.Name == "EmptyNote");
+            Assert.NotNull(newRow);
+            Assert.True(newRow!.IsEffectivelyVisible, "空列表时「新建对话」必须仍可见");
+            Assert.NotNull(empty);
+            Assert.True(empty!.IsVisible, "空列表应显示空态提示");
+        });
+    }
+
+    private static void Pump(Window window)
+    {
+        for (var i = 0; i < 20; i++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(10);
+        }
+    }
+
+    private static string Texts(Control root) =>
+        string.Join(
+            "\n",
+            root.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "")
+        );
 }

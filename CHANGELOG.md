@@ -77,6 +77,14 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **弹窗里「新建」入口只在窗口外**：会话弹窗原先只有主界面头部工具条能新开对话，弹窗内无处可点；
+  书房弹窗则把「新建小说」压在底部动作条里。两个弹窗统一为**列表首行**模式（对齐 TUI
+  `SessionPickerDialog` 的「新建会话」）：卡片第一行 = `＋ 新建对话` / `＋ 新建小说`，
+  与数据行同一套分隔线与 hover 薄雾（新增 `Button.ListActionRow`），点击即关窗并执行。
+  空列表时卡片仍保留该行（此前 `ListCard.IsVisible = rows.Count > 0` 会连入口一起藏掉），
+  空态文案改为指向这一行。书房底部因此去掉重复的「新建小说」，只留导航 + 唯一 Primary。
+  回归：新增 `ProjectPickerLayoutTests` + `SessionManagerLayoutTests` 两个用例组
+  （首行位于列表之上、空列表仍可见、空态不与首行重叠、点击回调恰一次并关窗）。
 - **大纲树横向溢出、右侧被截**：行内「标题 + Meta」原本是横向 `StackPanel`——它按**无限宽度**
   量标题，`TextTrimming` 永远不触发，长章节名把行撑到 435px（面板只有 359px），
   于是出现横向滚动条、`草稿` 等右侧内容被切掉。改为 `* / Auto` 两列网格 +
