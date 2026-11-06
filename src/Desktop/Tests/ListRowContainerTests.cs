@@ -73,7 +73,11 @@ public sealed class ListRowContainerTests
             window.Show();
 
             // LoadAsync 是 fire-and-forget：泵几轮直到行容器出现
-            for (var i = 0; i < 20 && !window.GetVisualDescendants().OfType<ListBoxItem>().Any(); i++)
+            for (
+                var i = 0;
+                i < 20 && !window.GetVisualDescendants().OfType<ListBoxItem>().Any();
+                i++
+            )
             {
                 Dispatcher.UIThread.RunJobs();
                 Thread.Sleep(10);
