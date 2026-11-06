@@ -102,9 +102,9 @@ public sealed class SetUpPanelChapterTimelineTests : IDisposable
         Assert.False(chapterNode.IsDraft);
         Assert.True(chapterNode.IsPublished);
 
-        // 时间线 Markdown（实体「历史 / 时间线」窗口数据源）= EntityLogFormatter 表格
+        // 变更记录 Markdown（实体「变更记录」窗口数据源）= EntityLogFormatter 表格
         var markdown = await vm.BuildAuditMarkdownAsync(EntityType.Character, "char1");
-        Assert.Contains("时间线", markdown);
+        Assert.Contains("变更记录", markdown);
     }
 
     private async Task SeedAsync()

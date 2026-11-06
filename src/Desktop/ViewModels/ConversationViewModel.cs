@@ -966,13 +966,16 @@ public sealed class ConversationViewModel : ViewModelBase
     private static LucideIconKind IconForEntityType(EntityType? type) =>
         type switch
         {
+            EntityType.Novel => LucideIconKind.BookOpen,
+            EntityType.Volume => LucideIconKind.Folder,
+            EntityType.Chapter => LucideIconKind.FileText,
             EntityType.Character => LucideIconKind.Users,
             EntityType.Faction => LucideIconKind.Building,
             EntityType.Location => LucideIconKind.MapPin,
             EntityType.Plotline => LucideIconKind.GitBranch,
+            EntityType.Scene => LucideIconKind.Theater,
             EntityType.Item => LucideIconKind.Package,
             EntityType.Relationship => LucideIconKind.Link2,
-            EntityType.Chapter => LucideIconKind.FileText,
             _ => LucideIconKind.FileText,
         };
 
@@ -988,6 +991,19 @@ public sealed class ConversationViewModel : ViewModelBase
 
         switch (type)
         {
+            case EntityType.Novel:
+            {
+                var novel = await _store.GetNovel(novelId);
+                return novel is null ? [] : [(novel.Title, novel.Id)];
+            }
+            case EntityType.Volume:
+                // 卷名可能是空串（只填了序号）→ 用「第N卷」作为引用名，与大纲行一致
+                return
+                [
+                    .. (await _store.GetVolumes(novelId)).Select(v =>
+                        (string.IsNullOrWhiteSpace(v.Name) ? $"第{v.Order}卷" : v.Name, v.Id)
+                    ),
+                ];
             case EntityType.Character:
                 return [.. (await _store.GetCharacters(novelId)).Select(c => (c.Name, c.Id))];
             case EntityType.Faction:
@@ -996,6 +1012,8 @@ public sealed class ConversationViewModel : ViewModelBase
                 return [.. (await _store.GetLocations(novelId)).Select(l => (l.Name, l.Id))];
             case EntityType.Plotline:
                 return [.. (await _store.GetPlotlines(novelId)).Select(p => (p.Name, p.Id))];
+            case EntityType.Scene:
+                return [.. (await _store.GetScenesByNovel(novelId)).Select(s => (s.Title, s.Id))];
             case EntityType.Item:
                 return [.. (await _store.GetItems(novelId)).Select(i => (i.Name, i.Id))];
             case EntityType.Relationship:
@@ -1005,7 +1023,7 @@ public sealed class ConversationViewModel : ViewModelBase
                     c => c.Id,
                     c => c.Name
                 );
-                // 关系引用名刻意不含空格（面板展示用「 ↔ 」）：名册必须能被 InlineRegex 整体匹配
+                // 关系引用名刻意不含空格（面板展示用「 ↔ 」）：名册必须能被整体匹配
                 return
                 [
                     .. relationships.Select(r =>
@@ -1017,7 +1035,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 ];
             }
             case EntityType.Chapter:
-                // 章节引用名 = 标题（不带「序. 」前缀）：名称含空格会截断内联正则
+                // 章节引用名 = 标题（不带「序. 」前缀）；名称可含空格，由最长匹配处理
                 return [.. (await _store.GetChapters(novelId)).Select(c => (c.Title, c.Id))];
             default:
                 return [];
@@ -1025,7 +1043,8 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 发送前把 `#类型:名称` 内联为 `类型[ID:xxx]:名称`（对齐 TUI TuiApp.Input.cs InlineEntityReferences）。
+    /// 发送前把 `#类型:名称` 内联为 `类型[ID:xxx]:名称`。
+    /// 名称可含空格（章节标题 / 卷名），按「最长且词边界结束」匹配；
     /// 未知类型/名称查不到 → 原样保留；任何异常 → 返回原文，绝不吞掉用户输入。
     /// </summary>
     public async Task<string> InlineEntityReferencesAsync(string text)
@@ -1035,39 +1054,43 @@ public sealed class ConversationViewModel : ViewModelBase
 
         try
         {
-            var matches = EntityRefParser.InlineRegex().Matches(text);
+            var matches = EntityRefParser.StartRegex().Matches(text);
             if (matches.Count == 0)
                 return text;
 
-            // key = "类型显示名\u0000名称"（值可为 null：已查过但未命中，避免重复读存储）
-            var idByName = new Dictionary<string, string?>(StringComparer.Ordinal);
+            var refsByType = new Dictionary<EntityType, List<(string Name, string Id)>>();
             var sb = new System.Text.StringBuilder(text.Length + 32);
             var last = 0;
             foreach (System.Text.RegularExpressions.Match match in matches)
             {
+                if (match.Index < last)
+                    continue; // 已落在上一个引用名称内部
                 var display = match.Groups[1].Value;
-                var name = match.Groups[2].Value;
                 var type = EntityRefParser.ToEntityType(display);
                 if (type is null)
                     continue;
 
-                var key = display + "\u0000" + name;
-                if (!idByName.TryGetValue(key, out var id))
+                var nameStart = match.Index + match.Length;
+                if (nameStart >= text.Length)
+                    continue;
+
+                if (!refsByType.TryGetValue(type.Value, out var refs))
                 {
-                    var refs = await LoadEntityRefsAsync(type.Value);
-                    id = refs.Where(r => r.Name == name).Select(r => r.Id).FirstOrDefault();
-                    idByName[key] = id;
+                    refs = await LoadEntityRefsAsync(type.Value);
+                    refsByType[type.Value] = refs;
                 }
-                if (id is null)
+
+                var hit = EntityReferenceMatcher.MatchLongest(text, nameStart, refs);
+                if (hit is null)
                     continue;
 
                 sb.Append(text, last, match.Index - last)
                     .Append(display)
                     .Append("[ID:")
-                    .Append(id)
+                    .Append(hit.Value.Id)
                     .Append("]:")
-                    .Append(name);
-                last = match.Index + match.Length;
+                    .Append(hit.Value.Name);
+                last = nameStart + hit.Value.Name.Length;
             }
 
             if (last == 0)

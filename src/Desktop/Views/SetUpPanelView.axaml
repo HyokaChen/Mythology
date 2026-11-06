@@ -114,7 +114,7 @@
                     <lucide:LucideIcon Kind="Link2" Size="14" StrokeWidth="1.8" />
                   </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="历史" Click="EntityHistory_OnClick">
+                <MenuItem Header="变更记录" Click="EntityHistory_OnClick">
                   <MenuItem.Icon>
                     <lucide:LucideIcon Kind="Clock3" Size="14" StrokeWidth="1.8" />
                   </MenuItem.Icon>
@@ -602,6 +602,20 @@
                                   <lucide:LucideIcon Kind="BookOpen" Size="14" StrokeWidth="1.8" />
                                 </MenuItem.Icon>
                               </MenuItem>
+                              <!-- 插入 # 引用（书 / 卷 / 章；未分卷组头与分页行不可引用） -->
+                              <MenuItem
+                                Header="插入引用"
+                                Click="OutlineInsertReference_OnClick"
+                                IsVisible="{Binding CanInsertReference}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon
+                                    Kind="CornerDownLeft"
+                                    Size="14"
+                                    StrokeWidth="1.8"
+                                  />
+                                </MenuItem.Icon>
+                              </MenuItem>
                               <!-- 发布 / 撤回（章专属；按草稿/发布两态由 code-behind 显隐，Tag 标记） -->
                               <MenuItem
                                 Header="发布"
@@ -623,9 +637,9 @@
                                   <lucide:LucideIcon Kind="Undo2" Size="14" StrokeWidth="1.8" />
                                 </MenuItem.Icon>
                               </MenuItem>
-                              <!-- 时间线（书 / 卷 / 章）：状态变化 + 本体动作 + 旧字段审计 -->
+                              <!-- 变更记录（书 / 卷 / 章）：状态变化 + 本体动作 + 旧字段审计 -->
                               <MenuItem
-                                Header="时间线"
+                                Header="变更记录"
                                 Click="OutlineTimeline_OnClick"
                                 IsVisible="{Binding IsChapter}"
                               >
@@ -653,9 +667,9 @@
                                   <lucide:LucideIcon Kind="Search" Size="14" StrokeWidth="1.8" />
                                 </MenuItem.Icon>
                               </MenuItem>
-                              <!-- 书 / 卷的时间线（章的时间线在细纲项之后） -->
+                              <!-- 书 / 卷的变更记录（章的变更记录在内容项之后） -->
                               <MenuItem
-                                Header="时间线"
+                                Header="变更记录"
                                 Click="OutlineTimeline_OnClick"
                                 IsVisible="{Binding IsNovel}"
                               >
@@ -664,7 +678,7 @@
                                 </MenuItem.Icon>
                               </MenuItem>
                               <MenuItem
-                                Header="时间线"
+                                Header="变更记录"
                                 Click="OutlineTimeline_OnClick"
                                 IsVisible="{Binding IsVolume}"
                               >

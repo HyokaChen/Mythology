@@ -1649,6 +1649,60 @@ public sealed class SetUpPanelLayoutTests
                 .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(panel)!;
 
+    [Fact]
+    public async Task EntityRefRegistry_ExposesAllReferenceableTabTypes()
+    {
+        var store = new FakeStore
+        {
+            Novel = new Novel
+            {
+                Id = "n1",
+                NovelId = "n1",
+                Title = "结构操作",
+            },
+        };
+        store.Volumes.Add(
+            new Volume
+            {
+                Id = "v1",
+                NovelId = "n1",
+                Name = "卷一 风起",
+                Order = 1,
+            }
+        );
+        store.Chapters.Add(
+            new Chapter
+            {
+                Id = "c1",
+                NovelId = "n1",
+                Title = "雨夜 寄北",
+                Order = 1,
+            }
+        );
+        store.Scenes.Add(
+            new SceneDefinition
+            {
+                Id = "s1",
+                NovelId = "n1",
+                Title = "初遇 在雨里",
+                Order = 1,
+            }
+        );
+
+        var panel = new SetUpPanel(store, PanelThemes.Dark);
+        panel.CurrentNovelId = "n1";
+        await panel.RefreshAsync("n1");
+
+        Assert.Contains("结构操作", panel.GetEntityNamesByType(EntityType.Novel));
+        Assert.Contains("卷一 风起", panel.GetEntityNamesByType(EntityType.Volume));
+        Assert.Contains("雨夜 寄北", panel.GetEntityNamesByType(EntityType.Chapter));
+        Assert.Contains("初遇 在雨里", panel.GetEntityNamesByType(EntityType.Scene));
+        Assert.Equal("v1", panel.TryResolveEntityId(EntityType.Volume, "卷一 风起"));
+        Assert.Equal("c1", panel.TryResolveEntityId(EntityType.Chapter, "雨夜 寄北"));
+        Assert.Equal("s1", panel.TryResolveEntityId(EntityType.Scene, "初遇 在雨里"));
+        Assert.Equal("n1", panel.TryResolveEntityId(EntityType.Novel, "结构操作"));
+    }
+
     /// <summary>大纲夹具：1 卷 + 1 卷内章 + 1 未分卷章；返回已刷新并排版的面板。</summary>
     private static async Task<(FakeStore Store, SetUpPanel Panel)> ArrangeOutlineFixtureAsync()
     {
@@ -1805,21 +1859,48 @@ public sealed class SetUpPanelLayoutTests
         Assert.NotNull(chapter);
         Assert.Equal(["⋯"], NodeActionLabels(chapter!));
 
-        // ⋯ 菜单按层级收敛：书 / 卷 = 时间线 · 详情 · 删除；章 = 时间线 · 发布|撤回 · 详情 · 内容 · 删除
+        // ⋯ 菜单按层级收敛：书 / 卷 = 详情·插入引用·变更记录·删除；
+        // 章 = 详情·内容·插入引用·变更记录·发布|撤回·删除
         // （书/卷的「🔍 检查」入口按用户要求移除——设定检查改由工具带等处以书级动作进入）
         Assert.Equal(
-            ["🧾 时间线", "📄 详情", "❌ 删除"],
+            ["📄 详情", "📋 插入引用", "🧾 变更记录", "❌ 删除"],
             RowMenuLabels(panel, (OutlineRow)novel.Data!)
         );
 
         var volumeMenu = RowMenuLabels(panel, (OutlineRow)volume.Data!);
-        Assert.Equal(["🧾 时间线", "📄 详情", "❌ 删除"], volumeMenu);
+        Assert.Equal(["📄 详情", "📋 插入引用", "🧾 变更记录", "❌ 删除"], volumeMenu);
 
         var chapterRow = (OutlineRow)chapter!.Data!;
         // 草稿章：可发布；已发布章才给「撤回」（见 OutlineTree_PublishMenu_FollowsChapterStatus）
         Assert.Equal(
-            ["🧾 时间线", "📤 发布", "📄 详情", "📖 内容", "❌ 删除"],
+            ["📄 详情", "📖 内容", "📋 插入引用", "🧾 变更记录", "📤 发布", "❌ 删除"],
             RowMenuLabels(panel, chapterRow)
+        );
+    }
+
+    /// <summary>书 / 卷 / 章的「插入引用」都指向正确实体与原始名称（不含序号前缀）。</summary>
+    [Fact]
+    public async Task OutlineTree_InsertReferenceMenu_RaisesEntityClickForEachLevel()
+    {
+        var (_, panel) = await ArrangeOutlineFixtureAsync();
+        var refs = new List<(EntityType Type, string Name)>();
+        panel.OnEntityClicked += (type, name) => refs.Add((type, name));
+
+        var novel = NovelNode(panel);
+        var volume = novel.Children.Single(n => IsVolumeNode(n));
+        var chapter = FindNode(novel, "雨夜寄北")!;
+
+        InvokeRowMenuItem(panel, (OutlineRow)novel.Data!, "插入引用");
+        InvokeRowMenuItem(panel, (OutlineRow)volume.Data!, "插入引用");
+        InvokeRowMenuItem(panel, (OutlineRow)chapter.Data!, "插入引用");
+
+        Assert.Equal(
+            [
+                (EntityType.Novel, "结构操作"),
+                (EntityType.Volume, "风起"),
+                (EntityType.Chapter, "雨夜寄北"),
+            ],
+            refs
         );
     }
 
@@ -1853,7 +1934,7 @@ public sealed class SetUpPanelLayoutTests
     /// <summary>
     /// 章行状态动作随发布状态切换：草稿给「📤 发布」、已发布给「↩️ 撤回」，
     /// 两者都只经宿主事件（发布/撤回事务由 TuiApp 调 ChapterLifecycleService）；
-    /// 时间线入口按层级指向对应实体（小说/卷/章都可查看本体时间线）。
+    /// 变更记录入口按层级指向对应实体（小说/卷/章都可查看本体变更记录）。
     /// </summary>
     [Fact]
     public async Task OutlineTree_PublishMenu_FollowsChapterStatus_AndRaisesHostEvents()
@@ -1890,9 +1971,9 @@ public sealed class SetUpPanelLayoutTests
         InvokeRowMenuItem(panel, publishedRow, "撤回");
         Assert.Equal(["ch1"], unpublished);
 
-        // 时间线入口：章行 → 章实体；小说行 → 小说实体
-        InvokeRowMenuItem(panel, publishedRow, "时间线");
-        InvokeRowMenuItem(panel, (OutlineRow)NovelNode(panel).Data!, "时间线");
+        // 变更记录入口：章行 → 章实体；小说行 → 小说实体
+        InvokeRowMenuItem(panel, publishedRow, "变更记录");
+        InvokeRowMenuItem(panel, (OutlineRow)NovelNode(panel).Data!, "变更记录");
         Assert.Contains((EntityType.Chapter, "ch1"), timelines);
         Assert.Contains((EntityType.Novel, "n1"), timelines);
     }

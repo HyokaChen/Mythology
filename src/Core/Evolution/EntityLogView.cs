@@ -310,16 +310,16 @@ public sealed class EntityLogView
     ) => names.TryGetValue((type, id), out var name) ? name : fallback;
 }
 
-/// <summary>实体时间线的 Markdown 表格渲染。</summary>
+/// <summary>实体变更记录（状态变化 + 本体动作 + 旧字段审计）的 Markdown 表格渲染。</summary>
 public static class EntityLogFormatter
 {
     public static string ToMarkdown(string entityName, IReadOnlyList<EntityLogEntry> entries)
     {
         if (entries.Count == 0)
-            return $"「{entityName}」暂无时间线记录。";
+            return $"「{entityName}」暂无变更记录。";
 
         var text = new System.Text.StringBuilder();
-        text.AppendLine($"## 「{entityName}」时间线");
+        text.AppendLine($"## 「{entityName}」变更记录");
         text.AppendLine();
         text.AppendLine("| 章 | 时间/地点 | 情节线 | 变化 | 原因/在场 | 来源 | 状态 |");
         text.AppendLine("|---|---|---|---|---|---|---|");

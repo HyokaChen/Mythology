@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Core.Data;
 using Core.Shared;
 using LlmTornado.Code;
 using Tui.Controls;
@@ -154,37 +155,62 @@ public sealed partial class TuiApp
             );
     }
 
-    /// <summary>实体引用正则表达式。</summary>
-    [GeneratedRegex(@"#([\p{L}]+):([^\s\]\)]+)")]
-    private static partial Regex EntityRefRegex();
+    /// <summary>引用起始（`#类型:`）；名称由 <see cref="EntityReferenceMatcher"/> 匹配（可含空格）。</summary>
+    [GeneratedRegex(@"#([\p{L}]+):")]
+    private static partial Regex EntityRefStartRegex();
 
     /// <summary>
-    /// 将实体引用内联到文本中。
-    /// 将 #类型:名称 格式转换为包含实体 ID 的格式。
+    /// 将实体引用内联到文本中：`#类型:名称` → `类型[ID:xxx]:名称`。
+    /// 名称按「最长且词边界结束」匹配，章节标题 / 卷名里的空格不会截断。
+    /// 未知类型 / 名称查不到时保留原文。
     /// </summary>
     /// <param name="text">原始文本。</param>
     /// <returns>处理后的文本。</returns>
     private string InlineEntityReferences(string text)
     {
-        return EntityRefRegex()
-            .Replace(
-                text,
-                m =>
-                {
-                    var typeDisplay = m.Groups[1].Value;
-                    // 将显示名（如"角色"）映射为内部实体类型键
-                    var entityName = m.Groups[2].Value;
-                    var typeKey = EntityDisplayHelper.ToEntityType(typeDisplay);
-                    if (typeKey is null)
-                        return m.Value;
-                    // 通过 SetUpPanel 解析实体名称为 ID
-                    var entityId = _setUpPanel.TryResolveEntityId(typeKey.Value, entityName);
-                    // 无法解析时保留原始引用文本；解析成功则内联 ID
-                    return entityId is null
-                        ? m.Value
-                        : $"{typeDisplay}[ID:{entityId}]:{entityName}";
-                }
-            );
+        var matches = EntityRefStartRegex().Matches(text);
+        if (matches.Count == 0)
+            return text;
+
+        var refsByType = new Dictionary<EntityType, IReadOnlyList<(string Name, string Id)>>();
+        var sb = new System.Text.StringBuilder(text.Length + 32);
+        var last = 0;
+        foreach (Match match in matches)
+        {
+            if (match.Index < last)
+                continue; // 已落在上一个引用名称内部
+            var typeDisplay = match.Groups[1].Value;
+            var typeKey = EntityDisplayHelper.ToEntityType(typeDisplay);
+            if (typeKey is null)
+                continue;
+
+            var nameStart = match.Index + match.Length;
+            if (nameStart >= text.Length)
+                continue;
+
+            if (!refsByType.TryGetValue(typeKey.Value, out var refs))
+            {
+                refs = _setUpPanel.GetEntityRefsByType(typeKey.Value);
+                refsByType[typeKey.Value] = refs;
+            }
+
+            var hit = EntityReferenceMatcher.MatchLongest(text, nameStart, refs);
+            if (hit is null)
+                continue;
+
+            sb.Append(text, last, match.Index - last)
+                .Append(typeDisplay)
+                .Append("[ID:")
+                .Append(hit.Value.Id)
+                .Append("]:")
+                .Append(hit.Value.Name);
+            last = nameStart + hit.Value.Name.Length;
+        }
+
+        if (last == 0)
+            return text;
+        sb.Append(text, last, text.Length - last);
+        return sb.ToString();
     }
 
     /// <summary>路径正则表达式。</summary>

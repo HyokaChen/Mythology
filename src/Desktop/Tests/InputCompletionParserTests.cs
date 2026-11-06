@@ -117,37 +117,50 @@ public sealed class InputCompletionParserTests
     }
 
     [Fact]
-    public void InlineRegex_MatchesTypeNamePairs()
+    public void StartRegex_MatchesTypePrefixes()
     {
         var types = EntityRefParser
-            .InlineRegex()
+            .StartRegex()
             .Matches("见 #角色:张三 与 #地点:凌霄峰")
             .Cast<System.Text.RegularExpressions.Match>()
             .Select(m => m.Groups[1].Value)
             .ToArray();
 
         Assert.Equal(["角色", "地点"], types);
-        Assert.Empty(EntityRefParser.InlineRegex().Matches("#123"));
+        Assert.Empty(EntityRefParser.StartRegex().Matches("#123"));
     }
 
     [Fact]
-    public void DisplayTypes_AreSevenTypesInTuiOrder()
+    public void DisplayTypes_AreAllReferenceableTabTypes()
     {
         Assert.Equal(
-            ["角色", "组织", "地点", "情节", "道具", "关系", "大纲"],
+            ["角色", "组织", "地点", "情节", "场景", "道具", "关系", "章节", "分卷", "小说"],
             EntityRefParser.DisplayTypes
         );
     }
 
     [Fact]
-    public void ToEntityType_MapsAllSevenDisplayTypes()
+    public void ToEntityType_MapsAllDisplayTypesAndLegacyAlias()
     {
         Assert.Equal(EntityType.Character, EntityRefParser.ToEntityType("角色"));
         Assert.Equal(EntityType.Faction, EntityRefParser.ToEntityType("组织"));
         Assert.Equal(EntityType.Location, EntityRefParser.ToEntityType("地点"));
         Assert.Equal(EntityType.Plotline, EntityRefParser.ToEntityType("情节"));
+        Assert.Equal(EntityType.Scene, EntityRefParser.ToEntityType("场景"));
         Assert.Equal(EntityType.Item, EntityRefParser.ToEntityType("道具"));
         Assert.Equal(EntityType.Relationship, EntityRefParser.ToEntityType("关系"));
+        Assert.Equal(EntityType.Chapter, EntityRefParser.ToEntityType("章节"));
         Assert.Equal(EntityType.Chapter, EntityRefParser.ToEntityType("大纲"));
+        Assert.Equal(EntityType.Volume, EntityRefParser.ToEntityType("分卷"));
+        Assert.Equal(EntityType.Novel, EntityRefParser.ToEntityType("小说"));
+    }
+
+    [Fact]
+    public void DisplayName_MapsEveryReferenceableType()
+    {
+        Assert.Equal("章节", EntityRefParser.DisplayName(EntityType.Chapter));
+        Assert.Equal("分卷", EntityRefParser.DisplayName(EntityType.Volume));
+        Assert.Equal("小说", EntityRefParser.DisplayName(EntityType.Novel));
+        Assert.Equal("场景", EntityRefParser.DisplayName(EntityType.Scene));
     }
 }

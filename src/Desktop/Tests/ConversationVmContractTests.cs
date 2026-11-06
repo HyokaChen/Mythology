@@ -316,7 +316,7 @@ public sealed class ConversationVmContractTests
         Assert.True(vm.IsSuggestionPopupVisible);
         Assert.Equal(0, vm.SelectedSuggestionIndex);
         Assert.Contains(vm.Suggestions, s => s.Name == "张三");
-        Assert.Contains(vm.Suggestions, s => s.Name == "雨夜寄北");
+        Assert.Contains(vm.Suggestions, s => s.Name == "雨夜 寄北");
     }
 
     [Fact]
@@ -333,7 +333,7 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
-    public async Task EntityRefSuggestions_TypeStage_ListsAllSevenTypes()
+    public async Task EntityRefSuggestions_TypeStage_ListsAllReferenceableTypes()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
@@ -363,7 +363,7 @@ public sealed class ConversationVmContractTests
         Assert.Equal("角色", suggestion.FullPath);
         Assert.True(vm.IsSuggestionPopupVisible);
 
-        await vm.UpdateEntityRefSuggestionsAsync(EntityRefParser.TryParse("#角色:李", 5));
+        await vm.UpdateEntityRefSuggestionsAsync(EntityRefParser.TryParse("#角色:王", 5));
 
         Assert.Empty(vm.Suggestions);
         Assert.False(vm.IsSuggestionPopupVisible);
@@ -394,7 +394,66 @@ public sealed class ConversationVmContractTests
         Assert.Equal("#xyz:1", await vm.InlineEntityReferencesAsync("#xyz:1"));
     }
 
-    /// <summary>种子：1 个角色 + 1 章，供 @ / # 补全与内联测试。</summary>
+    [Fact]
+    public async Task EntityRefSuggestions_NameStage_SupportsVolumeChapterSceneAndNovel()
+    {
+        using var h = new Harness();
+        await SeedEntityRefsAsync(h);
+        var vm = h.CreateVm();
+        vm.CurrentNovelId = "n1";
+
+        await vm.UpdateEntityRefSuggestionsAsync(
+            EntityRefParser.TryParse("#分卷:卷", "#分卷:卷".Length)
+        );
+        Assert.Equal("卷一 风起", Assert.Single(vm.Suggestions).Name);
+
+        await vm.UpdateEntityRefSuggestionsAsync(
+            EntityRefParser.TryParse("#章节:雨夜", "#章节:雨夜".Length)
+        );
+        Assert.Equal("雨夜 寄北", Assert.Single(vm.Suggestions).Name);
+
+        await vm.UpdateEntityRefSuggestionsAsync(
+            EntityRefParser.TryParse("#场景:初遇", "#场景:初遇".Length)
+        );
+        Assert.Equal("初遇 在雨里", Assert.Single(vm.Suggestions).Name);
+
+        await vm.UpdateEntityRefSuggestionsAsync(
+            EntityRefParser.TryParse("#小说:测试", "#小说:测试".Length)
+        );
+        Assert.Equal("测试小说", Assert.Single(vm.Suggestions).Name);
+    }
+
+    [Fact]
+    public async Task InlineEntityReferences_ResolvesSpacedNamesAcrossAllTabTypes()
+    {
+        using var h = new Harness();
+        await SeedEntityRefsAsync(h);
+        var vm = h.CreateVm();
+        vm.CurrentNovelId = "n1";
+
+        var sent = await vm.InlineEntityReferencesAsync(
+            "看 #场景:初遇 在雨里 与 #章节:雨夜 寄北 及 #分卷:卷一 风起 和 #小说:测试小说 结束"
+        );
+
+        Assert.Equal(
+            "看 场景[ID:sc1]:初遇 在雨里 与 章节[ID:c1]:雨夜 寄北 及 分卷[ID:v1]:卷一 风起 和 小说[ID:n1]:测试小说 结束",
+            sent
+        );
+    }
+
+    [Fact]
+    public async Task InlineEntityReferences_ShortNameDoesNotEatLongerWord()
+    {
+        using var h = new Harness();
+        await SeedEntityRefsAsync(h);
+        var vm = h.CreateVm();
+        vm.CurrentNovelId = "n1";
+
+        // 角色「李」是「李四」的前缀：没有词边界，不能把「李四」解析成引用
+        Assert.Equal("#角色:李四", await vm.InlineEntityReferencesAsync("#角色:李四"));
+    }
+
+    /// <summary>种子：角色 + 书 + 卷 + 章 + 场景（含空格名称），供 @ / # 补全与内联测试。</summary>
     private static async Task SeedEntityRefsAsync(Harness h)
     {
         var store = h.NovelStore;
@@ -407,14 +466,41 @@ public sealed class ConversationVmContractTests
                 Name = "张三",
             }
         );
+        await store.SaveCharacter(
+            new Character
+            {
+                Id = "ch2",
+                NovelId = "n1",
+                Name = "李",
+            }
+        );
+        await store.SaveVolume(
+            new Volume
+            {
+                Id = "v1",
+                NovelId = "n1",
+                Name = "卷一 风起",
+                Order = 1,
+            }
+        );
         await store.SaveChapter(
             new Chapter
             {
                 Id = "c1",
                 NovelId = "n1",
-                Title = "雨夜寄北",
+                Title = "雨夜 寄北",
                 Order = 1,
                 Content = "雨落下来。",
+            }
+        );
+        await store.SaveScene(
+            new SceneDefinition
+            {
+                Id = "sc1",
+                NovelId = "n1",
+                Title = "初遇 在雨里",
+                Order = 1,
+                ChapterId = "c1",
             }
         );
     }

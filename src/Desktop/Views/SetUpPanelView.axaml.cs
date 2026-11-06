@@ -817,7 +817,25 @@ public partial class SetUpPanelView : UserControl
         await RefreshPanelAsync();
     }
 
-    /// <summary>节点「时间线」（书 / 卷 / 章）→ 实体时间线 Markdown 窗口。</summary>
+    /// <summary>节点「插入引用」→ 书 / 卷 / 章进入 # 引用（发送时自动内联 ID）。</summary>
+    private void OutlineInsertReference_OnClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        e.Handled = true;
+        if (
+            sender is MenuItem { DataContext: OutlineRow row }
+            && DataContext is ViewModels.SetUpPanelViewModel vm
+            && OutlineEntityType(row.Kind) is { } type
+            && row.ReferenceName.Length > 0
+        )
+        {
+            vm.RequestInsert(EntityRefParser.DisplayName(type), row.ReferenceName);
+        }
+    }
+
+    /// <summary>节点「变更记录」→ 实体变更审计 Markdown 窗口（非故事时间线）。</summary>
     private async void OutlineTimeline_OnClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
@@ -833,7 +851,7 @@ public partial class SetUpPanelView : UserControl
             return;
 
         var markdown = await vm.BuildAuditMarkdownAsync(type, row.Id);
-        ShowDialog(new MarkdownDialog("时间线 · " + row.Title, markdown));
+        ShowDialog(new MarkdownDialog("变更记录 · " + row.Title, markdown));
     }
 
     /// <summary>大纲行 → 本体实体类型（无对应实体的行返回 null）。</summary>
@@ -1034,7 +1052,7 @@ public partial class SetUpPanelView : UserControl
         }
     }
 
-    /// <summary>📜 历史按钮 → 查看实体时间线（状态变化 + 本体动作 + 旧字段审计）。</summary>
+    /// <summary>「变更记录」→ 状态变化 + 本体动作 + 旧字段审计（不是故事时间线）。</summary>
     private async void EntityHistory_OnClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
@@ -1046,7 +1064,7 @@ public partial class SetUpPanelView : UserControl
         )
         {
             var md = await vm.BuildAuditMarkdownAsync(CurrentTabType, item.Id);
-            var window = new MarkdownDialog("时间线 · " + item.Name, md);
+            var window = new MarkdownDialog("变更记录 · " + item.Name, md);
             ShowDialog(window);
         }
         e.Handled = true;

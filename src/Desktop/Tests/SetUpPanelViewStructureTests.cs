@@ -369,4 +369,40 @@ public sealed class SetUpPanelViewStructureTests
         Assert.Contains("Enter 新建", Attr(box, "PlaceholderText"), StringComparison.Ordinal);
         Assert.Contains("Esc", Attr(box, "PlaceholderText"), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RequestInsert_EmitsHashSyntax_ForAllEntryTypes()
+    {
+        var vm = new SetUpPanelViewModel();
+        string? inserted = null;
+        vm.EntityReferenceRequested += text => inserted = text;
+
+        vm.RequestInsert("分卷", "卷一 风起");
+        Assert.Equal("#分卷:卷一 风起 ", inserted);
+
+        vm.RequestInsert(
+            new Desktop.Models.EntityItem { Name = "初遇 在雨里", ReferenceKind = "场景" }
+        );
+        Assert.Equal("#场景:初遇 在雨里 ", inserted);
+    }
+
+    [Fact]
+    public void OutlineNodeMenu_HasInsertReference_AndChangeLogLabel()
+    {
+        var root = LoadSetUpPanelView();
+
+        // 书 / 卷 / 章都能插入 # 引用；可见性由 Core 行模型统一判定
+        var insert = Descendants(root, "MenuItem")
+            .Single(e => Attr(e, "Click") == "OutlineInsertReference_OnClick");
+        Assert.Equal("插入引用", Attr(insert, "Header"));
+        Assert.Equal("{Binding CanInsertReference}", Attr(insert, "IsVisible"));
+
+        // 原「时间线」入口（书 / 卷 / 章三处）统一改名为「变更记录」
+        var auditItems = Descendants(root, "MenuItem")
+            .Where(e => Attr(e, "Click") == "OutlineTimeline_OnClick")
+            .ToList();
+        Assert.Equal(3, auditItems.Count);
+        Assert.All(auditItems, e => Assert.Equal("变更记录", Attr(e, "Header")));
+        Assert.DoesNotContain("时间线", root.ToString(), StringComparison.Ordinal);
+    }
 }

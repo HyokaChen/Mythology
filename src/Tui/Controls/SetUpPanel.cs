@@ -179,6 +179,9 @@ public sealed partial class SetUpPanel
     /// <summary>章节 ID→名称 映射。</summary>
     private readonly Dictionary<string, string> _chapterNames = [];
 
+    /// <summary>分卷 ID→引用名 映射（空卷名用「第N卷」）。</summary>
+    private readonly Dictionary<string, string> _volumeNames = [];
+
     // 刷新前保存各 Accordion 当前展开的实体 ID，刷新后恢复展开状态
     /// <summary>当前展开的角色实体 ID。</summary>
     private string? _expandedCharacterId;
@@ -520,7 +523,7 @@ public sealed partial class SetUpPanel
     /// <summary>设定检查 finding 反馈（CHANGE_10 §4.3）：(findingId, adopted|dismissed)。</summary>
     public event Action<string, string>? OnSetupFeedback;
 
-    /// <summary>用户点击实体上的"📜 历史"按钮时触发。</summary>
+    /// <summary>用户点击实体上的「变更记录」按钮时触发。</summary>
     public event Action<EntityType, string>? OnViewAuditLog; // (entityType, entityId)
 
     public SetUpPanel(INovelStore store, PanelColors colors)
@@ -875,37 +878,37 @@ public sealed partial class SetUpPanel
 
     /// <summary>获取指定类型的所有实体名称（供 Stage 2 弹出窗口使用）。</summary>
     public string[] GetEntityNamesByType(EntityType entityType) =>
+        [.. GetEntityRefsByType(entityType).Select(r => r.Name)];
+
+    /// <summary>按类型取「引用显示名 → 实体 id」（补全与提交内联共用）。</summary>
+    public IReadOnlyList<(string Name, string Id)> GetEntityRefsByType(EntityType entityType) =>
         entityType switch
         {
-            EntityType.Character => [.. _characterNames.Values],
-            EntityType.Faction => [.. _factionNames.Values],
-            EntityType.Location => [.. _locationNames.Values],
-            EntityType.Plotline => [.. _plotlineNames.Values],
-            EntityType.Scene => [.. _sceneNames.Values],
-            EntityType.Item => [.. _itemNames.Values],
-            EntityType.Relationship => [.. _relationshipNames.Values],
-            EntityType.Chapter => [.. _chapterNames.Values],
+            EntityType.Novel => _novel is { Title.Length: > 0 } novel
+                ? [(novel.Title, novel.Id)]
+                : [],
+            EntityType.Volume => [.. _volumeNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Character => [.. _characterNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Faction => [.. _factionNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Location => [.. _locationNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Plotline => [.. _plotlineNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Scene => [.. _sceneNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Item => [.. _itemNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Relationship => [.. _relationshipNames.Select(kv => (kv.Value, kv.Key))],
+            EntityType.Chapter => [.. _chapterNames.Select(kv => (kv.Value, kv.Key))],
             _ => [],
         };
 
     /// <summary>名称到 ID 反向解析（供 InlineEntityReferences 提交预处理使用）。</summary>
-    public string? TryResolveEntityId(EntityType entityType, string entityName) =>
-        entityType switch
+    public string? TryResolveEntityId(EntityType entityType, string entityName)
+    {
+        foreach (var reference in GetEntityRefsByType(entityType))
         {
-            EntityType.Character => _characterNames
-                .FirstOrDefault(kv => kv.Value == entityName)
-                .Key,
-            EntityType.Faction => _factionNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            EntityType.Location => _locationNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            EntityType.Plotline => _plotlineNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            EntityType.Scene => _sceneNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            EntityType.Item => _itemNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            EntityType.Relationship => _relationshipNames
-                .FirstOrDefault(kv => kv.Value == entityName)
-                .Key,
-            EntityType.Chapter => _chapterNames.FirstOrDefault(kv => kv.Value == entityName).Key,
-            _ => null,
-        };
+            if (string.Equals(reference.Name, entityName, StringComparison.Ordinal))
+                return reference.Id;
+        }
+        return null;
+    }
 
     // ── 内容区工具带（搜索 + 新建 + 筛选） ──
     //
@@ -1470,7 +1473,7 @@ public sealed partial class SetUpPanel
             _ => null,
         };
 
-        // 行右侧只留一个 ⋯：查看/编辑 · 插入引用 · 历史 · 删除全在 popup 里
+        // 行右侧只留一个 ⋯：查看/编辑 · 插入引用 · 变更记录 · 删除全在 popup 里
         // （行名本身仍是「点击插入引用」的主入口）。
         // 画成按钮形状而不是裸文字（用户报障：实体行的 ⋯ 不像大纲行那样是个按钮）——
         // 用与大纲 MenuButton 相同的 BuildButton 配色（Border 底 + SidePanelFg 字 + 左右各 1 格留白）。
@@ -1488,7 +1491,7 @@ public sealed partial class SetUpPanel
                     [
                         ("📄 查看 / 编辑", () => editAction?.Invoke(CurrentNovelId, entityId)),
                         ("📋 插入引用", () => OnEntityClicked?.Invoke(entityType, entityName)),
-                        ("📜 历史", () => OnViewAuditLog?.Invoke(entityType, entityId)),
+                        ("🧾 变更记录", () => OnViewAuditLog?.Invoke(entityType, entityId)),
                         ("❌ 删除", () => delAction?.Invoke(CurrentNovelId, entityId)),
                     ]
                 )
@@ -1528,8 +1531,8 @@ public sealed partial class SetUpPanel
     }
 
     /// <summary>
-    /// 追加实体历史段到详情：① 出场摘要（<see cref="EntityTimelineView"/>：出场章序，非状态变化，
-    /// 与本体时间线不重复）；② 最近 <see cref="MaxEntityLogLines"/> 条本体时间线
+    /// 追加实体变更记录段到详情：① 出场摘要（<see cref="EntityTimelineView"/>：出场章序，非状态变化，
+    /// 与变更记录不重复）；② 最近 <see cref="MaxEntityLogLines"/> 条变更记录
     /// （状态变化 + 本体动作日志 + 旧审计只读合并）。
     ///
     /// 图标语义：Create ➕ / Update ✏ / Delete 🗑 / Revert ↩；⏳ 待发布、🔗 联动、🔒 秘密/私密。
@@ -1566,7 +1569,7 @@ public sealed partial class SetUpPanel
 
         if (_entityLogs?.Get(entityType, entityId) is { Count: > 0 } entries)
         {
-            lines.Add("[dim]── 本体时间线 ──[/]");
+            lines.Add("[dim]── 变更记录 ──[/]");
             foreach (var entry in entries.TakeLast(MaxEntityLogLines))
                 lines.Add(FormatEntityLogLine(entry));
         }
@@ -1717,6 +1720,11 @@ public sealed partial class SetUpPanel
                 _volumes.Clear();
                 if (structure is not null)
                     _volumes.AddRange(structure.Volumes);
+                _volumeNames.Clear();
+                foreach (var volume in _volumes)
+                    _volumeNames[volume.Id] = string.IsNullOrWhiteSpace(volume.Name)
+                        ? $"第{volume.Order}卷"
+                        : volume.Name;
 
                 // 出场摘要数据源（章序映射 + as-of 视图；失败静默降级为空）
                 _chapterOrderMap.Clear();
@@ -2167,7 +2175,7 @@ public sealed partial class SetUpPanel
             _chapterVolumeLookup = null; // 章节集变了 → 场景筛选的「章节→卷」查表失效重建
             _chapterNames.Clear();
             foreach (var ch in _chapters)
-                _chapterNames[ch.Id] = $"{ch.Order}. {ch.Title}";
+                _chapterNames[ch.Id] = ch.Title;
 
             // 高亮章节 → 自动展开其所在卷/未分卷组，保证目标可见（AI 工具跳转场景）
             if (
@@ -2347,38 +2355,60 @@ public sealed partial class SetUpPanel
     private List<(string Label, Action Action)> BuildOutlineRowMenuItems(OutlineRow row)
     {
         var items = new List<(string Label, Action Action)>();
+        var referenceType = row.Kind switch
+        {
+            OutlineRowKind.Novel => EntityType.Novel,
+            OutlineRowKind.VolumeHeader => EntityType.Volume,
+            OutlineRowKind.Chapter => EntityType.Chapter,
+            _ => (EntityType?)null,
+        };
+        void AddReference()
+        {
+            if (referenceType is { } type && row.ReferenceName.Length > 0)
+            {
+                items.Add(("📋 插入引用", () => OnEntityClicked?.Invoke(type, row.ReferenceName)));
+            }
+        }
+
         switch (row.Kind)
         {
             case OutlineRowKind.Novel:
             {
-                // 书级行：＋ = 新增分卷；⋯ 只留 时间线 / 详情 / 删除（用户报障：菜单项过多）。
-                // 总纲、世界规则、连载状态都收进详情对话框。
+                // 书级行：＋ = 新增分卷；⋯ 详情 / 插入引用 / 变更记录 / 删除。
+                items.Add(("📄 详情", () => OnEditNovel?.Invoke(CurrentNovelId, CurrentNovelId)));
+                AddReference();
                 items.Add(
                     (
-                        "🧾 时间线",
+                        "🧾 变更记录",
                         () => OnViewAuditLog?.Invoke(EntityType.Novel, CurrentNovelId ?? "")
                     )
                 );
-                items.Add(("📄 详情", () => OnEditNovel?.Invoke(CurrentNovelId, CurrentNovelId)));
                 items.Add(("❌ 删除", () => OnDeleteNovel?.Invoke(CurrentNovelId, CurrentNovelId)));
                 break;
             }
             case OutlineRowKind.VolumeHeader:
             {
-                // 卷行：＋ = 新增章节；⋯ 只留 时间线 / 详情 / 删除（重命名/上下移并进详情表单）。
+                // 卷行：＋ = 新增章节；⋯ 详情 / 插入引用 / 变更记录 / 删除。
                 var volumeId = row.Id;
-                items.Add(("🧾 时间线", () => OnViewAuditLog?.Invoke(EntityType.Volume, volumeId)));
                 items.Add(("📄 详情", () => OnEditVolume?.Invoke(CurrentNovelId, volumeId)));
+                AddReference();
+                items.Add(
+                    ("🧾 变更记录", () => OnViewAuditLog?.Invoke(EntityType.Volume, volumeId))
+                );
                 items.Add(("❌ 删除", () => OnDeleteVolume?.Invoke(CurrentNovelId, volumeId)));
                 break;
             }
             case OutlineRowKind.Chapter:
             {
-                // 章行：⋯ 留 时间线 / 发布|撤回 / 详情 / 内容 / 删除
-                // （标题/章节号/字数/更新时间/细纲并进详情对话框）。
+                // 章行：⋯ 详情 / 内容 / 插入引用 / 变更记录 / 发布|撤回 / 删除。
                 var chapterId = row.Id;
+                items.Add(("📄 详情", () => OnEditChapter?.Invoke(CurrentNovelId, chapterId)));
                 items.Add(
-                    ("🧾 时间线", () => OnViewAuditLog?.Invoke(EntityType.Chapter, chapterId))
+                    ("📖 内容", () => OnEditChapterContent?.Invoke(CurrentNovelId, chapterId))
+                );
+                AddReference();
+                items.Add(
+                    ("🧾 变更记录", () => OnViewAuditLog?.Invoke(EntityType.Chapter, chapterId))
                 );
                 // 状态动作只给与当前状态匹配的那一个：草稿可发布，已发布可撤回
                 // （状态是发布事务的结果，只能经 ChapterLifecycleService 改，见宿主事件）。
@@ -2391,10 +2421,6 @@ public sealed partial class SetUpPanel
                         items.Add(("↩ 撤回", () => OnUnpublishChapter?.Invoke(chapterId)));
                         break;
                 }
-                items.Add(("📄 详情", () => OnEditChapter?.Invoke(CurrentNovelId, chapterId)));
-                items.Add(
-                    ("📖 内容", () => OnEditChapterContent?.Invoke(CurrentNovelId, chapterId))
-                );
                 items.Add(("❌ 删除", () => OnDeleteChapter?.Invoke(CurrentNovelId, chapterId)));
                 break;
             }

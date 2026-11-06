@@ -584,10 +584,15 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         NovelOutlineText = "";
     }
 
-    /// <summary>请求插入实体引用。</summary>
-    public void RequestInsert(EntityItem item)
+    /// <summary>请求插入实体引用（输出 `#类型:名称 `，发送前由 ConversationViewModel 内联为 ID）。</summary>
+    public void RequestInsert(EntityItem item) => RequestInsert(item.ReferenceKind, item.Name);
+
+    /// <summary>按实体类型 + 名称插入引用（大纲行的书 / 卷 / 章走这里）。</summary>
+    public void RequestInsert(string referenceKind, string name)
     {
-        EntityReferenceRequested?.Invoke($"{item.ReferenceKind}「{item.Name}」");
+        if (referenceKind.Length == 0 || name.Length == 0)
+            return;
+        EntityReferenceRequested?.Invoke($"#{referenceKind}:{name} ");
     }
 
     /// <summary>

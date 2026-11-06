@@ -402,7 +402,7 @@ public partial class WorldRulePanel : UserControl
         };
         var edit = SmallButton("编辑");
         edit.Click += (_, _) => BeginEdit(rule);
-        var history = SmallButton("历史");
+        var history = SmallButton("变更记录");
         history.Click += (_, _) => ShowHistoryAsync(rule);
         var delete = SmallButton("删除", danger: true);
         delete.Click += (_, _) => ConfirmDelete(rule);
@@ -621,7 +621,7 @@ public partial class WorldRulePanel : UserControl
         _ = new ConfirmDeleteWindow("世界规则", label, () => DeleteAsync(rule)).ShowDialog(owner);
     }
 
-    /// <summary>「历史」→ 实体时间线（世界规则的本体动作 + 字段审计，只读 Markdown）。</summary>
+    /// <summary>「变更记录」→ 世界规则的本体动作 + 字段审计（只读 Markdown）。</summary>
     private async void ShowHistoryAsync(WorldRule rule)
     {
         var name =
@@ -638,12 +638,12 @@ public partial class WorldRulePanel : UserControl
             );
             var markdown = Core.Evolution.EntityLogFormatter.ToMarkdown(name, entries);
             if (TopLevel.GetTopLevel(this) is Window owner)
-                await new MarkdownDialog("时间线 · " + name, markdown).ShowDialog(owner);
+                await new MarkdownDialog("变更记录 · " + name, markdown).ShowDialog(owner);
         }
         catch (Exception ex)
         {
-            Log?.LogWarning(ex, "加载世界规则时间线失败 id={Id}", rule.Id);
-            StatusText.Text = $"加载时间线失败：{ex.Message}";
+            Log?.LogWarning(ex, "加载世界规则变更记录失败 id={Id}", rule.Id);
+            StatusText.Text = $"加载变更记录失败：{ex.Message}";
             StatusText.IsVisible = true;
         }
     }

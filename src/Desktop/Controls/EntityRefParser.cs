@@ -17,9 +17,12 @@ public static partial class EntityRefParser
         "组织",
         "地点",
         "情节",
+        "场景",
         "道具",
         "关系",
-        "大纲",
+        "章节",
+        "分卷",
+        "小说",
     ];
 
     /// <summary>补全阶段。</summary>
@@ -42,9 +45,9 @@ public static partial class EntityRefParser
         public static readonly Result None = new(Stage.None, 0, "", "");
     }
 
-    /// <summary>发送内联正则（与 TUI TuiApp.Input.cs 的 EntityRefRegex 同款）。</summary>
-    [GeneratedRegex(@"#([\p{L}]+):([^\s\]\)]+)")]
-    public static partial Regex InlineRegex();
+    /// <summary>引用起始（`#类型:`）；名称由 <see cref="Core.Data.EntityReferenceMatcher"/> 匹配。</summary>
+    [GeneratedRegex(@"#([\p{L}]+):")]
+    public static partial Regex StartRegex();
 
     /// <summary>解析光标前的 # 引用：引用必须紧贴光标结束，且 # 之后不得出现空白。</summary>
     public static Result TryParse(string text, int caretIndex)
@@ -77,7 +80,7 @@ public static partial class EntityRefParser
         return new Result(Stage.Name, hash, typeDisplay, query);
     }
 
-    /// <summary>显示名 → 实体类型（7 项，与 TUI EntityDisplayHelper.HashDisplayToEntityTypeMap 一致）。</summary>
+    /// <summary>显示名 → 实体类型（10 项 + 兼容旧 `#大纲`；与 TUI EntityDisplayHelper 一致）。</summary>
     public static EntityType? ToEntityType(string display) =>
         display switch
         {
@@ -85,10 +88,30 @@ public static partial class EntityRefParser
             "组织" => EntityType.Faction,
             "地点" => EntityType.Location,
             "情节" => EntityType.Plotline,
+            "场景" => EntityType.Scene,
             "道具" => EntityType.Item,
             "关系" => EntityType.Relationship,
-            "大纲" => EntityType.Chapter,
+            "章节" or "大纲" => EntityType.Chapter,
+            "分卷" => EntityType.Volume,
+            "小说" => EntityType.Novel,
             _ => null,
+        };
+
+    /// <summary>实体类型 → 插入引用时使用的规范显示名。</summary>
+    public static string DisplayName(EntityType type) =>
+        type switch
+        {
+            EntityType.Character => "角色",
+            EntityType.Faction => "组织",
+            EntityType.Location => "地点",
+            EntityType.Plotline => "情节",
+            EntityType.Scene => "场景",
+            EntityType.Item => "道具",
+            EntityType.Relationship => "关系",
+            EntityType.Chapter => "章节",
+            EntityType.Volume => "分卷",
+            EntityType.Novel => "小说",
+            _ => "实体",
         };
 
     /// <summary>一级选中：把 [Start, caret) 的 "#前缀" 换成 "#类型:"（无尾随空格 → 立刻进入二级）。</summary>

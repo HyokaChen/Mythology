@@ -45,6 +45,9 @@ public sealed record OutlineRow
     /// <summary>原始名（卷名 / 章名，无「第N卷 ·」与「{Order}.」前缀）；其余行为空串。</summary>
     public string Name { get; init; } = "";
 
+    /// <summary>插入 `#` 引用时使用的名称（小说标题 / 卷名 / 章名；不可引用行为空）。</summary>
+    public string ReferenceName { get; init; } = "";
+
     public string MetaLine { get; init; } = "";
     public string SummaryLine { get; init; } = "";
     public string StatusIcon { get; init; } = "";
@@ -99,6 +102,11 @@ public sealed record OutlineRow
 
     /// <summary>是否小说根行。</summary>
     public bool IsNovel => Kind == OutlineRowKind.Novel;
+
+    /// <summary>是否可插入 `#` 引用（书 / 卷 / 章；未分卷组头和分页行不可）。</summary>
+    public bool CanInsertReference =>
+        (Kind is OutlineRowKind.Novel or OutlineRowKind.VolumeHeader or OutlineRowKind.Chapter)
+        && ReferenceName.Length > 0;
 
     /// <summary>是否卷行（含未分卷组头）。</summary>
     public bool IsVolume => Kind is OutlineRowKind.VolumeHeader or OutlineRowKind.UnassignedHeader;
@@ -224,6 +232,7 @@ public static class OutlineRows
                 Key = "novel",
                 Id = structure.Novel.Id,
                 Title = structure.Novel.Title,
+                ReferenceName = structure.Novel.Title,
                 MetaLine = FormatNovelMetaLine(structure.Novel),
                 SummaryLine = summary.OutlineLine,
                 IsExpanded = state.NovelExpanded,
@@ -576,6 +585,7 @@ public static class OutlineRows
             Id = chapter.Id,
             Title = $"{chapter.Order}. {chapter.Title}",
             Name = chapter.Title,
+            ReferenceName = chapter.Title,
             MetaLine = FormatChapterMetaLine(chapter),
             SummaryLine = FirstLine(chapter.Summary),
             StatusIcon = StatusIconOf(chapter.Status),
@@ -609,6 +619,9 @@ public static class OutlineRows
             Id = volume.Id,
             Title = FormatVolumeTitle(volume),
             Name = volume.Name,
+            ReferenceName = string.IsNullOrWhiteSpace(volume.Name)
+                ? $"第{volume.Order}卷"
+                : volume.Name,
             MetaLine = FormatCountLine(matching),
             SummaryLine = FirstLine(volume.Summary),
             DetailLines = BuildVolumeDetailLines(volume, plotlineNames, characterNames),
