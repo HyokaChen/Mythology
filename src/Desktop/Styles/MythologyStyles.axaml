@@ -356,6 +356,16 @@
   <Style Selector="ListBoxItem:selected">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
   </Style>
+  <!-- ── 收掉 SukiUI 列表模板里的「幻影行」 ──
+       SukiUI 的 ListBox 模板在 ItemsPresenter **之外**还声明了一个 ListBoxItem，
+       其 Content 是数据对象的 ToString()（运行时实测：Content=String、IndexFromContainer=-1、
+       恒 IsVisible=True）。它渲染成列表顶上多出来的一行小字——书房里表现成
+       「标题 · 题材 0章 · 日期」压在书名上方（用户报障「为什么出现这么多标题」）。
+       真实数据行在 ItemsPresenter 里，不属于模板子级，不会被这条 /template/ 规则命中
+       （headless 实测：幻影行 vis=False / 高 0，真实行仍 vis=True）。 -->
+  <Style Selector="ListBox /template/ ListBoxItem">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
   <Style Selector="ComboBox /template/ Border">
     <Setter Property="Transitions">
       <Transitions>

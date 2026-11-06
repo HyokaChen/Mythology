@@ -77,6 +77,15 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **列表行上方多出一行「标题 · 题材 0章 · 日期」**：SukiUI 的 `ListBox` 模板在 `ItemsPresenter`
+  **之外**多声明了一个 `ListBoxItem`，其 `Content` 是数据对象的 `ToString()`（运行时实测
+  `Content=String`、`IndexFromContainer=-1`、恒 `IsVisible=True`），于是每条列表都渲染出
+  一个"幻影行"——书房里就是书名上方那行小字。新增 `ListBox /template/ ListBoxItem`
+  → `IsVisible=False`：只命中模板子级，真实数据行在 `ItemsPresenter` 里不受影响
+  （实测每行列表 2 个容器 → 仅 1 个可见，分组间距也一并收回）。
+  回归：新增 `ListRowContainerTests`（N 条数据只能有 N 个可见行）；测试侧把 Avalonia
+  headless 宿主抽成进程内唯一的 `HeadlessUiHost`——两套宿主各自 `SetupWithoutStarting()`
+  会让另一批用例整批 0ms 失败。
 - **桌面端侧栏搜索框「看不出是输入框」**：`TextBox.Adaline` 是透明底 + `Mist` hairline，
   而侧栏底板正是 `Bone` —— 两者对比度只有 **1.12:1**（实测渲染帧里边框与面板同色），
   搜索框退化成一排浅色文字。新增 `TextBox.Adaline.SearchField` 样式（仅挂侧栏工具带那一个

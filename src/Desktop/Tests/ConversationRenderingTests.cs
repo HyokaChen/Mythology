@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Runtime.ExceptionServices;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -1732,84 +1730,9 @@ public class ConversationRenderingTests
             .Select(t => t is MarkdownTextBlock markdown ? markdown.ActualText : t.Text)
             .ToList();
 
-    /// <summary>专用 Avalonia UI 线程：初始化 headless 平台，串行执行渲染动作。</summary>
+    /// <summary>共享的 Avalonia headless UI 线程（进程内唯一 Application，见 <see cref="HeadlessUiHost"/>）。</summary>
     private sealed class HeadlessUiThread
     {
-        private readonly BlockingCollection<Action> _work = [];
-        private readonly ManualResetEventSlim _ready = new(false);
-        private Exception? _initError;
-
-        public HeadlessUiThread()
-        {
-            var thread = new Thread(Pump)
-            {
-                IsBackground = true,
-                Name = "Mythology.Desktop.Headless",
-            };
-            thread.Start();
-
-            if (!_ready.Wait(TimeSpan.FromSeconds(30)))
-                throw new TimeoutException("Avalonia headless UI 线程初始化超时");
-            if (_initError is not null)
-                throw new InvalidOperationException("Avalonia headless 初始化失败", _initError);
-        }
-
-        public void Run(Action action)
-        {
-            using var done = new ManualResetEventSlim(false);
-            ExceptionDispatchInfo? error = null;
-
-            _work.Add(() =>
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    error = ExceptionDispatchInfo.Capture(ex);
-                }
-                finally
-                {
-                    done.Set();
-                }
-            });
-
-            if (!done.Wait(TimeSpan.FromSeconds(60)))
-                throw new TimeoutException("Avalonia headless 渲染动作超时");
-            error?.Throw();
-        }
-
-        private void Pump()
-        {
-            try
-            {
-                // 用真实 App：加载 MythologyTheme/Styles + LiveMarkdown 默认样式，
-                // 让 CodeBlock 等模板化控件也走生产主题，而不是空的测试 Application。
-                AppBuilder
-                    .Configure<App>()
-                    .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true })
-                    .SetupWithoutStarting();
-            }
-            catch (Exception ex)
-            {
-                _initError = ex;
-                _ready.Set();
-                return;
-            }
-
-            _ready.Set();
-            foreach (var action in _work.GetConsumingEnumerable())
-            {
-                try
-                {
-                    action();
-                }
-                catch
-                {
-                    // 动作内部自行捕获断言异常；这里只防止 UI 线程退出。
-                }
-            }
-        }
+        public void Run(Action action) => HeadlessUiHost.Instance.Run(action);
     }
 }
