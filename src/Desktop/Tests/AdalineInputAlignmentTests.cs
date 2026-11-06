@@ -20,7 +20,12 @@ public sealed class AdalineInputAlignmentTests
             var plain = new TextBox { Classes = { "Adaline" } };
             var search = new TextBox { Classes = { "Adaline", "SearchField" } };
             var host = new StackPanel { Spacing = 8, Children = { plain, search } };
-            var window = new Window { Content = host, Width = 320, Height = 200 };
+            var window = new Window
+            {
+                Content = host,
+                Width = 320,
+                Height = 200,
+            };
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
@@ -41,7 +46,12 @@ public sealed class AdalineInputAlignmentTests
                 TextWrapping = TextWrapping.Wrap,
                 MinHeight = 80,
             };
-            var window = new Window { Content = box, Width = 320, Height = 200 };
+            var window = new Window
+            {
+                Content = box,
+                Width = 320,
+                Height = 200,
+            };
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
