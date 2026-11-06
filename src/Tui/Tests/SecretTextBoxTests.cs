@@ -45,6 +45,5 @@ public sealed class SecretTextBoxTests
         Assert.Contains("abcd", rendered, StringComparison.Ordinal);
     }
 
-    private static string StripMarkup(string text) =>
-        Regex.Replace(text, @"\[[^\[\]]*\]", "");
+    private static string StripMarkup(string text) => Regex.Replace(text, @"\[[^\[\]]*\]", "");
 }

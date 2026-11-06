@@ -101,6 +101,5 @@ public sealed class McpTabTests
         Assert.DoesNotContain("header-secret-5678", rendered, StringComparison.Ordinal);
     }
 
-    private static string StripMarkup(string text) =>
-        Regex.Replace(text, @"\[[^\[\]]*\]", "");
+    private static string StripMarkup(string text) => Regex.Replace(text, @"\[[^\[\]]*\]", "");
 }

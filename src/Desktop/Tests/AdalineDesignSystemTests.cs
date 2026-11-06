@@ -340,10 +340,7 @@ public sealed class AdalineDesignSystemTests
         if (!binding.StartsWith("{Binding ", StringComparison.Ordinal))
             return "";
 
-        return binding["{Binding ".Length..]
-            .TrimEnd('}')
-            .Split(',')[0]
-            .Trim();
+        return binding["{Binding ".Length..].TrimEnd('}').Split(',')[0].Trim();
     }
 
     private static string DesktopDir()

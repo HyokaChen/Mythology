@@ -40,11 +40,7 @@ public sealed class SecretTextBoxTests
             var next = new TextBox();
             var window = new Window
             {
-                Content = new StackPanel
-                {
-                    Spacing = 8,
-                    Children = { input, next },
-                },
+                Content = new StackPanel { Spacing = 8, Children = { input, next } },
                 Width = 360,
                 Height = 200,
             };
@@ -80,19 +76,11 @@ public sealed class SecretTextBoxTests
     {
         HeadlessUiHost.Instance.Run(() =>
         {
-            var input = new SecretTextBox
-            {
-                Text = "sk-old-0000",
-                PlaceholderText = "API Key",
-            };
+            var input = new SecretTextBox { Text = "sk-old-0000", PlaceholderText = "API Key" };
             var next = new TextBox();
             var window = new Window
             {
-                Content = new StackPanel
-                {
-                    Spacing = 8,
-                    Children = { input, next },
-                },
+                Content = new StackPanel { Spacing = 8, Children = { input, next } },
                 Width = 360,
                 Height = 200,
             };

@@ -47,7 +47,9 @@ internal sealed class McpTab
             new HStack(
                 new Button("➕ 本地服务器")
                     .Style(ThemeStyles.BuildButtonAccent(PanelThemes.Current))
-                    .Click(() => AddCard("", "stdio", "", "npx", "", true, "none", null, null, null)),
+                    .Click(() =>
+                        AddCard("", "stdio", "", "npx", "", true, "none", null, null, null)
+                    ),
                 new Button("🌐 远程 MCP")
                     .Style(ThemeStyles.BuildButtonAccent(PanelThemes.Current))
                     .Click(() => AddCard("", "http", "", "", "", true, "none", null, null, null))
@@ -201,11 +203,7 @@ internal sealed class McpTab
                 0,
                 0
             )
-            .Cell(
-                new HStack(new Markup("[dim]传输[/]"), transportInput).Spacing(1),
-                1,
-                0
-            )
+            .Cell(new HStack(new Markup("[dim]传输[/]"), transportInput).Spacing(1), 1, 0)
             .Cell(
                 new HStack(
                     new Markup("[dim]URL[/]"),

@@ -12,11 +12,10 @@ namespace Desktop.Controls;
 /// </summary>
 public partial class SecretTextBox : UserControl
 {
-    public static readonly StyledProperty<string?> TextProperty =
-        AvaloniaProperty.Register<SecretTextBox, string?>(
-            nameof(Text),
-            defaultBindingMode: BindingMode.TwoWay
-        );
+    public static readonly StyledProperty<string?> TextProperty = AvaloniaProperty.Register<
+        SecretTextBox,
+        string?
+    >(nameof(Text), defaultBindingMode: BindingMode.TwoWay);
 
     public static readonly StyledProperty<string?> PlaceholderTextProperty =
         AvaloniaProperty.Register<SecretTextBox, string?>(nameof(PlaceholderText));
