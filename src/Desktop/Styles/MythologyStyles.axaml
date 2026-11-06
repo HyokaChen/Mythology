@@ -646,7 +646,11 @@
   </Style>
 
   <!-- 大纲 TreeView 悬停/选中：与列表行同一套 Sage Mist 薄雾，且不加边框
-       （外层 Card 已有一条 Mist 边线，再画环就是双层边框） -->
+       （外层 Card 已有一条 Mist 边线，再画环就是双层边框）。
+       SukiUI 7.0.1 的 TreeViewItem ControlTheme 在 :selected 时把模板
+       Border#SelectionBorder 直接刷成 SukiPrimaryColor（品牌 Olive Press #2b390a）；
+       只改 ContentPresenter 会在深底上叠 20% 薄雾（#435028），Forest Ink 约 2:1。
+       选中底色必须落在 SelectionBorder 上，ContentPresenter 保持透明，避免叠两层。 -->
   <Style Selector="TreeViewItem /template/ ContentPresenter">
     <Setter Property="Transitions">
       <Transitions>
@@ -666,8 +670,15 @@
   <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
   </Style>
-  <Style Selector="TreeViewItem:selected /template/ ContentPresenter">
+  <Style Selector="TreeViewItem:selected /template/ Border#SelectionBorder">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+  </Style>
+  <!-- SukiUI 的 selected + pointerover 规则会把 SelectionBorder 重新刷回主色。 -->
+  <Style Selector="TreeViewItem:selected /template/ Border#SelectionBorder:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+  </Style>
+  <Style Selector="TreeViewItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
 
