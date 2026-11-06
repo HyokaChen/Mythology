@@ -7,6 +7,13 @@
 ## [Unreleased]
 
 ### Changed
+- **启动迁移 010：把「第N卷 …」空章节还原为分卷**。Volume 实体晚于早期书稿数据引入，
+  当时卷标题被写成空章节，导致大纲把所有卷塞进「未分卷」。新迁移只处理「标题为 `第N卷 …`、
+  正文为空、未归属任何卷」的章节：标题剩余部分 → `Volume.Name`、编号 → `Volume.Order`，
+  并搬运 summary / plotline-ids / character-ids / notes；随后删除空章并清理指向它的
+  chapter-id 引用（场景 / 情节线 / 关系 / 世界规则 / 道具时窗 / 出场 / 演化 / 变更集）。
+  同 order+name 的卷已存在时不重复创建；正文非空的卷标题章不动（宁可漏迁，不误删）。
+  回归：`VolumeHeadingChaptersMigrationTests`（转换/跳过/引用清理/幂等）+ 真实书稿副本冒烟。
 - **词法与 FTS 重建：词典变化只重分词，且 FTS 按小说分区**（`docs/lexical-retokenize-plan.md`）。
   `NovelLexicon` 改为**全局**名字注册表（JiebaNet 词表是进程单例，之前「每部小说独立词典」不成立）：
   实体名（角色/组织/地点/道具/情节线/场景）去空格、按标点分段后以 `freq=100_000` 注册——
