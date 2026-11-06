@@ -77,12 +77,17 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
-- **侧栏搜索框文字不居中、且没有回车提示**：搜索框用了 `.Adaline` 的
-  `VerticalContentAlignment=Top`（那是给多行正文输入用的），单行字段被顶到上沿；
-  `.SearchField` 改为竖直居中 + 上下 `6px` 对称内边距（headless 实测占位文字上下留白均 30px）。
-  界面没有搜索按钮，右侧补一枚 `↩`（Lucide `CornerDownLeft` + tooltip）说明回车的作用；
-  回车**原本什么都不做**，现由 `SearchBox_OnKeyDown` 落实为「打开第一条命中」（与单击行同一语义，
-  大纲分区不拦截）。文本框右内边距 60 同时容下 `↩` 与 `✕`。
+- **所有单行输入的文字都不竖直居中（含 8 个分区共用的侧栏搜索框）**：`.Adaline` 统一把
+  `VerticalContentAlignment` 设成 `Top`（那是给多行正文输入用的），于是命令面板、模型切换、
+  设置页、新建项目、实体编辑、云登录等**全部单行输入**的文字都贴住上沿。现改为：
+  `.Adaline` 默认 `Center`，`TextBox.Adaline[AcceptsReturn=True]` 单独走 `Top`——
+  单行自动居中、多行仍从顶部起排（headless 实测：单行 `Center` / 多行 `Top`，
+  搜索框占位文字上下留白均 30px）。
+- **侧栏搜索框没有回车提示**：界面没有搜索按钮，右侧补一枚 `↩`（Lucide `CornerDownLeft` +
+  tooltip），**8 个分区都显示**。回车原本什么都不做，现由 `SearchBox_OnKeyDown` 落实为
+  「跳到第一条命中」：实体分区打开该条目编辑窗（与单击行同一语义），大纲分区
+  `RevealChapter/RevealVolume` 展开所在卷 + 高亮 + 滚到该行；没有搜索词时不拦截。
+  文本框右内边距 60 同时容下 `↩` 与 `✕`（结构测试改为「≥ 54 才不会压字」的语义断言）。
 - **Desktop 右侧滚动条压住内容**：`SmoothScroll.Avalonia` 主题给 `ScrollContentPresenter`
   挂了 `[ScrollViewer.AllowAutoHide=True] → Grid.ColumnSpan/RowSpan=2` 的样式，内容于是横跨到
   滚动条列下面——新建项目表单的输入框右缘被滚动条直接盖住。无头探针实测：400px 宽视口里

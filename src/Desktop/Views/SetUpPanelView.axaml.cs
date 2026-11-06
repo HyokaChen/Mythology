@@ -857,21 +857,54 @@ public partial class SetUpPanelView : UserControl
     }
 
     /// <summary>
-    /// 搜索框回车 = 打开第一条命中（与单击行同一语义：进编辑窗口）。
-    /// 搜索本身是即输即筛，回车不是「开始搜」而是「确认并进入」——搜索框右侧的 ↩ 提示说的就是它。
-    /// 大纲分区没有实体列表，回车不拦截（留给树自身处理）。
+    /// 搜索框回车 = 跳到第一条命中。搜索是即输即筛，回车不是「开始搜」：
+    /// 实体分区打开该条目的编辑窗（与单击行同一语义）；大纲分区展开所在卷、高亮并滚到该行
+    /// （复用既有的 RevealVolume / RevealChapter）。搜索框右侧的 ↩ 提示说的就是它。
+    /// 没有搜索词时不算「命中」，不拦截（回车留给控件默认行为）。
     /// </summary>
     private void SearchBox_OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)
             return;
-        if (sender is not Control { DataContext: ViewModels.EntityTab { HasProgress: false } tab })
+        if (sender is not Control { DataContext: ViewModels.EntityTab tab })
             return;
-        if (tab.Items.Count == 0)
+        if (DataContext is not ViewModels.SetUpPanelViewModel { HasSearchText: true } vm)
+            return;
+
+        if (!tab.HasProgress)
+        {
+            if (tab.Items.Count == 0)
+                return;
+            e.Handled = true;
+            OpenEditor(tab.Items[0].Id);
+            return;
+        }
+
+        var hit = FirstOutlineHit(vm.OutlineNodes);
+        if (hit is null)
             return;
 
         e.Handled = true;
-        OpenEditor(tab.Items[0].Id);
+        if (hit.IsChapter)
+            vm.RevealChapter(hit.Row.Id);
+        else
+            vm.RevealVolume(hit.Row.Id);
+        ScrollToNewlyCreatedRow(); // Reveal 只是标了 IsNewlyCreated；滚动由视图补
+    }
+
+    /// <summary>大纲第一条可定位命中：跳过「小说」根行与不可定位的行，返回第一个卷 / 章。</summary>
+    private static ViewModels.OutlineNodeVm? FirstOutlineHit(
+        IEnumerable<ViewModels.OutlineNodeVm> nodes
+    )
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Kind is OutlineRowKind.Chapter or OutlineRowKind.VolumeHeader)
+                return node;
+            if (FirstOutlineHit(node.Children) is { } child)
+                return child;
+        }
+        return null;
     }
 
     /// <summary>

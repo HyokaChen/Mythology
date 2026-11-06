@@ -204,8 +204,12 @@
     <Setter Property="CaretBrush" Value="{DynamicResource BrushForestInk}" />
     <Setter Property="SelectionBrush" Value="{DynamicResource BrushEucalyptus}" />
     <Setter Property="FontSize" Value="14" />
-    <!-- 多行输入顶对齐：Avalonia TextBox 默认 VerticalContentAlignment=Center，
-         拉伸后的多行框（正文编辑器 / 长文本字段）会把文字竖直居中——书写必须从顶部起排 -->
+    <!-- 单行输入竖直居中（默认）。多行正文（AcceptsReturn=True）另走顶对齐——
+         否则拉伸后的长文本框会把第一行竖直居中，书写必须从顶部起排。 -->
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <!-- 多行输入顶对齐：Avalonia TextBox 默认 Center，正文编辑器 / 长文本字段必须从顶部起排 -->
+  <Style Selector="TextBox.Adaline[AcceptsReturn=True]">
     <Setter Property="VerticalContentAlignment" Value="Top" />
   </Style>
   <!-- 聚焦环：SukiUI 的 TextBox 模板没有 Border#PART_Border（真实元素是 GlassCard#PART_GlassBorder
@@ -227,9 +231,6 @@
   <Style Selector="TextBox.Adaline.SearchField">
     <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
-    <!-- Adaline 的 Top 是给多行正文输入用的；搜索框是单行，顶对齐会贴住上沿（用户报障：
-         文字不居中）。单行字段一律竖直居中，上下 padding 对称。 -->
-    <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Padding" Value="10,6" />
   </Style>
 

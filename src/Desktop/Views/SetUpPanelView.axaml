@@ -199,17 +199,16 @@
                 VerticalAlignment="Center"
                 Margin="0,0,12,0"
               >
-                <!-- 没有搜索按钮：用 ↩ 说明回车的作用（实体分区回车 = 打开第一条命中）。
-                     搜索是即输即筛，回车不是「开始搜」而是「确认并进入」；
-                     具体行为写在 tooltip 里，界面只留一个符号（DESIGN.md：稀疏、不加装饰）。 -->
+                <!-- 没有搜索按钮：用 ↩ 说明回车的作用。搜索是即输即筛，
+                     回车不是「开始搜」而是「跳到第一条命中」——实体分区进编辑窗，
+                     大纲分区展开所在卷并高亮该行。所有分区都显示，行为写在 tooltip 里。 -->
                 <lucide:LucideIcon
                   Kind="CornerDownLeft"
                   Size="12"
                   StrokeWidth="1.8"
                   Foreground="{DynamicResource BrushSageMist}"
                   VerticalAlignment="Center"
-                  IsVisible="{Binding HasNoProgress}"
-                  ToolTip.Tip="回车打开第一条命中"
+                  ToolTip.Tip="回车跳到第一条命中"
                 />
                 <Button
                   Classes="IconButton"
