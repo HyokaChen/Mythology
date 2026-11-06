@@ -284,11 +284,9 @@ internal sealed class ProviderTab
             .HorizontalAlignment(Align.Stretch);
         nameInput.IsVisible = isCustom;
 
-        var keyInput = new TextBox()
+        var keyInput = new SecretTextBox()
             .Text(state.ApiKey)
             .Placeholder("sk-…")
-            .IsPassword(true)
-            .PasswordRevealMode(PasswordRevealMode.WhileFocused)
             .HorizontalAlignment(Align.Stretch);
 
         var urlInput = new TextBox()

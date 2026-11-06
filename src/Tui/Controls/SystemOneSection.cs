@@ -151,7 +151,7 @@ internal sealed class SystemOneSection(SettingsService cfg)
             )
             .Cell(new Markup("[dim]访问密钥[/]"), 3, 0)
             .Cell(
-                new TextBox()
+                new SecretTextBox()
                     .Text(_apiKey)
                     .Placeholder("托管 Jev 必填（本地留空）")
                     .HorizontalAlignment(Align.Stretch),

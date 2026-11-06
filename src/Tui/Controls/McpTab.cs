@@ -2,6 +2,7 @@ using Core.Data;
 using XenoAtom.Terminal.UI;
 using XenoAtom.Terminal.UI.Controls;
 using XenoAtom.Terminal.UI.Geometry;
+using XenoAtom.Terminal.UI.Styling;
 
 namespace Tui.Controls;
 
@@ -10,6 +11,9 @@ namespace Tui.Controls;
 /// </summary>
 internal sealed class McpTab
 {
+    private static readonly string[] AuthModes = ["none", "bearer", "header"];
+    private static readonly string[] AuthLabels = ["无鉴权", "Bearer 令牌", "自定义头"];
+
     private readonly VStack _cards = new() { Spacing = 1 }; // 卡片容器
     private readonly List<McpCardState> _entries = []; // MCP 卡片状态列表
 
@@ -28,7 +32,11 @@ internal sealed class McpTab
                 server.Url ?? "",
                 server.Command,
                 string.Join(" ", server.Args),
-                server.Enabled
+                server.Enabled,
+                server.Auth,
+                server.BearerToken,
+                server.AuthHeader,
+                server.AuthValue
             );
         }
 
@@ -39,10 +47,10 @@ internal sealed class McpTab
             new HStack(
                 new Button("➕ 本地服务器")
                     .Style(ThemeStyles.BuildButtonAccent(PanelThemes.Current))
-                    .Click(() => AddCard("", "stdio", "", "npx", "", true)),
+                    .Click(() => AddCard("", "stdio", "", "npx", "", true, "none", null, null, null)),
                 new Button("🌐 远程 MCP")
                     .Style(ThemeStyles.BuildButtonAccent(PanelThemes.Current))
-                    .Click(() => AddCard("", "http", "", "", "", true))
+                    .Click(() => AddCard("", "http", "", "", "", true, "none", null, null, null))
             ).Spacing(1)
         ).Spacing(1);
         content.HorizontalAlignment = Align.Stretch;
@@ -64,6 +72,10 @@ internal sealed class McpTab
                 Command = s.Command.Value ?? "npx",
                 Args = ParseShellArgs(s.Args.Value ?? ""),
                 Enabled = s.Enabled.Value,
+                Auth = AuthModes[Math.Clamp(s.AuthIndex.Value, 0, AuthModes.Length - 1)],
+                BearerToken = NullIfWhiteSpace(s.BearerToken.Value),
+                AuthHeader = NullIfWhiteSpace(s.AuthHeader.Value),
+                AuthValue = NullIfWhiteSpace(s.AuthValue.Value),
             })
             .Where(s => !string.IsNullOrEmpty(s.Name))
             .ToList();
@@ -77,13 +89,21 @@ internal sealed class McpTab
     /// <param name="command">命令（stdio 时）。</param>
     /// <param name="args">参数（stdio 时）。</param>
     /// <param name="enabled">是否启用。</param>
+    /// <param name="auth">鉴权方式（none/bearer/header）。</param>
+    /// <param name="bearerToken">Bearer 令牌。</param>
+    /// <param name="authHeader">自定义鉴权头名。</param>
+    /// <param name="authValue">自定义鉴权头的值。</param>
     private void AddCard(
         string name,
         string transport,
         string url,
         string command,
         string args,
-        bool enabled
+        bool enabled,
+        string? auth,
+        string? bearerToken,
+        string? authHeader,
+        string? authValue
     )
     {
         var state = new McpCardState
@@ -94,12 +114,73 @@ internal sealed class McpTab
             Command = new State<string?>(command),
             Args = new State<string?>(args),
             Enabled = new State<bool>(enabled),
+            AuthIndex = new State<int>(AuthIndexFor(auth)),
+            BearerToken = new State<string?>(bearerToken ?? ""),
+            AuthHeader = new State<string?>(authHeader ?? ""),
+            AuthValue = new State<string?>(authValue ?? ""),
         };
         _entries.Add(state);
+
+        var transportInput = new TextBox()
+            .Text(state.Transport)
+            .Placeholder("stdio / http")
+            .HorizontalAlignment(Align.Stretch);
+
+        var authSelect = new MythSelect(AuthLabels, state.AuthIndex.Value)
+            .SelectedIndex(state.AuthIndex)
+            .Style(SelectStyle.NoBorder);
+        authSelect.HorizontalAlignment = Align.Stretch;
+
+        var bearerRow = new HStack(
+            new Markup("[dim]令牌[/]"),
+            new SecretTextBox()
+                .Text(state.BearerToken)
+                .Placeholder("Bearer 令牌")
+                .HorizontalAlignment(Align.Stretch)
+        ).Spacing(1);
+        bearerRow.IsVisible = state.AuthIndex.Value == 1;
+
+        var headerNameRow = new HStack(
+            new Markup("[dim]头名[/]"),
+            new TextBox()
+                .Text(state.AuthHeader)
+                .Placeholder("X-API-Key")
+                .HorizontalAlignment(Align.Stretch)
+        ).Spacing(1);
+        headerNameRow.IsVisible = state.AuthIndex.Value == 2;
+
+        var headerValueRow = new HStack(
+            new Markup("[dim]头值[/]"),
+            new SecretTextBox()
+                .Text(state.AuthValue)
+                .Placeholder("值")
+                .HorizontalAlignment(Align.Stretch)
+        ).Spacing(1);
+        headerValueRow.IsVisible = state.AuthIndex.Value == 2;
+
+        authSelect.SelectionChanged(
+            (_, e) =>
+            {
+                bearerRow.IsVisible = e.NewIndex == 1;
+                headerNameRow.IsVisible = e.NewIndex == 2;
+                headerValueRow.IsVisible = e.NewIndex == 2;
+            }
+        );
+
+        // 鉴权仅对 HTTP 传输有意义；Transport 仍是自由文本，跟随输入动态显示。
+        var authSection = new VStack(
+            new HStack(new Markup("[dim]鉴权[/]"), authSelect).Spacing(1),
+            bearerRow,
+            headerNameRow,
+            headerValueRow
+        ).Spacing(1);
+        authSection.IsVisible = !IsStdio(state.Transport.Value);
+        transportInput.Update(_ => authSection.IsVisible = !IsStdio(transportInput.Text));
 
         var grid = new Grid()
             .Columns(new ColumnDefinition { Width = GridLength.Star() })
             .Rows(
+                new RowDefinition { Height = GridLength.Auto },
                 new RowDefinition { Height = GridLength.Auto },
                 new RowDefinition { Height = GridLength.Auto },
                 new RowDefinition { Height = GridLength.Auto },
@@ -121,13 +202,7 @@ internal sealed class McpTab
                 0
             )
             .Cell(
-                new HStack(
-                    new Markup("[dim]传输[/]"),
-                    new TextBox()
-                        .Text(state.Transport)
-                        .Placeholder("stdio / http")
-                        .HorizontalAlignment(Align.Stretch)
-                ).Spacing(1),
+                new HStack(new Markup("[dim]传输[/]"), transportInput).Spacing(1),
                 1,
                 0
             )
@@ -142,6 +217,7 @@ internal sealed class McpTab
                 2,
                 0
             )
+            .Cell(authSection, 3, 0)
             .Cell(
                 new HStack(
                     new Markup("[dim]命令[/]"),
@@ -150,7 +226,7 @@ internal sealed class McpTab
                         .Placeholder("npx")
                         .HorizontalAlignment(Align.Stretch)
                 ).Spacing(1),
-                3,
+                4,
                 0
             )
             .Cell(
@@ -161,13 +237,27 @@ internal sealed class McpTab
                         .Placeholder("-y @example/mcp-server")
                         .HorizontalAlignment(Align.Stretch)
                 ).Spacing(1),
-                4,
+                5,
                 0
             )
             .HorizontalAlignment(Align.Stretch);
 
         _cards.Children.Add(new Border(grid) { Padding = new Thickness(1, 0, 1, 0) });
     }
+
+    private static int AuthIndexFor(string? auth) =>
+        auth?.Trim().ToLowerInvariant() switch
+        {
+            "bearer" => 1,
+            "header" => 2,
+            _ => 0,
+        };
+
+    private static bool IsStdio(string? transport) =>
+        string.Equals(transport?.Trim(), "stdio", StringComparison.OrdinalIgnoreCase);
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// 解析 Shell 参数字符串。
@@ -220,4 +310,8 @@ internal sealed class McpCardState
     public State<string?> Command = new("", null); // 启动命令
     public State<string?> Args = new("", null); // 命令参数
     public State<bool> Enabled = new(false); // 是否启用
+    public State<int> AuthIndex = new(0); // 鉴权方式：0=none / 1=bearer / 2=header
+    public State<string?> BearerToken = new("", null); // Bearer 令牌
+    public State<string?> AuthHeader = new("", null); // 自定义鉴权头名
+    public State<string?> AuthValue = new("", null); // 自定义鉴权头的值
 }
