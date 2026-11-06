@@ -857,6 +857,24 @@ public partial class SetUpPanelView : UserControl
     }
 
     /// <summary>
+    /// 搜索框回车 = 打开第一条命中（与单击行同一语义：进编辑窗口）。
+    /// 搜索本身是即输即筛，回车不是「开始搜」而是「确认并进入」——搜索框右侧的 ↩ 提示说的就是它。
+    /// 大纲分区没有实体列表，回车不拦截（留给树自身处理）。
+    /// </summary>
+    private void SearchBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+        if (sender is not Control { DataContext: ViewModels.EntityTab { HasProgress: false } tab })
+            return;
+        if (tab.Items.Count == 0)
+            return;
+
+        e.Handled = true;
+        OpenEditor(tab.Items[0].Id);
+    }
+
+    /// <summary>
     /// 元信息行「筛选」→ 打开当前类型的筛选对话框（1~2 个维度；选项由 VM 按类型与当前数据构建，
     /// 与编辑窗字段同源）；确认 / 清除后由 VM 重填列表并刷新占位里的命中数。
     /// </summary>

@@ -77,6 +77,12 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **侧栏搜索框文字不居中、且没有回车提示**：搜索框用了 `.Adaline` 的
+  `VerticalContentAlignment=Top`（那是给多行正文输入用的），单行字段被顶到上沿；
+  `.SearchField` 改为竖直居中 + 上下 `6px` 对称内边距（headless 实测占位文字上下留白均 30px）。
+  界面没有搜索按钮，右侧补一枚 `↩`（Lucide `CornerDownLeft` + tooltip）说明回车的作用；
+  回车**原本什么都不做**，现由 `SearchBox_OnKeyDown` 落实为「打开第一条命中」（与单击行同一语义，
+  大纲分区不拦截）。文本框右内边距 60 同时容下 `↩` 与 `✕`。
 - **Desktop 右侧滚动条压住内容**：`SmoothScroll.Avalonia` 主题给 `ScrollContentPresenter`
   挂了 `[ScrollViewer.AllowAutoHide=True] → Grid.ColumnSpan/RowSpan=2` 的样式，内容于是横跨到
   滚动条列下面——新建项目表单的输入框右缘被滚动条直接盖住。无头探针实测：400px 宽视口里

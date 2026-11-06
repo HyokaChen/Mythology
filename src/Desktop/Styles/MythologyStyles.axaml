@@ -227,6 +227,10 @@
   <Style Selector="TextBox.Adaline.SearchField">
     <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <!-- Adaline 的 Top 是给多行正文输入用的；搜索框是单行，顶对齐会贴住上沿（用户报障：
+         文字不居中）。单行字段一律竖直居中，上下 padding 对称。 -->
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Padding" Value="10,6" />
   </Style>
 
   <!-- ── 会话输入框（无边框，仅底部 hairline） ── -->

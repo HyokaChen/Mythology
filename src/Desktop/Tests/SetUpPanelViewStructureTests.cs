@@ -286,8 +286,15 @@ public sealed class SetUpPanelViewStructureTests
         Assert.Equal("ClearSearch_OnClick", Attr(icons[0], "Click"));
         Assert.Equal("Right", Attr(icons[0].Parent!, "HorizontalAlignment"));
         Assert.DoesNotContain("SearchIcon_OnClick", content.ToString(), StringComparison.Ordinal);
-        // 文本框右侧留白给图标（10,4,34,4）
-        Assert.Equal("10,4,34,4", Attr(box, "Padding"));
+        // 文本框右侧留白要同时容下「↩ 回车提示」与「✕ 清除」：图标 12 + 间距 8 + 按钮 22 + 外边距 12 = 54
+        var padY = Attr(box, "Padding").Split(',').Select(double.Parse).ToArray();
+        Assert.True(
+            padY[2] >= 54,
+            $"搜索框右内边距 {padY[2]} 不足 54：图标会压住输入文字（Padding={Attr(box, "Padding")}）"
+        );
+        // 没有搜索按钮 → 用 ↩ 说明回车（实体分区回车 = 打开第一条命中）
+        Assert.Contains("CornerDownLeft", host.ToString(), StringComparison.Ordinal);
+        Assert.Equal("SearchBox_OnKeyDown", Attr(box, "KeyDown"));
         // 占位文案按分区（含筛选命中数）由 VM 给出
         Assert.Contains("Parent.SearchPlaceholder", content.ToString(), StringComparison.Ordinal);
 

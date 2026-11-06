@@ -185,19 +185,32 @@
               <TextBox
                 Classes="Adaline SearchField"
                 HorizontalAlignment="Stretch"
-                Padding="10,4,34,4"
+                Padding="10,6,60,6"
                 PlaceholderText="{Binding Parent.SearchPlaceholder}"
                 Text="{Binding Parent.SearchText, Mode=TwoWay}"
+                KeyDown="SearchBox_OnKeyDown"
               />
               <!-- 仅保留「清空」；占位文案由 VM 按分区给出（不含放大镜，TUI 同口径）——
                    放大镜只出现在元信息行的「筛选」入口上 -->
               <StackPanel
                 Orientation="Horizontal"
-                Spacing="0"
+                Spacing="8"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
                 Margin="0,0,12,0"
               >
+                <!-- 没有搜索按钮：用 ↩ 说明回车的作用（实体分区回车 = 打开第一条命中）。
+                     搜索是即输即筛，回车不是「开始搜」而是「确认并进入」；
+                     具体行为写在 tooltip 里，界面只留一个符号（DESIGN.md：稀疏、不加装饰）。 -->
+                <lucide:LucideIcon
+                  Kind="CornerDownLeft"
+                  Size="12"
+                  StrokeWidth="1.8"
+                  Foreground="{DynamicResource BrushSageMist}"
+                  VerticalAlignment="Center"
+                  IsVisible="{Binding HasNoProgress}"
+                  ToolTip.Tip="回车打开第一条命中"
+                />
                 <Button
                   Classes="IconButton"
                   Padding="5,2"
