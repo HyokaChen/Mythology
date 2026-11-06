@@ -77,6 +77,17 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **大纲树横向溢出、右侧被截**：行内「标题 + Meta」原本是横向 `StackPanel`——它按**无限宽度**
+  量标题，`TextTrimming` 永远不触发，长章节名把行撑到 435px（面板只有 359px），
+  于是出现横向滚动条、`草稿` 等右侧内容被切掉。改为 `* / Auto` 两列网格 +
+  `TextTrimming=CharacterEllipsis` + `ToolTip.Tip`（悬停看全名），并给 TreeView
+  `ScrollViewer.HorizontalScrollBarVisibility="Disabled"`（无横向滚动才给得出有限宽度）。
+  回归：新增 `SetUpPanelOutlineLayoutTests`（真实布局断言 `Extent.Width ≤ Viewport.Width`；
+  临时放开横向滚动实测会红：Extent 435 > Viewport 359）。
+- **关系分区搜索/筛选完全失效**：`LoadRelationshipsAsync` 直接 `Relationships.Clear()+Add()`
+  绕过 `PublishItems`，因此关系从不进入 `_allEntityItems` —— 搜索词/筛选变化时只重填另外六个
+  实体集合。改为统一走 `PublishItems(EntityType.Relationship, items)`。
+  回归：新增用例（名称命中 / 描述命中 / 未命中空态 / 清空恢复；旧代码实测 `Assert.Empty` 失败）。
 - **会话窗口「删除」紧挨主 CTA，极易误点**：底部动作条原本是 `[删除][打开]` 相邻、同高同形、
   只隔 12px，且都在右下角——鼠标奔着角落的主按钮去时会滑到删除上（用户报障「老是习惯性点到删除」）。
   现在计数与**删除所选**贴左侧，主 CTA「打开」独占右下角（实测两者间距 12px → **279px**，

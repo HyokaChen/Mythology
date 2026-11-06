@@ -1056,12 +1056,9 @@ public sealed class SetUpPanelViewModel : ViewModelBase
                 Details = [new KeyValuePair<string, string>("描述", r.Description)],
             })
             .ToList();
-        _post(() =>
-        {
-            Relationships.Clear();
-            foreach (var i in items)
-                Relationships.Add(i);
-        });
+        // 走统一发布路径：登记进 _allEntityItems，搜索词/筛选变化才会重填这个 tab
+        // （原先直接 clear+add，导致关系分区搜索与筛选完全失效）。
+        PublishItems(EntityType.Relationship, items);
     }
 
     /// <summary>

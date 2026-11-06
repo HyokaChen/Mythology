@@ -486,6 +486,7 @@
                 ItemsSource="{Binding Parent.OutlineNodes}"
                 SelectionMode="Single"
                 Background="Transparent"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
               >
                 <!-- TreeViewItem.IsExpanded ↔ 节点 VM：程序化 reveal 能展开、用户展开能回写状态集合 -->
                 <TreeView.Styles>
@@ -497,15 +498,23 @@
                   <TreeDataTemplate x:DataType="vm:OutlineNodeVm" ItemsSource="{Binding Children}">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,1,0,1">
                       <StackPanel Grid.Column="0" Spacing="1">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <!-- 标题 + Meta 用 * / Auto 两列（而不是横向 StackPanel）：
+                             横向 StackPanel 以无限宽度量标题，TextTrimming 永远不触发 →
+                             长标题把行撑出面板、逼出横向滚动条（用户报障）。 -->
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                           <TextBlock
+                            Grid.Column="0"
                             Text="{Binding Title}"
                             FontSize="12"
                             FontWeight="SemiBold"
                             Foreground="{DynamicResource BrushForestInk}"
                             VerticalAlignment="Center"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap"
+                            ToolTip.Tip="{Binding Title}"
                           />
                           <TextBlock
+                            Grid.Column="1"
                             Text="{Binding Meta}"
                             FontFamily="{StaticResource FontMono}"
                             FontSize="10"
@@ -513,7 +522,7 @@
                             VerticalAlignment="Center"
                             IsVisible="{Binding Meta, Converter={StaticResource StringNotEmptyConverter}}"
                           />
-                        </StackPanel>
+                        </Grid>
                         <TextBlock
                           Text="{Binding Summary}"
                           FontSize="11"

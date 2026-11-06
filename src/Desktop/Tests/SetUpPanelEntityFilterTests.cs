@@ -59,6 +59,51 @@ public sealed class SetUpPanelEntityFilterTests : IDisposable
             }
         );
 
+    /// <summary>
+    /// 关系分区也要吃搜索词（回归：`LoadRelationshipsAsync` 曾绕过 PublishItems，
+    /// 没登记进 _allEntityItems，于是搜索词变化时这个 tab 完全不被重填）。
+    /// </summary>
+    [Fact]
+    public async Task RelationshipSearch_NarrowsList()
+    {
+        await SeedNovelAsync();
+        await SaveCharacterAsync("c1", "阿尔", CharacterRole.Protagonist, "");
+        await SaveCharacterAsync("c2", "贝塔", CharacterRole.Supporting, "");
+        await _store.SaveRelationship(
+            new Relationship
+            {
+                Id = "r1",
+                NovelId = NovelId,
+                CharacterAId = "c1",
+                CharacterBId = "c2",
+                Type = RelationshipType.Mentor,
+                Strength = RelationshipStrength.Strong,
+                Description = "师承关系",
+            }
+        );
+
+        var vm = CreateViewModel();
+        await vm.RefreshAsync();
+        Assert.Single(vm.Relationships);
+
+        // 名称拼接体「阿尔 ↔ 贝塔」命中
+        vm.SearchText = "阿尔";
+        Assert.Single(vm.Relationships);
+
+        // 摘要（描述）命中
+        vm.SearchText = "师承";
+        Assert.Single(vm.Relationships);
+
+        // 未命中 → 空列表 + 空态文案
+        vm.SearchText = "不可能出现的词";
+        Assert.Empty(vm.Relationships);
+        Assert.Equal("未命中「不可能出现的词」", vm.SearchEmptyHint);
+
+        // 清空恢复全量
+        vm.SearchText = "";
+        Assert.Single(vm.Relationships);
+    }
+
     /// <summary>角色按定位筛选：集合只剩命中项；占位文案带命中数；清除后恢复全量与默认文案。</summary>
     [Fact]
     public async Task CharacterFilter_NarrowsList_AndShowsHitCountInPlaceholder()
