@@ -300,6 +300,52 @@ public sealed class AdalineDesignSystemTests
         );
     }
 
+    /// <summary>
+    /// 所有密钥输入必须使用 SecretTextBox：默认只显示末 4 位，聚焦才显示完整值。
+    /// 历史 bug：托管 Jev 的访问密钥是裸 TextBox，编辑态完全明文。
+    /// </summary>
+    [Fact]
+    public void SecretInputs_UseSecretTextBox()
+    {
+        var secretProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ApiKey",
+            "SystemOneApiKey",
+            "BearerToken",
+            "AuthValue",
+        };
+
+        var root = Load("Views", "SettingsView.axaml");
+        var plainTextBoxes = root.Descendants()
+            .Where(e => e.Name.LocalName == "TextBox")
+            .Where(e => secretProperties.Contains(BindingPath(Attr(e, "Text"))))
+            .Select(e => Attr(e, "Text"))
+            .ToList();
+
+        Assert.True(
+            plainTextBoxes.Count == 0,
+            $"密钥输入必须使用 SecretTextBox：{string.Join(", ", plainTextBoxes)}"
+        );
+
+        var secretInputs = root.Descendants()
+            .Where(e => e.Name.LocalName == "SecretTextBox")
+            .Where(e => secretProperties.Contains(BindingPath(Attr(e, "Text"))))
+            .ToList();
+
+        Assert.Equal(5, secretInputs.Count);
+    }
+
+    private static string BindingPath(string binding)
+    {
+        if (!binding.StartsWith("{Binding ", StringComparison.Ordinal))
+            return "";
+
+        return binding["{Binding ".Length..]
+            .TrimEnd('}')
+            .Split(',')[0]
+            .Trim();
+    }
+
     private static string DesktopDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

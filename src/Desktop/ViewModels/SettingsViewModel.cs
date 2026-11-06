@@ -1214,10 +1214,7 @@ public sealed class ApiKeyRow(
     }
 
     /// <summary>展示态的脱敏密钥（保留末 4 位便于辨认）。</summary>
-    public string MaskedKey =>
-        string.IsNullOrWhiteSpace(ApiKey) ? "未填写密钥"
-        : ApiKey.Length <= 4 ? new string('•', ApiKey.Length)
-        : $"••••••••{ApiKey[^4..]}";
+    public string MaskedKey => SecretMask.Format(ApiKey, "未填写密钥");
 
     /// <summary>展示态的名称行（仅自定义提供商显示）。</summary>
     public string NameLine => $"名称  {Name}";
@@ -1414,10 +1411,10 @@ public sealed class McpServerRow(
         {
             "bearer" => string.IsNullOrWhiteSpace(BearerToken)
                 ? "鉴权  bearer · 未填写令牌"
-                : "鉴权  bearer · 已配置令牌",
+                : $"鉴权  bearer · {SecretMask.Format(BearerToken)}",
             "header" => string.IsNullOrWhiteSpace(AuthHeader)
                 ? "鉴权  自定义头 · 未填写"
-                : $"鉴权  {AuthHeader} · 已配置",
+                : $"鉴权  {AuthHeader} · {SecretMask.Format(AuthValue, "未填写值")}",
             _ => "鉴权  无",
         };
 }

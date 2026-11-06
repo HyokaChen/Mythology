@@ -188,11 +188,6 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
   </Style>
 
-  <!-- ── 密钥输入框：聚焦即明文（对齐 TUI PasswordRevealMode.WhileFocused） ── -->
-  <Style Selector="TextBox.RevealOnFocus:focus">
-    <Setter Property="RevealPassword" Value="True" />
-  </Style>
-
   <!-- ── 输入框（透明底 · hairline Mist 边框 · 焦点 Forest Ink） ── -->
   <Style Selector="TextBox.Adaline">
     <Setter Property="Background" Value="Transparent" />
