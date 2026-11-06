@@ -248,9 +248,6 @@ src/Desktop/
     <!-- 图标 -->
     <PackageReference Include="Lucide.Avalonia" Version="0.2.19" />
 
-    <!-- 平滑滚动 -->
-    <PackageReference Include="SmoothScroll.Avalonia" Version="12.0.0.14" />
-
     <!-- 微软扩展 -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.11" />

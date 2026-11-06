@@ -61,9 +61,6 @@
     <!-- 图标 -->
     <PackageReference Include="Lucide.Avalonia" Version="0.2.28" />
 
-    <!-- 平滑滚动 -->
-    <PackageReference Include="SmoothScroll.Avalonia" Version="12.0.0.14" />
-
     <!-- 微软扩展 -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />

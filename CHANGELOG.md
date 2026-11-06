@@ -77,6 +77,14 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **Desktop 右侧滚动条压住内容**：`SmoothScroll.Avalonia` 主题给 `ScrollContentPresenter`
+  挂了 `[ScrollViewer.AllowAutoHide=True] → Grid.ColumnSpan/RowSpan=2` 的样式，内容于是横跨到
+  滚动条列下面——新建项目表单的输入框右缘被滚动条直接盖住。无头探针实测：400px 宽视口里
+  内容 presenter 占满 `0..400`、垂直滚动条在 `382..400`；该主题自己的 `ScrollPresenter` 模板
+  其实**从未生效**（SukiUI 在 Styles 层设置 Template，优先级高于 ControlTheme），所以接入后
+  唯一可见效果就是这条遮挡样式。删除 `ScrollViewerSmoothTheme` + 包引用后，presenter 收回到
+  `0..382`，滚动条独占 `382..400`。回归：新增 `ScrollViewerLayoutTests`
+  （内容右缘 ≤ 滚动条左缘）；`Desktop.Tests` 518/518。
 - **列表行上方多出一行「标题 · 题材 0章 · 日期」**：SukiUI 的 `ListBox` 模板在 `ItemsPresenter`
   **之外**多声明了一个 `ListBoxItem`，其 `Content` 是数据对象的 `ToString()`（运行时实测
   `Content=String`、`IndexFromContainer=-1`、恒 `IsVisible=True`），于是每条列表都渲染出

@@ -1609,12 +1609,12 @@ public class ConversationRenderingTests
 
     /// <summary>动效采样的帧数（headless 下动画时钟只推进有限帧，14 帧足够抓到「离开起点」）。</summary>
     /// <summary>
-    /// SmoothScroll 惯性滚动主题接入后，ScrollViewer 必须仍是 AutoScrollItemsControl 认得的模板：
+    /// App 级主题不得把 ScrollViewer 换成别的控件类型或改名：
     /// 类型还是 ScrollViewer、名字还是 PART_ScrollViewer——否则流式自动跟随会静默失效
     /// （OnApplyTemplate 的 Find&lt;ScrollViewer&gt;("PART_ScrollViewer") 返回 null）。
     /// </summary>
     [Fact]
-    public void SmoothScrollTheme_KeepsAutoScrollTemplateContract()
+    public void AutoScrollTemplateContract_KeepsNamedScrollViewer()
     {
         Ui.Value.Run(() =>
         {
@@ -1649,7 +1649,7 @@ public class ConversationRenderingTests
             var sv = list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
             Assert.NotNull(sv);
             Assert.Equal("PART_ScrollViewer", sv!.Name);
-            // SmoothScroll 主题不得把 ScrollViewer 换成别的类型，否则 AutoScrollItemsControl 失效
+            // 主题不得把 ScrollViewer 换成别的类型，否则 AutoScrollItemsControl 失效
             Assert.IsType<Avalonia.Controls.ScrollViewer>(sv);
 
             window.Close();
