@@ -498,7 +498,7 @@ public static class Program
             }
 
             // ── 检索索引增量同步 + 后台 Worker（失败不阻断启动） ──
-            _ = CoreServiceExtensions.SyncRetrievalIndexAsync(
+            _ = CoreServiceExtensions.StartRetrievalIndexSyncInBackground(
                 (ServiceProvider)provider,
                 CancellationToken.None
             );

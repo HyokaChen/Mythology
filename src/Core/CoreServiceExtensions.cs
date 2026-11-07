@@ -370,33 +370,113 @@ public static class CoreServiceExtensions
     }
 
     /// <summary>
-    /// 启动时执行检索索引增量同步，然后启动后台 Worker。
-    /// 同步失败仅输出警告，不阻断启动。
+    /// 启动后台检索索引对账（不阻塞 TUI/Desktop 启动）。
+    ///
+    /// 对账在后台跑；embedding 服务不可达时不能把入口拖住，也不能在启动期反复等提供商
+    /// 超时。后台先做一次短预检；不可达则跳过本轮对账（检索沿用现有索引，实时变更仍由
+    /// Worker 尝试），预检/对账结果只进日志文件，不写 stderr 以免叠画 TUI。对账（或跳过）
+    /// 结束后才启动 Worker，避免全量对账与实时 Worker 并发写同一文档。
     /// </summary>
-    public static async Task SyncRetrievalIndexAsync(ServiceProvider provider, CancellationToken ct)
+    public static Task StartRetrievalIndexSyncInBackground(
+        ServiceProvider provider,
+        CancellationToken ct
+    )
     {
+        var kernel = provider.GetService<RetrievalKernel>();
+        if (kernel is null)
+            return Task.CompletedTask;
+
+        var store = provider.GetRequiredService<INovelStore>();
+        var logger = provider.GetRequiredService<ILogger<VectorSyncService>>();
+
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    if (!await ProbeEmbeddingAsync(kernel, logger, ct))
+                        return;
+
+                    var vectorSync = new VectorSyncService(
+                        store,
+                        kernel.Store,
+                        kernel,
+                        kernel.Builder,
+                        logger
+                    );
+                    try
+                    {
+                        await vectorSync.SyncAsync(ct);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        // 应用退出：正常停止
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "启动期检索对账失败；实时变更仍由 Worker 继续");
+                    }
+                }
+                finally
+                {
+                    // 对账（或跳过）后才启动 Worker：避免全量对账与实时 Worker 并发写同一文档。
+                    // 预检失败时这里立即启动，实时变更照常入队/处理。
+                    if (!ct.IsCancellationRequested)
+                        kernel.StartWorker();
+                }
+            },
+            CancellationToken.None
+        );
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 启动期 embedding 预检：一次 "ping" 调用，短超时；失败/零向量返回 false（不抛异常）。
+    /// 只用于决定本轮是否值得跑全量对账，失败原因写日志文件而不是 stderr。
+    /// </summary>
+    private static async Task<bool> ProbeEmbeddingAsync(
+        RetrievalKernel kernel,
+        ILogger<VectorSyncService> logger,
+        CancellationToken ct
+    )
+    {
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(StartupEmbeddingProbeTimeout);
         try
         {
-            var kernel = provider.GetService<RetrievalKernel>();
-            if (kernel is not null)
-            {
-                var store = provider.GetRequiredService<INovelStore>();
-                var vectorSync = new VectorSyncService(
-                    store,
-                    kernel.Store,
-                    kernel,
-                    kernel.Builder,
-                    provider.GetRequiredService<ILogger<VectorSyncService>>()
-                );
-                await vectorSync.SyncAsync(ct);
-                kernel.StartWorker();
-            }
+            var probe = await kernel.EmbeddingService.EmbedAsync("ping", probeCts.Token);
+            if (probe.Any(v => v != 0f))
+                return true;
+            logger.LogWarning(
+                "Embedding 预检返回零向量，跳过启动期检索对账；检索沿用现有索引（BM25 可用）"
+            );
+            return false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return false; // 应用退出
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning(
+                "Embedding 预检 {Seconds}s 超时，跳过启动期检索对账；检索沿用现有索引（BM25 可用），实时变更由 Worker 继续",
+                StartupEmbeddingProbeTimeout.TotalSeconds
+            );
+            return false;
         }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync($"检索索引同步失败: {ex.Message}");
+            logger.LogWarning(
+                ex,
+                "Embedding 预检失败，跳过启动期检索对账；检索沿用现有索引（BM25 可用），实时变更由 Worker 继续"
+            );
+            return false;
         }
     }
+
+    /// <summary>启动期 embedding 预检预算（后台；不阻塞入口）。</summary>
+    private static readonly TimeSpan StartupEmbeddingProbeTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// 应用 config.yaml 中保存的提供商配置到 Agent（默认模型、思考级别、API Key）。

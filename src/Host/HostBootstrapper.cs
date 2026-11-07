@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using CloudDiagnosis;
+using Core;
 using Core.Agent;
 using Core.Cloud;
 using Core.Data;
@@ -334,8 +335,8 @@ public static class HostBootstrapper
         agent.SetModelName(llmModel);
         agent.SetThinkingLevel(config[ConfigurationKeys.AgentThinkingLevel] ?? "medium");
 
-        // ── 检索索引增量同步 ──
-        await SyncRetrievalIndexAsync(provider, store, ct);
+        // ── 检索索引增量同步（后台；不阻塞 TUI 启动） ──
+        await CoreServiceExtensions.StartRetrievalIndexSyncInBackground(provider, ct);
 
         var sessionStore = provider.GetRequiredService<FileSessionStore>();
         var configStore = provider.GetRequiredService<ConfigStore>();
@@ -1264,56 +1265,6 @@ public static class HostBootstrapper
             }
             return Task.FromResult(false);
         };
-    }
-
-    // ══════════════════════════════════════════════════════════
-    //  子步骤：检索索引同步
-    // ══════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// 启动时执行检索索引增量同步，然后启动后台 Worker。
-    /// 同步失败仅输出警告，不阻断启动。
-    /// </summary>
-    private static async Task SyncRetrievalIndexAsync(
-        ServiceProvider provider,
-        INovelStore store,
-        CancellationToken ct
-    )
-    {
-        try
-        {
-            var kernel = provider.GetService<RetrievalKernel>();
-            if (kernel is not null)
-            {
-                var vectorSync = new VectorSyncService(
-                    store,
-                    kernel.Store,
-                    kernel,
-                    kernel.Builder,
-                    provider.GetRequiredService<ILogger<VectorSyncService>>()
-                );
-                // 启动预算收口（CloudTimings.StartupIndexSyncTimeout）：同步会对变更实体调
-                // embedding——远端不可达时每个调用都可能等到提供商超时，拖住 TUI 入口。
-                // 超时 → 警告（检索内核按块捕获 OCE 后快速空转收尾，不阻塞；实时编辑由
-                // Worker 增量补齐，遗漏的补偿对账下次启动自动完成）。
-                using (var syncCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-                {
-                    syncCts.CancelAfter(ClientPlatform.CloudTimings.StartupIndexSyncTimeout);
-                    await vectorSync.SyncAsync(syncCts.Token);
-                    if (syncCts.IsCancellationRequested && !ct.IsCancellationRequested)
-                    {
-                        await Console.Error.WriteLineAsync(
-                            "警告: 检索索引同步超过启动预算，以部分索引启动（实时变更由 Worker 补齐，完整对账下轮启动重跑）"
-                        );
-                    }
-                }
-                kernel.StartWorker();
-            }
-        }
-        catch (Exception ex)
-        {
-            await Console.Error.WriteLineAsync($"检索索引同步失败: {ex.Message}");
-        }
     }
 
     // ══════════════════════════════════════════════════════════

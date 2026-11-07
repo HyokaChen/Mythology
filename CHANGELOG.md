@@ -93,6 +93,15 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **Host 启动不再被检索索引对账拖住**：原实现启动时 `await` 全量增量同步，超过
+  `StartupIndexSyncTimeout`（15s）就打印「以部分索引启动」警告。embedding 端点不可达
+  （日志实测 `http://10.1.44.242:8200/v1/embeddings` 返回 HTTP 502）时，每个文档的
+  embedding 调用都会拖到预算线，TUI 入口被无谓阻塞。现在 Host 与 Desktop 共用
+  `StartRetrievalIndexSyncInBackground`：先 `kernel.StartWorker()`，TUI 立即启动；
+  后台先用 10s 预检 embedding，不可达则跳过本轮全量对账并只写日志文件（不再写 stderr、
+  不再有「部分索引」警告），检索沿用现有索引（BM25 可用），实时变更由 Worker 继续尝试；
+  预检通过才在后台跑完整对账。`StartupIndexSyncTimeout` 与 Host 的本地阻塞同步方法已删除。
+  回归：Host `--mock` 真机启动冒烟（25s 内进入 TUI、无该警告）；Core 1540/1540、Desktop 556/556。
 - **斜杠补全键盘选择丢失 / 无法级联**：TUI `MythPromptEditor` 的 `AnchoredPopup.ItemActivated`
   先 `Close` 再派发，`OnMyPopupClosed` 清空候选导致 Enter 应用时无候选（上下键选完输入框仍只有 `/`）；
   点击路径又因 `PointerPressed` + `ItemActivated` 双应用出现 `alpha alpha `。现在关闭只清 popup 引用，
@@ -102,7 +111,7 @@
   Desktop 同步：`UpdateCommandSuggestions` 返回替换区间与后缀（`/tools` 插件级自动补冒号），
   `InsertSelectedCommand` 按区间插入并刷新下一级 popup，不再丢弃参数/整段覆盖。
   回归：TUI 键盘 Down/Enter 实机、`/tools` 三级级联、占位清理；Desktop 替换区间/后缀；全量 Core 1540/1540、
-  Desktop 543/543、TUI 876 通过（2 skipped）。
+  Desktop 556/556、TUI 876 通过（2 skipped）。
 - **弹窗里「新建」入口只在窗口外**：会话弹窗原先只有主界面头部工具条能新开对话，弹窗内无处可点；
   书房弹窗则把「新建小说」压在底部动作条里。两个弹窗统一为**列表首行**模式（对齐 TUI
   `SessionPickerDialog` 的「新建会话」）：卡片第一行 = `＋ 新建对话` / `＋ 新建小说`，

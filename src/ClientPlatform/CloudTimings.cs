@@ -91,13 +91,6 @@ public static class CloudTimings
     public static readonly TimeSpan StreamingClientTimeout = Timeout.InfiniteTimeSpan;
 
     /// <summary>
-    /// 启动期检索索引同步预算：VectorSyncService.SyncAsync 会对变更实体逐块调 embedding——
-    /// 远端不可达时每个调用都可能等到提供商超时。启动等待不能无限；超时 → 警告 + 转后台
-    /// 增量（kernel.StartWorker）补齐。
-    /// </summary>
-    public static readonly TimeSpan StartupIndexSyncTimeout = TimeSpan.FromSeconds(15);
-
-    /// <summary>
     /// 启动引导前置连通性预检预算：新用户自动弹登录前快速探测（TuiApp.RunStartupOnboardingAsync）。
     /// 云端不可达时不弹挂起登录框，直接 Toast + 进入项目选择——启动不能被登录握手拖住。
     /// </summary>
