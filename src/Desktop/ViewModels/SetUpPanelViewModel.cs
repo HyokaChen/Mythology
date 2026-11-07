@@ -1721,6 +1721,9 @@ public sealed class OutlineNodeVm(
     /// <summary>副文本（计数 / 进度）。</summary>
     public string Meta => Row.MetaLine;
 
+    /// <summary>行标题完整文本（标题 + Meta；TextBlock 行尾省略后仍可通过 tooltip 看全）。</summary>
+    public string HeaderTooltip => string.IsNullOrWhiteSpace(Meta) ? Title : $"{Title} · {Meta}";
+
     /// <summary>摘要行（卷纲 / 细纲首行）。</summary>
     public string Summary => Row.SummaryLine;
 

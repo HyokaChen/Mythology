@@ -497,32 +497,31 @@
                 <TreeView.ItemTemplate>
                   <TreeDataTemplate x:DataType="vm:OutlineNodeVm" ItemsSource="{Binding Children}">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,1,0,1">
-                      <StackPanel Grid.Column="0" Spacing="1">
-                        <!-- 标题 + Meta 用 * / Auto 两列（而不是横向 StackPanel）：
-                             横向 StackPanel 以无限宽度量标题，TextTrimming 永远不触发 →
-                             长标题把行撑出面板、逼出横向滚动条（用户报障）。 -->
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                          <TextBlock
-                            Grid.Column="0"
+                      <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                        <!-- 标题 + Meta 合成一条 TextBlock：整行首字形是标题，超宽时在行尾
+                             统一省略。拆成两列时 Meta 会拿走自然宽度、把标题挤成 0 宽并
+                             越过右侧动作区（用户报障「描述覆盖全部」）；单行还能让右侧
+                             ＋/⋯ 与文字行垂直居中对齐。 -->
+                        <TextBlock
+                          TextTrimming="CharacterEllipsis"
+                          TextWrapping="NoWrap"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="{Binding HeaderTooltip}"
+                        >
+                          <Run
                             Text="{Binding Title}"
                             FontSize="12"
                             FontWeight="SemiBold"
                             Foreground="{DynamicResource BrushForestInk}"
-                            VerticalAlignment="Center"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap"
-                            ToolTip.Tip="{Binding Title}"
                           />
-                          <TextBlock
-                            Grid.Column="1"
+                          <Run Text="  " />
+                          <Run
                             Text="{Binding Meta}"
                             FontFamily="{StaticResource FontMono}"
                             FontSize="10"
                             Foreground="{DynamicResource BrushSageMist}"
-                            VerticalAlignment="Center"
-                            IsVisible="{Binding Meta, Converter={StaticResource StringNotEmptyConverter}}"
                           />
-                        </Grid>
+                        </TextBlock>
                         <TextBlock
                           Text="{Binding Summary}"
                           FontSize="11"
