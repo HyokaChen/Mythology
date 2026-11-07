@@ -48,17 +48,6 @@ public sealed class InputCompletionParserTests
     }
 
     [Fact]
-    public void Mention_IsPathIntent_Classifies()
-    {
-        Assert.True(MentionParser.IsPathIntent(""));
-        Assert.True(MentionParser.IsPathIntent("/usr"));
-        Assert.True(MentionParser.IsPathIntent("./rel"));
-        Assert.True(MentionParser.IsPathIntent("~/x"));
-        Assert.True(MentionParser.IsPathIntent("卷一/细"));
-        Assert.False(MentionParser.IsPathIntent("卷一"));
-    }
-
-    [Fact]
     public void Mention_CaretAfterNewline_IsNotFound()
     {
         // 回归：光标在换行之后（如粘贴多行后光标在第二行）→ @ 在上一行，不能跨行匹配

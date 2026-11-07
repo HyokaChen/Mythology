@@ -125,14 +125,9 @@ public sealed class FilePathCompletionTests : IDisposable
     }
 
     [Fact]
-    public void IsDirectoryEntry_And_NormalizeSeparator()
+    public void IsDirectoryEntry_DistinguishesDirsFromFiles()
     {
         Assert.True(FilePathCompletion.IsDirectoryEntry("abc/"));
         Assert.False(FilePathCompletion.IsDirectoryEntry("abc.txt"));
-        Assert.Equal(
-            "abc" + Path.DirectorySeparatorChar,
-            FilePathCompletion.NormalizeSeparator("abc/")
-        );
-        Assert.Equal("abc.txt", FilePathCompletion.NormalizeSeparator("abc.txt"));
     }
 }

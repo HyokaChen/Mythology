@@ -2,7 +2,7 @@ namespace Desktop.Models;
 
 using Lucide.Avalonia;
 
-/// <summary>@ 路径补全建议项（小说实体：角色/章节）。</summary>
+/// <summary>@ 文件路径补全建议项（目录/文件条目）。</summary>
 public sealed class FileSystemItem
 {
     /// <summary>显示名称。</summary>

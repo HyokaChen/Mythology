@@ -98,8 +98,4 @@ public static class FilePathCompletion
 
     /// <summary>候选是否目录（尾加 / 的约定）。</summary>
     public static bool IsDirectoryEntry(string entry) => entry.EndsWith('/');
-
-    /// <summary>把目录候选尾部的 / 换成系统分隔符（Windows 保留 \ 惯例）。</summary>
-    public static string NormalizeSeparator(string entry) =>
-        IsDirectoryEntry(entry) ? entry[..^1] + Path.DirectorySeparatorChar : entry;
 }

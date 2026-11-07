@@ -34,18 +34,6 @@ public static partial class MentionParser
     }
 
     /// <summary>
-    /// 查询词是否为文件路径意图（与 TUI TriggerCompletion 的 isFilePath 判定一致）：
-    /// 空（裸 @）、以 / ./ ~ 开头、或含路径分隔符。
-    /// </summary>
-    public static bool IsPathIntent(string query) =>
-        query.Length == 0
-        || query.StartsWith('/')
-        || query.StartsWith("./")
-        || query.StartsWith('~')
-        || query.Contains('/')
-        || query.Contains('\\');
-
-    /// <summary>
     /// 将选中建议插入文本（替换 "@query" 为 "@路径"，目录候选尾带 / 可继续导航）。
     /// </summary>
     public static (string Text, int Caret) InsertSuggestion(
