@@ -1916,6 +1916,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (!string.Equals(evt.NovelId, SelectedNovel?.Id, StringComparison.Ordinal))
             return Task.CompletedTask;
 
+        if (!EntityChangeSummary.ShouldShowInChat(evt))
+            return Task.CompletedTask;
+
         var summary = EntityChangeSummary.Describe(evt);
         if (summary is null)
             return Task.CompletedTask;

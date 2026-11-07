@@ -75,5 +75,53 @@ public class EntityChangeSummaryTests
         );
 
         Assert.Null(EntityChangeSummary.Describe(evt));
+        Assert.False(EntityChangeSummary.ShouldShowInChat(evt));
+    }
+
+    [Fact]
+    public void ToolDrivenChange_IsCoveredByToolStep_NotDuplicatedInChat()
+    {
+        var evt = new EntityChangeEvent(
+            EntityType.Plotline,
+            "pl_1",
+            AuditAction.Update,
+            "novel_1",
+            "卷二·夏夜的萤火",
+            ToolName: "manage_plotline"
+        );
+
+        Assert.True(EntityChangeSummary.IsToolStepDuplicate(evt));
+        Assert.False(EntityChangeSummary.ShouldShowInChat(evt));
+    }
+
+    [Fact]
+    public void ManualChange_HasNoToolName_IsShownInChat()
+    {
+        var evt = new EntityChangeEvent(
+            EntityType.Character,
+            "char_1",
+            AuditAction.Update,
+            "novel_1",
+            "林月如",
+            Source: AuditSource.User
+        );
+
+        Assert.False(EntityChangeSummary.IsToolStepDuplicate(evt));
+        Assert.True(EntityChangeSummary.ShouldShowInChat(evt));
+    }
+
+    [Fact]
+    public void AiScannerChange_HasNoToolName_IsShownInChat()
+    {
+        // NoteCaptureScanner 这类 AI 写盘没有工具步骤，仍需对话状态行。
+        var evt = new EntityChangeEvent(
+            EntityType.Note,
+            "note_1",
+            AuditAction.Create,
+            "novel_1",
+            "候选笔记"
+        );
+
+        Assert.True(EntityChangeSummary.ShouldShowInChat(evt));
     }
 }

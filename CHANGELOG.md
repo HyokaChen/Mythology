@@ -93,6 +93,14 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **工具写盘不再刷屏「系统」状态行**：`EntityChangeEvent` 由 `FileNovelStore.FireEntityChanged`
+  从 `OntologyWriteContext.Current` 补齐 `Source`/`ToolName`；AI 工具写盘（ToolName 非空）已有
+  工具步骤（`情节线管理 … 已更新`）展示，Desktop/TUI 不再各追加一条
+  `系统 / 📝 修改情节线…`，避免一轮 `manage_plotline` 把对话底部堆满。手动编辑、扫描等
+  无工具步骤的实体变更仍保留系统行；小说级变更照旧隐藏。
+  回归：Core 事件作用域（User→Source=User/无 ToolName；Ai→Source=Ai/ToolName）
+  + `EntityChangeSummary.ShouldShowInChat`（工具重复 / 手动 / 扫描 / 小说级）；
+  Core 1541/1541、Desktop 560/560、TUI 876 通过（2 skipped）。
 - **大纲小说行 Meta 挤掉标题 / 动作图标不垂直居中**：Desktop 大纲模板原先把标题放 `*`、
   Meta 放 `Auto`；Meta（作者 · 题材 · 目标字数）一长就拿到自然宽度，标题列被压成 0 宽并
   向右压到 ＋/⋯ 按钮边缘。现在标题 + Meta 合成一条 `TextBlock`（Inline Run 保留标题粗体、
@@ -100,7 +108,7 @@
   ＋/⋯ 与文字行同中心；Tooltip 显示完整标题 + Meta。TUI 的 Meta 本就是独立行且按 20 字截断，
   不受影响。
   回归：新增 `LongNovelMeta_DoesNotHideTitle_AndActionsCenterWithText`（330px 真实布局：
-  标题宽度 > 0、文字右缘不越过按钮、文字/按钮中心差 ≤ 1px）；Desktop 557/557。
+  标题宽度 > 0、文字右缘不越过按钮、文字/按钮中心差 ≤ 1px）；Desktop 560/560。
 - **Host 启动不再被检索索引对账拖住**：原实现启动时 `await` 全量增量同步，超过
   `StartupIndexSyncTimeout`（15s）就打印「以部分索引启动」警告。embedding 端点不可达
   （日志实测 `http://10.1.44.242:8200/v1/embeddings` 返回 HTTP 502）时，每个文档的
@@ -109,7 +117,7 @@
   后台先用 10s 预检 embedding，不可达则跳过本轮全量对账并只写日志文件（不再写 stderr、
   不再有「部分索引」警告），检索沿用现有索引（BM25 可用），实时变更由 Worker 继续尝试；
   预检通过才在后台跑完整对账。`StartupIndexSyncTimeout` 与 Host 的本地阻塞同步方法已删除。
-  回归：Host `--mock` 真机启动冒烟（25s 内进入 TUI、无该警告）；Core 1540/1540、Desktop 557/557。
+  回归：Host `--mock` 真机启动冒烟（25s 内进入 TUI、无该警告）；Core 1540/1540、Desktop 560/560。
 - **斜杠补全键盘选择丢失 / 无法级联**：TUI `MythPromptEditor` 的 `AnchoredPopup.ItemActivated`
   先 `Close` 再派发，`OnMyPopupClosed` 清空候选导致 Enter 应用时无候选（上下键选完输入框仍只有 `/`）；
   点击路径又因 `PointerPressed` + `ItemActivated` 双应用出现 `alpha alpha `。现在关闭只清 popup 引用，
@@ -119,7 +127,7 @@
   Desktop 同步：`UpdateCommandSuggestions` 返回替换区间与后缀（`/tools` 插件级自动补冒号），
   `InsertSelectedCommand` 按区间插入并刷新下一级 popup，不再丢弃参数/整段覆盖。
   回归：TUI 键盘 Down/Enter 实机、`/tools` 三级级联、占位清理；Desktop 替换区间/后缀；全量 Core 1540/1540、
-  Desktop 557/557、TUI 876 通过（2 skipped）。
+  Desktop 560/560、TUI 876 通过（2 skipped）。
 - **弹窗里「新建」入口只在窗口外**：会话弹窗原先只有主界面头部工具条能新开对话，弹窗内无处可点；
   书房弹窗则把「新建小说」压在底部动作条里。两个弹窗统一为**列表首行**模式（对齐 TUI
   `SessionPickerDialog` 的「新建会话」）：卡片第一行 = `＋ 新建对话` / `＋ 新建小说`，

@@ -1,4 +1,5 @@
 using Core.Data;
+using Core.Evolution;
 using Xunit;
 
 namespace Core.Tests;
@@ -828,6 +829,49 @@ public sealed class FileNovelStoreIntegrationTests : IAsyncDisposable
 
         Assert.NotNull(captured);
         Assert.Equal(AuditAction.Create, captured!.Action);
+    }
+
+    [Fact]
+    public async Task EntityChangedEvent_CarriesAmbientWriteScope()
+    {
+        await _store.SaveNovel(new Novel { Id = "evt-scope", Title = "作用域测试" });
+
+        EntityChangeEvent? captured = null;
+        _store.OnEntityChanged += evt =>
+        {
+            captured = evt;
+            return Task.CompletedTask;
+        };
+
+        using (OntologyWriteContext.BeginUser("session-user"))
+        {
+            await _store.SaveCharacter(
+                new Character
+                {
+                    Id = "scope-char",
+                    NovelId = "evt-scope",
+                    Name = "手动角色",
+                }
+            );
+        }
+        Assert.NotNull(captured);
+        Assert.Equal(AuditSource.User, captured!.Source);
+        Assert.Null(captured.ToolName);
+
+        using (OntologyWriteContext.Begin(AuditSource.Ai, "manage_character", "session-ai"))
+        {
+            await _store.SaveCharacter(
+                new Character
+                {
+                    Id = "scope-char",
+                    NovelId = "evt-scope",
+                    Name = "AI 角色",
+                }
+            );
+        }
+        Assert.NotNull(captured);
+        Assert.Equal(AuditSource.Ai, captured!.Source);
+        Assert.Equal("manage_character", captured.ToolName);
     }
 
     [Fact]

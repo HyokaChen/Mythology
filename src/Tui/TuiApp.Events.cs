@@ -95,10 +95,10 @@ public sealed partial class TuiApp
 
         PostToUi(() =>
         {
-            // 在对话面板显示变更摘要
+            // 在对话面板显示变更摘要（工具写盘已有工具步骤，不再重复刷系统行）
             var label = EntityDisplayHelper.DisplayName(evt.EntityType);
             var changeSummary = EntityChangeSummary.Describe(evt);
-            if (changeSummary is not null)
+            if (changeSummary is not null && EntityChangeSummary.ShouldShowInChat(evt))
                 _conversationPanel.AddSystemMessage($"📝 {changeSummary}");
 
             // 用户手动编辑时，向 Agent 发送 Steer 通知让 LLM 感知用户操作

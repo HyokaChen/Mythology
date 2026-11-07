@@ -4380,6 +4380,15 @@ public sealed class FileNovelStore : INovelStore
 
     private async Task FireEntityChanged(EntityChangeEvent evt)
     {
+        // 来源/工具名由当前写入作用域补齐：工具写盘已经在外层 OntologyWriteContext.Begin(Ai, toolName)
+        // 里执行，UI 可据此避免把「工具步骤已展示过的变更」再堆一条系统消息。
+        var scope = OntologyWriteContext.Current;
+        evt = evt with
+        {
+            Source = evt.Source == AuditSource.Ai ? scope.Source : evt.Source,
+            ToolName = evt.ToolName ?? scope.ToolName,
+        };
+
         // 方案 2B · Phase 4：写盘成功后只向单写者队列投递刷新意图，不在保存栈内 Set Input。
         _semantic?.NotifyNovelChanged(evt.NovelId);
 
