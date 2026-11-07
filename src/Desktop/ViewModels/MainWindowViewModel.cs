@@ -58,6 +58,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     private long _totalTokens;
     private bool _hasContextMeasure;
     private long _measuredContextTokens;
+
+    // 实测采样时刻的实时上下文估算：之后 live 若增长（新消息入上下文），实测即过期，
+    // 仪表必须改用实时估算，否则会钉在旧值上（长回合中看着「永不变」）。
+    private long _measureLiveTokens;
+
     private bool _isCompacting;
     private readonly ContextTokenCalibrator _calibrator;
     private readonly ILogger _log;
@@ -375,6 +380,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         // 状态栏：Token 计数（累计，步骤 5 替换为仪表）
         _bridge.OnTokenUsage += (prompt, completion) =>
+        {
+            // 采样时刻的实时上下文要在 Agent 线程取：Post 到 UI 线程后消息可能已增长，
+            // 拿那时的值做采样会把「实测已过期」错判为新鲜。
+            var liveAtUsage = _agent.LiveContextTokens;
             Dispatcher.UIThread.Post(() =>
             {
                 _totalTokens += prompt + completion;
@@ -382,17 +391,21 @@ public sealed class MainWindowViewModel : ViewModelBase
                 // 上下文占用仪表：以 API 实测 PromptTokens 为采样点校准
                 _hasContextMeasure = true;
                 _measuredContextTokens = prompt;
-                _calibrator.AddSample(
-                    Core.Agent.ConversationLoop.EstimateMessagesTokens(_agent.State.Messages),
-                    prompt
-                );
+                _measureLiveTokens = liveAtUsage;
+                _calibrator.AddSample(liveAtUsage, prompt);
                 UpdateContextGauge();
             });
+        };
 
         // Agent 事件单一入口扇出（全局决策 4） — 仅活跃对话处理流式事件；仪表/状态栏侧效果同 handler 内
         _bridge.OnStreamEvent += (_, evt) =>
             Dispatcher.UIThread.Post(() =>
             {
+                // 每轮开始/结束都刷新上下文仪表：消息在这两个时刻进入上下文，
+                // 等 TokenUsage 事件会让仪表整回合停在旧值（provider 不回 usage 时永远不动）。
+                if (evt is TurnStart or AgentEnd or AgentInterrupted)
+                    UpdateContextGauge();
+
                 // 微信回合的事件由通道自己处理（发到手机）；桌面 UI 只渲染本地对话
                 if (_weChatBridge?.IsTurnActive == true)
                     return;
@@ -1834,6 +1847,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         _hasContextMeasure = false;
         _measuredContextTokens = 0;
+        _measureLiveTokens = 0;
         UpdateContextGauge();
     }
 
@@ -1861,12 +1875,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         long used;
-        if (_hasContextMeasure && _calibrator.HasCalibration)
+        // 实时上下文（运行中也随消息增长）。实测只在采样后上下文未继续增长时有效——
+        // 否则那是旧快照，用实时估算，避免仪表钉在旧值。
+        var live = _agent.LiveContextTokens;
+        if (_hasContextMeasure && _calibrator.HasCalibration && live <= _measureLiveTokens)
             used = _calibrator.ToConversationTokens(_measuredContextTokens);
         else
-            used = _calibrator.ProjectConversation(
-                Core.Agent.ConversationLoop.EstimateMessagesTokens(_agent.State.Messages)
-            );
+            used = _calibrator.ProjectConversation(live);
 
         if (used <= 0)
         {

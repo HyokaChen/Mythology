@@ -86,6 +86,11 @@ public sealed class ConversationLoop(
     // 持久化用的消息历史（从 Conversation 同步生成）
     private readonly List<ChatMessage> _persistedMessages = [];
 
+    // 当前上下文的实时 token 估算（_persistedMessages 每次增长后刷新）。
+    // Agent.State.Messages 只在一轮 Prompt 结束后同步，运行中读它永远是旧值（首轮为 0）；
+    // 状态栏仪表需要随工具/助手消息增长，读这里。
+    private long _liveContextTokens;
+
     // 当前迭代的新消息（用于返回值）
     private List<ChatMessage>? _loopNewMessages;
 
@@ -139,6 +144,17 @@ public sealed class ConversationLoop(
 
     /// <summary>获取持久化用的消息历史。</summary>
     public IReadOnlyList<ChatMessage> PersistedMessages => _persistedMessages;
+
+    /// <summary>
+    /// 当前上下文的实时 token 估算（会话口径，0 起算）。
+    /// 与 <see cref="PersistedMessages"/> 同步刷新，运行中随每轮消息增长；
+    /// UI 仪表应读此值而不是 Agent.State.Messages（后者只在 Prompt 结束后同步）。
+    /// </summary>
+    public long LiveContextTokens => _liveContextTokens;
+
+    /// <summary>刷新实时上下文估算（持久化消息每次增删后调用）。</summary>
+    private void RefreshLiveContextTokens() =>
+        _liveContextTokens = EstimateMessagesTokens(_persistedMessages);
 
     /// <summary>获取底层 Conversation 对象（runtime source of truth）。</summary>
     public Conversation? Conversation => _conversation;
@@ -486,6 +502,7 @@ public sealed class ConversationLoop(
 
         _persistedMessages.Clear();
         _persistedMessages.AddRange(historicalMessages);
+        RefreshLiveContextTokens();
 
         _conversation = CreateConversation();
 
@@ -813,6 +830,8 @@ public sealed class ConversationLoop(
             if (injectMessages.Count > 0 || steerMessages.Count > 0)
                 await NotifyMessagesReadyAsync(ct);
 
+            // 本轮开始前刷新（覆盖 inject/steer 的追加；TurnStart 触发 UI 仪表重算）
+            RefreshLiveContextTokens();
             CoreLogger.LoopIteration(logger.Safe(), iteration);
             await emit(new TurnStart(), ct);
 
@@ -1774,6 +1793,9 @@ public sealed class ConversationLoop(
                 _persistedMessages.Add(msg);
                 _loopNewMessages?.Add(msg);
             }
+
+            // 本轮消息（含工具结果与 usage 锚点）已齐 → 刷新实时上下文，供状态栏仪表使用
+            RefreshLiveContextTokens();
 
             // ★ 及时落盘：这一轮（含工具调用轮）的消息已经完整归一化（reasoning/args/tokens），
             // 立即写入 FileSessionStore，不等整个 Agent loop 停止。
@@ -2787,6 +2809,7 @@ public sealed class ConversationLoop(
     public async ValueTask DisposeAsync()
     {
         _persistedMessages.Clear();
+        RefreshLiveContextTokens();
         await Task.CompletedTask;
     }
 

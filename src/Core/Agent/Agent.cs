@@ -39,6 +39,16 @@ public sealed class Agent : IAsyncDisposable
     /// （HARNESS-CLOUD §16.4 优先级 2/3：从最近 Assistant/User 消息提取创作目标）读取。
     /// </summary>
     public IReadOnlyList<ChatMessage> Messages => _messages;
+
+    /// <summary>
+    /// 当前上下文的实时 token 估算（会话口径，0 起算，不含系统提示/工具定义开销）。
+    /// 运行中随每轮消息增长（<see cref="ConversationLoop.LiveContextTokens"/>）；
+    /// 无循环时回退到 <see cref="Messages"/> 的字符估算。状态栏仪表应读此值——
+    /// <see cref="Messages"/> 只在 Prompt 结束后同步，运行中读它永远是上一轮的旧值。
+    /// </summary>
+    public long LiveContextTokens =>
+        _conversationLoop?.LiveContextTokens ?? ConversationLoop.EstimateMessagesTokens(_messages);
+
     private readonly ILogger? _logger; // 日志记录器
     private CancellationTokenSource _internalCts = new(); // 内部取消令牌源
     private CancellationHttpHandler? _httpHandler; // 追踪活跃 HTTP 响应的 handler
