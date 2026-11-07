@@ -93,6 +93,15 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **大纲树 hover 的纯白浮卡（Desktop）**：SukiUI 7.0.1 的未选中行 `:pointerover` 把
+  `Border#SelectionBorder` 刷成 `SukiCardBackground`（`#fdfefb`），在 Bone 卡面上像一块白色浮卡；
+  正文 `ContentPresenter` 又叠一层 12% 薄雾，行首箭头格纯白、内容格灰绿，成一条两截色带。
+  现在底色只落 `SelectionBorder` 一层（hover 12% / selected 20% Sage Mist，ContentPresenter 恒透明），
+  雾挂 `Border#SelectionBorder:pointerover` 而不是 `TreeViewItem:pointerover`（指针状态会向祖先传播，
+  挂 item 会连父行一起点亮）；圆角归零，按列表行的平铺语言而不是浮卡。
+  回归：新增 `HoveredTreeRow_PaintsSageMistWash_OnSelectionBorderOnly` 与
+  `HoveredChildRow_DoesNotWashItsParentRow`；真实 SetUpPanel 渲染 + 指针 hover 冒烟（行带 `#e6eadf` 铺满全宽）；
+  Desktop 565/565。
 - **旧会话目录/键迁移补齐（011/012）**：011 把历史 `--novels-{标题}--` 会话目录迁到
   `--novels-{小说id}--`、MANIFEST/JSONL 键与事件枚举统一 kebab-case（旧会话此前在列表里
   变成 `id=""` 幽灵行、`GetSession` 返回 null）；012 持久化修复历史 `tool-calls` 的空/非法

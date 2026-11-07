@@ -78,6 +78,120 @@ public sealed class TreeViewSelectionThemeTests
     }
 
     [Fact]
+    public void HoveredTreeRow_PaintsSageMistWash_OnSelectionBorderOnly()
+    {
+        // 用户报障：大纲树 hover 时行首是纯白浮卡（SukiUI 未选中行 :pointerover 把
+        // SelectionBorder 刷成 SukiCardBackground #fdfefb），正文区再叠一层 12% 薄雾，
+        // 箭头格纯白 / 内容格灰绿，成一条两截色带。
+        // 锁行为：hover 的雾只落在 SelectionBorder 一层，ContentPresenter 永远透明。
+        // 直接注入 :pointerover 而不模拟鼠标：共享无头宿主里，先前测试遗留的窗口会抢指针，
+        // 真实 MouseMove 时灵时不灵。
+        Ui.Run(() =>
+        {
+            var item = new TreeViewItem { Header = "第一卷" };
+            var tree = new TreeView
+            {
+                Width = 320,
+                Height = 120,
+                SelectionMode = SelectionMode.Single,
+            };
+            tree.Items.Add(item);
+            var window = new Window
+            {
+                Content = tree,
+                Width = 360,
+                Height = 200,
+            };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var border = Assert.Single(
+                item.GetVisualDescendants().OfType<Border>(),
+                b => b.Name == "SelectionBorder"
+            );
+            var header = Assert.Single(
+                item.GetVisualDescendants().OfType<ContentPresenter>(),
+                p => p.Name == "PART_HeaderPresenter"
+            );
+
+            // 无头首帧还没推进 BrushTransition 时钟：移除过渡，只看最终底色。
+            border.Transitions = null;
+            header.Transitions = null;
+
+            ((IPseudoClasses)border.Classes).Add(":pointerover");
+            Dispatcher.UIThread.RunJobs();
+
+            var hover = Assert.IsAssignableFrom<ISolidColorBrush>(border.Background);
+            Assert.Equal(Color.Parse("#1FA5AC9F"), hover.Color);
+            Assert.True(
+                header.Background is null || ((ISolidColorBrush)header.Background).Color.A == 0,
+                "hover 行 ContentPresenter 不应再叠一层背景（否则箭头格与正文区两截色）"
+            );
+            // 行是表不是卡：平铺雾面，不沿用 SukiUI 的圆角浮卡。
+            Assert.Equal(default, border.CornerRadius);
+        });
+    }
+
+    [Fact]
+    public void HoveredChildRow_DoesNotWashItsParentRow()
+    {
+        // 指针状态会向祖先传播：悬停子行时父 TreeViewItem 也是 :pointerover。
+        // 雾必须挂在 Border#SelectionBorder 自己的 :pointerover 上——挂在 TreeViewItem 上
+        // 会把父行、祖父行整条链都点亮（大纲树只有叶子该亮）。
+        Ui.Run(() =>
+        {
+            var child = new TreeViewItem { Header = "第 1 章" };
+            var parent = new TreeViewItem { Header = "第 1 卷", IsExpanded = true };
+            parent.Items.Add(child);
+            var tree = new TreeView
+            {
+                Width = 320,
+                Height = 160,
+                SelectionMode = SelectionMode.Single,
+            };
+            tree.Items.Add(parent);
+            var window = new Window
+            {
+                Content = tree,
+                Width = 360,
+                Height = 220,
+            };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var allBorders = tree.GetVisualDescendants()
+                .OfType<Border>()
+                .Where(b => b.Name == "SelectionBorder")
+                .ToList();
+            Assert.Equal(2, allBorders.Count);
+
+            Border BorderOf(TreeViewItem owner) =>
+                Assert.Single(
+                    allBorders,
+                    b => b.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault() == owner
+                );
+
+            var parentBorder = BorderOf(parent);
+            var childBorder = BorderOf(child);
+            parentBorder.Transitions = null;
+            childBorder.Transitions = null;
+
+            // 真实指针链：子行（Border）是命中元素，父 item 只是祖先。
+            ((IPseudoClasses)childBorder.Classes).Add(":pointerover");
+            ((IPseudoClasses)parent.Classes).Add(":pointerover");
+            Dispatcher.UIThread.RunJobs();
+
+            var hover = Assert.IsAssignableFrom<ISolidColorBrush>(childBorder.Background);
+            Assert.Equal(Color.Parse("#1FA5AC9F"), hover.Color);
+            Assert.True(
+                parentBorder.Background is null
+                    || ((ISolidColorBrush)parentBorder.Background).Color.A == 0,
+                "悬停子行不应点亮父行"
+            );
+        });
+    }
+
+    [Fact]
     public void SelectedTreeRow_UsesLightWash_WithReadableForestInk()
     {
         var styles = Load("Styles", "MythologyStyles.axaml");

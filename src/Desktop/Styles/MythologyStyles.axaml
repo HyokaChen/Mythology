@@ -666,10 +666,15 @@
 
   <!-- 大纲 TreeView 悬停/选中：与列表行同一套 Sage Mist 薄雾，且不加边框
        （外层 Card 已有一条 Mist 边线，再画环就是双层边框）。
-       SukiUI 7.0.1 的 TreeViewItem ControlTheme 在 :selected 时把模板
-       Border#SelectionBorder 直接刷成 SukiPrimaryColor（品牌 Olive Press #2b390a）；
-       只改 ContentPresenter 会在深底上叠 20% 薄雾（#435028），Forest Ink 约 2:1。
-       选中底色必须落在 SelectionBorder 上，ContentPresenter 保持透明，避免叠两层。 -->
+       SukiUI 7.0.1 的 TreeViewItem ControlTheme 有两处默认态会破坏纸面：
+       ① 未选中行 :pointerover 把模板 Border#SelectionBorder 刷成 SukiCardBackground
+          （#fdfefb）——Bone 卡上就是一块纯白浮卡；
+       ② 行首箭头格没有 ContentPresenter，只有正文区叠了薄雾，于是左侧纯白、
+          正文灰绿，成一条两截色带（用户报障：hover 前面那块白色很丑）。
+       底色只落在 SelectionBorder 这一层：hover 12% / selected 20%；ContentPresenter
+       永远透明。雾挂在 Border 自己的 :pointerover 上而不是 TreeViewItem 上：
+       指针状态会向祖先传播，挂 item 上会把父行也点亮。
+       圆角归零——行是表、不是卡（DESIGN.md §Code Block Panel / §Surfaces）。 -->
   <Style Selector="TreeViewItem /template/ ContentPresenter">
     <Setter Property="Transitions">
       <Transitions>
@@ -686,8 +691,8 @@
       </Transitions>
     </Setter>
   </Style>
-  <Style Selector="TreeViewItem:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  <Style Selector="TreeViewItem">
+    <Setter Property="CornerRadius" Value="0" />
   </Style>
   <Style Selector="TreeViewItem /template/ Border#SelectionBorder">
     <Setter Property="Transitions">
@@ -700,10 +705,13 @@
       </Transitions>
     </Setter>
   </Style>
+  <Style Selector="TreeViewItem /template/ Border#SelectionBorder:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
+  </Style>
   <Style Selector="TreeViewItem:selected /template/ Border#SelectionBorder">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
   </Style>
-  <!-- SukiUI 的 selected + pointerover 规则会把 SelectionBorder 重新刷回主色。 -->
+  <!-- SukiUI 的 selected + pointerover 规则会把 SelectionBorder 重新刷回主色/白光。 -->
   <Style Selector="TreeViewItem:selected /template/ Border#SelectionBorder:pointerover">
     <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
   </Style>
