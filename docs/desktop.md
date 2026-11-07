@@ -111,7 +111,7 @@ src/Desktop/
 │   ├── DiffLineView.cs                   # 详情区结构化 diff 行（前缀/行号/红绿类别）
 │   ├── ConversationSummary.cs            # 侧边栏对话摘要
 │   ├── EntityItem.cs                     # 设定面板实体项
-│   ├── FileSystemItem.cs                 # @ 路径补全建议
+│   ├── FileSystemItem.cs                 # @ 文件路径补全建议
 │   ├── SourceInfo.cs                     # 信息来源
 │   └── CloudAuthState.cs                 # 云端账号状态 (SignedIn/Validating/Invalid/Offline/...)
 │
@@ -133,7 +133,7 @@ src/Desktop/
 │
 ├── Controls/
 │   ├── AutoScrollItemsControl.cs          # 自动滚动聊天列表
-│   ├── MentionParser.cs                   # @ 提及补全解析器
+│   ├── MentionParser.cs                   # @ 文件路径补全解析器（含空格路径）
 │   ├── EntityRefParser.cs                 # # 实体引用补全解析器（两级：类型 → 名称）
 │   ├── EntityFieldRegistry.cs             # 实体字段定义注册表 (动态表单)
 │   ├── EntityEditWindow.axaml + .cs       # 实体编辑动态表单窗口
@@ -880,7 +880,7 @@ dotnet publish src/Desktop -c Release -r osx-x64 --self-contained
 | 实体管理 | 命令行 | 右侧 8-Tab 面板 + 动态表单编辑 |
 | 云端登录 | `/login` 命令 | OAuth 回调 + 手动 Key |
 | Markdown 实时渲染 | ❌ | ✅ LiveMarkdown |
-| @ 路径补全 | ❌ | ✅ MentionParser + Popup |
+| @ 文件路径补全 | ✅ CWD 导航 | ✅ 项目根导航（含空格路径；`~/`、`/` 绝对入口） |
 | # 实体引用补全 | ✅ 两级（类型 → 名称）+ 内联 ID | ✅ EntityRefParser 两级 + 发送内联 ID |
 | 拖放路径 | ❌ | ✅ |
 | 快捷操作 | ❌ | ✅ 空状态快捷按钮 |

@@ -35,6 +35,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private readonly ToolDisplayFormatter _toolDisplay;
     private readonly ToolRegistry? _registry;
     private readonly ILogger _log;
+    private readonly string? _novelsRoot;
     private CancellationTokenSource? _cts;
     private StreamEventHandler? _handler;
     private ChatMessageModel? _agentMessage;
@@ -177,7 +178,7 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
-    } = "输入指令，Enter 发送 · @ 引用角色/章节 · # 引用任意设定 · Esc 中断";
+    } = "输入指令，Enter 发送 · @ 引用文件 · # 引用任意设定 · Esc 中断";
 
     /// <summary>
     /// 可用斜杠命令列表（补全候选）。权威定义是 <see cref="TryExecuteCommand"/> 的 switch 分支——
@@ -925,56 +926,52 @@ public sealed class ConversationViewModel : ViewModelBase
             ? mw
             : null;
 
-    /// <summary>根据 @ 查询刷新补全建议（角色 + 章节）；空查询列出全部（各取上限 6 条）。</summary>
+    /// <summary>
+    /// 根据 @ 查询刷新文件路径补全建议（小说项目根为基准目录；~/ 与 / 为绝对入口）。
+    /// 目录候选尾带 / 可继续导航；空查询列出项目根顶层条目。
+    /// </summary>
     public async Task UpdateMentionSuggestionsAsync(string query)
     {
         var version = ++_suggestionVersion;
         Suggestions.Clear();
-        var novelId = CurrentNovelId;
-        if (string.IsNullOrEmpty(novelId))
+        var novelsRoot = _novelsRoot ?? "";
+        if (novelsRoot.Length == 0)
         {
             IsSuggestionPopupVisible = false;
             return;
         }
+
         try
         {
-            var characters = await _store.GetCharacters(novelId);
-            var items = characters
-                .Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Take(6)
-                .Select(c => new FileSystemItem
-                {
-                    Name = c.Name,
-                    FullPath = $"角色/{c.Name}",
-                    IconKind = LucideIconKind.Users,
-                })
-                .ToList();
-
-            var chapters = await _store.GetChapters(novelId);
-            items.AddRange(
-                chapters
-                    .Where(ch => ch.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    .Take(6)
-                    .Select(ch => new FileSystemItem
-                    {
-                        Name = ch.Title,
-                        FullPath = $"章节/{ch.Title}",
-                        IconKind = LucideIconKind.FileText,
-                    })
+            // IO 在线程池执行（目录枚举可能碰到网络卷/慢盘，避免卡 UI 线程）
+            var entries = await Task.Run(() =>
+                Core.Shared.FilePathCompletion.GetEntries(query, novelsRoot)
             );
 
             // 过期结果丢弃（用户在等待期间继续输入）：弹窗状态归更新的那次调用管
             if (version != _suggestionVersion)
                 return;
             Suggestions.Clear();
-            foreach (var item in items)
-                Suggestions.Add(item);
+            foreach (var entry in entries)
+            {
+                var isDir = Core.Shared.FilePathCompletion.IsDirectoryEntry(entry);
+                Suggestions.Add(
+                    new FileSystemItem
+                    {
+                        Name = entry,
+                        FullPath = Path.GetFullPath(
+                            Path.Combine(novelsRoot, entry)
+                        ),
+                        IconKind = isDir ? LucideIconKind.Folder : LucideIconKind.FileText,
+                    }
+                );
+            }
             SelectedSuggestionIndex = 0;
             IsSuggestionPopupVisible = Suggestions.Count > 0;
         }
         catch
         {
-            // 数据层不可用时静默降级（无补全）
+            // IO 不可用时静默降级（无补全）
             if (version == _suggestionVersion)
                 IsSuggestionPopupVisible = false;
         }
@@ -1206,7 +1203,7 @@ public sealed class ConversationViewModel : ViewModelBase
 
     /// <summary>无参构造函数（XAML 设计时支持）。</summary>
     public ConversationViewModel()
-        : this(null!, null!, null!, null!) { }
+        : this(null!, null!, null!) { }
 
     public ConversationViewModel(
         DesktopAgentBridge bridge,
@@ -1214,12 +1211,14 @@ public sealed class ConversationViewModel : ViewModelBase
         INovelStore store,
         UserQuestionStore? questionStore = null,
         ILogger<ConversationViewModel>? log = null,
-        ToolRegistry? tools = null
+        ToolRegistry? tools = null,
+        string? novelsRoot = null
     )
     {
         _bridge = bridge;
         _engine = engine;
         _store = store;
+        _novelsRoot = novelsRoot;
         _questionStore = questionStore ?? new UserQuestionStore();
         _toolDisplay = new ToolDisplayFormatter(tools);
         _registry = tools;

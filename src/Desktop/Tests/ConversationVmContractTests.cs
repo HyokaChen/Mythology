@@ -372,27 +372,47 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
-    public async Task MentionSuggestions_EmptyQuery_ListsEntities_AndOpensPopup()
+    public async Task MentionSuggestions_EmptyQuery_ListsProjectRootFiles_AndOpensPopup()
     {
         using var h = new Harness();
-        await SeedEntityRefsAsync(h);
         var vm = h.CreateVm();
-        vm.CurrentNovelId = "n1";
+
+        // 项目根（A2）下放置一个文件：裸 @ → 列项目根顶层条目
+        File.WriteAllText(Path.Combine(h.NovelsRoot, "序章.txt"), "内容");
 
         await vm.UpdateMentionSuggestionsAsync("");
 
         Assert.True(vm.IsSuggestionPopupVisible);
         Assert.Equal(0, vm.SelectedSuggestionIndex);
-        Assert.Contains(vm.Suggestions, s => s.Name == "张三");
-        Assert.Contains(vm.Suggestions, s => s.Name == "雨夜 寄北");
+        Assert.Contains(vm.Suggestions, s => s.Name == "序章.txt");
     }
 
     [Fact]
-    public async Task MentionSuggestions_NoNovel_HidesPopup()
+    public async Task MentionSuggestions_SubdirectorySlash_NavigatesNextLevel()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
-        vm.CurrentNovelId = null;
+        Directory.CreateDirectory(Path.Combine(h.NovelsRoot, "卷一 风起"));
+        File.WriteAllText(Path.Combine(h.NovelsRoot, "卷一 风起", "细纲.md"), "内容");
+
+        // B2 回归：含空格目录 + 尾 / → 列子目录内容
+        await vm.UpdateMentionSuggestionsAsync("卷一 风起/");
+
+        var suggestion = vm.Suggestions.SingleOrDefault(s => s.Name == "细纲.md");
+        Assert.NotNull(suggestion);
+        Assert.True(vm.IsSuggestionPopupVisible);
+    }
+
+    [Fact]
+    public async Task MentionSuggestions_NoNovelsRoot_HidesPopup()
+    {
+        using var h = new Harness();
+        // 未提供项目根（设计时 VM）→ 不弹窗（降级而非崩溃）
+        var vm = new ConversationViewModel(
+            h.Bridge,
+            h.Engine,
+            h.NovelStore
+        );
 
         await vm.UpdateMentionSuggestionsAsync("");
 
@@ -722,6 +742,7 @@ public sealed class ConversationVmContractTests
         public Harness()
         {
             var root = Path.Combine(_base, "novels");
+            NovelsRoot = root;
             var storeDir = Path.Combine(_base, "store");
             Directory.CreateDirectory(root);
             Directory.CreateDirectory(storeDir);
@@ -748,8 +769,20 @@ public sealed class ConversationVmContractTests
 
         public INovelStore NovelStore => _novelStore;
 
+        public string NovelsRoot { get; }
+
+        public DesktopAgentBridge Bridge => _bridge;
+
+        public SessionEngine Engine => _engine;
+
         public ConversationViewModel CreateVm() =>
-            new(_bridge, _engine, _novelStore, tools: Registry);
+            new(
+                _bridge,
+                _engine,
+                _novelStore,
+                tools: Registry,
+                novelsRoot: NovelsRoot
+            );
 
         public void Dispose()
         {

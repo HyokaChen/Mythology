@@ -3,18 +3,22 @@ using System.Text.RegularExpressions;
 namespace Desktop.Controls;
 
 /// <summary>
-/// @ 提及补全解析器：定位光标前的 "@query"（支持中文/字母/数字/下划线），
-/// 返回查询词与起始索引，供 View 层驱动补全弹窗。
+/// @ 文件路径补全解析器：定位光标前的 "@path" 查询词（可含空格、中文、路径分隔符），
+/// 返回查询词与起始索引，供 View 层驱动文件补全弹窗。
+/// 语义与 TUI 对齐：@ = 引用本地文件，实体提及走 # 实体引用。
 /// </summary>
 public static partial class MentionParser
 {
-    /// <summary>@ 提及解析结果（Found=false 表示光标前不是提及）。</summary>
+    /// <summary>@ 路径解析结果（Found=false 表示光标前不是路径查询）。</summary>
     public readonly record struct Mention(bool Found, string Query, int Start);
 
-    [GeneratedRegex(@"@([\p{L}\p{N}_\-]*)$", RegexOptions.CultureInvariant)]
+    // 路径 token：贪婪到光标（不含换行）。空格合法（macOS 常见 "My Files/"），
+    // 由 FilePathCompletion 按最后一个分隔符切分目录/前缀；多词句子的最后一个词
+    // 若含路径特征才被视作路径，纯自然语言词不误触发。
+    [GeneratedRegex(@"@([^\n\r]*)$", RegexOptions.CultureInvariant)]
     private static partial Regex MentionRegex();
 
-    /// <summary>尝试解析光标前的 @ 提及（裸 @ = Found 且 Query 为空）。</summary>
+    /// <summary>尝试解析光标前的 @ 路径查询（裸 @ = Found 且 Query 为空）。</summary>
     public static Mention TryGetMention(string text, int caretIndex)
     {
         if (caretIndex <= 0 || text.Length == 0)
@@ -29,15 +33,31 @@ public static partial class MentionParser
         return new Mention(true, match.Groups[1].Value, match.Index);
     }
 
-    /// <summary>将选中建议插入文本（替换 "@query" 为 "@名称 "）。</summary>
-    public static string InsertSuggestion(
+    /// <summary>
+    /// 查询词是否为文件路径意图（与 TUI TriggerCompletion 的 isFilePath 判定一致）：
+    /// 空（裸 @）、以 / ./ ~ 开头、或含路径分隔符。
+    /// </summary>
+    public static bool IsPathIntent(string query) =>
+        query.Length == 0
+        || query.StartsWith('/')
+        || query.StartsWith("./")
+        || query.StartsWith('~')
+        || query.Contains('/')
+        || query.Contains('\\');
+
+    /// <summary>
+    /// 将选中建议插入文本（替换 "@query" 为 "@路径"，目录候选尾带 / 可继续导航）。
+    /// </summary>
+    public static (string Text, int Caret) InsertSuggestion(
         string text,
         int caretIndex,
         int mentionStart,
         string suggestion
     )
     {
-        var replaced = text[..mentionStart] + "@" + suggestion + " " + text[caretIndex..];
-        return replaced;
+        var trailing = suggestion.EndsWith('/') ? "" : " ";
+        var replaced = text[..mentionStart] + "@" + suggestion + trailing + text[caretIndex..];
+        var caret = mentionStart + 1 + suggestion.Length + trailing.Length;
+        return (replaced, caret);
     }
 }

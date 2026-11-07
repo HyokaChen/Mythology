@@ -603,7 +603,13 @@ public static class Program
         RegisterCloudClients(services, mythologyDir, workspace);
 
         services.AddSingleton<MainWindowViewModel>();
-        services.AddTransient<ConversationViewModel>();
+        services.AddTransient(sp => new ConversationViewModel(
+            sp.GetRequiredService<DesktopAgentBridge>(),
+            sp.GetRequiredService<SessionEngine>(),
+            sp.GetRequiredService<INovelStore>(),
+            tools: sp.GetService<ToolRegistry>(),
+            novelsRoot: sp.GetRequiredService<NovelWorkspace>().ActiveRoot
+        ));
         services.AddTransient<SetUpPanelViewModel>();
         services.AddTransient(sp => new SettingsViewModel(
             sp.GetRequiredService<ConfigStore>(),

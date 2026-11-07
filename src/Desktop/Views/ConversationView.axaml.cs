@@ -295,7 +295,7 @@ public partial class ConversationView : UserControl
         RefreshSuggestions();
     }
 
-    /// <summary>插入选中建议到输入框（# 一级 → "#类型:"；# 二级 → "#类型:名称 "；@ → "@名称 "）。</summary>
+    /// <summary>插入选中建议到输入框（# 一级 → "#类型:"；# 二级 → "#类型:名称 "；@ → "@路径"，目录尾带 / 继续导航）。</summary>
     private void InsertSelectedSuggestion(ConversationViewModel vm)
     {
         var text = InputBox.Text ?? "";
@@ -335,13 +335,22 @@ public partial class ConversationView : UserControl
         }
 
         var suggestion = vm.Suggestions[index];
-        InputBox.Text = MentionParser.InsertSuggestion(text, caret, mention.Start, suggestion.Name);
-        InputBox.CaretIndex = mention.Start + suggestion.Name.Length + 2;
+        var (newText, newCaret) = MentionParser.InsertSuggestion(
+            text,
+            caret,
+            mention.Start,
+            suggestion.Name
+        );
+        InputBox.Text = newText;
+        InputBox.CaretIndex = newCaret;
+        // 目录候选尾带 / → 继续展开下一级；文件候选补空格关闭弹窗
         vm.IsSuggestionPopupVisible = false;
         InputBox.Focus();
+        if (suggestion.Name.EndsWith('/'))
+            RefreshSuggestions(); // 目录 → 下一级导航
     }
 
-    // ── 拖放：把文件/目录路径插入输入框（@ 路径语义） ──
+    // ── 拖放：把文件/目录路径插入输入框（@ 路径语义，与补全插入格式一致） ──
 
     private void InputBox_OnDragOver(object? sender, DragEventArgs e)
     {
@@ -362,10 +371,7 @@ public partial class ConversationView : UserControl
             return;
 
         var text = InputBox.Text ?? "";
-        var insert = string.Join(
-            "\n",
-            paths.Select(path => Directory.Exists(path) ? $"[目录]{path}" : $"[文件]{path}")
-        );
+        var insert = string.Join("\n", paths.Select(p => "@" + p));
         var caret = InputBox.CaretIndex;
         InputBox.Text = text.Insert(caret, insert + "\n");
         InputBox.CaretIndex = caret + insert.Length + 1;

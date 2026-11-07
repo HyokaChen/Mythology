@@ -5,19 +5,19 @@ using Xunit;
 namespace Desktop.Tests;
 
 /// <summary>
-/// 输入补全语法单测：@ 提及（MentionParser）与 # 实体引用（EntityRefParser）。
-/// 覆盖「裸 @ / 裸 # 必须仍触发弹窗」与「Enter 换行必须关弹窗」两条回归。
+/// 输入补全语法单测：@ 文件路径（MentionParser）与 # 实体引用（EntityRefParser）。
+/// 覆盖「裸 @ / 裸 # 必须仍触发弹窗」「Enter 换行必须关弹窗」「含空格路径不断词」三条回归。
 /// </summary>
 public sealed class InputCompletionParserTests
 {
-    // ─────────── @ 提及 ───────────
+    // ─────────── @ 文件路径 ───────────
 
     [Fact]
     public void Mention_AtEnd_IsFound()
     {
-        var mention = MentionParser.TryGetMention("@张", 2);
+        var mention = MentionParser.TryGetMention("@卷一", 3);
         Assert.True(mention.Found);
-        Assert.Equal("张", mention.Query);
+        Assert.Equal("卷一", mention.Query);
         Assert.Equal(0, mention.Start);
     }
 
@@ -31,16 +31,59 @@ public sealed class InputCompletionParserTests
     }
 
     [Fact]
-    public void Mention_BeforeNewline_IsNotFound()
+    public void Mention_PathWithSpaces_IsFound()
     {
-        // 回归：`$` 也会匹配字符串末尾 \n 之前，Enter 换行后弹窗不能残留
-        Assert.False(MentionParser.TryGetMention("@张\n", 3).Found);
+        // B2：含空格目录名（macOS 常见）不断词，光标紧贴即命中
+        var mention = MentionParser.TryGetMention("@卷一 风起/", 8);
+        Assert.True(mention.Found);
+        Assert.Equal("卷一 风起/", mention.Query);
     }
 
     [Fact]
-    public void Mention_NotAtCaret_IsNotFound()
+    public void Mention_AbsoluteAndHomePaths_AreFound()
     {
-        Assert.False(MentionParser.TryGetMention("@张 后", 5).Found);
+        Assert.True(MentionParser.TryGetMention("@/usr/l", 7).Found);
+        Assert.True(MentionParser.TryGetMention("@~/Docum", 8).Found);
+        Assert.True(MentionParser.TryGetMention("@./rel", 6).Found);
+    }
+
+    [Fact]
+    public void Mention_IsPathIntent_Classifies()
+    {
+        Assert.True(MentionParser.IsPathIntent(""));
+        Assert.True(MentionParser.IsPathIntent("/usr"));
+        Assert.True(MentionParser.IsPathIntent("./rel"));
+        Assert.True(MentionParser.IsPathIntent("~/x"));
+        Assert.True(MentionParser.IsPathIntent("卷一/细"));
+        Assert.False(MentionParser.IsPathIntent("卷一"));
+    }
+
+    [Fact]
+    public void Mention_CaretAfterNewline_IsNotFound()
+    {
+        // 回归：光标在换行之后（如粘贴多行后光标在第二行）→ @ 在上一行，不能跨行匹配
+        Assert.False(MentionParser.TryGetMention("@卷一\n", 4).Found);
+        Assert.False(MentionParser.TryGetMention("@卷一\n后", 5).Found);
+    }
+
+    [Fact]
+    public void Mention_OnlyAtCaretEnd_IsNotFound_BeforeAtSign()
+    {
+        // 光标在 @ 之前 → 不构成提及
+        Assert.False(MentionParser.TryGetMention("看这 @卷", 2).Found);
+    }
+
+    [Fact]
+    public void InsertSuggestion_DirectoryKeepsSlash_FileGetsSpace()
+    {
+        // "请看 @卷"：@=3，卷=4，光标在卷后=5（query=卷，Start=3）
+        var (dirText, dirCaret) = MentionParser.InsertSuggestion("请看 @卷", 5, 3, "卷一 风起/");
+        Assert.Equal("请看 @卷一 风起/", dirText);
+        Assert.Equal("请看 @卷一 风起/".Length, dirCaret);
+
+        var (fileText, fileCaret) = MentionParser.InsertSuggestion("请看 @序", 5, 3, "序章.txt");
+        Assert.Equal("请看 @序章.txt ", fileText);
+        Assert.Equal("请看 @序章.txt ".Length, fileCaret);
     }
 
     // ─────────── # 实体引用 ───────────
