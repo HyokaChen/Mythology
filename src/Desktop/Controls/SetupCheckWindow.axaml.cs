@@ -28,17 +28,7 @@ public partial class SetupCheckWindow : Window
         {
             if (vm.IsChecking)
                 return;
-            RunCheckButton.IsEnabled = false;
-            RunCheckButton.Content = "检查中…";
-            try
-            {
-                await vm.ExecuteCheckSetupAsync();
-            }
-            finally
-            {
-                RunCheckButton.IsEnabled = true;
-                RunCheckButton.Content = "运行检查";
-            }
+            await vm.ExecuteCheckSetupAsync();
         };
     }
 

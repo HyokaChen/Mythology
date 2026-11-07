@@ -16,6 +16,8 @@ namespace Desktop.Styles;
 /// <summary>
 /// 动效原语（全仓唯一实现点）：
 /// Enter         — 附加即可见 / IsVisible false→true 时播一次「淡入 + 上浮」
+/// Fade          — 附加即可见 / IsVisible false→true 时仅淡入（Fast 150ms，不碰 RenderTransform）
+/// Pop           — 附加即可见 / IsVisible false→true 时淡入 + 0.92→1 轻微放大（Fast 150ms，不回弹）
 /// PopupEnter    — Popup 每次 Opened 时对 Child 播一次（可用 PopupEnterRise 定方向）
 /// Stagger       — 列表容器附加：项按索引错峰淡入（只播一次，复用容器不重播）
 /// TabSwitch     — TabControl 附加：选中项按翻页方向滑入（替代 5 处手写接线）
@@ -81,6 +83,28 @@ public class Motion
 
     public static readonly AttachedProperty<double> EnterRiseProperty =
         AvaloniaProperty.RegisterAttached<Motion, Visual, double>("EnterRise", DefaultRise);
+
+    /// <summary>附加即可见 / IsVisible false→true 时仅淡入（不写 RenderTransform）。</summary>
+    public static readonly AttachedProperty<bool> FadeProperty = AvaloniaProperty.RegisterAttached<
+        Motion,
+        Visual,
+        bool
+    >("Fade");
+
+    public static bool GetFade(Visual v) => v.GetValue(FadeProperty);
+
+    public static void SetFade(Visual v, bool value) => v.SetValue(FadeProperty, value);
+
+    /// <summary>附加即可见 / IsVisible false→true 时淡入 + 0.92→1 轻微放大。</summary>
+    public static readonly AttachedProperty<bool> PopProperty = AvaloniaProperty.RegisterAttached<
+        Motion,
+        Visual,
+        bool
+    >("Pop");
+
+    public static bool GetPop(Visual v) => v.GetValue(PopProperty);
+
+    public static void SetPop(Visual v, bool value) => v.SetValue(PopProperty, value);
 
     public static readonly AttachedProperty<bool> PopupEnterProperty =
         AvaloniaProperty.RegisterAttached<Motion, Popup, bool>("PopupEnter");
@@ -207,6 +231,50 @@ public class Motion
                         && sender is Visual { IsVisible: true } v
                     )
                         _ = PlayEnter(v, GetEnterRise(v));
+                };
+            }
+        );
+
+        FadeProperty.Changed.AddClassHandler<Visual>(
+            static (visual, e) =>
+            {
+                if (e.NewValue is not true)
+                    return;
+                visual.AttachedToVisualTree += static (sender, args) =>
+                {
+                    _ = args;
+                    if (sender is Visual v && v.IsVisible)
+                        _ = FadeIn(v, Fast);
+                };
+                visual.PropertyChanged += static (sender, args) =>
+                {
+                    if (
+                        args.Property == Visual.IsVisibleProperty
+                        && sender is Visual { IsVisible: true } v
+                    )
+                        _ = FadeIn(v, Fast);
+                };
+            }
+        );
+
+        PopProperty.Changed.AddClassHandler<Visual>(
+            static (visual, e) =>
+            {
+                if (e.NewValue is not true)
+                    return;
+                visual.AttachedToVisualTree += static (sender, args) =>
+                {
+                    _ = args;
+                    if (sender is Visual v && v.IsVisible)
+                        _ = PlayPop(v, Fast);
+                };
+                visual.PropertyChanged += static (sender, args) =>
+                {
+                    if (
+                        args.Property == Visual.IsVisibleProperty
+                        && sender is Visual { IsVisible: true } v
+                    )
+                        _ = PlayPop(v, Fast);
                 };
             }
         );
@@ -506,6 +574,55 @@ public class Motion
         }
     }
 
+    /// <summary>淡入 + 0.92→1 轻微放大；用于小徽标/完成图标，绝不改布局。</summary>
+    public static async Task PlayPop(Visual visual, TimeSpan? duration = null)
+    {
+        var cts = Begin(visual);
+        var actual = duration ?? Fast;
+        try
+        {
+            visual.Opacity = 0;
+
+            var scale = visual.RenderTransform as ScaleTransform;
+            if (scale is null && visual.RenderTransform is not null)
+            {
+                // 已有非 Scale 变换：不覆盖它，退化为纯淡入
+                await RunOpacity(visual, actual, cts.Token);
+                return;
+            }
+
+            scale ??= new ScaleTransform(0.92, 0.92);
+            visual.RenderTransform = scale;
+            visual.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+
+            await Task.WhenAll(
+                RunOpacity(visual, actual, cts.Token),
+                RunScale(scale, 0.92, 1, actual, cts.Token)
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Motion] PlayPop 失败: {ex}");
+        }
+        finally
+        {
+            if (IsCurrent(visual, cts))
+            {
+                visual.Opacity = 1;
+                if (visual.RenderTransform is ScaleTransform scale)
+                {
+                    scale.ScaleX = 1;
+                    scale.ScaleY = 1;
+                }
+                Running.Remove(visual);
+            }
+        }
+    }
+
     /// <summary>
     /// 退场：淡出 + 下沉（位移优先走渲染线程）。
     /// 只用于显式 Close() 的覆盖层——调用方负责在动画结束后真正关闭/隐藏，
@@ -587,6 +704,20 @@ public class Motion
     ) =>
         BuildAnimation(() => TranslateTransform.XProperty, fromX, 0, duration)
             .RunAsync(translate, token);
+
+    private static Task RunScale(
+        ScaleTransform scale,
+        double from,
+        double to,
+        TimeSpan duration,
+        CancellationToken token
+    ) =>
+        Task.WhenAll(
+            BuildAnimation(() => ScaleTransform.ScaleXProperty, from, to, duration)
+                .RunAsync(scale, token),
+            BuildAnimation(() => ScaleTransform.ScaleYProperty, from, to, duration)
+                .RunAsync(scale, token)
+        );
 
     private static Animation BuildAnimation(
         Func<AvaloniaProperty> property,

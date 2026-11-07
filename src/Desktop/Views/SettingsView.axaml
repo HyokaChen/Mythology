@@ -53,11 +53,22 @@
                 Background="{DynamicResource BrushSageLeaf}"
                 CornerRadius="55"
                 Opacity="0"
+                RenderTransform="scale(0.72,1)"
+                RenderTransformOrigin="50%,50%"
               >
                 <Border.Transitions>
                   <Transitions>
                     <!-- 与相邻 tab 的旧下划线交叉淡出：300ms 会让两条线同时半显，像重影 -->
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                    <DoubleTransition
+                      Property="Opacity"
+                      Duration="{x:Static motion:Motion.Fast}"
+                      Easing="SineEaseOut"
+                    />
+                    <TransformOperationsTransition
+                      Property="RenderTransform"
+                      Duration="{x:Static motion:Motion.Fast}"
+                      Easing="SineEaseOut"
+                    />
                   </Transitions>
                 </Border.Transitions>
               </Border>
@@ -67,6 +78,7 @@
       </Setter>
       <Style Selector="^:selected /template/ Border#PART_Underline">
         <Setter Property="Opacity" Value="1" />
+        <Setter Property="RenderTransform" Value="scale(1,1)" />
       </Style>
     </ControlTheme>
   </UserControl.Resources>
@@ -150,6 +162,7 @@
                 FontSize="11"
                 Foreground="{DynamicResource BrushSageMist}"
                 IsVisible="{Binding ModelDiscoverStatus, Converter={StaticResource StringNotEmpty}}"
+                motion:Motion.Fade="True"
               />
             </StackPanel>
 
@@ -374,6 +387,7 @@
                 FontSize="11"
                 Foreground="{DynamicResource BrushSageMist}"
                 IsVisible="{Binding EmbeddingModelDiscoverStatus, Converter={StaticResource StringNotEmpty}}"
+                motion:Motion.Fade="True"
               />
             </StackPanel>
 
@@ -1229,6 +1243,7 @@
           TextTrimming="CharacterEllipsis"
           VerticalAlignment="Center"
           IsVisible="{Binding SaveStatus, Converter={StaticResource StringNotEmpty}}"
+          motion:Motion.Fade="True"
         />
         <Button
           Grid.Column="1"

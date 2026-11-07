@@ -46,13 +46,17 @@ public sealed class TreeViewSelectionThemeTests
             Dispatcher.UIThread.RunJobs();
 
             var item = Assert.Single(tree.GetVisualDescendants().OfType<TreeViewItem>());
-            item.IsSelected = true;
-            Dispatcher.UIThread.RunJobs();
-
             var border = Assert.Single(
                 item.GetVisualDescendants().OfType<Border>(),
                 b => b.Name == "SelectionBorder"
             );
+
+            // 无头首帧还没有推进 BrushTransition 的时钟；这里先移除过渡，
+            // 只验证最终选中底色与文字对比度。过渡结构由 MotionWiringTests 锁定。
+            border.Transitions = null;
+            item.IsSelected = true;
+            Dispatcher.UIThread.RunJobs();
+
             var background = Assert.IsAssignableFrom<ISolidColorBrush>(border.Background);
             Assert.Equal(Color.Parse("#33A5AC9F"), background.Color);
 

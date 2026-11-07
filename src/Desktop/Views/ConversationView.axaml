@@ -240,6 +240,7 @@
                                 Size="11"
                                 StrokeWidth="1.6"
                                 IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                                motion:Motion.Pop="True"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                               />
@@ -278,6 +279,7 @@
                             Foreground="{DynamicResource BrushSageGray}"
                             TextWrapping="Wrap"
                             Margin="18,0,0,0"
+                            motion:Motion.Fade="True"
                           />
                           <!-- 详情默认折叠：工具原始参数/结果与结构化 diff 不铺在对话里；
                              思考正文在详情区默认展开（步骤创建时置 true），可点「收起」折叠。
@@ -288,6 +290,8 @@
                             Spacing="4"
                             Margin="18,2,0,0"
                             HorizontalAlignment="Stretch"
+                            motion:Motion.Enter="True"
+                            motion:Motion.EnterRise="4"
                           >
                             <TextBlock
                               Text="{Binding ThinkingText}"
@@ -581,6 +585,7 @@
                 Classes="Ghost"
                 Command="{Binding StopProcessingCommand}"
                 IsVisible="{Binding IsProcessing}"
+                motion:Motion.Fade="True"
               >
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <lucide:LucideIcon
@@ -597,6 +602,7 @@
                 Classes="Primary"
                 Command="{Binding SendMessageCommand}"
                 IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                motion:Motion.Fade="True"
               >
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <TextBlock Text="发送" VerticalAlignment="Center" />

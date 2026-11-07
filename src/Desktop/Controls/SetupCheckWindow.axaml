@@ -2,6 +2,7 @@
   x:Class="Desktop.Controls.SetupCheckWindow"
   xmlns="https://github.com/avaloniaui"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:controls="clr-namespace:Desktop.Controls"
   xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
   xmlns:models="clr-namespace:Desktop.Models"
   xmlns:vm="clr-namespace:Desktop.ViewModels"
@@ -162,7 +163,28 @@
       <!-- DESIGN.md：次级在左 · Primary 居右（此前 Primary 在左、Ghost 在最右，动作序倒置） -->
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CloseButton" Classes="Ghost" Content="关闭" />
-        <Button x:Name="RunCheckButton" Classes="Primary" Content="运行检查" />
+        <Button x:Name="RunCheckButton" Classes="Primary" IsEnabled="{Binding !IsChecking}">
+          <Panel>
+            <TextBlock
+              Text="运行检查"
+              IsVisible="{Binding !IsChecking}"
+              motion:Motion.Fade="True"
+            />
+            <StackPanel
+              Orientation="Horizontal"
+              Spacing="6"
+              IsVisible="{Binding IsChecking}"
+              motion:Motion.Fade="True"
+            >
+              <controls:BusySpinner
+                IsActive="{Binding IsChecking}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushLinen}"
+              />
+              <TextBlock Text="检查中…" />
+            </StackPanel>
+          </Panel>
+        </Button>
       </StackPanel>
     </StackPanel>
   </Grid>

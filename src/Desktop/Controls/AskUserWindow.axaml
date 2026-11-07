@@ -33,7 +33,15 @@
     </Border>
 
     <!-- 自定义输入区（单选时显示） -->
-    <StackPanel x:Name="CustomPanel" Grid.Row="2" Spacing="6" IsVisible="False" Margin="0,12,0,0">
+    <StackPanel
+      x:Name="CustomPanel"
+      Grid.Row="2"
+      Spacing="6"
+      IsVisible="False"
+      Margin="0,12,0,0"
+      motion:Motion.Enter="True"
+      motion:Motion.EnterRise="4"
+    >
       <TextBox x:Name="CustomInput" Classes="Adaline" PlaceholderText="输入自定义答案…" />
       <TextBlock
         Text="Enter 确认 · Esc 取消"

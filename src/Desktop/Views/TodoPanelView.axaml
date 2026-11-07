@@ -80,6 +80,7 @@
                         Foreground="{DynamicResource BrushSageMist}"
                         Text="{Binding StatusLabel}"
                         IsVisible="{Binding IsCompleted}"
+                        motion:Motion.Fade="True"
                       />
                     </StackPanel>
                   </Grid>

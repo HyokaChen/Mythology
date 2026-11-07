@@ -172,6 +172,7 @@
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
                 IsVisible="{Binding UpdatePrompt.HasPendingUpdate, FallbackValue=False}"
+                motion:Motion.Pop="True"
               />
             </Panel>
           </Button>

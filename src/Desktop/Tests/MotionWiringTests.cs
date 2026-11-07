@@ -221,6 +221,7 @@ public sealed class MotionWiringTests
     [InlineData("MenuItem /template/ Border#root")]
     [InlineData("TabItem /template/ ContentPresenter")]
     [InlineData("TreeViewItem /template/ ContentPresenter")]
+    [InlineData("TreeViewItem /template/ Border#SelectionBorder")]
     [InlineData("Border.OutlineRow")]
     [InlineData("ScrollBar Thumb")]
     [InlineData("ProgressBar")]
@@ -432,6 +433,248 @@ public sealed class MotionWiringTests
         Assert.True(
             pressed is not null,
             "MythologyStyles.axaml 缺少 Button:pressed 的 scale(0.97)"
+        );
+    }
+
+    [Fact]
+    public void ConversationComposerModeButtons_FadeIn()
+    {
+        var root = Load("Views/ConversationView.axaml");
+        foreach (var name in new[] { "StopButton", "SendButton" })
+        {
+            var button = Single(
+                root,
+                e => e.Name.LocalName == "Button" && AttrPlain(e, "Name") == name
+            );
+            Assert.Equal("True", Attr(button, "Motion.Fade"));
+        }
+    }
+
+    [Fact]
+    public void ConversationAgentStepCompletion_PopsIn()
+    {
+        var stepTemplate = Single(
+            Load("Views/ConversationView.axaml"),
+            e =>
+                e.Name.LocalName == "DataTemplate"
+                && e.Attributes()
+                    .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("AgentStep"))
+        );
+        var icon = stepTemplate
+            .Descendants()
+            .Single(e =>
+                e.Name.LocalName == "LucideIcon"
+                && AttrPlain(e, "IsVisible")
+                    .Contains("InvertedBoolToVisibility", StringComparison.Ordinal)
+            );
+
+        Assert.Equal("True", Attr(icon, "Motion.Pop"));
+    }
+
+    [Fact]
+    public void ConversationResultSummary_FadesIn()
+    {
+        var text = Single(
+            Load("Views/ConversationView.axaml"),
+            e =>
+                e.Name.LocalName == "TextBlock"
+                && AttrPlain(e, "Text").Contains("ResultSummary", StringComparison.Ordinal)
+        );
+
+        Assert.Equal("True", Attr(text, "Motion.Fade"));
+    }
+
+    [Fact]
+    public void ConversationToolDetails_PlaysEnterWithSmallRise()
+    {
+        var details = Single(
+            Load("Views/ConversationView.axaml"),
+            e =>
+                e.Name.LocalName == "StackPanel"
+                && AttrPlain(e, "Classes").Contains("StepDetails", StringComparison.Ordinal)
+        );
+
+        Assert.Equal("True", Attr(details, "Motion.Enter"));
+        Assert.Equal("4", Attr(details, "Motion.EnterRise"));
+    }
+
+    [Fact]
+    public void MainWindowUpdateBadge_PopsIn()
+    {
+        var dot = Single(
+            Load("Views/MainWindow.axaml"),
+            e =>
+                e.Name.LocalName == "Ellipse"
+                && AttrPlain(e, "IsVisible")
+                    .Contains("UpdatePrompt.HasPendingUpdate", StringComparison.Ordinal)
+        );
+
+        Assert.Equal("True", Attr(dot, "Motion.Pop"));
+    }
+
+    [Fact]
+    public void UpdatePromptActionButtons_FadeIn()
+    {
+        var root = Load("Controls/UpdatePromptDialog.axaml");
+        foreach (var content in new[] { "重试", "开始安装" })
+        {
+            var button = Single(
+                root,
+                e => e.Name.LocalName == "Button" && AttrPlain(e, "Content") == content
+            );
+            Assert.Equal("True", Attr(button, "Motion.Fade"));
+        }
+    }
+
+    [Fact]
+    public void SettingsTabUnderline_GrowsOnSelection()
+    {
+        var root = Load("Views/SettingsView.axaml");
+        var underline = Single(
+            root,
+            e => e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "PART_Underline"
+        );
+        Assert.True(
+            underline
+                .Descendants()
+                .Any(d =>
+                    d.Name.LocalName == "TransformOperationsTransition"
+                    && AttrPlain(d, "Property") == "RenderTransform"
+                ),
+            "PART_Underline 缺少 RenderTransform 过渡"
+        );
+
+        var selected = Single(
+            root,
+            e =>
+                e.Name.LocalName == "Style"
+                && AttrPlain(e, "Selector") == "^:selected /template/ Border#PART_Underline"
+        );
+        Assert.True(
+            selected
+                .Elements()
+                .Any(s =>
+                    AttrPlain(s, "Property") == "RenderTransform"
+                    && AttrPlain(s, "Value").Contains("scale(1,1)", StringComparison.Ordinal)
+                ),
+            "PART_Underline 选中态缺少 scale(1,1)"
+        );
+    }
+
+    [Fact]
+    public void SettingsAsyncStatus_FadesIn()
+    {
+        var root = Load("Views/SettingsView.axaml");
+        foreach (
+            var binding in new[]
+            {
+                "ModelDiscoverStatus",
+                "EmbeddingModelDiscoverStatus",
+                "SaveStatus",
+            }
+        )
+        {
+            var text = Single(
+                root,
+                e =>
+                    e.Name.LocalName == "TextBlock"
+                    && AttrPlain(e, "Text") == $"{{Binding {binding}}}"
+            );
+            Assert.Equal("True", Attr(text, "Motion.Fade"));
+        }
+    }
+
+    [Fact]
+    public void SetupCheckRunButton_HasBusySpinnerAndFade()
+    {
+        var root = Load("Controls/SetupCheckWindow.axaml");
+        var button = Single(
+            root,
+            e => e.Name.LocalName == "Button" && AttrPlain(e, "Name") == "RunCheckButton"
+        );
+        Assert.Contains("IsChecking", AttrPlain(button, "IsEnabled"), StringComparison.Ordinal);
+
+        var spinner = Single(
+            button,
+            e =>
+                e.Name.LocalName == "BusySpinner"
+                && AttrPlain(e, "IsActive").Contains("IsChecking", StringComparison.Ordinal)
+        );
+        Assert.NotNull(spinner);
+
+        var idle = Single(
+            button,
+            e => e.Name.LocalName == "TextBlock" && AttrPlain(e, "Text") == "运行检查"
+        );
+        Assert.Equal("True", Attr(idle, "Motion.Fade"));
+
+        var busy = Single(
+            button,
+            e =>
+                e.Name.LocalName == "StackPanel"
+                && AttrPlain(e, "IsVisible").Contains("IsChecking", StringComparison.Ordinal)
+        );
+        Assert.Equal("True", Attr(busy, "Motion.Fade"));
+    }
+
+    [Fact]
+    public void AskUserCustomPanel_PlaysEnterWithSmallRise()
+    {
+        var panel = Single(
+            Load("Controls/AskUserWindow.axaml"),
+            e => e.Name.LocalName == "StackPanel" && AttrPlain(e, "Name") == "CustomPanel"
+        );
+
+        Assert.Equal("True", Attr(panel, "Motion.Enter"));
+        Assert.Equal("4", Attr(panel, "Motion.EnterRise"));
+    }
+
+    [Fact]
+    public void TodoCompletedLabel_FadesIn()
+    {
+        var text = Single(
+            Load("Views/TodoPanelView.axaml"),
+            e =>
+                e.Name.LocalName == "TextBlock"
+                && AttrPlain(e, "IsVisible").Contains("IsCompleted", StringComparison.Ordinal)
+        );
+
+        Assert.Equal("True", Attr(text, "Motion.Fade"));
+    }
+
+    [Fact]
+    public void ToolTip_TravelsUpOnOpen()
+    {
+        var style = Single(
+            Load("Styles/MythologyStyles.axaml"),
+            e => e.Name.LocalName == "Style" && AttrPlain(e, "Selector") == "ToolTip"
+        );
+        var animation = Single(style, e => e.Name.LocalName == "Animation");
+        Assert.Contains("Motion.Fast", AttrPlain(animation, "Duration"), StringComparison.Ordinal);
+
+        var keyFrames = animation.Descendants().Where(e => e.Name.LocalName == "KeyFrame").ToList();
+        Assert.True(
+            keyFrames.Any(k =>
+                k.Descendants()
+                    .Any(s =>
+                        AttrPlain(s, "Property") == "RenderTransform"
+                        && AttrPlain(s, "Value")
+                            .Contains("translateY(2px)", StringComparison.Ordinal)
+                        && AttrPlain(s, "Value").Contains("scale(0.98)", StringComparison.Ordinal)
+                    )
+            ),
+            "ToolTip 缺少 translateY(2px) scale(0.98) 起始帧"
+        );
+        Assert.True(
+            keyFrames.Any(k =>
+                k.Descendants()
+                    .Any(s =>
+                        AttrPlain(s, "Property") == "RenderTransform"
+                        && AttrPlain(s, "Value").Contains("translateY(0)", StringComparison.Ordinal)
+                        && AttrPlain(s, "Value").Contains("scale(1)", StringComparison.Ordinal)
+                    )
+            ),
+            "ToolTip 缺少 translateY(0) scale(1) 结束帧"
         );
     }
 

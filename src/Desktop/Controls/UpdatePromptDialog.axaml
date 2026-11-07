@@ -143,12 +143,14 @@
               Command="{Binding PrimaryActionCommand}"
               IsVisible="{Binding IsFailed, FallbackValue=False}"
               Content="重试"
+              motion:Motion.Fade="True"
             />
             <Button
               Classes="Primary"
               Command="{Binding InstallNowCommand}"
               IsVisible="{Binding IsInstallReady, FallbackValue=False}"
               Content="开始安装"
+              motion:Motion.Fade="True"
             />
           </StackPanel>
         </StackPanel>
