@@ -97,25 +97,11 @@ public sealed class MythPromptEditor : PromptEditor
     private string _trailingOnApply = " "; // 应用时附加的尾部文本
 
     /// <summary>
-    /// 选择应用文本后设置，以便下一帧知道跳过重新触发补全
-    /// （否则会自动应用单个候选并撤销用户随后的退格操作）。
+    /// 本次弹层是否已经应用过候选。点击路径会经 PointerPressed 应用一次，
+    /// 随后 release 的 ItemActivated 会再派发一次；键盘路径只经 ItemActivated。
+    /// 用一次性标志保证两条路径合计只应用一次（用户报障：点击出现 "alpha alpha "）。
     /// </summary>
-    private bool _selectionApplied;
-
-    /// <summary>
-    /// 由更新循环调用。当为 true 时，更新循环不应为当前文本更改触发补全。
-    /// 消耗一次。
-    /// </summary>
-    /// <returns>是否已消耗选择应用标志。</returns>
-    public bool ConsumeSelectionApplied()
-    {
-        if (_selectionApplied)
-        {
-            _selectionApplied = false;
-            return true;
-        }
-        return false;
-    }
+    private bool _candidateApplied;
 
     // ── 输入历史状态 ─────────────────────────────────────────
     private readonly List<string> _history = []; // 历史记录列表
@@ -161,6 +147,7 @@ public sealed class MythPromptEditor : PromptEditor
         _myCandidates = candidates;
         _myReplaceStart = replaceStart;
         _myReplaceLength = replaceLength;
+        _candidateApplied = false;
 
         // Reuse existing popup — update items and anchor rect
         if (_myPopup is not null)
@@ -454,27 +441,37 @@ public sealed class MythPromptEditor : PromptEditor
     /// <summary>按索引应用候选（AnchoredPopup.ItemActivated 先关面板后派发，因此此处面板已关）。</summary>
     internal void ApplyCandidateAt(int idx)
     {
-        if (idx < 0 || idx >= _myCandidates.Length)
+        if (_candidateApplied || idx < 0 || idx >= _myCandidates.Length)
             return;
 
-        var candidate = _myCandidates[idx];
+        _candidateApplied = true;
+        var candidate = CandidateInsertText(_myCandidates[idx]);
         var text = Text ?? "";
         var start = Math.Clamp(_myReplaceStart, 0, text.Length);
         var length = Math.Clamp(_myReplaceLength, 0, text.Length - start);
-        // 替换斜杠命令部分并附加尾部空格
+        // 替换斜杠命令部分并附加尾部文本（# 一级是 ":"，其余是空格）
         var before = text[..start];
         var after = text[(start + length)..];
         var newText = before + candidate + _trailingOnApply + after;
 
         Text = newText;
         CaretIndex = start + candidate.Length + _trailingOnApply.Length;
-
-        var wasHashStage1 = _trailingOnApply != " ";
         _trailingOnApply = " ";
-
-        _selectionApplied = !wasHashStage1;
-        // 焦点回到编辑器
+        // 焦点回到编辑器；下一次 update loop 看到文本变化会 TriggerCompletion，
+        // 由它决定是否展开下一级 popup（/tools → 插件、/theme → 主题、#类型 → 名称）。
         App?.Focus(this);
+    }
+
+    /// <summary>
+    /// 斜杠命令候选里的用法占位（如 `/read &lt;序号|ID|标题&gt;`）只用于展示，
+    /// 应用时必须只落命令本身，否则输入框会插入一段不能执行的占位文本。
+    /// </summary>
+    internal static string CandidateInsertText(string candidate)
+    {
+        if (candidate.Length == 0 || !candidate.StartsWith('/'))
+            return candidate;
+        var usageIdx = candidate.IndexOf(" <", StringComparison.Ordinal);
+        return usageIdx > 0 ? candidate[..usageIdx] : candidate;
     }
 
     // ── 弹出窗口事件处理 ────────────────────────────────────────
@@ -491,12 +488,15 @@ public sealed class MythPromptEditor : PromptEditor
         e.Handled = true;
     }
 
-    /// <summary>弹出窗口关闭时清理补全状态（AnchoredPopup.onClosed 回调）。</summary>
+    /// <summary>
+    /// 弹出窗口关闭时清理补全状态（AnchoredPopup.onClosed 回调）。
+    /// 注意：<see cref="AnchoredPopup{TOwner}"/> 的 ItemActivated 是「先 Close（触发本回调）再派发
+    /// onActivated」。若这里清空 _myCandidates / 替换区间，键盘 Enter 的应用会拿到空候选
+    /// （用户报障：上下键选完后候选没有进入输入框）。因此只清 popup 引用，候选快照留到下一次
+    /// ShowCompletionPopup 覆盖；ApplyCandidateAt 只接受本次 pending 的索引。
+    /// </summary>
     private void OnMyPopupClosed()
     {
         _myPopup = null;
-        _myCandidates = [];
-        _myReplaceStart = 0;
-        _myReplaceLength = 0;
     }
 }

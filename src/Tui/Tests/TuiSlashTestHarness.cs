@@ -9,6 +9,7 @@ using Core.Plugins;
 using Core.Shared;
 using Core.Tools;
 using LlmTornado.Code;
+using Tui.Controls;
 using Tui.Services;
 using XenoAtom.Terminal.UI;
 using LlmChatMessage = LlmTornado.Chat.ChatMessage;
@@ -71,6 +72,7 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
     private readonly FieldInfo _persistedMessageCountField;
     private readonly FieldInfo _lastParentEntryIdField;
     private readonly FieldInfo _inputTextField;
+    private readonly FieldInfo _promptEditorField;
     private readonly MethodInfo _submitInput;
 
     /// <summary>测试小说消息（6 条：3 轮 user/assistant）。</summary>
@@ -162,6 +164,7 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
         _persistedMessageCountField = typeof(TuiApp).GetField("_persistedMessageCount", flags)!;
         _lastParentEntryIdField = typeof(TuiApp).GetField("_lastParentEntryId", flags)!;
         _inputTextField = typeof(TuiApp).GetField("_inputText", flags)!;
+        _promptEditorField = typeof(TuiApp).GetField("_promptEditor", flags)!;
         _submitInput = typeof(TuiApp).GetMethod("SubmitInput", flags)!;
     }
 
@@ -169,9 +172,18 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
 
     internal string? CurrentSessionId => (string?)_sessionIdField.GetValue(App);
 
+    internal MythPromptEditor PromptEditor => (MythPromptEditor)_promptEditorField.GetValue(App)!;
+
     internal void SetSessionId(string sessionId) => _sessionIdField.SetValue(App, sessionId);
 
     internal void InvokeSlashCommand(string input) => _handleSlashCommand.Invoke(App, [input]);
+
+    /// <summary>只设置输入框文本（不回车）；用于触发真实 update loop 的补全链路。</summary>
+    internal void SetInputText(string input)
+    {
+        var inputText = (State<string?>)_inputTextField.GetValue(App)!;
+        inputText.Value = input;
+    }
 
     /// <summary>模拟用户在输入框输入并回车：设置 _inputText.Value 后走真实 SubmitInput 路径。</summary>
     internal void SubmitInput(string input)

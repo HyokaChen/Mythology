@@ -240,10 +240,12 @@ public partial class ConversationView : UserControl
         var text = InputBox.Text ?? "";
         var caret = InputBox.CaretIndex;
 
-        var isSlash = text.TrimStart().StartsWith('/') && !text.Contains('\n');
-        if (isSlash)
+        var trimmed = text.TrimStart();
+        var isCommand =
+            (trimmed.StartsWith('/') || trimmed.StartsWith(':')) && !text.Contains('\n');
+        if (isCommand)
         {
-            // 斜杠命令补全优先于 @ / # 补全
+            // 斜杠/冒号命令补全优先于 @ / # 补全
             vm.IsSuggestionPopupVisible = false;
             vm.UpdateCommandSuggestions(text);
             return;
@@ -270,7 +272,7 @@ public partial class ConversationView : UserControl
         _ = vm.UpdateMentionSuggestionsAsync(mention.Query);
     }
 
-    /// <summary>插入选中命令到输入框（替换 /query）。</summary>
+    /// <summary>插入选中命令到输入框（按 VM 给出的替换区间；命令级补空格、/tools 插件级补冒号）。</summary>
     private void InsertSelectedCommand(ConversationViewModel vm)
     {
         var text = InputBox.Text ?? "";
@@ -282,15 +284,15 @@ public partial class ConversationView : UserControl
 
         var index = Math.Clamp(vm.SelectedCommandIndex, 0, vm.CommandSuggestions.Count - 1);
         var command = vm.CommandSuggestions[index];
-        // 替换当前 /前缀（直到空格或行尾）
-        var trimmed = text.TrimStart();
-        var spaceIdx = trimmed.IndexOf(' ');
-        var prefix = spaceIdx < 0 ? trimmed : trimmed[..spaceIdx];
-        var startOffset = text.Length - trimmed.Length;
-        InputBox.Text = text[..startOffset] + command;
-        InputBox.CaretIndex = InputBox.Text.Length;
+        var start = Math.Clamp(vm.CommandReplaceStart, 0, text.Length);
+        var length = Math.Clamp(vm.CommandReplaceLength, 0, text.Length - start);
+        var insert = command + vm.CommandSuffix;
+        InputBox.Text = text[..start] + insert + text[(start + length)..];
+        InputBox.CaretIndex = start + insert.Length;
         vm.IsCommandPopupVisible = false;
         InputBox.Focus();
+        // 级联补全：/tools → 插件、/tools 插件: → 工具；其余命令选中后自然关闭。
+        RefreshSuggestions();
     }
 
     /// <summary>插入选中建议到输入框（# 一级 → "#类型:"；# 二级 → "#类型:名称 "；@ → "@名称 "）。</summary>

@@ -93,6 +93,16 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **斜杠补全键盘选择丢失 / 无法级联**：TUI `MythPromptEditor` 的 `AnchoredPopup.ItemActivated`
+  先 `Close` 再派发，`OnMyPopupClosed` 清空候选导致 Enter 应用时无候选（上下键选完输入框仍只有 `/`）；
+  点击路径又因 `PointerPressed` + `ItemActivated` 双应用出现 `alpha alpha `。现在关闭只清 popup 引用，
+  候选快照保留到下一次 `ShowCompletionPopup`，并用一次性 applied 标志保证点击/键盘各只应用一次。
+  选中命令后 update loop 继续补全：`/tools → 插件 → 工具`、`/theme → 主题`、`#类型 → 名称`；
+  `/read <...>` 等用法占位只用于展示，插入时只落命令本身。
+  Desktop 同步：`UpdateCommandSuggestions` 返回替换区间与后缀（`/tools` 插件级自动补冒号），
+  `InsertSelectedCommand` 按区间插入并刷新下一级 popup，不再丢弃参数/整段覆盖。
+  回归：TUI 键盘 Down/Enter 实机、`/tools` 三级级联、占位清理；Desktop 替换区间/后缀；全量 Core 1540/1540、
+  Desktop 543/543、TUI 876 通过（2 skipped）。
 - **弹窗里「新建」入口只在窗口外**：会话弹窗原先只有主界面头部工具条能新开对话，弹窗内无处可点；
   书房弹窗则把「新建小说」压在底部动作条里。两个弹窗统一为**列表首行**模式（对齐 TUI
   `SessionPickerDialog` 的「新建会话」）：卡片第一行 = `＋ 新建对话` / `＋ 新建小说`，

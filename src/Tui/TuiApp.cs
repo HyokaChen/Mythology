@@ -882,13 +882,9 @@ public sealed partial class TuiApp : IDisposable
                 if (current != _prevInputText || tabCompletion)
                 {
                     _prevInputText = current;
-                    var selectionApplied = _promptEditor.ConsumeSelectionApplied();
 
                     var isSlashCmd =
-                        current is not null
-                        && current.StartsWith('/')
-                        && !current.Contains('\n')
-                        && (!current.Contains(' ') || current.StartsWith("/tools "));
+                        current is not null && current.StartsWith('/') && !current.Contains('\n');
 
                     var isEntityMention =
                         current is not null && current.Contains('@') && !current.Contains('\n');
@@ -896,11 +892,7 @@ public sealed partial class TuiApp : IDisposable
                     var isHashRef =
                         current is not null && current.Contains('#') && !current.Contains('\n');
 
-                    if (
-                        !selectionApplied
-                        && (isSlashCmd || isEntityMention || isHashRef)
-                        && current is not null
-                    )
+                    if ((isSlashCmd || isEntityMention || isHashRef) && current is not null)
                         TriggerCompletion(current);
                     else if (_promptEditor.IsMyPopupOpen)
                         _promptEditor.CloseMyPopup();

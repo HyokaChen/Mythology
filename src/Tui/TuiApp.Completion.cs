@@ -143,33 +143,47 @@ public sealed partial class TuiApp
 
         // /tools 二级补全：空格后补全插件 ID，冒号后补全工具名
         const string toolsPrefix = SlashCommandParser.Tools;
-        if (input.StartsWith($"{toolsPrefix} ") && input.Length > toolsPrefix.Length + 1)
+        if (input.StartsWith($"{toolsPrefix} "))
         {
             var afterPrefix = input[(toolsPrefix.Length + 1)..];
             var colonIdx = afterPrefix.IndexOf(':');
 
             if (colonIdx < 0)
             {
-                // /tools <部分插件ID> — 空格后补全插件 kebab-case ID
+                // 已经选完插件（尾部空格）→ 等用户继续输入冒号/回车，不再弹同一份插件列表
+                if (afterPrefix.Contains(' '))
+                {
+                    _promptEditor.CloseMyPopup();
+                    return;
+                }
+
+                // /tools <部分插件ID> — 补全插件 kebab-case ID；选中后自动补冒号进入工具级
                 var pluginIds = _registry.GetPluginIds();
-                var prefix = afterPrefix;
-
                 var idMatches = pluginIds
-                    .Where(id => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    .Where(id => id.StartsWith(afterPrefix, StringComparison.OrdinalIgnoreCase))
                     .ToArray();
-
                 var candidates = idMatches.Length > 0 ? idMatches : pluginIds.ToArray();
-                _promptEditor.ShowCompletionPopup(
-                    candidates,
-                    toolsPrefix.Length + 1,
-                    afterPrefix.Length
-                );
+                if (candidates.Length > 0)
+                {
+                    _promptEditor.ShowCompletionPopup(
+                        candidates,
+                        toolsPrefix.Length + 1,
+                        afterPrefix.Length,
+                        ":"
+                    );
+                    return;
+                }
             }
             else
             {
                 // /tools <插件ID>:<部分工具名> — 冒号后补全该插件的工具名
                 var pluginId = afterPrefix[..colonIdx];
                 var toolPrefix = afterPrefix[(colonIdx + 1)..];
+                if (toolPrefix.Contains(' '))
+                {
+                    _promptEditor.CloseMyPopup();
+                    return;
+                }
 
                 var actualPluginName = _registry.GetPluginNameById(pluginId);
                 if (actualPluginName is not null)
@@ -180,17 +194,51 @@ public sealed partial class TuiApp
                         .Where(n => n.StartsWith(toolPrefix, StringComparison.OrdinalIgnoreCase))
                         .ToArray();
                     var candidates = matches.Length > 0 ? matches : toolNames;
-                    _promptEditor.ShowCompletionPopup(
-                        candidates,
-                        7 + colonIdx + 1,
-                        toolPrefix.Length
-                    );
+                    if (candidates.Length > 0)
+                    {
+                        _promptEditor.ShowCompletionPopup(
+                            candidates,
+                            toolsPrefix.Length + 1 + colonIdx + 1,
+                            toolPrefix.Length
+                        );
+                        return;
+                    }
                 }
             }
+            _promptEditor.CloseMyPopup();
+            return;
         }
 
-        // 斜杠命令补全：按前缀过滤已注册命令
+        // /theme 二级补全：toggle 或主题 id（选中后尾部空格关闭 popup）
+        const string themePrefix = SlashCommandParser.Theme;
+        if (input.StartsWith($"{themePrefix} "))
+        {
+            var afterPrefix = input[(themePrefix.Length + 1)..];
+            if (!afterPrefix.Contains(' '))
+            {
+                var candidates = new[] { SlashCommandParser.ThemeToggle }
+                    .Concat(ThemeRegistry.All.Select(t => t.Id))
+                    .Where(c => c.StartsWith(afterPrefix, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                if (candidates.Length > 0)
+                {
+                    _promptEditor.ShowCompletionPopup(
+                        candidates,
+                        themePrefix.Length + 1,
+                        afterPrefix.Length
+                    );
+                    return;
+                }
+            }
+            _promptEditor.CloseMyPopup();
+            return;
+        }
+
+        // 斜杠命令一级补全：只列命令本身（不把 <参数> 用法带进输入框）。
+        // 选中命令后，下一次 update loop 会按新文本继续展开 /tools、/theme 等二级 popup。
         var matching = GetSlashCommands()
+            .Select(c => c.Split(' ')[0])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(c => c.StartsWith(input, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         if (matching.Length > 0)

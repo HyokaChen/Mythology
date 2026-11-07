@@ -853,6 +853,51 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
         await WaitForOutputAsync("未知插件");
     }
 
+    /// <summary>
+    /// 用户报障的完整链路：输入 `/tools` → 上下键/Enter 选中并插入输入框 →
+    /// 自动展开插件二级 popup → 再选中插件 → 插入 `plugin:` 并展开工具三级 popup。
+    /// </summary>
+    [Fact]
+    public async Task SlashCompletion_KeyboardSelection_InsertsAndCascades()
+    {
+        var pluginId = _harness.Registry.GetPluginIds().First();
+
+        await Dispatcher.Current.InvokeAsync(() => _harness.SetInputText("/tools"));
+        await WaitUntilAsync(() => _harness.PromptEditor.IsMyPopupOpen, "一级斜杠补全弹层");
+
+        // 第一个候选 = /tools；Enter 应用
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+        await WaitUntilAsync(
+            async () =>
+                await TerminalUiFixture.OnUiAsync(() => _harness.PromptEditor.Text == "/tools "),
+            "选中 /tools 后未插入输入框"
+        );
+
+        // 应用后 update loop 自动展开 /tools 的插件二级 popup
+        await WaitUntilAsync(
+            async () =>
+                await TerminalUiFixture.OnUiAsync(() => _harness.PromptEditor.IsMyPopupOpen),
+            "插件二级 popup 未自动展开"
+        );
+
+        // 第一个插件候选 = pluginId；Enter 应用并自动补冒号
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+        await WaitUntilAsync(
+            async () =>
+                await TerminalUiFixture.OnUiAsync(() =>
+                    _harness.PromptEditor.Text == $"/tools {pluginId}:"
+                ),
+            "插件候选未插入并补冒号"
+        );
+
+        // 冒号后自动展开工具三级 popup
+        await WaitUntilAsync(
+            async () =>
+                await TerminalUiFixture.OnUiAsync(() => _harness.PromptEditor.IsMyPopupOpen),
+            "工具三级 popup 未自动展开"
+        );
+    }
+
     [Fact]
     public async Task Variants_NoVariant_ShowsToast()
     {

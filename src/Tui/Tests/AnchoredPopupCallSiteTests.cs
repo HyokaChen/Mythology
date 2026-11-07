@@ -141,6 +141,41 @@ public sealed class CompletionPopupCallSiteTests : IAsyncLifetime
         Assert.Equal("beta ", await OnUiAsync(() => _editor.Text ?? ""));
     }
 
+    /// <summary>
+    /// 键盘路径：Down 选中第二项、Enter 应用，输入框必须变成 "/beta "。
+    /// 用户报障：slash 弹窗里上下键选择后，候选没有进入输入框。
+    /// </summary>
+    [Fact]
+    public async Task KeyboardDownThenEnter_AppliesSelectedCandidate()
+    {
+        await OnUiAsync(() =>
+        {
+            _editor.Text = "/";
+            _editor.CaretIndex = 1;
+            _editor.ShowCompletionPopup(["/alpha", "/beta"], 0, 1, " ");
+            return true;
+        });
+        await WaitUntilAsync(
+            async () => await OnUiAsync(() => FindPopupList() is not null),
+            "补全弹层打开"
+        );
+        await Task.Delay(80);
+
+        var list = await OnUiAsync(() => FindPopupList());
+        Assert.NotNull(list);
+        Assert.Equal(0, await OnUiAsync(() => list!.SelectedIndex));
+
+        _backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        await Task.Delay(80);
+        Assert.Equal(1, await OnUiAsync(() => list!.SelectedIndex));
+
+        _backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+        await Task.Delay(250);
+
+        Assert.Equal("/beta ", await OnUiAsync(() => _editor.Text ?? ""));
+        Assert.False(await OnUiAsync(() => _editor.IsMyPopupOpen));
+    }
+
     // ── 基础设施 ──
 
     private OptionList<string>? FindPopupList() =>

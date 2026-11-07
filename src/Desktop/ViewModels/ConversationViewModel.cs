@@ -33,6 +33,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private readonly INovelStore _store;
     private readonly UserQuestionStore _questionStore;
     private readonly ToolDisplayFormatter _toolDisplay;
+    private readonly ToolRegistry? _registry;
     private readonly ILogger _log;
     private CancellationTokenSource? _cts;
     private StreamEventHandler? _handler;
@@ -50,6 +51,15 @@ public sealed class ConversationViewModel : ViewModelBase
 
     /// <summary>斜杠命令补全建议。</summary>
     public ObservableCollection<string> CommandSuggestions { get; } = [];
+
+    /// <summary>选中命令时替换的绝对起点（含 /tools 参数级补全）。</summary>
+    public int CommandReplaceStart { get; private set; }
+
+    /// <summary>选中命令时替换的长度。</summary>
+    public int CommandReplaceLength { get; private set; }
+
+    /// <summary>选中命令后追加的文本（命令级 = 空格；/tools 插件级 = 冒号）。</summary>
+    public string CommandSuffix { get; private set; } = " ";
 
     public string InputText
     {
@@ -213,9 +223,83 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         CommandSuggestions.Clear();
         var trimmed = text.TrimStart();
+        var startOffset = text.Length - trimmed.Length;
+        CommandReplaceStart = startOffset;
+        CommandReplaceLength = trimmed.Length;
+        CommandSuffix = " ";
         var isCommand = trimmed.StartsWith('/') || trimmed.StartsWith(':');
         if (!isCommand || trimmed.Contains('\n'))
         {
+            IsCommandPopupVisible = false;
+            return;
+        }
+
+        // /tools 二级：插件 ID → 选中自动补冒号 → 工具名
+        const string toolsPrefix = "/tools ";
+        if (trimmed.StartsWith(toolsPrefix, StringComparison.Ordinal))
+        {
+            var after = trimmed[toolsPrefix.Length..];
+            var colon = after.IndexOf(':');
+            if (colon < 0)
+            {
+                // 已经选完插件（尾部空格）→ 等用户继续输入冒号/回车，不再弹同一份列表
+                if (!after.Contains(' '))
+                {
+                    var pluginIds = _registry?.GetPluginIds() ?? [];
+                    var matches = pluginIds
+                        .Where(id => id.StartsWith(after, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    var candidates = matches.Count > 0 ? matches : pluginIds.ToList();
+                    if (candidates.Count > 0)
+                    {
+                        foreach (var id in candidates)
+                            CommandSuggestions.Add(id);
+                        CommandReplaceStart = startOffset + toolsPrefix.Length;
+                        CommandReplaceLength = after.Length;
+                        CommandSuffix = ":";
+                        IsCommandPopupVisible = true;
+                        _selectedCommandIndex = 0;
+                        RaiseSelectedCommandChanged();
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                var pluginId = after[..colon];
+                var toolPrefix = after[(colon + 1)..];
+                if (!toolPrefix.Contains(' '))
+                {
+                    var actualPluginName = _registry?.GetPluginNameById(pluginId);
+                    if (actualPluginName is not null)
+                    {
+                        var toolNames = _registry!
+                            .GetToolsByPlugin(actualPluginName)
+                            .Select(t => t.Name)
+                            .OrderBy(n => n)
+                            .ToList();
+                        var matches = toolNames
+                            .Where(n =>
+                                n.StartsWith(toolPrefix, StringComparison.OrdinalIgnoreCase)
+                            )
+                            .ToList();
+                        var candidates = matches.Count > 0 ? matches : toolNames;
+                        if (candidates.Count > 0)
+                        {
+                            foreach (var name in candidates)
+                                CommandSuggestions.Add(name);
+                            CommandReplaceStart = startOffset + toolsPrefix.Length + colon + 1;
+                            CommandReplaceLength = toolPrefix.Length;
+                            CommandSuffix = " ";
+                            IsCommandPopupVisible = true;
+                            _selectedCommandIndex = 0;
+                            RaiseSelectedCommandChanged();
+                            return;
+                        }
+                    }
+                }
+            }
+
             IsCommandPopupVisible = false;
             return;
         }
@@ -1138,6 +1222,7 @@ public sealed class ConversationViewModel : ViewModelBase
         _store = store;
         _questionStore = questionStore ?? new UserQuestionStore();
         _toolDisplay = new ToolDisplayFormatter(tools);
+        _registry = tools;
         _log =
             log
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ConversationViewModel>.Instance;

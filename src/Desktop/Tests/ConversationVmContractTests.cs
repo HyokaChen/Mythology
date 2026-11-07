@@ -1,4 +1,5 @@
-﻿using Core.Agent;
+﻿using System.Text.Json;
+using Core.Agent;
 using Core.Data;
 using Core.Shared;
 using Core.Tools;
@@ -453,6 +454,35 @@ public sealed class ConversationVmContractTests
         Assert.Equal("#角色:李四", await vm.InlineEntityReferencesAsync("#角色:李四"));
     }
 
+    [Fact]
+    public void CommandSuggestions_ToolsCascade_UsesArgumentRangeAndColon()
+    {
+        using var h = new Harness();
+        h.Registry.Register(new StubTool("read_file", "读取文件"), "test-plugin");
+        var vm = h.CreateVm();
+
+        vm.UpdateCommandSuggestions("/to");
+        Assert.Contains("/tools", vm.CommandSuggestions);
+        Assert.Equal(
+            (0, 3, " "),
+            (vm.CommandReplaceStart, vm.CommandReplaceLength, vm.CommandSuffix)
+        );
+
+        vm.UpdateCommandSuggestions("/tools ");
+        Assert.Contains("test-plugin", vm.CommandSuggestions);
+        Assert.Equal(
+            (7, 0, ":"),
+            (vm.CommandReplaceStart, vm.CommandReplaceLength, vm.CommandSuffix)
+        );
+
+        vm.UpdateCommandSuggestions("/tools test-plugin:");
+        Assert.Contains("read_file", vm.CommandSuggestions);
+        Assert.Equal(
+            (19, 0, " "),
+            (vm.CommandReplaceStart, vm.CommandReplaceLength, vm.CommandSuffix)
+        );
+    }
+
     /// <summary>种子：角色 + 书 + 卷 + 章 + 场景（含空格名称），供 @ / # 补全与内联测试。</summary>
     private static async Task SeedEntityRefsAsync(Harness h)
     {
@@ -559,6 +589,21 @@ public sealed class ConversationVmContractTests
             VariantContent = "变体正文",
         };
 
+    private sealed class StubTool(string name, string label) : AgentTool
+    {
+        public override string Name => name;
+        public override string Label => label;
+        public override string Description => "";
+        public override JsonElement? Parameters => null;
+
+        public override Task<AgentToolResult> ExecuteAsync(
+            string toolCallId,
+            JsonElement args,
+            CancellationToken ct,
+            IProgress<AgentToolResult>? onUpdate = null
+        ) => Task.FromResult(new AgentToolResult());
+    }
+
     /// <summary>最小装配（临时目录；Dispose 清理）。</summary>
     private sealed class Harness : IDisposable
     {
@@ -579,8 +624,8 @@ public sealed class ConversationVmContractTests
             Directory.CreateDirectory(root);
             Directory.CreateDirectory(storeDir);
 
-            var registry = new ToolRegistry();
-            Agent = new Agent(registry, null);
+            Registry = new ToolRegistry();
+            Agent = new Agent(Registry, null);
             _bridge = new DesktopAgentBridge(Agent);
             _novelStore = new FileNovelStore(root, storeDir);
             ConfigStore = new ConfigStore(storeDir);
@@ -597,9 +642,12 @@ public sealed class ConversationVmContractTests
 
         public Agent Agent { get; }
 
+        public ToolRegistry Registry { get; }
+
         public INovelStore NovelStore => _novelStore;
 
-        public ConversationViewModel CreateVm() => new(_bridge, _engine, _novelStore);
+        public ConversationViewModel CreateVm() =>
+            new(_bridge, _engine, _novelStore, tools: Registry);
 
         public void Dispose()
         {

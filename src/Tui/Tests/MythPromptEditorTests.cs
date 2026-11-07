@@ -65,6 +65,18 @@ public class MythPromptEditorTests
         Assert.Equal(0, MythPromptEditor.CountLineBreaksBefore("a\n", 1));
     }
 
+    [Theory]
+    [InlineData("/read <序号|ID|标题>", "/read")]
+    [InlineData("/chapter <序号|ID|标题>", "/chapter")]
+    [InlineData("/search <关键字>", "/search")]
+    [InlineData("/theme toggle", "/theme toggle")]
+    [InlineData("/tools my-plugin", "/tools my-plugin")]
+    [InlineData("alpha", "alpha")]
+    public void CandidateInsertText_StripsUsagePlaceholders(string candidate, string expected)
+    {
+        Assert.Equal(expected, MythPromptEditor.CandidateInsertText(candidate));
+    }
+
     // ── 导航分界语义（由 OnKeyDown 使用） ──
 
     [Fact]
