@@ -408,11 +408,7 @@ public sealed class ConversationVmContractTests
     {
         using var h = new Harness();
         // 未提供项目根（设计时 VM）→ 不弹窗（降级而非崩溃）
-        var vm = new ConversationViewModel(
-            h.Bridge,
-            h.Engine,
-            h.NovelStore
-        );
+        var vm = new ConversationViewModel(h.Bridge, h.Engine, h.NovelStore);
 
         await vm.UpdateMentionSuggestionsAsync("");
 
@@ -776,13 +772,7 @@ public sealed class ConversationVmContractTests
         public SessionEngine Engine => _engine;
 
         public ConversationViewModel CreateVm() =>
-            new(
-                _bridge,
-                _engine,
-                _novelStore,
-                tools: Registry,
-                novelsRoot: NovelsRoot
-            );
+            new(_bridge, _engine, _novelStore, tools: Registry, novelsRoot: NovelsRoot);
 
         public void Dispose()
         {

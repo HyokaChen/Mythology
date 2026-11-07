@@ -99,8 +99,8 @@ public sealed partial class TuiApp
         if (atIndex >= lineStart)
         {
             var afterAt = input[(atIndex + 1)..];
-            var pathCandidates = Core.Shared.FilePathCompletion
-                .GetEntries(afterAt, Directory.GetCurrentDirectory())
+            var pathCandidates = Core
+                .Shared.FilePathCompletion.GetEntries(afterAt, Directory.GetCurrentDirectory())
                 .Select(e => e.Name)
                 .ToArray();
             if (pathCandidates.Length > 0)
@@ -221,5 +221,4 @@ public sealed partial class TuiApp
         else
             _promptEditor.CloseMyPopup();
     }
-
 }

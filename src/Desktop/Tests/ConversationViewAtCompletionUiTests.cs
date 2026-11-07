@@ -110,8 +110,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             {
                 input!.Text = text;
                 input.CaretIndex = text.Length;
-                PumpUntil(() => !_vm.IsSuggestionPopupVisible || _vm.Suggestions.Count > 0,
-                    "补全建议刷新");
+                PumpUntil(
+                    () => !_vm.IsSuggestionPopupVisible || _vm.Suggestions.Count > 0,
+                    "补全建议刷新"
+                );
 
                 assert(view, input);
             }
@@ -156,11 +158,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
 
                 // 键盘 Tab 经真实路由处理器应用候选
                 input.RaiseEvent(
-                    new KeyEventArgs
-                    {
-                        RoutedEvent = InputElement.KeyDownEvent,
-                        Key = Key.Tab,
-                    }
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Tab }
                 );
                 PumpUntil(() => input.Text == "@卷一 风起/", "Tab 应用目录候选");
 
