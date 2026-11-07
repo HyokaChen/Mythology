@@ -500,6 +500,12 @@ public sealed class ConversationLoop(
     {
         ArgumentNullException.ThrowIfNull(historicalMessages);
 
+        // 恢复历史时先修复 tool-call arguments：旧会话可能残留空字符串/截断 JSON，
+        // 原样发送会让下一轮 LLM 请求被 400 拒绝。修复在恢复阶段做，TUI/Desktop 共用同一循环。
+        var repairedArgs = JsonRepairUtil.RepairToolCallArguments(historicalMessages, logger);
+        if (repairedArgs > 0)
+            logger?.LogWarning("恢复会话：修复 {Count} 个 tool-call 参数", repairedArgs);
+
         _persistedMessages.Clear();
         _persistedMessages.AddRange(historicalMessages);
         RefreshLiveContextTokens();
@@ -1693,6 +1699,7 @@ public sealed class ConversationLoop(
             {
                 var retryWatch = Stopwatch.StartNew();
                 var llmAttempt = 0;
+                var invalidArgsRepaired = false;
                 while (true)
                 {
                     llmAttempt++;
@@ -1700,6 +1707,29 @@ public sealed class ConversationLoop(
                     {
                         await _conversation!.StreamResponseRich(handler, ct);
                         break; // 流式成功 → 退出重试循环
+                    }
+                    catch (Exception ex)
+                        when (!ct.IsCancellationRequested
+                            && !invalidArgsRepaired
+                            && IsInvalidToolArgsError(ex)
+                        )
+                    {
+                        // 400 arguments must be valid JSON：历史里残留空/截断的 tool-call 参数。
+                        // 修复后只重试一次；没有可修复项则直接抛出，避免死循环。
+                        invalidArgsRepaired = true;
+                        var repaired = JsonRepairUtil.RepairToolCallArguments(
+                            _persistedMessages,
+                            logger
+                        );
+                        if (repaired == 0)
+                            throw;
+
+                        logger?.LogWarning(
+                            ex,
+                            "历史 tool-call arguments 非法，已修复 {Count} 个并重试",
+                            repaired
+                        );
+                        await Task.Delay(LlmRetryDelay(1), ct);
                     }
                     catch (Exception ex)
                         when (!ct.IsCancellationRequested
@@ -1997,6 +2027,30 @@ public sealed class ConversationLoop(
     }
 
     /// <summary>
+    /// 工具参数为空/非法：规范化为合法 JSON（保证历史可再次发送），但不执行工具，
+    /// 并向模型返回明确的 tool error，促使其重新发起调用。
+    /// </summary>
+    private static async Task RejectInvalidToolArgumentsAsync(
+        FunctionCall call,
+        string toolCallId,
+        string toolName,
+        Func<AgentEvent, CancellationToken, Task> emit,
+        CancellationToken ct
+    )
+    {
+        call.Arguments = "{}";
+        var message =
+            $"错误：工具「{toolName}」的 arguments 为空或不是合法 JSON，已拒绝执行。"
+            + "请重新调用并提供完整 JSON 参数。";
+        call.Result = new FunctionResult(
+            call,
+            [new FunctionResultBlockText(message)],
+            invocationSucceeded: false
+        );
+        await emit(new ToolExecutionEnd(toolCallId, true, message), ct);
+    }
+
+    /// <summary>
     /// 执行单个 AgentTool（工具调用）。
     /// 包括参数解析、novel_id 注入、钩子调用和结果处理。
     /// </summary>
@@ -2010,7 +2064,8 @@ public sealed class ConversationLoop(
 
         var toolCallId = call.ToolCall?.Id ?? Guid.NewGuid().ToString("N")[..12];
         var toolName = call.Name;
-        var arguments = call.Arguments ?? "{}";
+        var rawArguments = call.Arguments;
+        var arguments = string.IsNullOrWhiteSpace(rawArguments) ? "{}" : rawArguments;
 
         // 工具调用一出现就先发 Start：前端靠它建卡并取得工具名。
         // 未注册工具的 End 会带 IsError（下面那条分支），卡片据此渲染失败态。
@@ -2032,6 +2087,19 @@ public sealed class ConversationLoop(
             return;
         }
 
+        // 空 arguments 不是「用默认参数执行」的理由：OpenAI 兼容协议会在下一轮
+        // 以 400 arguments must be valid JSON 拒绝整段历史。拒绝执行 + 规范化为 {}，
+        // 让模型看到明确的 tool error 并重新发起调用。
+        if (string.IsNullOrWhiteSpace(rawArguments))
+        {
+            logger?.LogWarning(
+                "工具 {Tool} 的 arguments 为空，已拒绝执行并规范化为 {{}}",
+                toolName
+            );
+            await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, emit, ct);
+            return;
+        }
+
         CoreLogger.ToolExecutionStart(logger.Safe(), toolName, toolCallId);
 
         ct.ThrowIfCancellationRequested();
@@ -2050,10 +2118,17 @@ public sealed class ConversationLoop(
             try
             {
                 args = JsonSerializer.Deserialize<JsonElement>(repaired);
+                // 修复后的参数写回 tool call，落盘/下一轮请求才是合法 JSON
+                call.Arguments = repaired;
             }
             catch
             {
-                args = JsonSerializer.Deserialize<JsonElement>("{}");
+                logger?.LogWarning(
+                    "工具 {Tool} 的 arguments 非法且无法修复，已拒绝执行并规范化为 {{}}",
+                    toolName
+                );
+                await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, emit, ct);
+                return;
             }
         }
 
@@ -2276,6 +2351,30 @@ public sealed class ConversationLoop(
                     return true;
             }
         }
+        return false;
+    }
+
+    /// <summary>
+    /// 判断异常是否为「历史 tool-call arguments 不是合法 JSON」的 400。
+    /// 这类错误可以在本地修复历史后重试一次（不同于 context overflow，后者走压缩路径）。
+    /// </summary>
+    internal static bool IsInvalidToolArgsError(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            var message = current.Message;
+            if (
+                message.Contains("arguments must be valid json", StringComparison.OrdinalIgnoreCase)
+                || (
+                    message.Contains("tool call", StringComparison.OrdinalIgnoreCase)
+                    && message.Contains("valid json", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 

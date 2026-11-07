@@ -263,3 +263,78 @@ public class JsonRepairUtilRepairToolCallTests
         Assert.NotEqual("", result);
     }
 }
+
+public class JsonRepairUtilToolArgumentTests
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void NormalizeToolCallArguments_Empty_ReturnsEmptyObject(string? arguments)
+    {
+        Assert.Equal("{}", JsonRepairUtil.NormalizeToolCallArguments(arguments));
+    }
+
+    [Fact]
+    public void NormalizeToolCallArguments_Valid_Unchanged()
+    {
+        const string valid = """{"x":1}""";
+        Assert.Equal(valid, JsonRepairUtil.NormalizeToolCallArguments(valid));
+    }
+
+    [Fact]
+    public void NormalizeToolCallArguments_Truncated_RepairedToValidJson()
+    {
+        var repaired = JsonRepairUtil.NormalizeToolCallArguments("""{"x":1""");
+        using var doc = System.Text.Json.JsonDocument.Parse(repaired);
+        Assert.Equal(System.Text.Json.JsonValueKind.Object, doc.RootElement.ValueKind);
+    }
+
+    [Fact]
+    public void RepairToolCallArguments_FixesEmptyAndCounts()
+    {
+        var msg = AssistantMessage("");
+        var repaired = JsonRepairUtil.RepairToolCallArguments([msg], logger: null);
+
+        Assert.Equal(1, repaired);
+        Assert.Equal("{}", msg.ToolCalls![0].FunctionCall!.Arguments);
+    }
+
+    [Fact]
+    public void RepairToolCallArguments_ValidArguments_NotCounted()
+    {
+        var msg = AssistantMessage("""{"x":1}""");
+        var repaired = JsonRepairUtil.RepairToolCallArguments([msg], logger: null);
+
+        Assert.Equal(0, repaired);
+        Assert.Equal("""{"x":1}""", msg.ToolCalls![0].FunctionCall!.Arguments);
+    }
+
+    [Fact]
+    public void RepairToolCallArguments_WhitespaceAndNullArgs_BothNormalized()
+    {
+        var first = AssistantMessage("  ");
+        var second = AssistantMessage(null);
+        var repaired = JsonRepairUtil.RepairToolCallArguments([first, second], logger: null);
+
+        Assert.Equal(2, repaired);
+        Assert.Equal("{}", first.ToolCalls![0].FunctionCall!.Arguments);
+        Assert.Equal("{}", second.ToolCalls![0].FunctionCall!.Arguments);
+    }
+
+    private static LlmTornado.Chat.ChatMessage AssistantMessage(string? arguments) =>
+        new(LlmTornado.Code.ChatMessageRoles.Assistant, "")
+        {
+            ToolCalls =
+            [
+                new LlmTornado.ChatFunctions.ToolCall
+                {
+                    FunctionCall = new LlmTornado.ChatFunctions.FunctionCall
+                    {
+                        Name = "probe",
+                        Arguments = arguments,
+                    },
+                },
+            ],
+        };
+}

@@ -129,13 +129,32 @@ public static partial class JsonRepairUtil
     }
 
     /// <summary>
-    /// 修复 assistant 消息中 ToolCalls 的损坏 arguments。
-    /// 如果不修复，下一轮 API 调用会将非法 JSON 发回 LLM API，导致 500 错误。
+    /// 把单个 tool-call 的 arguments 规范化为「合法 JSON」：
+    /// 空/纯空白 → <c>{}</c>；可修复的截断 JSON → 修复结果；彻底无法修复 → <c>{}</c>；
+    /// 已合法则原样返回。供恢复、执行、迁移三个入口共用，避免规则漂移。
     /// </summary>
-    /// <param name="newMessages">本轮新增的消息列表。</param>
-    /// <param name="logger">Logger 实例。</param>
-    public static void RepairToolCallArguments(List<ChatMessage> newMessages, ILogger? logger)
+    public static string NormalizeToolCallArguments(string? arguments)
     {
+        if (IsValidJson(arguments))
+            return arguments!;
+        if (string.IsNullOrWhiteSpace(arguments))
+            return "{}";
+
+        var repaired = TryRepairJson(arguments);
+        return IsValidJson(repaired) ? repaired : "{}";
+    }
+
+    /// <summary>
+    /// 修复 assistant 消息中 ToolCalls 的损坏/空 arguments。
+    /// 空字符串同样是非法 JSON：OpenAI 兼容协议会以 400
+    /// <c>Assistant tool call … arguments must be valid JSON</c> 拒绝下一轮请求。
+    /// </summary>
+    /// <param name="newMessages">待修复的消息列表（新消息或恢复的历史）。</param>
+    /// <param name="logger">Logger 实例。</param>
+    /// <returns>被修复的 tool call 数量。</returns>
+    public static int RepairToolCallArguments(IEnumerable<ChatMessage> newMessages, ILogger? logger)
+    {
+        var repairedCount = 0;
         foreach (var msg in newMessages)
         {
             if (msg.Role != ChatMessageRoles.Assistant || msg.ToolCalls is null)
@@ -147,28 +166,37 @@ public static partial class JsonRepairUtil
                     continue;
 
                 var args = tc.FunctionCall.Arguments;
-                if (string.IsNullOrEmpty(args))
-                    continue;
-
                 if (IsValidJson(args))
                     continue;
 
-                var repaired = TryRepairJson(args);
-                var success = IsValidJson(repaired);
-                if (!success)
+                var success = false;
+                string repaired;
+                if (string.IsNullOrWhiteSpace(args))
+                {
                     repaired = "{}";
+                }
+                else
+                {
+                    repaired = TryRepairJson(args);
+                    success = IsValidJson(repaired);
+                    if (!success)
+                        repaired = "{}";
+                }
 
                 CoreLogger.ToolCallArgsRepaired(
                     logger.Safe(),
                     tc.FunctionCall.Name,
                     success,
-                    args.Length,
+                    args?.Length ?? 0,
                     repaired.Length
                 );
 
                 tc.FunctionCall.Arguments = repaired;
+                repairedCount++;
             }
         }
+
+        return repairedCount;
     }
 
     #endregion
@@ -561,7 +589,7 @@ public static partial class JsonRepairUtil
     /// <summary>
     /// 验证 JSON 格式有效性
     /// </summary>
-    private static bool IsValidJson(string json)
+    private static bool IsValidJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return false;

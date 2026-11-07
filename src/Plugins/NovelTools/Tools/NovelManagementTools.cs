@@ -1001,6 +1001,28 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
     )
     {
         ThrowIfCancelled(ct);
+
+        // 空参数不是「创建 0 章」的合法请求：模型漏传 chapter-titles 时必须明确报错，
+        // 否则会静默返回成功文案，掩盖调用方问题（历史 bug：arguments="" 时也走到这里）。
+        var titles = (args.ChapterTitles ?? [])
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => title.Trim())
+            .ToArray();
+        if (titles.Length == 0)
+        {
+            return new AgentToolResult<OutlineDetails>
+            {
+                Content =
+                [
+                    new TextContent(
+                        "创建大纲需要至少一个章节标题（chapter-titles），当前参数为空。"
+                    ),
+                ],
+                IsError = true,
+                Details = new OutlineDetails { ChapterCount = 0 },
+            };
+        }
+
         var existingChapters = await store.GetChapters(args.NovelId, ct);
         ThrowIfCancelled(ct);
 
@@ -1008,7 +1030,7 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
         var skipped = 0;
         var startOrder = existingChapters.Count > 0 ? existingChapters.Max(c => c.Order) + 1 : 1;
 
-        foreach (var title in args.ChapterTitles)
+        foreach (var title in titles)
         {
             // 查找是否已有同标题章节，跳过以保留内容和 ID
             var existing = existingChapters.Find(c => c.Title == title);

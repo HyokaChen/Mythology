@@ -484,6 +484,8 @@ public sealed class SessionEngine(
         }
         catch (SessionPersistenceException ex)
         {
+            // 持久化故障终止本轮：in_progress 任务不可能再被模型完成，回退避免卡在「进行中」
+            todoStore.RevertInProgressToPending();
             HandleSessionPersistenceFailure(ex);
         }
         catch (OperationCanceledException)
@@ -542,10 +544,14 @@ public sealed class SessionEngine(
                 HandleSessionPersistenceFailure(ex);
             }
             if (_sessionPersistenceFaulted)
+            {
+                todoStore.RevertInProgressToPending();
                 return;
+            }
 
             if (overflowRetryCount >= maxOverflowRetries)
             {
+                todoStore.RevertInProgressToPending();
                 OnSystemNotice?.Invoke(
                     _contextManagement is { Mode: ContextMode.Continuation }
                         ? $"上下文溢出，已重试 {maxOverflowRetries} 次仍无法恢复。请开启新会话。"
@@ -566,6 +572,7 @@ public sealed class SessionEngine(
                 _ = RunPromptAsync(text, ct, overflowRetryCount + 1);
                 return;
             }
+            todoStore.RevertInProgressToPending();
             OnSystemNotice?.Invoke(
                 _contextManagement is { Mode: ContextMode.Continuation }
                     ? "上下文过长，页切换失败。请开启新会话。"
@@ -574,6 +581,8 @@ public sealed class SessionEngine(
         }
         catch (Exception ex)
         {
+            // 任意非中断异常终止本轮：in_progress 任务回退，避免 UI 永远显示「进行中」
+            todoStore.RevertInProgressToPending();
             if (!await TryPersistNewMessagesAsync())
                 return;
             try

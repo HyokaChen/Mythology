@@ -137,6 +137,8 @@ public sealed partial class TuiApp
         }
         catch (SessionPersistenceException ex)
         {
+            // 持久化故障终止本轮：in_progress 回退，避免卡在「进行中」
+            _todoStore.RevertInProgressToPending();
             HandleSessionPersistenceFailure(ex);
         }
         catch (OperationCanceledException)
@@ -201,10 +203,14 @@ public sealed partial class TuiApp
             }
 
             if (_sessionPersistenceFaulted)
+            {
+                _todoStore.RevertInProgressToPending();
                 return;
+            }
 
             if (overflowRetryCount >= maxOverflowRetries)
             {
+                _todoStore.RevertInProgressToPending();
                 _isPromptPending = false; // 溢出重试耗尽：清理
                 ToastService.Error(
                     _contextManagement is { Mode: ContextMode.Continuation }
@@ -231,6 +237,7 @@ public sealed partial class TuiApp
                 );
                 return;
             }
+            _todoStore.RevertInProgressToPending();
             ToastService.Error(
                 _contextManagement is { Mode: ContextMode.Continuation }
                     ? "上下文过长，页切换失败。请开启新会话。"
@@ -240,6 +247,9 @@ public sealed partial class TuiApp
         }
         catch (Exception ex)
         {
+            // 任意非中断异常终止本轮：in_progress 回退，避免 UI 永远显示「进行中」
+            _todoStore.RevertInProgressToPending();
+
             // 保存会话消息（含用户消息，避免丢失）
 
             if (!await TryPersistNewMessagesAsync())

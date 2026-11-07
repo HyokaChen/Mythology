@@ -93,6 +93,16 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **旧会话目录/键迁移补齐（011/012）**：011 把历史 `--novels-{标题}--` 会话目录迁到
+  `--novels-{小说id}--`、MANIFEST/JSONL 键与事件枚举统一 kebab-case（旧会话此前在列表里
+  变成 `id=""` 幽灵行、`GetSession` 返回 null）；012 持久化修复历史 `tool-calls` 的空/非法
+  `arguments`。两个迁移均幂等、迁移后二次扫描验证，真实会话副本已验证 4 个会话可恢复。
+- **工具参数为空/非法不再毒化会话**：模型产出 `arguments:""` 时，下一轮 OpenAI 兼容请求会以
+  `400 Assistant tool call … arguments must be valid JSON` 拒绝整段历史。修复四层：执行入口
+  拒绝空/非法参数（返回 tool error、不执行），恢复历史时规范化为 `{}`，遇到该 400 先本地修复
+  再重试一次，012 落盘修复；`create_outline` 空 `chapter-titles` 改为明确报错。
+  Desktop/TUI 遇到非中断错误结束回合时把 `in_progress` todo 回退 `pending`。
+  回归：Core 1559/1559、Desktop 563/563、TUI 876/878（2 skipped）、NovelTools 176/176。
 - **实体变更提示按发生位置交错，不再堆到回合末尾**：`EntityChangeEvent` 由
   `FileNovelStore.FireEntityChanged` 从 `OntologyWriteContext.Current` 补齐 `Source` / `ToolName`。
   Agent 运行中，`📝 新建/修改/删除…` 作为 `AgentStep(Kind=Notice)` 插到**触发它的工具步骤之后**，
