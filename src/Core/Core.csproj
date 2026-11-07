@@ -21,18 +21,18 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Core.Tests</_Parameter1>
     </AssemblyAttribute>
-    <PackageReference Include="System.Numerics.Tensors" Version="10.0.13" />
+    <PackageReference Include="System.Numerics.Tensors" Version="10.0.14" />
     <PackageReference Include="Tacos" Version="1.0.4" />
     <PackageReference Include="Tacos.SourceGenerator" Version="1.0.4" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="LlmTornado" Version="3.8.79" NoWarn="NU1903" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" NoWarn="NU1903" />
+    <PackageReference Include="LlmTornado" Version="3.8.82" NoWarn="NU1903" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" NoWarn="NU1903" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <PackageReference Include="sqlite-vec" Version="0.1.7-alpha.2.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.13" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
     <!-- DiffComputer：TUI 与 Desktop 共用的行级 Myers diff（结果展示） -->
     <PackageReference Include="DiffPlex" Version="1.9.0" />
@@ -42,7 +42,7 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- jieba 中文分词（ToolSearchEngine 检索用）。System.Drawing.Common 直接引用覆盖 jieba.NET 传递的漏洞版本。 -->
     <PackageReference Include="jieba.NET" Version="0.42.2" />
-    <PackageReference Include="System.Drawing.Common" Version="10.0.13" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.14" />
   </ItemGroup>
   <!-- jieba.NET 词典资源：将 NuGet 包中的 Resources/ 复制到输出目录（与 云端私有仓库 的 云端私有引擎 同款） -->
   <Target Name="CopyJiebaResources" AfterTargets="Build">
