@@ -1264,6 +1264,23 @@ public sealed class ConversationViewModel : ViewModelBase
         HasMessages = true;
     }
 
+    /// <summary>
+    /// 实体变更提示：Agent 运行中直接插入当前 Agent 消息的步骤时间线，
+    /// 让它出现在触发它的工具步骤之后，而不是等整条回复结束后统一堆到末尾。
+    /// 空闲时仍落系统行；工具写盘的迟到事件直接忽略（工具步骤已经展示结果）。
+    /// </summary>
+    public void AddEntityChangeNotice(string text, bool fromToolCall)
+    {
+        if (IsProcessing && _agentMessage is { } agentMessage)
+        {
+            agentMessage.AgentSteps.Add(AgentStep.CreateNotice(text));
+            return;
+        }
+
+        if (!fromToolCall)
+            AddSystemNotice(text);
+    }
+
     /// <summary>主窗口把处理状态转发到活跃对话（后台对话不被转发）。</summary>
     public void SetProcessing(bool processing)
     {

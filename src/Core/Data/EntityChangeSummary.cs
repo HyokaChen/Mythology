@@ -27,18 +27,6 @@ public static class EntityChangeSummary
         };
 
     /// <summary>
-    /// 是否应在对话里追加系统状态行。
-    /// 工具写盘（<see cref="EntityChangeEvent.ToolName"/> 非空）已经有工具步骤展示，
-    /// 再补一条「系统」行只会把对话堆满；小说级变更本来就不展示。
-    /// </summary>
-    public static bool ShouldShowInChat(EntityChangeEvent evt) =>
-        Describe(evt) is not null && !IsToolStepDuplicate(evt);
-
-    /// <summary>该变更是否已经由工具步骤覆盖（避免对话里的重复系统行）。</summary>
-    public static bool IsToolStepDuplicate(EntityChangeEvent evt) =>
-        !string.IsNullOrWhiteSpace(evt.ToolName);
-
-    /// <summary>
     /// 生成实体变更摘要；小说级变更不显示，未知操作返回 null。
     /// </summary>
     public static string? Describe(EntityChangeEvent evt)

@@ -220,7 +220,18 @@
                           <TextBlock Classes="StepContentText" Text="{Binding ContentText}" />
                         </Border>
 
-                        <StackPanel Spacing="2" IsVisible="{Binding IsNotContentStep}">
+                        <!-- 实体变更提示：不另起「系统」气泡，直接作为当前 Agent 时间线的一步，
+                             插在触发它的工具步骤之后；后续思考/工具步骤自然排在它下面。 -->
+                        <TextBlock
+                          Classes="SystemNoticeText AgentStepNoticeText"
+                          IsVisible="{Binding IsNoticeStep}"
+                          Text="{Binding ContentText}"
+                          TextAlignment="Left"
+                          Margin="18,1,0,1"
+                          motion:Motion.Fade="True"
+                        />
+
+                        <StackPanel Spacing="2" IsVisible="{Binding IsStepHeader}">
                           <!-- 步骤头：图标/标题/参数与「详情」同一行；参数列吃满剩余宽度并换行 -->
                           <Grid
                             ColumnDefinitions="Auto,Auto,*,Auto"

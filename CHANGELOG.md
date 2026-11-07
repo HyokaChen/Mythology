@@ -93,14 +93,14 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
-- **工具写盘不再刷屏「系统」状态行**：`EntityChangeEvent` 由 `FileNovelStore.FireEntityChanged`
-  从 `OntologyWriteContext.Current` 补齐 `Source`/`ToolName`；AI 工具写盘（ToolName 非空）已有
-  工具步骤（`情节线管理 … 已更新`）展示，Desktop/TUI 不再各追加一条
-  `系统 / 📝 修改情节线…`，避免一轮 `manage_plotline` 把对话底部堆满。手动编辑、扫描等
-  无工具步骤的实体变更仍保留系统行；小说级变更照旧隐藏。
-  回归：Core 事件作用域（User→Source=User/无 ToolName；Ai→Source=Ai/ToolName）
-  + `EntityChangeSummary.ShouldShowInChat`（工具重复 / 手动 / 扫描 / 小说级）；
-  Core 1541/1541、Desktop 560/560、TUI 876 通过（2 skipped）。
+- **实体变更提示按发生位置交错，不再堆到回合末尾**：`EntityChangeEvent` 由
+  `FileNovelStore.FireEntityChanged` 从 `OntologyWriteContext.Current` 补齐 `Source` / `ToolName`。
+  Agent 运行中，`📝 新建/修改/删除…` 作为 `AgentStep(Kind=Notice)` 插到**触发它的工具步骤之后**，
+  后续思考/工具步骤继续排在其后；回合空闲时的手动编辑/扫描变更仍落「系统」行；工具写盘在回合结束后
+  迟到的通知直接丢弃（工具步骤已展示结果）。小说级变更照旧隐藏。TUI 的工具调用是独立 `FlowItem`，
+  系统行按事件顺序自然交错。
+  回归：Core 事件作用域 + Desktop `ConversationVmContractTests` 四种落点 + 渲染顺序/13-20 排版。
+  Core 1544/1544、Desktop 563/563、TUI 876 通过（2 skipped）。
 - **大纲小说行 Meta 挤掉标题 / 动作图标不垂直居中**：Desktop 大纲模板原先把标题放 `*`、
   Meta 放 `Auto`；Meta（作者 · 题材 · 目标字数）一长就拿到自然宽度，标题列被压成 0 宽并
   向右压到 ＋/⋯ 按钮边缘。现在标题 + Meta 合成一条 `TextBlock`（Inline Run 保留标题粗体、

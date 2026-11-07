@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Reflection;
+using System.Text.Json;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
@@ -49,6 +50,72 @@ public sealed class ConversationVmContractTests
         Assert.DoesNotContain("修改「悲剧走向」版本：", message.Content);
         // 暂存已消费，不会二次投递
         Assert.False(vm.HasPendingRefinement);
+    }
+
+    [Fact]
+    public void EntityChangeNotice_WhileProcessing_InterleavesWithToolSteps()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var agent = AttachAgentMessage(vm, processing: true);
+        vm.Messages.Add(agent);
+
+        var firstTool = ToolStep("情节线管理 A");
+        agent.AgentSteps.Add(firstTool);
+        vm.AddEntityChangeNotice("📝 修改情节线「卷一」", fromToolCall: true);
+
+        var secondTool = ToolStep("情节线管理 B");
+        agent.AgentSteps.Add(secondTool);
+        vm.AddEntityChangeNotice("📝 修改情节线「卷二」", fromToolCall: true);
+
+        Assert.Collection(
+            agent.AgentSteps,
+            step => Assert.Same(firstTool, step),
+            step => AssertNotice(step, "📝 修改情节线「卷一」"),
+            step => Assert.Same(secondTool, step),
+            step => AssertNotice(step, "📝 修改情节线「卷二」")
+        );
+        Assert.Single(vm.Messages);
+        Assert.Same(agent, vm.Messages[0]);
+    }
+
+    [Fact]
+    public void EntityChangeNotice_ManualDuringProcessing_AlsoInterleaves()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var agent = AttachAgentMessage(vm, processing: true);
+
+        vm.AddEntityChangeNotice("📝 手动修改角色「林月如」", fromToolCall: false);
+
+        AssertNotice(Assert.Single(agent.AgentSteps), "📝 手动修改角色「林月如」");
+        Assert.Empty(vm.Messages);
+    }
+
+    [Fact]
+    public void EntityChangeNotice_WhileIdle_IsSystemRow()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+
+        vm.AddEntityChangeNotice("📝 手动修改角色「林月如」", fromToolCall: false);
+
+        var message = Assert.Single(vm.Messages);
+        Assert.Equal(MessageSender.System, message.Sender);
+        Assert.Equal("📝 手动修改角色「林月如」", message.Content.ToString());
+        Assert.True(vm.HasMessages);
+    }
+
+    [Fact]
+    public void EntityChangeNotice_LateToolEvent_IsDropped()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+
+        // 工具步骤已经结束并展示过结果；迟到的写盘事件不再补到底部。
+        vm.AddEntityChangeNotice("📝 修改情节线「卷二」", fromToolCall: true);
+
+        Assert.Empty(vm.Messages);
     }
 
     /// <summary>
@@ -588,6 +655,41 @@ public sealed class ConversationVmContractTests
             VariantLabel = "悲剧走向",
             VariantContent = "变体正文",
         };
+
+    /// <summary>测试用：把 Agent 占位消息挂到 VM 当前回合（生产代码由 SendMessageAsync 创建）。</summary>
+    private static Desktop.Models.ChatMessage AttachAgentMessage(
+        ConversationViewModel vm,
+        bool processing
+    )
+    {
+        var agent = new Desktop.Models.ChatMessage(MessageSender.Agent);
+        var field = typeof(ConversationViewModel).GetField(
+            "_agentMessage",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        Assert.NotNull(field);
+        field.SetValue(vm, agent);
+        vm.IsProcessing = processing;
+        return agent;
+    }
+
+    private static AgentStep ToolStep(string title) =>
+        new()
+        {
+            Kind = StepKind.ToolCall,
+            Title = title,
+            Status = AgentStepStatus.Completed,
+        };
+
+    private static void AssertNotice(AgentStep step, string text)
+    {
+        Assert.Equal(StepKind.Notice, step.Kind);
+        Assert.Equal(AgentStepStatus.Completed, step.Status);
+        Assert.True(step.IsNoticeStep);
+        Assert.False(step.IsStepHeader);
+        Assert.False(step.IsContentStep);
+        Assert.Equal(text, step.ContentText);
+    }
 
     private sealed class StubTool(string name, string label) : AgentTool
     {

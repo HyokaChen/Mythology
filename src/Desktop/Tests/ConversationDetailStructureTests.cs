@@ -112,7 +112,9 @@ public sealed class ConversationDetailStructureTests
         var root = LoadConversationView();
         var content = root.Descendants()
             .Single(e =>
-                e.Name.LocalName == "TextBlock" && Attr(e, "Text") == "{Binding ContentText}"
+                e.Name.LocalName == "TextBlock"
+                && Attr(e, "Classes") == "StepContentText"
+                && Attr(e, "Text") == "{Binding ContentText}"
             );
 
         Assert.Equal("StepContentText", Attr(content, "Classes"));
@@ -123,9 +125,23 @@ public sealed class ConversationDetailStructureTests
         Assert.Contains(
             root.Descendants(),
             e =>
-                e.Name.LocalName == "StackPanel"
-                && Attr(e, "IsVisible") == "{Binding IsNotContentStep}"
+                e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding IsStepHeader}"
         );
+    }
+
+    [Fact]
+    public void NoticeStep_RendersCompactStatusRow_WithoutStepHeader()
+    {
+        var root = LoadConversationView();
+        var notice = root.Descendants()
+            .Single(e =>
+                e.Name.LocalName == "TextBlock"
+                && Attr(e, "Classes").Contains("AgentStepNoticeText", StringComparison.Ordinal)
+            );
+
+        Assert.Contains("SystemNoticeText", Attr(notice, "Classes"));
+        Assert.Equal("{Binding ContentText}", Attr(notice, "Text"));
+        Assert.Equal("{Binding IsNoticeStep}", Attr(notice, "IsVisible"));
     }
 
     [Fact]

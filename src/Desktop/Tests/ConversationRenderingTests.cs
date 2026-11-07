@@ -359,6 +359,91 @@ public class ConversationRenderingTests
     }
 
     [Fact]
+    public void NoticeStep_RendersBetweenToolSteps_AsCompactStatusRow()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new ChatMessage(MessageSender.Agent);
+            message.AgentSteps.Add(
+                new AgentStep
+                {
+                    Kind = StepKind.ToolCall,
+                    Title = "情节线管理 A",
+                    Status = AgentStepStatus.Completed,
+                }
+            );
+            message.AgentSteps.Add(AgentStep.CreateNotice("📝 修改情节线「卷一」"));
+            message.AgentSteps.Add(
+                new AgentStep
+                {
+                    Kind = StepKind.ToolCall,
+                    Title = "情节线管理 B",
+                    Status = AgentStepStatus.Completed,
+                }
+            );
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<ItemsControl>("MessageList")!;
+            list.ItemsSource = new[] { message };
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                Pump();
+                var firstTitle = Assert.Single(
+                    view.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text == "情节线管理 A"
+                );
+                var noticeText = Assert.Single(
+                    view.GetVisualDescendants().OfType<TextBlock>(),
+                    t =>
+                        t.Text == "📝 修改情节线「卷一」"
+                        && t.IsEffectivelyVisible
+                        && t.Classes.Contains("AgentStepNoticeText")
+                );
+                var secondTitle = Assert.Single(
+                    view.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text == "情节线管理 B"
+                );
+
+                var firstY = firstTitle.TranslatePoint(new Point(0, 0), view);
+                var noticeY = noticeText.TranslatePoint(new Point(0, 0), view);
+                var secondY = secondTitle.TranslatePoint(new Point(0, 0), view);
+                Assert.NotNull(firstY);
+                Assert.NotNull(noticeY);
+                Assert.NotNull(secondY);
+                Assert.True(
+                    firstY.Value.Y < noticeY.Value.Y,
+                    $"提示必须排在第一个工具步骤之后：tool={firstY.Value.Y:F1}, notice={noticeY.Value.Y:F1}"
+                );
+                Assert.True(
+                    noticeY.Value.Y < secondY.Value.Y,
+                    $"提示必须排在下一个工具步骤之前：notice={noticeY.Value.Y:F1}, tool={secondY.Value.Y:F1}"
+                );
+
+                Assert.True(noticeText.IsEffectivelyVisible);
+                Assert.Contains("SystemNoticeText", noticeText.Classes);
+                Assert.Contains("AgentStepNoticeText", noticeText.Classes);
+                Assert.Equal(13, noticeText.FontSize);
+                Assert.Equal(20, noticeText.LineHeight);
+                Assert.Equal(new Thickness(18, 1, 0, 1), noticeText.Margin);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void InputText_LeftEdgeAlignsWithMessageBody()
     {
         Ui.Value.Run(() =>

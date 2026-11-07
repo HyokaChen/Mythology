@@ -4380,8 +4380,8 @@ public sealed class FileNovelStore : INovelStore
 
     private async Task FireEntityChanged(EntityChangeEvent evt)
     {
-        // 来源/工具名由当前写入作用域补齐：工具写盘已经在外层 OntologyWriteContext.Begin(Ai, toolName)
-        // 里执行，UI 可据此避免把「工具步骤已展示过的变更」再堆一条系统消息。
+        // 来源/工具名由当前写入作用域补齐：Desktop 用 ToolName 判断工具写盘事件是否已错过当前
+        // Agent 时间线（回合结束后迟到的通知不再补到底部）；手动编辑则保留系统行。
         var scope = OntologyWriteContext.Current;
         evt = evt with
         {

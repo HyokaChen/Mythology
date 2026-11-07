@@ -56,15 +56,11 @@ public sealed class AgentStep : INotifyPropertyChanged
     /// <summary>是否为阶段正文步骤（无步骤头，轻量文本展示时间线）。</summary>
     public bool IsContentStep => Kind == StepKind.Content;
 
-    /// <summary>是否为带步骤头的步骤（思考/工具/子步骤）。</summary>
-    public bool IsNotContentStep => !IsContentStep;
+    /// <summary>是否为实体变更提示步骤（轻量系统行，穿插在工具步骤之间）。</summary>
+    public bool IsNoticeStep => Kind == StepKind.Notice;
 
-    /// <summary>
-    /// 阶段正文。工具或下一轮思考开始前，把当前流式正文冻结到独立步骤，
-    /// 保证时间线是「思考 → 正文 → 工具 → 思考 → 最终正文」，而不是全部堆到回合末尾。
-    /// 冻结后不再变化，用普通文本控件渲染，避免为每段中间正文新建 Markdown 渲染器造成卡顿。
-    /// </summary>
-    public string ContentText { get; init; } = "";
+    /// <summary>是否为带步骤头的步骤（思考/工具/子步骤）。</summary>
+    public bool IsStepHeader => Kind is StepKind.Thinking or StepKind.ToolCall or StepKind.SubStep;
 
     /// <summary>创建一条已完成的历史/中间正文步骤。</summary>
     public static AgentStep CreateContent(string text) =>
@@ -74,6 +70,22 @@ public sealed class AgentStep : INotifyPropertyChanged
             Status = AgentStepStatus.Completed,
             ContentText = text,
         };
+
+    /// <summary>创建一条实体变更提示步骤（按事件发生顺序插入当前 Agent 步骤）。</summary>
+    public static AgentStep CreateNotice(string text) =>
+        new()
+        {
+            Kind = StepKind.Notice,
+            Status = AgentStepStatus.Completed,
+            ContentText = text,
+        };
+
+    /// <summary>
+    /// 阶段正文 / 实体变更提示。阶段正文用于工具或下一轮思考开始前冻结当前流式正文，
+    /// 保证时间线是「思考 → 正文 → 工具 → 思考 → 最终正文」；提示步骤则把
+    /// 「📝 修改情节线…」插在触发它的工具步骤之后，而不是堆到回合末尾。
+    /// </summary>
+    public string ContentText { get; init; } = "";
 
     /// <summary>状态图标（Lucide 单色描边，与 TodoPanel 状态同款体系）。</summary>
     public LucideIconKind StatusIcon =>

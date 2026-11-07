@@ -95,10 +95,11 @@ public sealed partial class TuiApp
 
         PostToUi(() =>
         {
-            // 在对话面板显示变更摘要（工具写盘已有工具步骤，不再重复刷系统行）
+            // 对话面板按事件发生顺序插入系统行；TUI 的工具调用本身是独立 FlowItem，
+            // 因此变更提示会自然落在当前工具卡片之后、下一张卡片之前。
             var label = EntityDisplayHelper.DisplayName(evt.EntityType);
             var changeSummary = EntityChangeSummary.Describe(evt);
-            if (changeSummary is not null && EntityChangeSummary.ShouldShowInChat(evt))
+            if (changeSummary is not null)
                 _conversationPanel.AddSystemMessage($"📝 {changeSummary}");
 
             // 用户手动编辑时，向 Agent 发送 Steer 通知让 LLM 感知用户操作

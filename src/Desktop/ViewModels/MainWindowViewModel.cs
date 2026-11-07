@@ -1925,13 +1925,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         return lines.Length == 0 ? "写作中…" : lines[Random.Shared.Next(lines.Length)];
     }
 
-    /// <summary>实体变更 → 当前会话系统状态行。事件可能来自后台 Agent 线程，统一切回 UI 线程。</summary>
+    /// <summary>
+    /// 实体变更 → 当前会话状态提示。事件可能来自后台 Agent 线程，统一切回 UI 线程；
+    /// 运行中作为 Agent 步骤交错显示，空闲时落系统行。
+    /// </summary>
     private Task OnStoreEntityChangedAsync(EntityChangeEvent evt)
     {
         if (!string.Equals(evt.NovelId, SelectedNovel?.Id, StringComparison.Ordinal))
-            return Task.CompletedTask;
-
-        if (!EntityChangeSummary.ShouldShowInChat(evt))
             return Task.CompletedTask;
 
         var summary = EntityChangeSummary.Describe(evt);
@@ -1939,13 +1939,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             return Task.CompletedTask;
 
         var text = $"📝 {summary}";
+        var fromToolCall = !string.IsNullOrWhiteSpace(evt.ToolName);
         var vm = ActiveConversationVm;
         if (vm is null)
             return Task.CompletedTask;
         if (Dispatcher.UIThread.CheckAccess())
-            vm.AddSystemNotice(text);
+            vm.AddEntityChangeNotice(text, fromToolCall);
         else
-            Dispatcher.UIThread.Post(() => vm.AddSystemNotice(text));
+            Dispatcher.UIThread.Post(() => vm.AddEntityChangeNotice(text, fromToolCall));
         return Task.CompletedTask;
     }
 

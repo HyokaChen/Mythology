@@ -22,6 +22,9 @@ public enum StepKind
     /// <summary>阶段正文（工具/思考之间的助手文本，按发生位置插入时间线）。</summary>
     Content,
 
+    /// <summary>实体变更提示（按发生位置穿插在工具步骤之间，不堆到回合末尾）。</summary>
+    Notice,
+
     /// <summary>工具调用。</summary>
     ToolCall,
 
