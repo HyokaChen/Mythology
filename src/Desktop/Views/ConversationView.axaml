@@ -478,7 +478,7 @@
           MinHeight="60"
         >
           <Grid RowDefinitions="Auto,Auto">
-            <!-- @ 提及 / # 实体引用补全弹窗（锚定输入卡片：上方 + 左右等宽） -->
+            <!-- @ 文件路径 / # 实体引用补全弹窗（锚定输入卡片：上方 + 左右等宽） -->
             <Popup
               x:Name="SuggestionPopup"
               PlacementTarget="{Binding ElementName=InputCard}"

@@ -47,7 +47,7 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>消息列表。</summary>
     public ObservableCollection<ChatMessageModel> Messages { get; } = [];
 
-    /// <summary>输入补全建议（@ 提及 / # 实体引用共用同一弹窗）。</summary>
+    /// <summary>输入补全建议（@ 文件路径 / # 实体引用共用同一弹窗）。</summary>
     public ObservableCollection<FileSystemItem> Suggestions { get; } = [];
 
     /// <summary>斜杠命令补全建议。</summary>
