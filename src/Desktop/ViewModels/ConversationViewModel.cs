@@ -954,15 +954,14 @@ public sealed class ConversationViewModel : ViewModelBase
             Suggestions.Clear();
             foreach (var entry in entries)
             {
-                var isDir = Core.Shared.FilePathCompletion.IsDirectoryEntry(entry);
                 Suggestions.Add(
                     new FileSystemItem
                     {
-                        Name = entry,
-                        FullPath = Path.GetFullPath(
-                            Path.Combine(novelsRoot, entry)
-                        ),
-                        IconKind = isDir ? LucideIconKind.Folder : LucideIconKind.FileText,
+                        Name = entry.Name,
+                        FullPath = entry.FullPath,
+                        IconKind = Core.Shared.FilePathCompletion.IsDirectoryEntry(entry.Name)
+                            ? LucideIconKind.Folder
+                            : LucideIconKind.FileText,
                     }
                 );
             }

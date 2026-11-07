@@ -99,10 +99,10 @@ public sealed partial class TuiApp
             // 长度上限防长文本误触发；空格合法（含空格目录名）
             if (afterAt.Length < 80)
             {
-                var pathCandidates = Core.Shared.FilePathCompletion.GetEntries(
-                    afterAt,
-                    Directory.GetCurrentDirectory()
-                );
+                var pathCandidates = Core.Shared.FilePathCompletion
+                    .GetEntries(afterAt, Directory.GetCurrentDirectory())
+                    .Select(e => e.Name)
+                    .ToArray();
                 if (pathCandidates.Length > 0)
                 {
                     _promptEditor.ShowCompletionPopup(
