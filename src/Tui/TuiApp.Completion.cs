@@ -92,26 +92,27 @@ public sealed partial class TuiApp
         }
 
         // @ 文件路径补全——目录导航（含空格路径不断词；B2 守卫修复）
+        // 只在光标所在行匹配（与 Desktop MentionParser 的 [^\n\r]*$ 一致），
+        // 不设长度上限：合法绝对路径常超 80 字符，无候选时自然关弹层。
+        var lineStart = input.LastIndexOf('\n') + 1;
         var atIndex = input.LastIndexOf('@');
-        if (atIndex >= 0)
+        if (atIndex >= lineStart)
         {
             var afterAt = input[(atIndex + 1)..];
-            // 长度上限防长文本误触发；空格合法（含空格目录名）
-            if (afterAt.Length < 80)
+            var pathCandidates = Core.Shared.FilePathCompletion
+                .GetEntries(afterAt, Directory.GetCurrentDirectory())
+                .Select(e => e.Name)
+                .ToArray();
+            if (pathCandidates.Length > 0)
             {
-                var pathCandidates = Core.Shared.FilePathCompletion
-                    .GetEntries(afterAt, Directory.GetCurrentDirectory())
-                    .Select(e => e.Name)
-                    .ToArray();
-                if (pathCandidates.Length > 0)
-                {
-                    _promptEditor.ShowCompletionPopup(
-                        pathCandidates,
-                        atIndex + 1,
-                        afterAt.Length
-                    );
-                    return;
-                }
+                // 只替换查询词最后一段：保留已输入的路径前缀（绝对/相对导航不丢基准）
+                var segIdx = afterAt.LastIndexOfAny(['/', '\\']);
+                _promptEditor.ShowCompletionPopup(
+                    pathCandidates,
+                    atIndex + 1 + segIdx + 1,
+                    afterAt.Length - (segIdx + 1)
+                );
+                return;
             }
         }
 

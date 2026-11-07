@@ -34,7 +34,9 @@ public static partial class MentionParser
     }
 
     /// <summary>
-    /// 将选中建议插入文本（替换 "@query" 为 "@路径"，目录候选尾带 / 可继续导航）。
+    /// 将选中建议插入文本：只替换查询词的最后一段（最后一个分隔符之后），
+    /// 保留已输入的绝对/相对路径前缀（`@/Users/x/序` 选「序章.txt」→ `@/Users/x/序章.txt`）。
+    /// 目录候选尾带 / 可继续导航；文件候选尾补空格。
     /// </summary>
     public static (string Text, int Caret) InsertSuggestion(
         string text,
@@ -43,9 +45,21 @@ public static partial class MentionParser
         string suggestion
     )
     {
+        var queryStart = mentionStart + 1;
+        var limit = Math.Min(caretIndex, text.Length);
+        var segmentStart = queryStart;
+        for (var i = limit - 1; i >= queryStart; i--)
+        {
+            if (text[i] is '/' or '\\')
+            {
+                segmentStart = i + 1;
+                break;
+            }
+        }
+
         var trailing = suggestion.EndsWith('/') ? "" : " ";
-        var replaced = text[..mentionStart] + "@" + suggestion + trailing + text[caretIndex..];
-        var caret = mentionStart + 1 + suggestion.Length + trailing.Length;
+        var replaced = text[..segmentStart] + suggestion + trailing + text[limit..];
+        var caret = segmentStart + suggestion.Length + trailing.Length;
         return (replaced, caret);
     }
 }

@@ -75,6 +75,27 @@ public sealed class InputCompletionParserTests
         Assert.Equal("请看 @序章.txt ".Length, fileCaret);
     }
 
+    [Fact]
+    public void InsertSuggestion_KeepsTypedPathPrefix()
+    {
+        // 绝对路径导航：只替换最后一段，不丢已输入的基准目录
+        const string text = "@/Users/me/novels/序";
+        var (applied, caret) = MentionParser.InsertSuggestion(text, text.Length, 0, "序章.txt");
+        Assert.Equal("@/Users/me/novels/序章.txt ", applied);
+        Assert.Equal(applied.Length, caret);
+
+        // 相对子目录导航同理
+        const string rel = "@卷一 风起/细";
+        var (relApplied, _) = MentionParser.InsertSuggestion(rel, rel.Length, 0, "细纲.md");
+        Assert.Equal("@卷一 风起/细纲.md ", relApplied);
+
+        // 目录候选：尾 / 保留，光标落在其后，可继续键入下一级
+        const string nav = "@/Users/me/";
+        var (dirApplied, dirCaret) = MentionParser.InsertSuggestion(nav, nav.Length, 0, "novels/");
+        Assert.Equal("@/Users/me/novels/", dirApplied);
+        Assert.Equal(dirApplied.Length, dirCaret);
+    }
+
     // ─────────── # 实体引用 ───────────
 
     [Fact]
