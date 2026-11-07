@@ -740,7 +740,6 @@ public sealed partial class TuiApp
             if (!string.IsNullOrEmpty(novel?.Title))
                 _titleSpinner.SetBaseTitle(novel!.Title);
             _statusBar.SetEnhanceMode(novel?.AutoEnhance ?? "semi");
-            UpdateEntityCompletions();
         }
         catch (Exception ex)
         {

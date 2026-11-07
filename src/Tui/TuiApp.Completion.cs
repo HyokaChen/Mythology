@@ -17,7 +17,8 @@ public sealed partial class TuiApp
 
     /// <summary>
     /// 根据输入内容触发补全弹窗。支持三种补全模式：
-    /// #实体引用（二级：类型→名称）、@文件路径/@实体提及、/tools 工具名。
+    /// #实体引用（二级：类型→名称）、@文件路径、/tools 工具名。
+    /// 实体提及一律走 #（@ 实体回退已删除，两端对齐）。
     /// 无匹配时关闭弹窗。
     /// </summary>
     /// <param name="input">当前输入框文本</param>
@@ -90,53 +91,26 @@ public sealed partial class TuiApp
             return;
         }
 
-        // @ 文件路径补全——目录导航
-        // 检测：@ 后跟路径特征文本（含 / 或 .\ 或 . 或裸 @）
+        // @ 文件路径补全——目录导航（含空格路径不断词；B2 守卫修复）
         var atIndex = input.LastIndexOf('@');
         if (atIndex >= 0)
         {
             var afterAt = input[(atIndex + 1)..];
-            if (!afterAt.Contains(' ') && afterAt.Length < 80)
+            // 长度上限防长文本误触发；空格合法（含空格目录名）
+            if (afterAt.Length < 80)
             {
-                // 判断 @ 后是否为文件路径（空、/、./、~、含路径分隔符）
-                var isFilePath =
-                    afterAt.Length == 0
-                    || afterAt.StartsWith('/')
-                    || afterAt.StartsWith("./")
-                    || afterAt.StartsWith('~')
-                    || afterAt.Contains('/')
-                    || afterAt.Contains('\\');
-
-                if (isFilePath)
+                var pathCandidates = Core.Shared.FilePathCompletion.GetEntries(
+                    afterAt,
+                    Directory.GetCurrentDirectory()
+                );
+                if (pathCandidates.Length > 0)
                 {
-                    var pathCandidates = GetFileCompletions(afterAt);
-                    if (pathCandidates.Length > 0)
-                    {
-                        _promptEditor.ShowCompletionPopup(
-                            pathCandidates,
-                            atIndex + 1,
-                            afterAt.Length
-                        );
-                        return;
-                    }
-                    // 文件无匹配时，回退到实体补全
-                }
-
-                // @ 实体提及补全：按前缀过滤所有实体名
-                var entities = _promptEditor.EntityCompletions;
-                if (entities.Count > 0)
-                {
-                    var matches =
-                        afterAt.Length > 0
-                            ? entities
-                                .Where(n => n.Contains(afterAt, StringComparison.OrdinalIgnoreCase))
-                                .ToArray()
-                            : entities.ToArray();
-                    if (matches.Length > 0)
-                    {
-                        _promptEditor.ShowCompletionPopup(matches, atIndex + 1, afterAt.Length);
-                        return;
-                    }
+                    _promptEditor.ShowCompletionPopup(
+                        pathCandidates,
+                        atIndex + 1,
+                        afterAt.Length
+                    );
+                    return;
                 }
             }
         }
@@ -247,122 +221,4 @@ public sealed partial class TuiApp
             _promptEditor.CloseMyPopup();
     }
 
-    /// <summary>
-    /// 从 SetUpPanel 收集所有实体名称，更新输入框的 @ 实体补全列表。
-    /// </summary>
-    private void UpdateEntityCompletions()
-    {
-        try
-        {
-            var names = _setUpPanel.GetAllEntityNames();
-            _promptEditor.SetEntityCompletions(names);
-        }
-        catch (Exception ex)
-        {
-            Services.TuiLogger.OperationFailed(_logger, ex, "update entity completions");
-        }
-    }
-
-    /// <summary>
-    /// 根据 @ 后的部分文件路径，返回目录条目用于补全。
-    /// 层级规则：空路径 → 当前目录列表；/path/ → 该目录下条目；./rel → CWD/rel 下条目。
-    /// 目录名后加 /；文件名保持原样。
-    /// </summary>
-    private string[] GetFileCompletions(string partialPath)
-    {
-        try
-        {
-            string dir;
-            string prefix;
-
-            if (string.IsNullOrEmpty(partialPath))
-            {
-                // 裸 @ → 显示当前工作目录条目
-                dir = Directory.GetCurrentDirectory();
-                prefix = "";
-            }
-            else if (partialPath.StartsWith("~/"))
-            {
-                // ~/ 路径：展开用户主目录
-                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                var rest = partialPath[2..];
-                var slashIdx = rest.LastIndexOf('/');
-                if (slashIdx < 0)
-                {
-                    dir = home;
-                    prefix = rest;
-                }
-                else
-                {
-                    dir = Path.Combine(home, rest[..slashIdx]);
-                    prefix = rest[(slashIdx + 1)..];
-                }
-            }
-            else if (partialPath.StartsWith('/'))
-            {
-                // 绝对路径：最后一个 / 之前为目录，之后为前缀
-                var slashIdx = partialPath.LastIndexOf('/');
-                dir = partialPath[..(slashIdx == 0 ? 1 : slashIdx)];
-                prefix = partialPath[(slashIdx + 1)..];
-            }
-            else if (partialPath.StartsWith("./"))
-            {
-                // ./ 相对路径：基于当前工作目录
-                var rest = partialPath[2..];
-                var slashIdx = rest.LastIndexOf('/');
-                if (slashIdx < 0)
-                {
-                    dir = Directory.GetCurrentDirectory();
-                    prefix = rest;
-                }
-                else
-                {
-                    dir = Path.Combine(Directory.GetCurrentDirectory(), rest[..slashIdx]);
-                    prefix = rest[(slashIdx + 1)..];
-                }
-            }
-            else
-            {
-                // 无 ./ 前缀的相对路径
-                var slashIdx = partialPath.LastIndexOf('/');
-                if (slashIdx < 0)
-                {
-                    dir = Directory.GetCurrentDirectory();
-                    prefix = partialPath;
-                }
-                else
-                {
-                    dir = Path.Combine(Directory.GetCurrentDirectory(), partialPath[..slashIdx]);
-                    prefix = partialPath[(slashIdx + 1)..];
-                }
-            }
-
-            if (!Directory.Exists(dir))
-                return [];
-
-            var entries = Directory
-                .GetFileSystemEntries(dir)
-                .Select(p =>
-                {
-                    var isDir = Directory.Exists(p);
-                    var name = Path.GetFileName(p);
-                    return isDir ? name + "/" : name; // 目录名后加 / 标识
-                })
-                .Where(n =>
-                    string.IsNullOrEmpty(prefix)
-                    || n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                    || n[..^1].StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                ) // 目录名含尾 /，需去掉再匹配前缀
-                .OrderBy(n => n)
-                .Take(20) // 限制最多 20 条，避免弹窗过长
-                .ToArray();
-
-            return entries;
-        }
-        catch (Exception ex)
-        {
-            Services.TuiLogger.OperationFailed(_logger, ex, "get file completions");
-            return [];
-        }
-    }
 }

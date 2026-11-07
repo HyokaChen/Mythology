@@ -76,19 +76,6 @@ public sealed class MythPromptEditor : PromptEditor
         );
     }
 
-    // ── 实体提及补全（由 TuiApp 填充） ─────────────
-    /// <summary>
-    /// @ 提及补全的实体名称列表。
-    /// 由 TuiApp 使用当前小说的实体名称填充。
-    /// </summary>
-    public List<string> EntityCompletions = [];
-
-    /// <summary>
-    /// 从 TuiApp 设置实体补全列表。
-    /// </summary>
-    /// <param name="names">实体名称列表。</param>
-    public void SetEntityCompletions(List<string> names) => EntityCompletions = names;
-
     // ── 补全状态 ────────────────────────────────────────
     private AnchoredPopup<MythPromptEditor>? _myPopup; // 补全弹出窗口（null = 未打开）
     private string[] _myCandidates = []; // 候选数组
