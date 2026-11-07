@@ -483,7 +483,7 @@ public sealed partial class TuiApp : IDisposable
             .Text(_inputText)
             .PromptMarkup("[primary]❯[/] ")
             .ContinuationPromptMarkup("")
-            .Placeholder("聊天 | /命令 | #角色 | @文件【ESC/Ctrl+C 中断回复】")
+            .Placeholder("聊天 | /命令 | #引用设定 | @文件【ESC/Ctrl+C 中断回复】")
             .CompletionPresentation(PromptEditorCompletionPresentation.PopupList)
             .CompletionHandler(HandleCompletion)
             .Accepted(SubmitInput);

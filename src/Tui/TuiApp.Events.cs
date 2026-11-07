@@ -306,6 +306,9 @@ public sealed partial class TuiApp
         return Task.CompletedTask;
     }
 
+    internal static string FormatEntityReference(EntityType entityType, string entityName) =>
+        $"#{EntityDisplayHelper.HashDisplayName(entityType)}:{entityName} ";
+
     /// <summary>
     /// 实体引用插入：输出 `#类型:名称 `（发送时由 InlineEntityReferences 补 ID）。
     /// 书 / 卷 / 章 / 场景等所有可引用实体共用同一语法。
@@ -314,9 +317,8 @@ public sealed partial class TuiApp
     /// <param name="entityName">实体显示名</param>
     private void OnEntityClicked(EntityType entityType, string entityName)
     {
-        var label = EntityDisplayHelper.HashDisplayName(entityType);
         var current = _inputText.Value ?? "";
-        var insertion = $"#{label}:{entityName} ";
+        var insertion = FormatEntityReference(entityType, entityName);
         _inputText.Value = string.IsNullOrEmpty(current) ? insertion : $"{current} {insertion}";
     }
 

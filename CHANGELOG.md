@@ -13,8 +13,9 @@
   名称解析改为「最长且词边界结束」匹配（`EntityReferenceMatcher`），章节标题 / 卷名里的空格不再把引用截断，
   同时不会把「李」错误匹配进「李四」。设定面板的「时间线 / 历史」入口统一更名为「变更记录」，
   明确它是状态变化 + 设定动作 + 发布/撤回的审计记录，不是故事时间线。
-  回归：新增 `EntityReferenceMatcherTests`、Desktop 空格式引用与 10 类型补全用例、TUI 书/卷/章插入引用事件用例；
-  全量 Core 1540/1540、Desktop 542/542、TUI 865 通过（2 skipped）。
+  回归：新增 `EntityReferenceMatcherTests`、Desktop 空格式引用与 10 类型补全用例、TUI 书/卷/章插入引用事件与
+  `TuiEntityRefTests`；TUI 输入提示 / 插入格式 / 类型表 / 大纲菜单与 Desktop 同步。
+  全量 Core 1540/1540、Desktop 542/542、TUI 868 通过（2 skipped）。
 - **启动迁移 010：把「第N卷 …」空章节还原为分卷**。Volume 实体晚于早期书稿数据引入，
   当时卷标题被写成空章节，导致大纲把所有卷塞进「未分卷」。新迁移只处理「标题为 `第N卷 …`、
   正文为空、未归属任何卷」的章节：标题剩余部分 → `Volume.Name`、编号 → `Volume.Order`，

@@ -167,7 +167,7 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
-    } = "输入指令，Enter 发送 · @ 引用角色/章节 · # 引用设定实体 · Esc 中断";
+    } = "输入指令，Enter 发送 · @ 引用角色/章节 · # 引用任意设定 · Esc 中断";
 
     /// <summary>
     /// 可用斜杠命令列表（补全候选）。权威定义是 <see cref="TryExecuteCommand"/> 的 switch 分支——
