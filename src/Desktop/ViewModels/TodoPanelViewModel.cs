@@ -93,7 +93,9 @@ public sealed class TodoItemRow(TodoItem item) : ReactiveObject
     public LucideIconKind StatusIcon =>
         Item.Status switch
         {
-            TodoStatus.InProgress => LucideIconKind.LoaderCircle,
+            // 静态图标：LoaderCircle 是缺口圆弧（动态加载器的残片），
+            // 列表里不旋转时读起来像「圆圈画了一半」的渲染故障 → 用中心圆点表示进行中。
+            TodoStatus.InProgress => LucideIconKind.CircleDot,
             TodoStatus.Completed => LucideIconKind.CircleCheck,
             TodoStatus.Deleted => LucideIconKind.Trash,
             _ => LucideIconKind.Circle,
