@@ -1,6 +1,7 @@
 using Core.Data;
 using Core.Data.Migrations;
 using Core.Infrastructure;
+using Core.Interactions;
 using Core.Plugins;
 using Core.Shared;
 using Core.Tools;
@@ -185,6 +186,7 @@ public static class CoreServiceExtensions
         services.AddSingleton<ToolRegistry>();
         services.AddSingleton<TodoStore>();
         services.AddSingleton<UserQuestionStore>();
+        services.AddSingleton<InteractionHub>();
     }
 
     /// <summary>解析 Data:StoreMode 灰度开关。</summary>

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Core.Agent;
 using Core.Data;
+using Core.Interactions;
 using Core.Novels;
 using Core.Shared;
 using Core.Tools;
@@ -31,7 +32,6 @@ public sealed class ConversationViewModel : ViewModelBase
     private readonly DesktopAgentBridge _bridge;
     private readonly SessionEngine _engine;
     private readonly INovelStore _store;
-    private readonly UserQuestionStore _questionStore;
     private readonly ToolDisplayFormatter _toolDisplay;
     private readonly ToolRegistry? _registry;
     private readonly ILogger _log;
@@ -661,15 +661,40 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>
     /// 暂存 refine 上下文并预填输入框，等待用户输入修改要求（主窗口 Refine 路由调用）。
     /// </summary>
-    public void BeginVariantRefinement(ExploreDetails explore, VariantReviewDecision decision)
-    {
-        _pendingRefinement = new PendingRefinement(
-            decision,
-            explore.Prompt,
-            explore.ExploreType,
-            explore.ApplyTarget
+    public void BeginVariantRefinement(ExploreDetails explore, VariantReviewDecision decision) =>
+        BeginVariantRefinement(
+            new PendingRefinement(
+                decision,
+                explore.Prompt,
+                explore.ExploreType,
+                explore.ApplyTarget
+            )
         );
-        var label = decision.VariantLabel ?? "variant";
+
+    /// <summary>直接消费 Core 效果 plan 的 refinement 入口。</summary>
+    public void BeginVariantRefinement(VariantEffect effect)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        BeginVariantRefinement(
+            new PendingRefinement(
+                new VariantReviewDecision
+                {
+                    Action = VariantReviewAction.Refine,
+                    VariantId = effect.VariantId,
+                    VariantLabel = effect.VariantLabel,
+                    VariantContent = effect.VariantContent,
+                },
+                effect.ExplorePrompt,
+                effect.ExploreType,
+                effect.ApplyTarget
+            )
+        );
+    }
+
+    private void BeginVariantRefinement(PendingRefinement pending)
+    {
+        _pendingRefinement = pending;
+        var label = pending.Decision.VariantLabel ?? "variant";
         InputText = $"修改「{label}」版本：";
         AddSystemNotice(
             $"📝 请输入对「{label}」的修改要求，按 Enter 发送（Agent 处理中会自动排入当前回合）"
@@ -1208,7 +1233,6 @@ public sealed class ConversationViewModel : ViewModelBase
         DesktopAgentBridge bridge,
         SessionEngine engine,
         INovelStore store,
-        UserQuestionStore? questionStore = null,
         ILogger<ConversationViewModel>? log = null,
         ToolRegistry? tools = null,
         string? novelsRoot = null
@@ -1218,7 +1242,6 @@ public sealed class ConversationViewModel : ViewModelBase
         _engine = engine;
         _store = store;
         _novelsRoot = novelsRoot;
-        _questionStore = questionStore ?? new UserQuestionStore();
         _toolDisplay = new ToolDisplayFormatter(tools);
         _registry = tools;
         _log =
@@ -1427,66 +1450,6 @@ public sealed class ConversationViewModel : ViewModelBase
         ContextStatsChanged?.Invoke();
     }
 
-    /// <summary>等待 ask_user 工具创建问题并逐个弹出对话框（轮询上限 500ms，对齐 TUI）。</summary>
-    public async Task ShowAskUserDialogAsync()
-    {
-        try
-        {
-            IReadOnlyList<PendingQuestion> pending = [];
-            for (var i = 0; i < 50; i++) // 最多等 500ms
-            {
-                await Task.Delay(10);
-                var all = _questionStore.GetPending();
-                pending = all;
-                if (pending.Count > 0)
-                    break;
-            }
-
-            if (pending.Count == 0)
-                return;
-
-            var owner = Avalonia.Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime
-                {
-                    MainWindow: { } mw
-                }
-                ? mw
-                : null;
-
-            foreach (var q in pending.Where(q => !q.IsAnswered))
-            {
-                var win = new AskUserWindow(_questionStore, q);
-                if (owner is not null)
-                {
-                    DialogTheme.FitToOwner(
-                        win,
-                        owner,
-                        0.68,
-                        640,
-                        1200,
-                        0.72,
-                        280,
-                        860,
-                        autoHeight: true
-                    );
-                    await win.ShowDialog(owner);
-                }
-                else
-                {
-                    // 无主窗口：非模态 + 关闭事件等待
-                    var tcs = new TaskCompletionSource();
-                    win.Closed += (_, _) => tcs.TrySetResult();
-                    win.Show();
-                    await tcs.Task;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "AskUser 对话框弹出失败");
-        }
-    }
-
     /// <summary>处理 Agent 事件（UI 线程，由主窗口转发）。</summary>
     public void HandleAgentEvent(AgentEvent evt)
     {
@@ -1524,12 +1487,6 @@ public sealed class ConversationViewModel : ViewModelBase
                 userMsg.Content.Append(text);
                 Messages.Add(userMsg);
                 HasMessages = true;
-                break;
-
-            // ask_user 工具：渲染工具卡片后弹出问题对话框（对齐 TUI AskUserDialog）
-            case ToolExecutionStart { ToolName: "ask_user" }:
-                _handler?.Handle(evt);
-                _ = ShowAskUserDialogAsync();
                 break;
 
             default:

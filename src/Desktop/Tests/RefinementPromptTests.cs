@@ -15,9 +15,9 @@ public sealed class RefinementPromptTests
         string? targetTitle = null
     ) =>
         new(
-            new Desktop.Controls.VariantReviewDecision
+            new Core.Tools.VariantReviewDecision
             {
-                Action = Desktop.Controls.VariantReviewAction.Refine,
+                Action = Core.Tools.VariantReviewAction.Refine,
                 VariantId = "v1",
                 VariantLabel = "悲剧走向",
                 VariantContent = "变体正文内容",

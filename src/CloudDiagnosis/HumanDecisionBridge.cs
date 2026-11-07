@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Core.Cloud;
+using Core.Interactions;
 using Core.Shared;
 using Microsoft.Extensions.Logging;
 
@@ -55,10 +56,9 @@ public enum DecisionProfileKind
 
 /// <summary>
 /// 人工裁决回路（HARNESS-CLOUD §5 组件 C）。
-/// DECISION（scene.plan 的 human_decision_required）→ QuestionDef → UserQuestionStore
-/// → WaitForAnswerAsync（链接超时 CTS）→ 答案回注文本 / 超时挂起文本。
-/// UI 弹窗由宿主经 <see cref="UserQuestionStore.PendingQuestionsCreated"/> 事件承担；
-/// 本组件不持有任何 UI 类型（§5.4 零新 UI）。
+/// DECISION（scene.plan 的 human_decision_required）→ QuestionDef → InteractionHub
+/// → WaitForQuestionAnswerAsync（链接超时 CTS）→ 答案回注文本 / 超时挂起文本。
+/// UI 弹窗由宿主从 <see cref="InteractionHub.Changed"/> claim/render；本组件不持有任何 UI 类型。
 /// P2/P3：DecisionHistory 持久化（SQLite vectors.db decision_history 表）+ 决策模式统计。
 /// </summary>
 public sealed class HumanDecisionBridge
@@ -66,7 +66,7 @@ public sealed class HumanDecisionBridge
     /// <summary>SQLite 持久化路径（null = 仅内存，测试/未配置）。</summary>
     private readonly string? _dbPath;
 
-    private readonly UserQuestionStore _store;
+    private readonly InteractionHub _hub;
     private readonly int _decisionTimeoutSeconds;
     private readonly bool _skipAnswerInjection;
     private readonly ILogger? _logger;
@@ -178,14 +178,14 @@ public sealed class HumanDecisionBridge
     }
 
     public HumanDecisionBridge(
-        UserQuestionStore store,
+        InteractionHub hub,
         int decisionTimeoutSeconds = 120,
         bool skipAnswerInjection = false,
         string? persistenceDbPath = null,
         ILogger? logger = null
     )
     {
-        _store = store;
+        _hub = hub;
         _decisionTimeoutSeconds = decisionTimeoutSeconds;
         _skipAnswerInjection = skipAnswerInjection;
         _dbPath = persistenceDbPath;
@@ -234,7 +234,8 @@ public sealed class HumanDecisionBridge
     )
     {
         var (question, firstOptionKind) = BuildQuestion(outcome);
-        var pending = _store.CreateQuestions([question]);
+        var created = _hub.CreateQuestionSet(_hub.CurrentContext, [question]);
+        var pending = created.Questions!.Items[0].Question;
 
         using var timeoutCts = new CancellationTokenSource(
             TimeSpan.FromSeconds(Math.Max(1, _decisionTimeoutSeconds))
@@ -244,12 +245,23 @@ public sealed class HumanDecisionBridge
         string[] answers;
         try
         {
-            answers = await _store.WaitForAnswerAsync(pending[0].Id, linked.Token);
+            answers = await _hub.WaitForQuestionAnswerAsync(created.Id, pending.Id, linked.Token);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // 超时（非用户取消）：问题留存 store（GetPending 可见），注入保守路径轻信号（§5.2）
-            return $"{SignalBuilder.Prefix} 存在待决问题 #{pending[0].Id}（{pending[0].Header}），"
+            _hub.Cancel(created.Id, "decision-cancelled", cancelWaiters: true);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // 超时：不终结问题，保留在 store 中供之后人工回答；本次注入保守路径轻信号（§5.2）
+            return $"{SignalBuilder.Prefix} 存在待决问题 #{pending.Id}（{pending.Header}），"
+                + "暂按保守路径继续：与该决策相关的剧情推进仅做铺垫不做定局。";
+        }
+
+        if (answers.Length == 1 && answers[0] == AskUserReplyFormatter.CancelledAnswer)
+        {
+            return $"{SignalBuilder.Prefix} 待决问题 #{pending.Id}（{pending.Header}）已被取消，"
                 + "暂按保守路径继续：与该决策相关的剧情推进仅做铺垫不做定局。";
         }
 

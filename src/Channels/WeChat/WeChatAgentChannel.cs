@@ -9,6 +9,7 @@
 
 using System.Text;
 using Core.Agent;
+using Core.Interactions;
 using Core.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,7 +25,7 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
     private readonly WeChatChannelService _channel;
     private readonly Func<string, CancellationToken, Task> _runTurn;
     private readonly Func<bool>? _isAgentBusy;
-    private readonly UserQuestionStore? _questionStore;
+    private readonly InteractionHub? _hub;
     private readonly ILogger<WeChatAgentChannel> _logger;
     private readonly object _gate = new();
     private readonly System.Text.StringBuilder _buffer = new();
@@ -46,6 +47,8 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
     private Task? _turnTask;
 
     private readonly List<string> _renderedQuestionIds = [];
+    private string? _claimedInteractionId;
+    private string? _claimedLeaseId;
 
     /// <summary>被 -14 拒掉的待补发文本（用户下次发消息时补发）。只留最后一条，避免堆积。</summary>
     private string? _pendingText;
@@ -56,14 +59,14 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
         WeChatChannelService channel,
         Func<string, CancellationToken, Task> runTurn,
         Func<bool>? isAgentBusy = null,
-        UserQuestionStore? questionStore = null,
+        InteractionHub? hub = null,
         ILogger<WeChatAgentChannel>? logger = null
     )
     {
         _channel = channel;
         _runTurn = runTurn;
         _isAgentBusy = isAgentBusy;
-        _questionStore = questionStore;
+        _hub = hub;
         _logger = logger ?? NullLogger<WeChatAgentChannel>.Instance;
         _settle = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
     }
@@ -120,8 +123,8 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
         _writer = WriteLoopAsync(_lifetime.Token);
         _typing = TypingLoopAsync(_lifetime.Token);
 
-        if (_questionStore is not null)
-            _questionStore.PendingQuestionsCreated += OnQuestionsCreated;
+        if (_hub is not null)
+            _hub.Changed += OnInteractionChanged;
 
         var longPollMs = WeChatConstants.DefaultLongPollTimeoutMs;
         var consecutiveFailures = 0;
@@ -277,12 +280,17 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
                     finally
                     {
                         Flush();
+                        string? claimed;
                         lock (_gate)
                         {
                             _turnActive = false;
-                            // 回合结束 = 期间创建的问题都已处置；残留 id 会让下一条消息被误当答案
+                            claimed = _claimedInteractionId;
+                            _claimedInteractionId = null;
+                            _claimedLeaseId = null;
                             _renderedQuestionIds.Clear();
                         }
+                        if (claimed is not null)
+                            _hub?.Cancel(claimed, "wechat-turn-end", cancelWaiters: true);
                         _settle.Change(Timeout.Infinite, Timeout.Infinite);
                         await _channel.SendTypingAsync(false, CancellationToken.None);
                     }
@@ -297,25 +305,72 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
     }
 
     /// <summary>
-    /// 回合期间创建的问题（ask_user 工具 + 云端裁决 Hook 都走这里）转成手机消息。
-    /// 非本回合创建的不接管：那是终端里的对话，宿主自己的弹窗会处理。
+    /// Core 交互变化：只接管微信本回合、且 owner 为微信/空闲的问题组。
+    /// 微信必须先 claim 才发送题目；答案通过 hub 提交，不再直接写 store。
     /// </summary>
-    private void OnQuestionsCreated(IReadOnlyList<PendingQuestion> questions)
+    private void OnInteractionChanged(InteractionSnapshot snapshot)
     {
-        if (questions.Count == 0)
+        if (_hub is null || snapshot.Kind != InteractionKind.QuestionSet)
+            return;
+
+        var canHandle = false;
+        lock (_gate)
+        {
+            if (
+                _turnActive
+                && (
+                    string.IsNullOrEmpty(snapshot.OwnerHost)
+                    || string.Equals(snapshot.OwnerHost, "wechat", StringComparison.Ordinal)
+                )
+            )
+                canHandle = true;
+        }
+        if (!canHandle)
+            return;
+
+        if (snapshot.IsTerminal)
+        {
+            lock (_gate)
+            {
+                if (string.Equals(_claimedInteractionId, snapshot.Id, StringComparison.Ordinal))
+                {
+                    _claimedInteractionId = null;
+                    _claimedLeaseId = null;
+                    _renderedQuestionIds.Clear();
+                }
+            }
+            return;
+        }
+
+        if (snapshot.State != InteractionState.Available)
+            return;
+
+        var status = _hub.TryClaim(snapshot.Id, "wechat", out var claimed);
+        if (status != SubmitStatus.Accepted || claimed?.Claim is null)
             return;
 
         lock (_gate)
         {
-            if (!_turnActive)
-                return;
-            foreach (var question in questions)
-                if (question.Id is { Length: > 0 } id && !_renderedQuestionIds.Contains(id))
-                    _renderedQuestionIds.Add(id);
+            _claimedInteractionId = snapshot.Id;
+            _claimedLeaseId = claimed.Claim.LeaseId;
+            _renderedQuestionIds.Clear();
         }
+        SendNextQuestion(claimed);
+    }
 
-        foreach (var question in questions)
-            _outbox.Writer.TryWrite(RenderQuestion(question));
+    private void SendNextQuestion(InteractionSnapshot snapshot)
+    {
+        var next = snapshot.Questions?.Items.FirstOrDefault(i =>
+            i.Outcome == QuestionOutcome.Unanswered
+        );
+        if (next is null)
+            return;
+        lock (_gate)
+        {
+            if (!_renderedQuestionIds.Contains(next.Question.Id))
+                _renderedQuestionIds.Add(next.Question.Id);
+        }
+        _outbox.Writer.TryWrite(RenderQuestion(next.Question));
     }
 
     /// <summary>把待答问题渲染成微信可读文本。</summary>
@@ -347,23 +402,28 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
     /// </summary>
     private bool TryAnswerQuestion(string reply)
     {
-        if (_questionStore is null)
+        if (_hub is null)
             return false;
 
-        List<PendingQuestion> ours;
+        string interactionId;
+        string leaseId;
+        PendingQuestion? question;
         lock (_gate)
         {
-            ours = _renderedQuestionIds
-                .Select(id => _questionStore.Get(id))
-                .Where(q => q is { IsAnswered: false })
-                .Select(q => q!)
-                .ToList();
+            if (_claimedInteractionId is null || _claimedLeaseId is null)
+                return false;
+            interactionId = _claimedInteractionId;
+            leaseId = _claimedLeaseId;
         }
 
-        if (ours.Count == 0)
+        var snapshot = _hub.Get(interactionId);
+        var item = snapshot?.Questions?.Items.FirstOrDefault(i =>
+            i.Outcome == QuestionOutcome.Unanswered
+        );
+        question = item?.Question;
+        if (question is null)
             return false;
 
-        var question = ours[0];
         if (!TryParseAnswer(question, reply, out var selected))
         {
             // 解析失败：重发题目而不是静默丢弃（用户会以为消息丢了）
@@ -371,18 +431,38 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
             return true;
         }
 
-        lock (_gate)
+        var result = _hub.SubmitQuestionAnswer(interactionId, question.Id, selected, leaseId);
+        if (result.Status != SubmitStatus.Accepted)
         {
-            _renderedQuestionIds.Remove(question.Id);
+            if (
+                result.Status
+                is SubmitStatus.AlreadyResolved
+                    or SubmitStatus.Expired
+                    or SubmitStatus.NotFound
+            )
+                ClearClaimed();
+            return true;
         }
 
-        _questionStore.Answer(question.Id, selected);
+        lock (_gate)
+            _renderedQuestionIds.Remove(question.Id);
 
-        // 一组问题有多条：答完一条接着发下一条
-        if (ours.Count > 1)
-            _outbox.Writer.TryWrite(RenderQuestion(ours[1]));
-
+        var updated = _hub.Get(interactionId);
+        if (updated is { IsTerminal: false })
+            SendNextQuestion(updated);
+        else
+            ClearClaimed();
         return true;
+    }
+
+    private void ClearClaimed()
+    {
+        lock (_gate)
+        {
+            _claimedInteractionId = null;
+            _claimedLeaseId = null;
+            _renderedQuestionIds.Clear();
+        }
     }
 
     /// <summary>解析编号回复。无选项的问题接受任意文字。</summary>
@@ -547,8 +627,11 @@ public sealed class WeChatAgentChannel : IAsyncDisposable
         await _lifetime.CancelAsync();
         _outbox.Writer.TryComplete();
 
-        if (_questionStore is not null)
-            _questionStore.PendingQuestionsCreated -= OnQuestionsCreated;
+        if (_hub is not null)
+        {
+            _hub.Changed -= OnInteractionChanged;
+            _hub.CancelHost("wechat");
+        }
 
         // 回合任务是独立任务：取消由宿主的 ct 负责，这里最多等 2 秒，不等它跑完
         if (_turnTask is { IsCompleted: false })

@@ -2220,6 +2220,29 @@ public sealed class ConversationLoop(
                 await afterToolCall.AfterToolCallAsync(hookContext, ct);
             }
 
+            // explore 结果进入 Core 交互状态机：UI 只负责认领/选择，
+            // 不再各自解析 ToolExecutionEnd.Details（否则 Desktop/TUI 必然漂移）。
+            if (
+                !toolResult.IsError
+                && toolResult.Details is ExploreDetails exploreDetails
+                && agent?.InteractionHub is { } interactionHub
+            )
+            {
+                try
+                {
+                    var context = interactionHub.CurrentContext;
+                    if (string.IsNullOrEmpty(context.SessionId))
+                        context = context with { SessionId = agent.SessionId ?? "" };
+                    if (string.IsNullOrEmpty(context.NovelId))
+                        context = context with { NovelId = agent.CurrentNovelId };
+                    interactionHub.CreateOrGetVariantReview(context, exploreDetails);
+                }
+                catch (ArgumentException)
+                {
+                    // 全部变体失败：没有可审阅内容，保持工具结果原样。
+                }
+            }
+
             await emit(
                 new ToolExecutionEnd(
                     toolCallId,

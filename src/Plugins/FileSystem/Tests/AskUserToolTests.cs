@@ -1,3 +1,4 @@
+using Core.Interactions;
 using Core.Shared;
 using Plugins.FileSystem.Tools;
 using Xunit;
@@ -9,8 +10,8 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_NoQuestions_ReturnsError()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -24,8 +25,8 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_TooManyQuestions_ReturnsError()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -50,8 +51,8 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_QuestionWithTooFewOptions_ReturnsError()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -76,8 +77,8 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_QuestionWithTooManyOptions_ReturnsError()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -102,12 +103,20 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_MultiSelectAnswers_JoinedByEnglishComma()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
-        var pendingCreated = new TaskCompletionSource<IReadOnlyList<PendingQuestion>>(
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
+        var pendingCreated = new TaskCompletionSource<InteractionSnapshot>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        store.PendingQuestionsCreated += questions => pendingCreated.TrySetResult(questions);
+        hub.Changed += snapshot =>
+        {
+            if (
+                snapshot.Kind == InteractionKind.QuestionSet
+                && snapshot.Questions?.Items.Any(i => i.Outcome == QuestionOutcome.Unanswered)
+                    == true
+            )
+                pendingCreated.TrySetResult(snapshot);
+        };
 
         var executeTask = tool.ExecuteAsync(
             "call_1",
@@ -128,7 +137,15 @@ public class AskUserToolTests
         );
 
         var pending = await pendingCreated.Task.WaitAsync(TestContext.Current.CancellationToken);
-        Assert.True(store.Answer(pending[0].Id, ["身世", "旧案"]));
+        Assert.Equal(SubmitStatus.Accepted, hub.TryClaim(pending.Id, "test", out var claimed));
+        var questionId = pending.Questions!.Items[0].Question.Id;
+        var submitted = hub.SubmitQuestionAnswer(
+            pending.Id,
+            questionId,
+            ["身世", "旧案"],
+            claimed!.Claim!.LeaseId
+        );
+        Assert.Equal(SubmitStatus.Accepted, submitted.Status);
 
         var result = await executeTask;
         var text = GetText(result);
@@ -139,8 +156,8 @@ public class AskUserToolTests
     [Fact]
     public async Task ExecuteAsync_ValidQuestion_CreatesPendingQuestion()
     {
-        var store = new UserQuestionStore();
-        var tool = new AskUserTool(store);
+        var hub = new InteractionHub();
+        var tool = new AskUserTool(hub);
 
         // Pass the cancellation token so the tool can be cancelled
         using var cts = new CancellationTokenSource(200);

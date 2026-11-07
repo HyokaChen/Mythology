@@ -4,6 +4,7 @@ using ClientPlatform;
 using Core.Agent;
 using Core.Data;
 using Core.Infrastructure;
+using Core.Interactions;
 using Core.Notes;
 using Core.Prompts;
 using LlmTornado.ChatFunctions;
@@ -84,6 +85,13 @@ public sealed partial class TuiApp
             ToastService.Error("会话保存故障尚未恢复，已拒绝继续生成以防止历史记录缺失。");
             return;
         }
+
+        _interactionHub?.CurrentContext = new InteractionContext(
+            _turnHost,
+            _sessionId,
+            _agent.CurrentNovelId,
+            TurnId: Guid.NewGuid().ToString("N")[..12]
+        );
 
         try
         {

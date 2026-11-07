@@ -10,6 +10,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
 using Desktop.Models;
@@ -772,8 +773,7 @@ public class ConversationRenderingTests
     {
         Ui.Value.Run(() =>
         {
-            var store = new UserQuestionStore();
-            var pending = store.CreateQuestions([
+            var (hub, interaction, window) = CreateAskUserWindow([
                 new QuestionDef
                 {
                     Header = "题材",
@@ -781,8 +781,7 @@ public class ConversationRenderingTests
                     Options = ["修真", "悬疑", "日常"],
                     MultiSelect = true,
                 },
-            ])[0];
-            var window = new Desktop.Controls.AskUserWindow(store, pending);
+            ]);
             window.Show();
             try
             {
@@ -794,7 +793,10 @@ public class ConversationRenderingTests
                 var confirm = window.FindControl<Button>("ConfirmButton")!;
                 confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
-                Assert.Equal(["修真", "日常"], store.Get(pending.Id)!.SelectedAnswers);
+                Assert.Equal(
+                    ["修真", "日常"],
+                    hub.Get(interaction.Id)!.Questions!.Items[0].Question.SelectedAnswers
+                );
             }
             finally
             {
@@ -895,16 +897,14 @@ public class ConversationRenderingTests
     {
         Ui.Value.Run(() =>
         {
-            var store = new UserQuestionStore();
-            var pending = store.CreateQuestions([
+            var (hub, interaction, window) = CreateAskUserWindow([
                 new QuestionDef
                 {
                     Header = "方向",
                     Question = "想写哪种？",
                     Options = ["都市修真", "仙侠"],
                 },
-            ])[0];
-            var window = new Desktop.Controls.AskUserWindow(store, pending);
+            ]);
             window.Show();
             try
             {
@@ -922,7 +922,7 @@ public class ConversationRenderingTests
                 var confirm = window.FindControl<Button>("ConfirmButton")!;
                 confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
-                var answered = store.Get(pending.Id)!;
+                var answered = hub.Get(interaction.Id)!.Questions!.Items[0].Question;
                 Assert.True(answered.IsAnswered);
                 Assert.Equal(["仙侠"], answered.SelectedAnswers);
             }
@@ -940,16 +940,14 @@ public class ConversationRenderingTests
         {
             static (Desktop.Controls.AskUserWindow Window, Border Card) Create(int count)
             {
-                var store = new UserQuestionStore();
-                var pending = store.CreateQuestions([
+                var (_, _, window) = CreateAskUserWindow([
                     new QuestionDef
                     {
                         Header = "方向",
                         Question = "这次开篇想走哪种方向？",
                         Options = Enumerable.Range(1, count).Select(i => $"选项 {i}").ToArray(),
                     },
-                ])[0];
-                var window = new Desktop.Controls.AskUserWindow(store, pending);
+                ]);
                 window.Show();
                 Pump();
                 var card = window
@@ -1777,6 +1775,25 @@ public class ConversationRenderingTests
                 window.Close();
             }
         });
+    }
+
+    private static (
+        InteractionHub Hub,
+        InteractionSnapshot Interaction,
+        Desktop.Controls.AskUserWindow Window
+    ) CreateAskUserWindow(QuestionDef[] definitions)
+    {
+        var hub = new InteractionHub();
+        hub.CurrentContext = new InteractionContext("test", "s1");
+        var interaction = hub.CreateQuestionSet(hub.CurrentContext, definitions);
+        Assert.Equal(SubmitStatus.Accepted, hub.TryClaim(interaction.Id, "test", out var claimed));
+        var window = new Desktop.Controls.AskUserWindow(
+            hub,
+            interaction.Id,
+            claimed!.Claim!.LeaseId,
+            interaction.Questions!.Items[0]
+        );
+        return (hub, interaction, window);
     }
 
     private static (Window Window, MarkdownRenderer Renderer) Render(string markdown)

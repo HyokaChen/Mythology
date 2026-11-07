@@ -7,6 +7,7 @@ using Core.Data;
 using Core.Data.Migrations;
 using Core.Forecast;
 using Core.Infrastructure;
+using Core.Interactions;
 using Core.Plugins;
 using Core.Shared;
 using Core.Stability;
@@ -44,6 +45,7 @@ public static class HostBootstrapper
         FileNovelStore Store,
         FileSessionStore SessionStore,
         UserQuestionStore QuestionStore,
+        InteractionHub InteractionHub,
         TodoStore TodoStore,
         ConfigStore ConfigStore,
         PluginLoader PluginLoader,
@@ -193,7 +195,9 @@ public static class HostBootstrapper
         var semantic =
             provider.GetService<NovelSemanticService>() ?? new NovelSemanticService(workspace);
         var questionStore = provider.GetRequiredService<UserQuestionStore>();
+        var interactionHub = provider.GetRequiredService<InteractionHub>();
         var agent = provider.GetRequiredService<Agent>();
+        agent.InteractionHub = interactionHub;
         var registry = provider.GetRequiredService<ToolRegistry>();
         var todoStore = provider.GetRequiredService<TodoStore>();
 
@@ -326,6 +330,7 @@ public static class HostBootstrapper
             semantic,
             config,
             questionStore,
+            interactionHub,
             Path.Combine(mythologyDir, "vectors.db")
         );
         ConfigureAgentAuditLoop(agent, provider, semantic);
@@ -395,6 +400,7 @@ public static class HostBootstrapper
             store,
             sessionStore,
             questionStore,
+            interactionHub,
             todoStore,
             configStore,
             pluginLoader,
@@ -481,6 +487,7 @@ public static class HostBootstrapper
         services.AddSingleton<ToolRegistry>();
         services.AddSingleton<TodoStore>();
         services.AddSingleton<UserQuestionStore>();
+        services.AddSingleton<InteractionHub>();
 
         // ── 双速自进化账本（单账本折叠架构）：append-only ledger.jsonl 的唯一运行时单例，
         //    写作钩子（结算/注入）与 get_writing_stats(tactics) 共用同一实例。──
@@ -1044,6 +1051,7 @@ public static class HostBootstrapper
         NovelSemanticService semantic,
         IConfiguration config,
         UserQuestionStore? questionStore,
+        InteractionHub interactionHub,
         string vectorsDbPath
     )
     {
@@ -1093,7 +1101,7 @@ public static class HostBootstrapper
                 : null;
         var decisionBridge = questionStore is not null
             ? new HumanDecisionBridge(
-                questionStore,
+                interactionHub,
                 cloudOptions.DecisionTimeoutSeconds,
                 skipAnswerInjection: true, // TUI 复用 ask_user 渲染链路，答案已自动追加为 user 消息
                 persistenceDbPath: vectorsDbPath,

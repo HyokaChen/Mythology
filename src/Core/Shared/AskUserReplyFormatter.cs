@@ -17,6 +17,9 @@ public static class AskUserReplyFormatter
     /// <summary>回复块首行。</summary>
     public const string Header = "User answers:";
 
+    /// <summary>取消的规范显示文本；仅用于 formatter，不代表状态。</summary>
+    public const string CancelledAnswer = "(已取消)";
+
     /// <summary>格式化一组问题；每组一行，未回答的组保留占位以维持顺序。</summary>
     public static string Format(IEnumerable<PendingQuestion> questions)
     {
@@ -42,7 +45,7 @@ public static class AskUserReplyFormatter
         if (!multiSelect)
             return answers.Count > 0 ? answers[0] : "";
         // 取消不是多选集合，统一保持标量，与迁移后的历史格式一致。
-        if (answers.Count == 1 && answers[0] == "(已取消)")
+        if (answers.Count == 1 && answers[0] == CancelledAnswer)
             return answers[0];
         return $"[{string.Join(", ", answers)}]";
     }

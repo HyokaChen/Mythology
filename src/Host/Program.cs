@@ -105,6 +105,7 @@ public static class Program
                 store,
                 sessionStore,
                 questionStore,
+                interactionHub,
                 todoStore,
                 configStore,
                 pluginLoader,
@@ -157,6 +158,7 @@ public static class Program
                 novelSync: novelSync, // cloud-novel-sync v3（:cloud sync / :cloud pull）
                 cloudUsage: cloudUsage, // :cloud status 积分余量（零价 usage 查询）
                 weChat: weChat, // 微信通道（/wechat bind|status|unbind + 长轮询驱动 Agent）
+                interactionHub: interactionHub,
                 loggerFactory: loggerFactory
             );
             await tui.RunAsync(_cts.Token);

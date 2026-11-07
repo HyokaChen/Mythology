@@ -267,22 +267,6 @@ public sealed partial class TuiApp
     private void ResetCalibration() => _tokenCalibrator.Reset();
 
     /// <summary>
-    /// Explore tool 变体选择事件处理。
-    /// 弹出多 Tab 审阅弹窗，用户可选择：
-    /// - 采用并写入章节
-    /// - 基于此版本继续修改
-    /// - 稍后决定
-    /// </summary>
-    /// <param name="toolCallId">工具调用 ID</param>
-    /// <param name="details">变体详情对象</param>
-    private void OnExploreVariant(string toolCallId, object? details)
-    {
-        if (details is null)
-            return;
-        _ = HandleVariantReviewAsync(details);
-    }
-
-    /// <summary>
     /// 导航到指定实体：在侧边栏中定位并展开该实体节点。
     /// </summary>
     /// <param name="entityType">实体类型字符串</param>

@@ -663,10 +663,10 @@ public sealed class ConversationVmContractTests
             ],
         };
 
-    private static Desktop.Controls.VariantReviewDecision RefineDecision() =>
+    private static Core.Tools.VariantReviewDecision RefineDecision() =>
         new()
         {
-            Action = Desktop.Controls.VariantReviewAction.Refine,
+            Action = Core.Tools.VariantReviewAction.Refine,
             VariantId = "v1",
             VariantLabel = "悲剧走向",
             VariantContent = "变体正文",

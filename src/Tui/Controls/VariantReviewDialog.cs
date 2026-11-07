@@ -8,39 +8,6 @@ using XenoAtom.Terminal.UI.Geometry;
 namespace Tui.Controls;
 
 /// <summary>
-/// 变体审核对话框：显示 explore 工具返回的多个变体，供用户选择采用、修改或忽略。
-/// </summary>
-public sealed record VariantReviewDecision
-{
-    /// <summary>用户选择的操作（采用/修改/忽略）。</summary>
-    public VariantReviewAction Action { get; init; }
-
-    /// <summary>选中的变体 ID。</summary>
-    public string? VariantId { get; init; }
-
-    /// <summary>选中的变体标签。</summary>
-    public string? VariantLabel { get; init; }
-
-    /// <summary>选中的变体内容。</summary>
-    public string? VariantContent { get; init; }
-}
-
-/// <summary>
-/// 变体审核操作类型。
-/// </summary>
-public enum VariantReviewAction
-{
-    /// <summary>采用此变体并写入。</summary>
-    Apply,
-
-    /// <summary>基于此变体继续修改。</summary>
-    Refine,
-
-    /// <summary>忽略此变体。</summary>
-    Dismiss,
-}
-
-/// <summary>
 /// 变体审核对话框：以 Tab 页形式展示多个变体，
 /// 用户可预览内容后选择采用（Apply）、继续修改（Refine）或忽略（Dismiss）。
 /// </summary>

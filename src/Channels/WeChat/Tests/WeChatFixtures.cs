@@ -4,6 +4,7 @@
 // 各写一份必然漂移。
 
 using Core.Agent;
+using Core.Interactions;
 using Core.Shared;
 using LlmTornado.Chat;
 using LlmTornado.Code;
@@ -17,7 +18,7 @@ internal sealed record WeChatFixture(
     WeChatChannelService Channel,
     WeChatAgentChannel Bridge,
     PathHandler Handler,
-    UserQuestionStore Questions,
+    QuestionTestAdapter Questions,
     TempDir Dir
 );
 
@@ -29,7 +30,7 @@ internal static class WeChatFixtures
     public static WeChatFixture Build(
         Func<WeChatAgentChannel, string, CancellationToken, Task> runTurn,
         Func<bool>? isAgentBusy = null,
-        UserQuestionStore? questions = null
+        QuestionTestAdapter? questions = null
     )
     {
         var handler = new PathHandler();
@@ -39,6 +40,7 @@ internal static class WeChatFixtures
             "test",
             new StubHttpClientFactory(handler)
         );
+        questions ??= new QuestionTestAdapter();
 
         // 预置绑定凭证（等价于已扫码完成）
         new WeChatBindingStore(dir.Path).Save(
@@ -60,15 +62,9 @@ internal static class WeChatFixtures
             channel,
             (text, ct) => runTurn(bridge, text, ct),
             isAgentBusy,
-            questions ?? new UserQuestionStore()
+            questions.Hub
         );
-        return new WeChatFixture(
-            channel,
-            bridge,
-            handler,
-            questions ?? new UserQuestionStore(),
-            dir
-        );
+        return new WeChatFixture(channel, bridge, handler, questions, dir);
     }
 
     public static void RouteCommon(PathHandler handler)

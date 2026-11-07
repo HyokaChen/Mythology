@@ -1,4 +1,5 @@
 using System.Reflection;
+using Core.Interactions;
 using Core.Shared;
 using Tui.Controls;
 using XenoAtom.Terminal;
@@ -27,8 +28,7 @@ public sealed class AskUserDialogTests : TerminalUiFixture
     [Fact]
     public async Task MultiSelect_TogglesCheckedRows_AndSubmitsAllAnswers()
     {
-        var store = new UserQuestionStore();
-        var questions = store.CreateQuestions([
+        var (hub, interaction, lease) = CreateClaimed([
             new QuestionDef
             {
                 Header = "方向",
@@ -37,10 +37,12 @@ public sealed class AskUserDialogTests : TerminalUiFixture
                 MultiSelect = true,
             },
         ]);
+        var slot = interaction.Questions!.Items[0];
+        var questionId = slot.Question.Id;
 
         await OnUiAsync(() =>
         {
-            _ = AskUserDialog.Show(store, questions);
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, slot);
             return 0;
         });
 
@@ -84,18 +86,19 @@ public sealed class AskUserDialogTests : TerminalUiFixture
         );
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
 
-        var answered = await store
-            .WaitForAnswerAsync(questions[0].Id)
+        var answered = await hub.WaitForQuestionAnswerAsync(interaction.Id, questionId)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(["身世", "旧案"], answered);
-        Assert.Equal(["身世", "旧案"], store.Get(questions[0].Id)!.SelectedAnswers);
+        Assert.Equal(
+            ["身世", "旧案"],
+            hub.Get(interaction.Id)!.Questions!.Items[0].Question.SelectedAnswers
+        );
     }
 
     [Fact]
     public async Task SingleSelect_EnterConfirmsSelectedRadioAnswer()
     {
-        var store = new UserQuestionStore();
-        var questions = store.CreateQuestions([
+        var (hub, interaction, lease) = CreateClaimed([
             new QuestionDef
             {
                 Header = "视角",
@@ -103,10 +106,12 @@ public sealed class AskUserDialogTests : TerminalUiFixture
                 Options = ["第一人称", "第三人称"],
             },
         ]);
+        var slot = interaction.Questions!.Items[0];
+        var questionId = slot.Question.Id;
 
         await OnUiAsync(() =>
         {
-            _ = AskUserDialog.Show(store, questions);
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, slot);
             return 0;
         });
 
@@ -124,10 +129,22 @@ public sealed class AskUserDialogTests : TerminalUiFixture
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
 
-        var answered = await store
-            .WaitForAnswerAsync(questions[0].Id)
+        var answered = await hub.WaitForQuestionAnswerAsync(interaction.Id, questionId)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(["第三人称"], answered);
+    }
+
+    private static (
+        InteractionHub Hub,
+        InteractionSnapshot Interaction,
+        string LeaseId
+    ) CreateClaimed(QuestionDef[] definitions)
+    {
+        var hub = new InteractionHub();
+        hub.CurrentContext = new InteractionContext("test", "s1");
+        var interaction = hub.CreateQuestionSet(hub.CurrentContext, definitions);
+        Assert.Equal(SubmitStatus.Accepted, hub.TryClaim(interaction.Id, "test", out var claimed));
+        return (hub, interaction, claimed!.Claim!.LeaseId);
     }
 
     private async Task<IReadOnlyList<string>> CaptureFrameAsync()

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
 
@@ -270,8 +271,7 @@ public sealed record TodoWriteDetails
 /// 询问用户工具：向用户提出结构化问题（用于不清晰或多方案情况）。
 /// TUI 会弹出交互面板，等待用户回复后返回答案。
 /// </summary>
-public sealed class AskUserTool(UserQuestionStore questionStore)
-    : AgentTool<AskUserParams, AskUserDetails>
+public sealed class AskUserTool(InteractionHub hub) : AgentTool<AskUserParams, AskUserDetails>
 {
     public override string Name => "ask_user";
     public override string Label => "询问用户";
@@ -321,7 +321,7 @@ public sealed class AskUserTool(UserQuestionStore questionStore)
             }
         }
 
-        // 在 store 中创建待回答问题（TUI 会检测到并弹出交互面板）
+        // Core 创建交互；UI 通过 InteractionHub 认领并提交答案。
         var questionDefs = args
             .Questions.Select(q => new QuestionDef
             {
@@ -332,16 +332,20 @@ public sealed class AskUserTool(UserQuestionStore questionStore)
             })
             .ToList();
 
-        var pending = questionStore.CreateQuestions(questionDefs);
+        var interaction = hub.CreateQuestionSet(hub.CurrentContext, questionDefs);
+        var pending = interaction.Questions!.Items.Select(i => i.Question).ToArray();
 
         // 等待所有问题被回答
-        var answerTasks = pending.Select(p => questionStore.WaitForAnswerAsync(p.Id, ct)).ToArray();
+        var answerTasks = pending
+            .Select(p => hub.WaitForQuestionAnswerAsync(interaction.Id, p.Id, ct))
+            .ToArray();
         try
         {
             await Task.WhenAll(answerTasks);
         }
         catch (OperationCanceledException)
         {
+            hub.Cancel(interaction.Id, "ask-user-cancelled", cancelWaiters: true);
             return new AgentToolResult<AskUserDetails>
             {
                 Content = [new TextContent("用户取消了回答")],
@@ -360,8 +364,9 @@ public sealed class AskUserTool(UserQuestionStore questionStore)
             Content = [new TextContent(answerText)],
             Details = new AskUserDetails
             {
+                InteractionId = interaction.Id,
                 QuestionIds = pending.Select(p => p.Id).ToArray(),
-                QuestionCount = pending.Count,
+                QuestionCount = pending.Length,
             },
         };
     }
@@ -399,6 +404,7 @@ public sealed record AskQuestion
 /// </summary>
 public sealed record AskUserDetails
 {
+    public string InteractionId { get; init; } = "";
     public string[] QuestionIds { get; init; } = [];
     public int QuestionCount { get; init; }
 }
@@ -409,7 +415,7 @@ public sealed record AskUserDetails
 /// 获取待回复问题工具：获取当前等待用户回复的问题列表。
 /// 用于检查 ask_user 提出的问题是否已被回答。
 /// </summary>
-public sealed class GetPendingQuestionsTool(UserQuestionStore questionStore)
+public sealed class GetPendingQuestionsTool(InteractionHub hub)
     : AgentTool<GetPendingQuestionsParams, GetPendingQuestionsDetails>
 {
     public override string Name => "get_pending_questions";
@@ -427,7 +433,7 @@ public sealed class GetPendingQuestionsTool(UserQuestionStore questionStore)
     )
     {
         ThrowIfCancelled(ct);
-        var pending = questionStore.GetPending();
+        var pending = hub.GetPendingQuestions(hub.CurrentContext.SessionId);
 
         if (pending.Count == 0)
         {

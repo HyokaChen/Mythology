@@ -1,3 +1,4 @@
+using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
 using Plugins.FileSystem.Tools;
@@ -10,8 +11,8 @@ public class GetPendingQuestionsToolTests
     [Fact]
     public async Task ExecuteAsync_NoPending_ReturnsEmptyMessage()
     {
-        var store = new UserQuestionStore();
-        var tool = new GetPendingQuestionsTool(store);
+        var hub = NewHub();
+        var tool = new GetPendingQuestionsTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -27,16 +28,19 @@ public class GetPendingQuestionsToolTests
     [Fact]
     public async Task ExecuteAsync_HasPending_ReturnsQuestions()
     {
-        var store = new UserQuestionStore();
-        store.CreateQuestions([
-            new QuestionDef
-            {
-                Header = "Test",
-                Question = "测试?",
-                Options = ["A", "B"],
-            },
-        ]);
-        var tool = new GetPendingQuestionsTool(store);
+        var hub = NewHub();
+        hub.CreateQuestionSet(
+            hub.CurrentContext,
+            [
+                new QuestionDef
+                {
+                    Header = "Test",
+                    Question = "测试?",
+                    Options = ["A", "B"],
+                },
+            ]
+        );
+        var tool = new GetPendingQuestionsTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -54,22 +58,25 @@ public class GetPendingQuestionsToolTests
     [Fact]
     public async Task ExecuteAsync_MultiplePending_ReturnsAll()
     {
-        var store = new UserQuestionStore();
-        store.CreateQuestions([
-            new QuestionDef
-            {
-                Header = "Q1",
-                Question = "问题1",
-                Options = ["A", "B"],
-            },
-            new QuestionDef
-            {
-                Header = "Q2",
-                Question = "问题2",
-                Options = ["C", "D"],
-            },
-        ]);
-        var tool = new GetPendingQuestionsTool(store);
+        var hub = NewHub();
+        hub.CreateQuestionSet(
+            hub.CurrentContext,
+            [
+                new QuestionDef
+                {
+                    Header = "Q1",
+                    Question = "问题1",
+                    Options = ["A", "B"],
+                },
+                new QuestionDef
+                {
+                    Header = "Q2",
+                    Question = "问题2",
+                    Options = ["C", "D"],
+                },
+            ]
+        );
+        var tool = new GetPendingQuestionsTool(hub);
 
         var result = await tool.ExecuteAsync(
             "call_1",
@@ -82,6 +89,13 @@ public class GetPendingQuestionsToolTests
         Assert.Contains("问题1", text);
         Assert.Contains("问题2", text);
         Assert.Contains("2 个", text);
+    }
+
+    private static InteractionHub NewHub()
+    {
+        var hub = new InteractionHub();
+        hub.CurrentContext = new InteractionContext("test", "s1");
+        return hub;
     }
 
     private static string GetText(AgentToolResult result) =>

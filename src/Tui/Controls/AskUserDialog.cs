@@ -1,3 +1,4 @@
+using Core.Interactions;
 using Core.Shared;
 using XenoAtom.Terminal;
 using XenoAtom.Terminal.UI;
@@ -9,87 +10,36 @@ using XenoAtom.Terminal.UI.Templating;
 namespace Tui.Controls;
 
 /// <summary>
-/// ask_user 工具的弹出对话框 — 渲染结构化问题，支持选择选项。
-///
-/// 设计参考 Codex/Claude Code/OpenCode：
-/// - 单选问题用 radio 列表，最后一行是 "Type something." 自定义输入
-/// - 多选问题用 checkbox 列表（空格/Enter 勾选，确认后一次提交全部选中项）
-/// - 用户选择或输入后，答案追加到 ConversationLoop，继续 agent loop
+/// ask_user 交互对话框 — 只渲染 Core 快照并把结果提交回 <see cref="InteractionHub"/>。
+/// 每个问题一个对话框；多问队列由 TuiApp presenter 负责，避免同帧叠窗。
 /// </summary>
 public static class AskUserDialog
 {
     private const string CustomOption = "Type something.";
 
-    /// <summary>
-    /// 显示带问题的模态对话框。用户回答完所有问题后返回。
-    /// </summary>
-    /// <param name="store">用户问题存储。</param>
-    /// <param name="questions">待回答问题列表。</param>
-    public static async Task Show(UserQuestionStore store, IReadOnlyList<PendingQuestion> questions)
-    {
-        switch (questions.Count)
-        {
-            case 0:
-                return;
-            case 1:
-                await ShowSingleDialogAsync(store, questions[0]);
-                return;
-            default:
-                await ShowSequentialAsync(store, questions);
-                break;
-        }
-    }
-
-    /// <summary>
-    /// 按顺序显示多个问题的对话框，每个问题独立弹窗，带进度指示。
-    ///
-    /// Dialog.Show() 是非阻塞的（仅把窗口加入渲染层立即返回），所以必须先等当前
-    /// 问题被回答/取消后再显示下一个；否则多个弹窗会在同一帧同时叠加渲染，
-    /// 每个弹窗各自的确认按钮因高度不同而错位叠显（点一次只关掉一个）。
-    /// </summary>
-    private static async Task ShowSequentialAsync(
-        UserQuestionStore store,
-        IReadOnlyList<PendingQuestion> questions
+    /// <summary>显示单个问题并等待关闭（回答或取消都已提交 Core）。</summary>
+    public static async Task ShowAsync(
+        InteractionHub hub,
+        string interactionId,
+        string leaseId,
+        QuestionSlotSnapshot slot
     )
     {
-        for (var i = 0; i < questions.Count; i++)
-        {
-            var q = questions[i];
-            if (q.IsAnswered)
-                continue;
-
-            var remaining = questions.Count - i;
-            await ShowSingleDialogAsync(store, q, remaining);
-        }
+        var closed = new TaskCompletionSource();
+        ShowSingleDialog(hub, interactionId, leaseId, slot, () => closed.TrySetResult());
+        // Dialog.Show() 非阻塞；等待关闭信号，确保 presenter 一次只弹一个。
+        await closed.Task;
     }
 
-    /// <summary>
-    /// 显示单个问题的对话框并等待用户回答/取消后返回。
-    /// </summary>
-    private static async Task ShowSingleDialogAsync(
-        UserQuestionStore store,
-        PendingQuestion question,
-        int? remaining = null
-    )
-    {
-        ShowSingleDialog(store, question, remaining);
-        // 所有关闭路径（选中选项 / 自定义输入 / Esc / X 按钮）都会 Answer，
-        // 因此这里必定完成；等待可确保对话框按顺序逐个弹出。
-        await store.WaitForAnswerAsync(question.Id);
-    }
-
-    /// <summary>
-    /// 显示单个问题的对话框。带可选进度指示。
-    /// </summary>
-    /// <param name="store">用户问题存储。</param>
-    /// <param name="question">待回答问题。</param>
-    /// <param name="remaining">剩余问题数（null 表示不显示进度）。</param>
     private static void ShowSingleDialog(
-        UserQuestionStore store,
-        PendingQuestion question,
-        int? remaining = null
+        InteractionHub hub,
+        string interactionId,
+        string leaseId,
+        QuestionSlotSnapshot slot,
+        Action onClosed
     )
     {
+        var question = slot.Question;
         // 构建选项列表：原选项 + "Type something." （单选时）
         var hasCustomInput = !question.MultiSelect;
         var displayOptions = question.Options.ToList();
@@ -123,9 +73,7 @@ public static class AskUserDialog
             IsVisible = false,
         };
 
-        var title = remaining.HasValue
-            ? $"{question.Header} [#C7B299]({remaining} 题待答)[/]"
-            : $"{question.Header}";
+        var title = question.Header;
 
         var dialog = new Dialog()
             .IsResizable(false)
@@ -143,11 +91,7 @@ public static class AskUserDialog
             .MinHeight(12)
             .Padding(new Thickness(2, 1, 2, 1));
 
-        var closeBtn = PanelThemes.CreateDialogCloseButton(() =>
-        {
-            store.Answer(question.Id, ["(已取消)"]);
-            dialog.Close();
-        });
+        var closeBtn = PanelThemes.CreateDialogCloseButton(CancelAndClose);
 
         var confirmBtn = new Button(new Markup("确认")).Style(
             ThemeStyles.BuildButtonAccent(PanelThemes.Current)
@@ -160,8 +104,7 @@ public static class AskUserDialog
                 if (answers.Length == 0)
                     return;
 
-                store.Answer(question.Id, answers);
-                dialog.Close();
+                SubmitAndClose(answers);
                 return;
             }
 
@@ -181,8 +124,7 @@ public static class AskUserDialog
                 return;
             }
 
-            store.Answer(question.Id, [selected]);
-            dialog.Close();
+            SubmitAndClose([selected]);
         });
 
         dialog.TopRightText(closeBtn);
@@ -203,8 +145,7 @@ public static class AskUserDialog
                 switch (e.Key)
                 {
                     case TerminalKey.Escape:
-                        store.Answer(question.Id, ["(已取消)"]);
-                        dialog.Close();
+                        CancelAndClose();
                         e.Handled = true;
                         break;
                     case TerminalKey.Tab when question.MultiSelect:
@@ -227,8 +168,7 @@ public static class AskUserDialog
                         }
                         else
                         {
-                            store.Answer(question.Id, [selected]);
-                            dialog.Close();
+                            SubmitAndClose([selected]);
                         }
 
                         e.Handled = true;
@@ -264,8 +204,21 @@ public static class AskUserDialog
             if (string.IsNullOrEmpty(customText))
                 return;
 
-            store.Answer(question.Id, [customText]);
+            SubmitAndClose([customText]);
+        }
+
+        void SubmitAndClose(string[] answers)
+        {
+            hub.SubmitQuestionAnswer(interactionId, question.Id, answers, leaseId);
             dialog.Close();
+            onClosed();
+        }
+
+        void CancelAndClose()
+        {
+            hub.CancelQuestion(interactionId, question.Id, leaseId, "user-cancelled");
+            dialog.Close();
+            onClosed();
         }
     }
 

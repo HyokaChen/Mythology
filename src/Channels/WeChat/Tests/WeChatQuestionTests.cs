@@ -37,7 +37,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task QuestionIsRenderedToPhoneWithNumberedOptions()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
             {
@@ -64,7 +64,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task NumberReplyBecomesTheAnswer()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         string? questionId = null;
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
@@ -107,7 +107,7 @@ public class WeChatQuestionTests
     public async Task AnswerBeatsTheBusyGuard()
     {
         // 关键顺序约束：等答案时 _turnActive 仍为 true，先判忙就永远答不了
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         var busy = false;
         string? questionId = null;
         var f = WeChatFixtures.Build(
@@ -149,7 +149,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task MultiSelectAcceptsCommaSeparatedNumbers()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         string? questionId = null;
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
@@ -196,7 +196,7 @@ public class WeChatQuestionTests
     public async Task SingleSelectWithMultipleNumbersIsRejectedAndQuestionResent()
     {
         // 静默取第一个会猜错意图；宁可重发题目让用户重选
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         string? questionId = null;
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
@@ -238,7 +238,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task OutOfRangeNumberIsRejectedAndQuestionResent()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         string? questionId = null;
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
@@ -274,7 +274,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task QuestionWithoutOptionsAcceptsFreeText()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         string? questionId = null;
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
@@ -318,7 +318,7 @@ public class WeChatQuestionTests
     [Fact]
     public async Task SecondQuestionIsSentAfterFirstIsAnswered()
     {
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         var f = WeChatFixtures.Build(
             (_, _, ct) =>
             {
@@ -349,15 +349,21 @@ public class WeChatQuestionTests
         await WaitForSentAsync(f, "第二个");
 
         // 等答案真的落地：不能只等固定时长（下一轮轮询有 500ms 最小间隔）
+        IReadOnlyList<PendingQuestion> pending = [];
         var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
-        while (DateTimeOffset.UtcNow < deadline && questions.GetPending().Count != 1)
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            pending = questions.GetPending();
+            if (pending.Count == 1)
+                break;
             await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
 
+        // 关闭 bridge 会按 turn abort 取消未答问题；待答状态必须在关闭前断言。
         await cts.CancelAsync();
         await loop;
         await f.Bridge.DisposeAsync();
 
-        var pending = questions.GetPending();
         Assert.Single(pending); // 第一个已答，第二个仍待答
         Assert.Equal("第二个", pending[0].Header);
     }
@@ -366,7 +372,7 @@ public class WeChatQuestionTests
     public async Task QuestionCreatedOutsideOurTurnIsNotSentToPhone()
     {
         // 终端里的对话：宿主自己的弹窗处理，通道不接管
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         var f = WeChatFixtures.Build((_, _, _) => Task.CompletedTask, questions: questions);
         WeChatFixtures.RouteCommon(f.Handler);
 
@@ -388,7 +394,7 @@ public class WeChatQuestionTests
     public async Task AnsweredQuestionIsNotConsumedAgainByTheNextMessage()
     {
         // 答完之后再发消息应回到普通 prompt 路径（否则手机上永远只能答题）
-        var questions = new UserQuestionStore();
+        var questions = new QuestionTestAdapter();
         var turnTexts = new List<string>();
         string? questionId = null;
         var f = WeChatFixtures.Build(

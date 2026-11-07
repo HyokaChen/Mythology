@@ -5,6 +5,7 @@ using Core.Agent;
 using Core.Cloud;
 using Core.Data;
 using Core.Infrastructure;
+using Core.Interactions;
 using Core.Plugins;
 using Core.Shared;
 using Core.Stability;
@@ -67,8 +68,15 @@ public sealed partial class TuiApp : IDisposable
     /// <summary>上下文管理模式热切换器（可选：插件未加载 / 测试环境为 null）。</summary>
     private readonly ContextModeSwitcher? _contextModeSwitcher;
 
-    /// <summary>ask_user 工具的待处理问题存储（可选）。</summary>
+    /// <summary>ask_user 工具的待处理问题存储（兼容读取）。</summary>
     private readonly UserQuestionStore? _questionStore;
+
+    /// <summary>Core 交互唯一状态机。</summary>
+    private readonly InteractionHub? _interactionHub;
+    private readonly VariantEffectExecutor? _variantEffectExecutor;
+
+    /// <summary>当前 turn 宿主（tui / wechat）。</summary>
+    private string _turnHost = "tui";
 
     /// <summary>Todo 任务存储，管理 AI 任务列表。</summary>
     private readonly TodoStore _todoStore;
@@ -232,6 +240,7 @@ public sealed partial class TuiApp : IDisposable
         RetrievalKernel? retrievalKernel = null,
         CloudConnectionService? cloudConnection = null,
         WeChatChannelService? weChat = null,
+        InteractionHub? interactionHub = null,
         ILoggerFactory? loggerFactory = null,
         ILogger<TuiApp>? logger = null,
         IFictionHarnessClient? cloudHarness = null,
@@ -257,12 +266,24 @@ public sealed partial class TuiApp : IDisposable
             ? null
             : new WeChatAgentChannel(
                 weChat,
-                // 方法组不能带可选参数转委托，包一层
-                (text, ct) => RunPromptAsync(text, ct),
+                // 方法组不能带可选参数转委托，包一层；微信回合 owner = wechat
+                async (text, ct) =>
+                {
+                    var previous = _turnHost;
+                    _turnHost = "wechat";
+                    try
+                    {
+                        await RunPromptAsync(text, ct);
+                    }
+                    finally
+                    {
+                        _turnHost = previous;
+                    }
+                },
                 // 终端里正在跑时，微信消息回"正忙"而不是撞进 Agent 抛异常
                 isAgentBusy: () => _agent.IsRunning,
                 // 裁决回路：Agent 的 ask_user 在手机上以编号选项呈现
-                questionStore: _questionStore,
+                hub: interactionHub,
                 loggerFactory?.CreateLogger<WeChatAgentChannel>()
             );
         _novelSync = novelSync; // cloud-novel-sync v3（:cloud sync / :cloud pull；null = 未接线）
@@ -280,6 +301,11 @@ public sealed partial class TuiApp : IDisposable
         _cloudSession.CredentialsInvalidated += OnCloudCredentialsInvalidated;
         _pluginLoader = pluginLoader;
         _questionStore = questionStore;
+        _interactionHub = interactionHub;
+        _variantEffectExecutor = interactionHub is null
+            ? null
+            : new VariantEffectExecutor(interactionHub);
+        _agent.InteractionHub = interactionHub;
         _todoStore = todoStore;
         _novelId = novelId;
         _resumeSessionId = sessionId;
@@ -425,14 +451,8 @@ public sealed partial class TuiApp : IDisposable
         // Token tracking: update StatusBar with the current session's context usage
         _adapter.OnContextTokens += OnTokenUpdate;
 
-        // ask_user 回答弹窗统一触发：所有问题（AskUserTool / 云端裁决）均经
-        // UserQuestionStore.CreateQuestions 创建并触发 PendingQuestionsCreated，
-        // 单一入口避免重复弹窗造成的幽灵对话框（多条流程各自关闭自己的 Dialog）。
-        if (_questionStore is not null)
-            _questionStore.PendingQuestionsCreated += OnPendingQuestionsCreated;
-
-        // explore variant selection handler
-        _conversationPanel.OnExploreVariant += OnExploreVariant;
+        // Core 交互统一触发：ask_user / 云端裁决 / 变体均经 InteractionHub。
+        WireInteractionEvents();
 
         // Entity link from conversation: navigate to side panel
         _conversationPanel.OnNavigateToEntity += OnNavigateToEntity;
@@ -634,10 +654,8 @@ public sealed partial class TuiApp : IDisposable
         _adapter.OnToolEnd -= OnAdapterToolEnd;
         _adapter.OnContextTokens -= OnTokenUpdate;
         _cloudSession.CredentialsInvalidated -= OnCloudCredentialsInvalidated;
-        _conversationPanel.OnExploreVariant -= OnExploreVariant;
         _conversationPanel.OnNavigateToEntity -= OnNavigateToEntity;
-        if (_questionStore is not null)
-            _questionStore.PendingQuestionsCreated -= OnPendingQuestionsCreated;
+        UnwireInteractionEvents();
         _agent.OnEvent -= OnAgentEvent;
         _themeService.ThemeChanged -= ApplyTheme;
         _setUpPanel.OnEntityClicked -= OnEntityClicked;
@@ -1330,77 +1348,4 @@ public sealed partial class TuiApp : IDisposable
     /// </summary>
     private static string Truncate(string text, int maxLen) =>
         text.Length <= maxLen ? text : text[..maxLen] + "…";
-
-    /// <summary>
-    /// HARNESS-CLOUD §5.4 触发桥：Hook 侧（云端裁决回路）经
-    /// UserQuestionStore.PendingQuestionsCreated 通知新问题已创建——
-    /// 直接复用 ask_user 弹窗与答案追加逻辑（问题已在 store 中，轮询立即命中）。
-    /// </summary>
-    private void OnPendingQuestionsCreated(IReadOnlyList<PendingQuestion> questions)
-    {
-        if (questions.Count == 0)
-            return;
-
-        // 微信回合里创建的问题由通道接管（发到手机上答）；两边都弹会让用户重复答同一题
-        if (_weChatBridge?.IsTurnActive == true)
-            return;
-
-        _ = ShowAskUserDialogAsync();
-    }
-
-    /// <summary>
-    /// 等待 AskUserTool 创建待处理 questions，然后显示对话框。
-    /// 将 ask_user 的答案追加到 conversation 作为 user message，
-    /// 这样用户可以在对话历史中看到自己的选择，LLM 也可以继续基于这个选择。
-    /// </summary>
-    /// <summary>
-    /// 等待 AskUserTool 创建待处理 questions，然后显示对话框。
-    /// 将 ask_user 的答案追加到 conversation 作为 user message，
-    /// 这样用户可以在对话历史中看到自己的选择，LLM 也可以继续基于这个选择。
-    /// </summary>
-    private async Task ShowAskUserDialogAsync()
-    {
-        if (_questionStore is null)
-            return;
-
-        // AskUserTool.ExecuteAsync 在 ToolExecutionStart 之后才运行，
-        // 需要轮询等待 questions 被创建出来（通常 < 100ms）
-        IReadOnlyList<PendingQuestion> pending = [];
-        for (var i = 0; i < 50; i++) // 最多等 500ms
-        {
-            await Task.Delay(10);
-            _questionStore.GetAll();
-            pending = _questionStore.GetPending();
-            if (pending.Count > 0)
-                break;
-        }
-
-        if (pending.Count == 0)
-        {
-            return;
-        }
-
-        await AskUserDialog.Show(_questionStore, pending);
-        _ = AppendAskUserAnswersToConversation(pending);
-    }
-
-    /// <summary>
-    /// 将 ask_user 的答案追加到 agent 消息列表。
-    /// 语义上是 user message（LLM 需要看到），视觉上已由 tool result 的 QA 卡片展示。
-    /// </summary>
-    private async Task AppendAskUserAnswersToConversation(IReadOnlyList<PendingQuestion> questions)
-    {
-        // 等待一小段时间确保答案已写入 store
-        await Task.Delay(50);
-
-        // 重新从 store 读取：Show 期间 Answer 会替换记录，调用方持有的 pending 快照没有 SelectedAnswers。
-        var answered = questions.Select(q => _questionStore?.Get(q.Id) ?? q).ToArray();
-        var answerText = AskUserReplyFormatter.Format(answered);
-        if (string.IsNullOrEmpty(answerText))
-            return; // 没有有效答案
-
-        // 追加到 agent 的消息列表；格式与 ask_user 工具结果完全一致，
-        // MessageRestorer / Desktop 历史映射据此跳过气泡（Q&A 卡片已展示完整信息）。
-        _agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, answerText));
-    }
 }

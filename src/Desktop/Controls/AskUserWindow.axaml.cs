@@ -1,37 +1,58 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Core.Interactions;
 using Core.Shared;
 
 namespace Desktop.Controls;
 
 /// <summary>
-/// ask_user 工具弹出窗口 — 渲染结构化问题，支持单选（+ 自定义输入）或多选。
-/// 移植自 TUI AskUserDialog：用户选择后写入 UserQuestionStore，解除 Agent 工具阻塞。
-/// 布局对齐 DESIGN.md（Adaline）：Linen 底 · Card 选项区 · Primary/Ghost 按钮 · 6px 节奏。
+/// ask_user 交互窗口 — 只渲染 Core 快照并把用户结果提交回 <see cref="InteractionHub"/>。
+/// 窗口不写 store、不决定状态；关闭/X 也作为取消提交给 Core。
 /// </summary>
 public partial class AskUserWindow : Window
 {
-    private readonly UserQuestionStore _store;
+    private readonly InteractionHub _hub;
+    private readonly string _interactionId;
+    private readonly string _leaseId;
+    private readonly QuestionSlotSnapshot _slot;
     private readonly PendingQuestion _question;
     private readonly List<RadioButton> _radioOptions = [];
     private readonly List<CheckBox> _checkOptions = [];
     private RadioButton? _customRadio;
+    private bool _submitted;
+    private bool _closedFromCore;
 
-    public AskUserWindow(UserQuestionStore store, PendingQuestion question)
+    public AskUserWindow(
+        InteractionHub hub,
+        string interactionId,
+        string leaseId,
+        QuestionSlotSnapshot slot
+    )
     {
-        _store = store;
-        _question = question;
+        _hub = hub;
+        _interactionId = interactionId;
+        _leaseId = leaseId;
+        _slot = slot;
+        _question = slot.Question;
 
         InitializeComponent();
 
-        Title = question.Header;
+        Title = _question.Header;
         QuestionText.Text = _question.Question;
 
         BuildOptions();
 
         CancelButton.Click += (_, _) => CancelAnswer();
         ConfirmButton.Click += (_, _) => ConfirmAnswer();
+        Closed += (_, _) =>
+        {
+            if (!_submitted && !_closedFromCore)
+            {
+                _submitted = true;
+                _hub.CancelQuestion(_interactionId, _question.Id, _leaseId, "window-closed");
+            }
+        };
 
         KeyDown += (_, e) =>
         {
@@ -145,7 +166,8 @@ public partial class AskUserWindow : Window
         if (answers.Count == 0)
             return; // 未做任何选择：保持窗口打开
 
-        _store.Answer(_question.Id, answers.ToArray());
+        _submitted = true;
+        _hub.SubmitQuestionAnswer(_interactionId, _question.Id, answers.ToArray(), _leaseId);
         Close();
     }
 
@@ -160,10 +182,18 @@ public partial class AskUserWindow : Window
             FontFamily = DialogTheme.FontSans,
         };
 
-    /// <summary>取消：写入「(已取消)」以解除阻塞（与 TUI 语义一致）。</summary>
+    /// <summary>取消当前题：Core 记录 Cancelled 并完成 waiter，继续下一题（若有）。</summary>
     private void CancelAnswer()
     {
-        _store.Answer(_question.Id, ["(已取消)"]);
+        _submitted = true;
+        _hub.CancelQuestion(_interactionId, _question.Id, _leaseId, "user-cancelled");
+        Close();
+    }
+
+    /// <summary>Core 已解析/取消该交互：关闭窗口，且不要再提交 cancel。</summary>
+    public void CloseFromCore()
+    {
+        _closedFromCore = true;
         Close();
     }
 }

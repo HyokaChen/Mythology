@@ -7,6 +7,7 @@ using Channels.WeChat;
 using Core.Agent;
 using Core.Data;
 using Core.Infrastructure;
+using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
 using Desktop.Controls;
@@ -45,6 +46,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>长轮询循环任务（启动后持引用，便于退出时观察）。</summary>
     private Task? _weChatLoop;
     private readonly UserQuestionStore _questionStore;
+    private readonly InteractionHub _interactionHub;
+    private readonly InteractionPresenter _interactionPresenter;
+    private readonly VariantEffectExecutor _variantEffectExecutor;
     private readonly Dictionary<string, ConversationViewModel> _activeVms = [];
 
     /// <summary>自动更新共享状态单例（弹窗与设置页「关于」同源）；设计时/容器缺失为 null。</summary>
@@ -310,6 +314,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         _configuration = configuration;
         _cloudAuth = cloudAuth;
         _questionStore = services.GetRequiredService<UserQuestionStore>();
+        _interactionHub = services.GetRequiredService<InteractionHub>();
+        _variantEffectExecutor = new VariantEffectExecutor(_interactionHub);
+        _interactionPresenter = new InteractionPresenter(
+            _interactionHub,
+            () => ActiveConversationVm?.CurrentConversationId,
+            GetMainWindow,
+            services.GetService<ILogger<InteractionPresenter>>(),
+            HandleVariantInteractionAsync
+        );
         _calibrator = services.GetRequiredService<ContextTokenCalibrator>();
 
         // 自动更新：解析共享状态并注入忙探针（有任务在跑时不弹、只亮红点，回合结束补弹）
@@ -327,7 +340,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 weChat,
                 RunWeChatTurnAsync,
                 isAgentBusy: () => _bridge.IsProcessing,
-                questionStore: _questionStore,
+                hub: _interactionHub,
                 logger: services.GetService<ILogger<WeChatAgentChannel>>()
             );
 
@@ -435,18 +448,6 @@ public sealed class MainWindowViewModel : ViewModelBase
 
                 // 回合结束补弹（忙时只亮红点；无更新/已稍后提醒时自身 no-op）
                 _updateState?.TryShowPrompt();
-            });
-
-        // HARNESS-CLOUD §5.4：Hook 侧（云端裁决）创建的问题也弹 AskUserWindow
-        _questionStore.PendingQuestionsCreated += _ =>
-            Dispatcher.UIThread.Post(async () =>
-            {
-                // 微信回合里创建的问题由通道接管（发到手机上答）；两边都弹会让用户重复答同一题
-                if (_weChatBridge?.IsTurnActive == true)
-                    return;
-
-                if (ActiveConversationVm is not null)
-                    await ActiveConversationVm.ShowAskUserDialogAsync();
             });
 
         // 云端登录状态（StateChanged → UI 线程刷新 Header ☁️ / 状态栏）
@@ -760,11 +761,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         // 步骤 10/12 接线（原 TODO.md 五窗口落地）
         vm.RequestTree += () => Dispatcher.UIThread.Post(() => _ = ShowTreeWindow(vm));
         vm.RequestMode += () => Dispatcher.UIThread.Post(() => _ = CycleEnhanceModeAsync(vm));
-        vm.ExploreVariantRaised += ed =>
-            Dispatcher.UIThread.Post(() => _ = HandleVariantReviewAsync(vm, ed));
         vm.ContextStatsChanged += () => Dispatcher.UIThread.Post(UpdateContextGauge);
         vm.RequestCommandsDialog += () => Dispatcher.UIThread.Post(ShowCommandsReference);
-        vm.RequestReopenVariants += () => Dispatcher.UIThread.Post(() => _ = ReopenVariants(vm));
+        vm.RequestReopenVariants += () => Dispatcher.UIThread.Post(() => ReopenVariants(vm));
         vm.RequestCloudColon += sub => Dispatcher.UIThread.Post(() => _ = ExecuteCloudCommand(sub));
         vm.RequestResume += novelId =>
             Dispatcher.UIThread.Post(() => _ = ResumeSessionAsync(vm, novelId));
@@ -909,99 +908,125 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>explore 变体审阅主入口：持久化变体组 → 弹窗 → 路由 Apply/Refine/Dismiss。</summary>
-    private async Task HandleVariantReviewAsync(ConversationViewModel vm, ExploreDetails explore)
+    /// <summary>Core 变体审阅呈现入口：唯一弹窗路径，结果写回 InteractionHub。</summary>
+    private async Task HandleVariantInteractionAsync(InteractionSnapshot snapshot)
     {
-        var owner = GetMainWindow();
-        if (owner is null)
+        var review = snapshot.VariantReview;
+        var lease = snapshot.Claim?.LeaseId;
+        if (review is null || string.IsNullOrEmpty(lease))
             return;
-        await vm.Engine.PersistVariantSetAsync(explore);
 
-        var window = new VariantReviewWindow(explore);
+        var vm = ActiveConversationVm;
+        var owner = GetMainWindow();
+        if (vm is null || owner is null)
+        {
+            _interactionHub.Cancel(snapshot.Id, "desktop-variant-no-owner", false, lease);
+            return;
+        }
+
+        await vm.Engine.PersistVariantSetAsync(review.Details);
+        var window = new VariantReviewWindow(review.Details);
         DialogTheme.FitToOwner(window, owner, 0.78, 720, 1400, 0.78, 480, 900);
         await window.ShowDialog(owner);
-        var decision = window.Decision;
-        if (decision is null || decision.Action == VariantReviewAction.Dismiss)
-            return; // 卡片保留在对话中，无需额外操作
-        if (decision.Action == VariantReviewAction.Refine)
-        {
-            vm.BeginVariantRefinement(explore, decision);
+        var decision =
+            window.Decision ?? new VariantReviewDecision { Action = VariantReviewAction.Dismiss };
+
+        var result = _interactionHub.SubmitVariantDecision(snapshot.Id, decision, lease);
+        if (result.Status != SubmitStatus.Accepted)
             return;
+        var effect = result.Effect ?? result.Snapshot?.VariantReview?.Effect;
+        if (effect is null)
+            return;
+
+        try
+        {
+            await _variantEffectExecutor.ExecuteAsync(
+                snapshot.Id,
+                effect,
+                e => ExecuteVariantEffectAsync(vm, e)
+            );
         }
-        await ApplyVariantAsync(vm, explore, decision);
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "应用变体效果失败");
+            vm.AddSystemNotice($"应用变体失败：{ex.Message}");
+        }
     }
 
-    /// <summary>/variants：重新打开最近变体组（LastVariantSet 由引擎维护）。</summary>
-    private async Task ReopenVariants(ConversationViewModel vm)
+    /// <summary>/variants：重新打开最近变体组；活动交互复用，终态则新建 generation。</summary>
+    private void ReopenVariants(ConversationViewModel vm)
     {
-        if (vm.Engine.LastVariantSet is { } explore)
+        if (vm.Engine.LastVariantSet is not { } explore)
         {
-            await HandleVariantReviewAsync(vm, explore);
+            vm.AddSystemNotice("没有待选择的变体");
             return;
         }
-        vm.AddSystemNotice("没有待选择的变体");
+        var sessionId = vm.CurrentConversationId;
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            vm.AddSystemNotice("当前会话尚未建立，无法重开变体");
+            return;
+        }
+        var reopened = _interactionHub.ReopenVariantReview(
+            new InteractionContext(InteractionPresenter.HostId, sessionId, vm.CurrentNovelId),
+            explore
+        );
+        if (reopened is null)
+            vm.AddSystemNotice("没有待选择的变体");
     }
 
     /// <summary>
-    /// 采用变体（镜像 TuiApp.Variant.cs HandleVariantApplyAsync）：
-    /// 无章节目标 → 结构化实体提取 / 追加对话；有章节目标 → 确认+冲突校验 → write_chapter 工具写入。
+    /// 执行 Core 下发的变体效果 plan；Host 只做副作用，不再重新组装业务分支。
     /// </summary>
-    private async Task ApplyVariantAsync(
-        ConversationViewModel vm,
-        ExploreDetails explore,
-        VariantReviewDecision decision
-    )
+    private async Task ExecuteVariantEffectAsync(ConversationViewModel vm, VariantEffect effect)
     {
+        if (effect.Kind == VariantEffectKind.Dismiss)
+            return;
+        if (effect.Kind == VariantEffectKind.PrefillRefinement)
+        {
+            vm.BeginVariantRefinement(effect);
+            return;
+        }
         if (vm.Engine.IsPersistenceFaulted)
         {
             vm.AddSystemNotice("会话保存故障尚未恢复，已拒绝采用变体以防止历史记录缺失。");
             return;
         }
 
-        var variantContent = decision.VariantContent ?? "";
-        var variantLabel = decision.VariantLabel ?? "";
-        var target = explore.ApplyTarget;
+        switch (effect.Kind)
+        {
+            case VariantEffectKind.AppendToContext:
+                await vm.AppendVariantToConversationAsync(
+                    effect.VariantContent,
+                    effect.VariantLabel
+                );
+                return;
+            case VariantEffectKind.SendExtractionPrompt:
+                vm.AddSystemNotice($"📋 已采用变体「{effect.VariantLabel}」，正在提取结构化数据…");
+                await vm.SendEnginePromptAsync(effect.ExtractionPrompt);
+                return;
+            case VariantEffectKind.WriteChapter:
+                break;
+            default:
+                throw new InvalidOperationException($"未知变体效果: {effect.Kind}");
+        }
 
+        var variantContent = effect.VariantContent;
+        var variantLabel = effect.VariantLabel;
+        var target = effect.ApplyTarget;
         if (target is null)
         {
-            // 非章节变体：根据 ExploreType 路由（对齐 TUI）
-            if (
-                explore.ExploreType is "character" or "plot" or "outline" or "style"
-                && !string.IsNullOrWhiteSpace(variantContent)
-            )
-            {
-                var typeName = explore.ExploreType switch
-                {
-                    "character" => "角色",
-                    "plot" => "情节线",
-                    "outline" => "大纲",
-                    _ => "创作内容",
-                };
-                var variantXml = VariantXml.Wrap(
-                    variantContent,
-                    decision.VariantId,
-                    variantLabel,
-                    explore.ExploreType
-                );
-                var extractPrompt =
-                    $"用户从探索结果中选择了变体「{variantLabel}」——"
-                    + $"一个{typeName}方案。\n\n"
-                    + variantXml
-                    + "\n\n请根据以上内容，使用相应的工具（如 batch_create_characters）创建结构化实体。"
-                    + "如果内容为大纲/风格描述，直接将其作为参考存入上下文，不需要创建实体。";
-                vm.AddSystemNotice($"📋 已采用变体「{variantLabel}」，正在提取结构化数据…");
-                await vm.SendEnginePromptAsync(extractPrompt);
-                return;
-            }
-            await vm.AppendVariantToConversationAsync(variantContent, variantLabel);
+            vm.AddSystemNotice("无法应用变体：缺少章节目标");
             return;
         }
 
         // ── 章节目标 ──
-        var isCreate = string.IsNullOrEmpty(target.ChapterId);
         var chapterTitle = target.Title;
         var chapterOrder = target.Order;
-        if (!isCreate && (string.IsNullOrWhiteSpace(chapterTitle) || chapterOrder <= 0))
+        if (
+            !string.IsNullOrEmpty(target.ChapterId)
+            && (string.IsNullOrWhiteSpace(chapterTitle) || chapterOrder <= 0)
+        )
         {
             var lookup = await _store.GetChapter(target.NovelId, target.ChapterId!);
             if (lookup is not null)
@@ -1020,7 +1045,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         if (owner is null)
             return;
 
-        if (!isCreate)
+        if (effect.RequiresOverwriteConfirmation)
         {
             var existing = await _store.GetChapter(target.NovelId, target.ChapterId!);
             if (existing is null)
@@ -1771,6 +1796,15 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         if (_bridge.IsProcessing)
             _bridge.Stop();
+        var oldSession = ActiveConversationVm?.CurrentConversationId;
+        if (
+            !string.IsNullOrEmpty(oldSession)
+            && !string.Equals(oldSession, vm.CurrentConversationId, StringComparison.Ordinal)
+        )
+        {
+            _interactionHub.CancelSession(oldSession, "session-switch");
+            _interactionPresenter.OnSessionChanged();
+        }
         ActiveConversationVm = vm;
         vm.Activate();
         InvalidateContextMeasure();
@@ -1911,7 +1945,16 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await engine.RunPromptAsync(text, ct);
+        var previous = engine.TurnHost;
+        engine.TurnHost = "wechat";
+        try
+        {
+            await engine.RunPromptAsync(text, ct);
+        }
+        finally
+        {
+            engine.TurnHost = previous;
+        }
     }
 
     /// <summary>空闲态状态栏文案（未配置 LLM Key 时引导去设置）。</summary>
@@ -1960,6 +2003,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (Program.CloudScheduler is not null && !string.IsNullOrEmpty(settleNovelId))
                 Program.CloudScheduler.SettleSession(settleNovelId);
             _store.OnEntityChanged -= OnStoreEntityChangedAsync;
+            _interactionPresenter.Dispose();
             _cloudAuth.Dispose();
             TodoPanel.Dispose();
             _agent.Abort();

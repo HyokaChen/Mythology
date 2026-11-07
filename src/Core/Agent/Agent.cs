@@ -152,6 +152,9 @@ public sealed class Agent : IAsyncDisposable
     /// <summary>当前会话 ID，贯穿所有持久化操作。</summary>
     public string? SessionId { get; set; }
 
+    /// <summary>Core 交互状态机（由宿主装配；ask_user / 变体统一经它创建）。</summary>
+    public Core.Interactions.InteractionHub? InteractionHub { get; set; }
+
     /// <summary>稳定性监控器，用于检测异常增长模式。</summary>
     public IStabilityMonitor? StabilityMonitor { get; set; }
 

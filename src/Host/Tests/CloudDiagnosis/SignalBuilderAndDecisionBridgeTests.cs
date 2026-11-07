@@ -159,7 +159,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task Decide_CreatesPendingQuestion_AndFiresTriggerBridgeEvent()
     {
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         IReadOnlyList<PendingQuestion>? notified = null;
         store.PendingQuestionsCreated += q => notified = q;
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
@@ -191,7 +191,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task Timeout_LeavesQuestionPending_AndReturnsConservativeSignal()
     {
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 1);
 
         var verdict = await bridge.DecideAsync(Decision, CancellationToken.None);
@@ -206,7 +206,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task UserCancellation_PropagatesOperationCanceledException()
     {
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
         using var cts = new CancellationTokenSource();
 
@@ -222,7 +222,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task UnknownReason_UsesFallbackTemplate_AndNoFocusAreas_DefaultOptions()
     {
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
         var outcome = Decision with { Reason = "some unknown english reason", FocusAreas = [] };
 
@@ -243,7 +243,7 @@ public sealed class HumanDecisionBridgeTests
     public async Task KnownReasonCode_PreferredOverReasonText()
     {
         // U-1：reason-code 命中时优先本地化，英文 reason 文本改写/未收录不影响文案。
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
         var outcome = Decision with
         {
@@ -353,7 +353,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task DecideAsync_DecisionOutcome_CreatesQuestion()
     {
-        var questions = new UserQuestionStore();
+        var questions = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(questions, decisionTimeoutSeconds: 120);
 
         var outcome = new ScenePlanOutcome(
@@ -386,7 +386,7 @@ public sealed class HumanDecisionBridgeTests
     public async Task DecideAsync_StructuredAnswerKind_TracksOptionIdentity()
     {
         // 无 focusAreas → 默认模板（首项 = 采纳建议）→ FollowSuggestion
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
         var task = bridge.DecideAsync(Decision with { FocusAreas = [] }, CancellationToken.None);
         for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
@@ -398,7 +398,7 @@ public sealed class HumanDecisionBridgeTests
         Assert.Equal(DecisionProfileKind.Trusting, bridge.DecisionProfile);
 
         // 有 focusAreas → 聚焦选项 = 自定方向 → OwnDirection
-        var store2 = new UserQuestionStore();
+        var store2 = new DecisionTestStore();
         var bridge2 = new HumanDecisionBridge(store2, decisionTimeoutSeconds: 120);
         var task2 = bridge2.DecideAsync(Decision, CancellationToken.None);
         for (var i = 0; i < 50 && store2.GetPending().Count == 0; i++)
@@ -442,7 +442,7 @@ public sealed class HumanDecisionBridgeTests
             }
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
-            var bridge = new HumanDecisionBridge(new UserQuestionStore(), persistenceDbPath: db);
+            var bridge = new HumanDecisionBridge(new DecisionTestStore(), persistenceDbPath: db);
             Assert.Single(bridge.DecisionHistory);
             Assert.Equal(DecisionAnswerKind.Unknown, bridge.DecisionHistory[0].AnswerKind);
             Assert.Equal(
@@ -458,7 +458,7 @@ public sealed class HumanDecisionBridgeTests
                 0.4,
                 answerKind: DecisionAnswerKind.OwnDirection
             );
-            var reopened = new HumanDecisionBridge(new UserQuestionStore(), persistenceDbPath: db);
+            var reopened = new HumanDecisionBridge(new DecisionTestStore(), persistenceDbPath: db);
             Assert.Equal(2, reopened.DecisionHistory.Count);
             Assert.Equal(DecisionAnswerKind.OwnDirection, reopened.DecisionHistory[1].AnswerKind);
             Assert.Equal(
@@ -485,7 +485,7 @@ public sealed class HumanDecisionBridgeTests
         var db = TempDb();
         try
         {
-            var store = new UserQuestionStore();
+            var store = new DecisionTestStore();
             var bridge1 = new HumanDecisionBridge(store, persistenceDbPath: db);
             bridge1.RecordDecision("novel_a", "问题1", "按建议继续自动迭代", 0.55);
             bridge1.RecordDecision("novel_a", "问题2", "我来指定方向", 0.42);
@@ -494,7 +494,7 @@ public sealed class HumanDecisionBridgeTests
             Assert.Equal("novel_a", bridge1.DecisionHistory[0].NovelId);
 
             // 新实例（模拟新会话）从 SQLite 回源
-            var bridge2 = new HumanDecisionBridge(new UserQuestionStore(), persistenceDbPath: db);
+            var bridge2 = new HumanDecisionBridge(new DecisionTestStore(), persistenceDbPath: db);
             Assert.Equal(2, bridge2.DecisionHistory.Count);
             Assert.Equal("按建议继续自动迭代", bridge2.DecisionHistory[0].Answer);
             Assert.Equal(0.55, bridge2.DecisionHistory[0].ScenePlanScore);
@@ -549,7 +549,7 @@ public sealed class HumanDecisionBridgeTests
     [Fact]
     public async Task DecideAsync_RecordsDecisionWithNovelId()
     {
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
 
         var task = bridge.DecideAsync(Decision, CancellationToken.None, novelId: "novel_x");
@@ -584,7 +584,7 @@ public sealed class HumanDecisionBridgeEdgeTests
     public async Task SkipAnswerInjection_ReturnsEmptyString_NoInjectQueueContent()
     {
         // Desktop 宿主复用 ask_user 渲染链路自动追加答案 → bridge 不再重复注入（P2 双通道去重）
-        var store = new UserQuestionStore();
+        var store = new DecisionTestStore();
         var bridge = new HumanDecisionBridge(
             store,
             decisionTimeoutSeconds: 120,

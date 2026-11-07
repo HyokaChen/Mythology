@@ -60,7 +60,8 @@ public sealed class SessionEngine(
     ContextTokenCalibrator calibrator,
     ConfigStore configStore,
     ILogger log,
-    RetrievalKernel? retrievalKernel = null
+    RetrievalKernel? retrievalKernel = null,
+    Core.Interactions.InteractionHub? interactionHub = null
 )
 {
     private readonly Agent agent = bridge.Agent;
@@ -81,6 +82,9 @@ public sealed class SessionEngine(
     private volatile bool _isCompacting;
     private readonly List<string> _inputHistory = [];
     private ExploreDetails? _lastExploreDetails;
+
+    /// <summary>当前 turn 的宿主（桌面 / 微信）；交互 owner 由它决定。</summary>
+    public string TurnHost { get; set; } = "desktop";
 
     /// <summary>当前会话 ID。</summary>
     public string SessionId => _sessionId;
@@ -432,6 +436,18 @@ public sealed class SessionEngine(
     /// 发送用户消息：主动压缩预检 → 更新 token 显示 → bridge.SendAsync → 持久化。
     /// 处理取消（interrupt 事件）、上下文溢出（compact + retry 最多 3 次）、通用异常。
     /// </summary>
+    private void SetInteractionContext()
+    {
+        if (interactionHub is null)
+            return;
+        interactionHub.CurrentContext = new Core.Interactions.InteractionContext(
+            TurnHost,
+            _sessionId,
+            agent.CurrentNovelId,
+            TurnId: Guid.NewGuid().ToString("N")[..12]
+        );
+    }
+
     public async Task RunPromptAsync(string text, CancellationToken ct, int overflowRetryCount = 0)
     {
         if (_sessionPersistenceFaulted)
@@ -466,6 +482,7 @@ public sealed class SessionEngine(
             // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
             _autoContinueCount = 0;
             _lastRollReason = null;
+            SetInteractionContext();
 
             await bridge.SendAsync(text, ct);
             await PersistNewMessagesAsync();
@@ -477,6 +494,7 @@ public sealed class SessionEngine(
             {
                 _autoContinueCount++;
                 _lastRollReason = null;
+                SetInteractionContext();
                 await bridge.ContinueAsync(ct);
                 await PersistNewMessagesAsync();
                 await PersistLoopStopEventAsync();

@@ -6,35 +6,6 @@ using LiveMarkdown.Avalonia;
 
 namespace Desktop.Controls;
 
-/// <summary>用户在变体审阅窗中选择的操作（采用/继续修改/忽略）。</summary>
-public enum VariantReviewAction
-{
-    /// <summary>采用此变体（写入章节或加入对话）。</summary>
-    Apply,
-
-    /// <summary>基于此变体继续修改。</summary>
-    Refine,
-
-    /// <summary>忽略此变体组。</summary>
-    Dismiss,
-}
-
-/// <summary>变体审阅决策（镜像 TUI VariantReviewDecision）。</summary>
-public sealed record VariantReviewDecision
-{
-    /// <summary>用户选择的操作。</summary>
-    public VariantReviewAction Action { get; init; }
-
-    /// <summary>选中的变体 ID。</summary>
-    public string? VariantId { get; init; }
-
-    /// <summary>选中的变体标签。</summary>
-    public string? VariantLabel { get; init; }
-
-    /// <summary>选中的变体内容。</summary>
-    public string? VariantContent { get; init; }
-}
-
 /// <summary>
 /// 变体审阅窗口（对齐 TUI VariantReviewDialog）：Tab 页展示 explore 工具返回的多个变体，
 /// 预览后选择采用（Apply）/ 继续修改（Refine）/ 忽略（Esc=Dismiss）。

@@ -52,7 +52,7 @@ public sealed class WritingFlowHookCloudTests
     private static async Task<WritingFlowHook> NewHookAsync(
         MockNovelStore store,
         IFictionHarnessClient harness,
-        UserQuestionStore? questionStore = null,
+        DecisionTestStore? questionStore = null,
         int decisionTimeoutSeconds = 120,
         CloudDiagnosisOptions? options = null,
         KnowledgeRestClient? knowledge = null,
@@ -108,7 +108,7 @@ public sealed class WritingFlowHookCloudTests
     public async Task DecisionOutcome_CreatesQuestion_AndAnswerFlowsToInjectQueue()
     {
         var store = new MockNovelStore();
-        var questions = new UserQuestionStore();
+        var questions = new DecisionTestStore();
         var agent = NewAgent();
         var calls = 0;
         var harness = new StubHarness(_ =>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Core.Data;
+using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
 using LlmTornado.Code;
@@ -87,77 +88,82 @@ public sealed partial class TuiApp
         }
     }
 
-    /// <summary>
-    /// 采用变体并写入：通过 WriteChapterTool 执行，保证索引、审计、统计完整。
-    /// </summary>
-    private async Task HandleVariantApplyAsync(
-        ExploreDetails explore,
-        VariantReviewDecision decision
-    )
+    /// <summary>执行 Core 下发的变体效果 plan；Host 只做副作用。</summary>
+    private async Task ExecuteVariantEffectAsync(VariantEffect effect)
     {
+        switch (effect.Kind)
+        {
+            case VariantEffectKind.Dismiss:
+                return;
+            case VariantEffectKind.PrefillRefinement:
+                QueueVariantRefinement(
+                    new VariantReviewDecision
+                    {
+                        Action = VariantReviewAction.Refine,
+                        VariantId = effect.VariantId,
+                        VariantLabel = effect.VariantLabel,
+                        VariantContent = effect.VariantContent,
+                    },
+                    effect.ExplorePrompt,
+                    effect.ExploreType,
+                    effect.ApplyTarget
+                );
+                return;
+        }
+
         if (_sessionPersistenceFaulted)
         {
             ToastService.Error("会话保存故障尚未恢复，已拒绝采用变体以防止历史记录缺失。");
             return;
         }
 
-        var target = explore.ApplyTarget;
-        var variantContent = decision.VariantContent ?? "";
-        var variantLabel = decision.VariantLabel ?? "";
-
-        if (target == null)
+        switch (effect.Kind)
         {
-            // 非章节变体：根据 ExploreType 路由
-            var exploreType = explore.ExploreType;
-            if (
-                exploreType is "character" or "plot" or "outline" or "style"
-                && !string.IsNullOrWhiteSpace(variantContent)
-            )
-            {
-                // 结构化提取：发送给 Agent 进行实体创建
-                var typeName = exploreType switch
-                {
-                    "character" => "角色",
-                    "plot" => "情节线",
-                    "outline" => "大纲",
-                    _ => "创作内容",
-                };
-                var variantXml = VariantXml.Wrap(
-                    variantContent,
-                    decision.VariantId,
-                    variantLabel,
-                    exploreType
+            case VariantEffectKind.AppendToContext:
+                _agent.AppendMessage(
+                    new LlmChatMessage(ChatMessageRoles.Assistant, effect.VariantContent)
                 );
-                var extractPrompt =
-                    $"用户从探索结果中选择了变体「{variantLabel}」——"
-                    + $"一个{typeName}方案。\n\n"
-                    + variantXml
-                    + "\n\n请根据以上内容，使用相应的工具（如 batch_create_characters）创建结构化实体。"
-                    + "如果内容为大纲/风格描述，直接将其作为参考存入上下文，不需要创建实体。";
-                var ct3 = _appCts?.Token ?? CancellationToken.None;
-                _ = RunPromptAsync(extractPrompt, ct3);
+                // ★ 变体内容写入上下文（无新 API 调用）：重算 token 显示
+                InvalidateContextMeasure();
+                UpdateTokenDisplay();
+                if (!await TryPersistNewMessagesAsync())
+                    return;
+                _conversationPanel.AddSystemMessage($"✅ 已采用变体「{effect.VariantLabel}」");
+                return;
+            case VariantEffectKind.SendExtractionPrompt:
+                var ct = _appCts?.Token ?? CancellationToken.None;
+                _ = RunPromptAsync(effect.ExtractionPrompt, ct);
                 _conversationPanel.AddSystemMessage(
-                    $"📋 已采用变体「{variantLabel}」，正在提取结构化数据…"
+                    $"📋 已采用变体「{effect.VariantLabel}」，正在提取结构化数据…"
                 );
                 return;
-            }
-
-            _agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.Assistant, variantContent));
-            // ★ 变体内容写入上下文（无新 API 调用）：重算 token 显示
-            InvalidateContextMeasure();
-            UpdateTokenDisplay();
-            if (!await TryPersistNewMessagesAsync())
+            case VariantEffectKind.WriteChapter:
+                await WriteVariantChapterAsync(effect);
                 return;
-            _conversationPanel.AddSystemMessage($"✅ 已采用变体「{variantLabel}」");
+            default:
+                throw new InvalidOperationException($"未知变体效果: {effect.Kind}");
+        }
+    }
+
+    /// <summary>执行章节写入效果；确认/冲突校验由效果 plan 的标记驱动。</summary>
+    private async Task WriteVariantChapterAsync(VariantEffect effect)
+    {
+        var target = effect.ApplyTarget;
+        if (target is null)
+        {
+            _conversationPanel.AddSystemMessage("无法应用变体：缺少章节目标");
             return;
         }
 
-        var isCreate = string.IsNullOrEmpty(target.ChapterId);
+        var variantContent = effect.VariantContent;
+        var variantLabel = effect.VariantLabel;
         var chapterTitle = target.Title;
         var chapterOrder = target.Order;
 
-        // ChapterId! 非空证明：isCreate=false 时 ChapterId 已通过 string.IsNullOrEmpty 检查，必定非 null
-        if ((string.IsNullOrWhiteSpace(chapterTitle) || chapterOrder <= 0) && !isCreate)
+        if (
+            !string.IsNullOrEmpty(target.ChapterId)
+            && (string.IsNullOrWhiteSpace(chapterTitle) || chapterOrder <= 0)
+        )
         {
             var lookup = await _store.GetChapter(target.NovelId, target.ChapterId!);
             if (lookup is not null)
@@ -172,9 +178,9 @@ public sealed partial class TuiApp
             return;
         }
 
-        if (!isCreate)
+        if (effect.RequiresOverwriteConfirmation)
         {
-            // ChapterId! 非空证明：isCreate=false 时 ChapterId 已通过检查
+            // ChapterId 非空由 RequiresOverwriteConfirmation 保证
             var existing = await _store.GetChapter(target.NovelId, target.ChapterId!);
             if (existing == null)
             {
@@ -194,8 +200,6 @@ public sealed partial class TuiApp
             if (!confirmed)
                 return;
 
-            // 二次校验：确认→写入之间章节是否被外部修改
-            // ChapterId! 非空证明：同上
             var recheck = await _store.GetChapter(target.NovelId, target.ChapterId!);
             if (recheck?.Content != snapshotContent)
             {
@@ -253,6 +257,91 @@ public sealed partial class TuiApp
         }
 
         await RefreshOutline();
+    }
+
+    /// <summary>
+    /// 兼容无 Hub 的旧路径：把 ExploreDetails/Decision 适配成 Core 效果 plan 后执行。
+    /// </summary>
+    private async Task HandleVariantApplyAsync(
+        ExploreDetails explore,
+        VariantReviewDecision decision
+    )
+    {
+        var variantContent = decision.VariantContent ?? "";
+        var variantLabel = decision.VariantLabel ?? "";
+        var variantId = decision.VariantId ?? "";
+        var target = explore.ApplyTarget;
+
+        VariantEffect effect;
+        if (target is not null)
+        {
+            effect = new VariantEffect(
+                Guid.NewGuid().ToString("N")[..12],
+                VariantEffectKind.WriteChapter,
+                variantId,
+                variantLabel,
+                variantContent,
+                explore.ExploreType,
+                explore.Prompt,
+                target,
+                "",
+                RequiresOverwriteConfirmation: !string.IsNullOrEmpty(target.ChapterId)
+            );
+        }
+        else if (
+            explore.ExploreType is "character" or "plot" or "outline" or "style"
+            && !string.IsNullOrWhiteSpace(variantContent)
+        )
+        {
+            var typeName = explore.ExploreType switch
+            {
+                "character" => "角色",
+                "plot" => "情节线",
+                "outline" => "大纲",
+                _ => "创作内容",
+            };
+            var variantXml = VariantXml.Wrap(
+                variantContent,
+                variantId,
+                variantLabel,
+                explore.ExploreType
+            );
+            var extractPrompt =
+                $"用户从探索结果中选择了变体「{variantLabel}」——"
+                + $"一个{typeName}方案。\n\n"
+                + variantXml
+                + "\n\n请根据以上内容，使用相应的工具（如 batch_create_characters）创建结构化实体。"
+                + "如果内容为大纲/风格描述，直接将其作为参考存入上下文，不需要创建实体。";
+            effect = new VariantEffect(
+                Guid.NewGuid().ToString("N")[..12],
+                VariantEffectKind.SendExtractionPrompt,
+                variantId,
+                variantLabel,
+                variantContent,
+                explore.ExploreType,
+                explore.Prompt,
+                null,
+                extractPrompt,
+                false
+            );
+        }
+        else
+        {
+            effect = new VariantEffect(
+                Guid.NewGuid().ToString("N")[..12],
+                VariantEffectKind.AppendToContext,
+                variantId,
+                variantLabel,
+                variantContent,
+                explore.ExploreType,
+                explore.Prompt,
+                null,
+                "",
+                false
+            );
+        }
+
+        await ExecuteVariantEffectAsync(effect);
     }
 
     /// <summary>
@@ -398,13 +487,21 @@ public sealed partial class TuiApp
     /// <summary>
     /// 继续修改：将变体内容暂存，预填主输入框，等待用户输入修改要求。
     /// </summary>
-    private void HandleVariantRefine(ExploreDetails explore, VariantReviewDecision decision)
+    private void HandleVariantRefine(ExploreDetails explore, VariantReviewDecision decision) =>
+        QueueVariantRefinement(decision, explore.Prompt, explore.ExploreType, explore.ApplyTarget);
+
+    private void QueueVariantRefinement(
+        VariantReviewDecision decision,
+        string? explorePrompt,
+        string? exploreType,
+        VariantApplyTarget? applyTarget
+    )
     {
         _pendingRefinement = new PendingRefinement(
             Decision: decision,
-            ExplorePrompt: explore.Prompt,
-            ExploreType: explore.ExploreType,
-            ApplyTarget: explore.ApplyTarget
+            ExplorePrompt: explorePrompt,
+            ExploreType: exploreType,
+            ApplyTarget: applyTarget
         );
 
         var label = decision.VariantLabel ?? "variant";
@@ -420,34 +517,54 @@ public sealed partial class TuiApp
     /// </summary>
     private async Task ReopenLastVariantSetAsync()
     {
-        if (_lastExploreDetails is not null)
+        var explore = _lastExploreDetails;
+        if (explore is null)
         {
-            await HandleVariantReviewAsync(_lastExploreDetails);
+            try
+            {
+                var json = await _sessionStore.GetLastVariantSetContentAsync(_sessionId);
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    explore = JsonSerializer.Deserialize<ExploreDetails>(
+                        json,
+                        JsonHelper.JsonOptions
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                Services.TuiLogger.OperationFailed(_logger, ex, "reopen variant set");
+            }
+        }
+
+        if (explore?.Variants is not { Count: > 0 })
+        {
+            ToastService.Info("没有待选择的变体");
+            return;
+        }
+        _lastExploreDetails = explore;
+
+        if (_interactionHub is null)
+        {
+            // 兼容无 hub 的测试/旧宿主；生产路径必须走 Core 认领与提交。
+            await HandleVariantReviewAsync(explore);
+            return;
+        }
+        if (string.IsNullOrEmpty(_sessionId))
+        {
+            ToastService.Warning("当前会话尚未建立，无法重开变体");
             return;
         }
 
-        try
+        var reopened = _interactionHub.ReopenVariantReview(
+            new InteractionContext(TuiHostId, _sessionId, _agent.CurrentNovelId),
+            explore
+        );
+        if (reopened is null)
         {
-            var json = await _sessionStore.GetLastVariantSetContentAsync(_sessionId);
-            if (!string.IsNullOrWhiteSpace(json))
-            {
-                var explore = JsonSerializer.Deserialize<ExploreDetails>(
-                    json,
-                    JsonHelper.JsonOptions
-                );
-                if (explore?.Variants is { Count: > 0 })
-                {
-                    _lastExploreDetails = explore;
-                    await HandleVariantReviewAsync(_lastExploreDetails);
-                    return;
-                }
-            }
+            ToastService.Info("没有待选择的变体");
+            return;
         }
-        catch (Exception ex)
-        {
-            Services.TuiLogger.OperationFailed(_logger, ex, "reopen variant set");
-        }
-
-        ToastService.Info("没有待选择的变体");
+        OnInteractionChanged(reopened);
     }
 }
