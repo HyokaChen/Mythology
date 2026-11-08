@@ -78,6 +78,18 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
         Assert.Empty(H.Agent.State.Messages);
     }
 
+    [Fact]
+    public async Task New_StartsFreshSession_AndKeepsCurrentNovel()
+    {
+        await H.SeedSessionStoreAsync();
+        var before = H.CurrentSessionId;
+        InvokeSlash("/new");
+        await TuiSlashTestHarness.WaitUntilAsync(() => H.CurrentSessionId != before, "新建会话");
+
+        Assert.Equal(TuiSlashTestHarness.NovelId, H.Agent.CurrentNovelId);
+        Assert.Empty(H.Agent.State.Messages);
+    }
+
     // ── /logout 与 :cloud logout：清除云端凭据（含死代码修复回归） ──
 
     [Fact]

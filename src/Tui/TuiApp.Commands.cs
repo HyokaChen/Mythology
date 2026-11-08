@@ -40,6 +40,7 @@ public sealed partial class TuiApp
             SlashCommandParser.State,
             SlashCommandParser.History,
             SlashCommandParser.Clear,
+            SlashCommandParser.New,
             $"{SlashCommandParser.Theme} {SlashCommandParser.ThemeToggle}",
             SlashCommandParser.Tools,
             // /stats 已合并入 /state，不再单独列出
@@ -265,6 +266,7 @@ public sealed partial class TuiApp
             | `/help` | — | 关于 Mythology |
             | `/state` | — | Agent 状态 + 工具统计 + 写作统计 |
             | `/clear` | — | 清屏 |
+            | `/new` | — | 在当前小说下新建会话 |
             | `/theme` | `[dark/light/toggle]` | 切换主题 |
             | `/tools` | `[插件名]` | 列出工具分组或展开插件 |
 
@@ -329,6 +331,12 @@ public sealed partial class TuiApp
                 break;
             case SlashCommandParser.SlashCommandKind.Clear:
                 ClearConversation();
+                break;
+            case SlashCommandParser.SlashCommandKind.New:
+                if (string.IsNullOrEmpty(_agent.CurrentNovelId))
+                    ToastService.Warning("当前没有加载小说");
+                else
+                    _ = OpenNovelAsync(_agent.CurrentNovelId);
                 break;
             case SlashCommandParser.SlashCommandKind.Resume:
             {

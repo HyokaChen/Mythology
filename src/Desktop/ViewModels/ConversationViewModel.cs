@@ -141,6 +141,9 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>命令执行完成事件（View 侧关闭弹窗、清空输入）。</summary>
     public event Action? CommandExecuted;
 
+    /// <summary>/new：请求宿主创建新的对话 VM 并切换（保留旧对话历史）。</summary>
+    public event Action? RequestNewConversation;
+
     /// <summary>当前会话 ID（引擎持有）。</summary>
     public string CurrentConversationId => _engine.SessionId;
 
@@ -351,7 +354,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 ClearMessages();
                 break;
             case "/new":
-                NewConversationCommand.Execute().Subscribe();
+                RequestNewConversation?.Invoke();
                 break;
             case "/session":
                 RequestSessionPicker?.Invoke();

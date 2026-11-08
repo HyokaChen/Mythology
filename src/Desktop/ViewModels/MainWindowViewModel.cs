@@ -751,6 +751,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             });
 
         // 斜杠命令请求 → 主窗口动作
+        vm.RequestNewConversation += () => Dispatcher.UIThread.Post(NewConversation);
         vm.RequestNovelSwitch += () => Dispatcher.UIThread.Post(ShowNovelPicker);
         vm.RequestSessionPicker += () => Dispatcher.UIThread.Post(ShowSessionPicker);
         vm.RequestSettings += () => Dispatcher.UIThread.Post(() => OpenSettings());

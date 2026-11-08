@@ -24,6 +24,7 @@ internal static class SlashCommandParser
     internal const string State = "/state"; // 状态
     internal const string History = "/history"; // 历史
     internal const string Clear = "/clear"; // 清屏
+    internal const string New = "/new"; // 新建会话
     internal const string Tools = "/tools"; // 工具
     internal const string Stats = "/stats"; // /stats 别名 → /state
     internal const string Resume = "/resume"; // 恢复
@@ -67,6 +68,9 @@ internal static class SlashCommandParser
         State,
         History,
         Clear,
+
+        /// <summary>/new：在当前小说下新建会话。</summary>
+        New,
 
         /// <summary>/stats 别名 → 与 State 同一处理器。</summary>
         Stats,
@@ -224,6 +228,7 @@ internal static class SlashCommandParser
             State => SlashCommandKind.State,
             History => SlashCommandKind.History,
             Clear => SlashCommandKind.Clear,
+            New => SlashCommandKind.New,
             Stats => SlashCommandKind.Stats,
             Resume => SlashCommandKind.Resume,
             Theme => SlashCommandKind.Theme,

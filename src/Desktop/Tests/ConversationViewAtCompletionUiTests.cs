@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
@@ -233,6 +235,47 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.Equal(1, _vm.SelectedSuggestionIndex);
             }
         );
+    }
+
+    [Fact]
+    public void ManyMessages_UseVirtualizingPanel_NotAllContainersRealized()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent($"消息 {i}");
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Dispatcher.UIThread.RunJobs();
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList");
+                Assert.NotNull(list);
+                var realized = list!.GetVisualDescendants().OfType<ContentPresenter>().Count();
+                Assert.NotEmpty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+                Assert.InRange(realized, 1, 40); // 200 条消息只能实例化视口附近
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
     }
 
     [Fact]

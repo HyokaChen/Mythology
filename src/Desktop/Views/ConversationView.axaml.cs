@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Desktop.Controls;
 using Desktop.Models;
@@ -33,6 +34,17 @@ public partial class ConversationView : UserControl
         // 打开后显式选中首项，保证 / 与 # 弹窗默认高亮第一行。
         SuggestionPopup.Opened += (_, _) => SelectFirstSuggestion();
         CommandPopup.Opened += (_, _) => SelectFirstCommand();
+        // 会话切换 / /new 后数据上下文换新 VM：整页滑入，避免无反馈的硬切。
+        DataContextChanged += (_, _) =>
+        {
+            if (!IsLoaded || DataContext is not ConversationViewModel)
+                return;
+            Dispatcher.UIThread.Post(
+                () =>
+                    _ = Desktop.Styles.Motion.PlayPageEnter(this, Desktop.Styles.Motion.PageShift),
+                DispatcherPriority.Loaded
+            );
+        };
     }
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;

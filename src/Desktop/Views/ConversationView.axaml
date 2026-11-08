@@ -154,6 +154,25 @@
         ItemsSource="{Binding Messages}"
         IsVisible="{Binding HasMessages}"
       >
+        <controls:AutoScrollItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <!-- 长对话只实例化视口内消息；/new 与切会话不再逐个拆 500+ 个控件 -->
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </controls:AutoScrollItemsControl.ItemsPanel>
+        <controls:AutoScrollItemsControl.Template>
+          <ControlTemplate TargetType="controls:AutoScrollItemsControl">
+            <ScrollViewer
+              x:Name="PART_ScrollViewer"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+              Padding="24,18,24,12"
+            >
+              <!-- 必须绑定 ItemsPanel；漏掉它 ItemsPresenter 会退回默认 StackPanel，虚拟化静默失效。 -->
+              <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+            </ScrollViewer>
+          </ControlTemplate>
+        </controls:AutoScrollItemsControl.Template>
         <controls:AutoScrollItemsControl.ItemTemplate>
           <DataTemplate x:DataType="models:ChatMessage">
             <StackPanel Margin="0,0,0,12" motion:Motion.Enter="True">
@@ -445,18 +464,6 @@
             </StackPanel>
           </DataTemplate>
         </controls:AutoScrollItemsControl.ItemTemplate>
-        <controls:AutoScrollItemsControl.Template>
-          <ControlTemplate TargetType="controls:AutoScrollItemsControl">
-            <ScrollViewer
-              x:Name="PART_ScrollViewer"
-              HorizontalScrollBarVisibility="Disabled"
-              VerticalScrollBarVisibility="Auto"
-              Padding="24,18,24,12"
-            >
-              <ItemsPresenter />
-            </ScrollViewer>
-          </ControlTemplate>
-        </controls:AutoScrollItemsControl.Template>
       </controls:AutoScrollItemsControl>
     </Grid>
 

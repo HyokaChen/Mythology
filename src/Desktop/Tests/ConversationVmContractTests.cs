@@ -144,6 +144,20 @@ public sealed class ConversationVmContractTests
         Assert.Null(observed);
     }
 
+    /// <summary>/new 路由契约：由宿主创建新 VM 并切换，不在当前 VM 内原地清空消息。</summary>
+    [Fact]
+    public void New_Command_RaisesHostNewConversationRequest()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var raised = 0;
+        vm.RequestNewConversation += () => raised++;
+
+        Assert.True(vm.TryExecuteCommand("/new"));
+        Assert.Equal(1, raised);
+        Assert.Equal(0, vm.Messages.Count);
+    }
+
     /// <summary>
     /// 用户气泡先行契约：SendEnginePromptAsync 必须先插 user 气泡再插 Agent 占位（修复前占位先上屏），
     /// 且 Loop 对同一条消息的 MessageStart 回显被吞（一次性内容匹配），不同文本照常渲染。

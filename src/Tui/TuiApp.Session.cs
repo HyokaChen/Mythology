@@ -555,6 +555,9 @@ public sealed partial class TuiApp
     /// <param name="sessionId">会话 ID，null 则新建会话。</param>
     private async Task OpenNovelAsync(string novelId, string? sessionId = null)
     {
+        // 同一小说内切会话/新建会话不需要重建设定面板；只有换小说才刷新。
+        var novelChanged = !string.Equals(_agent.CurrentNovelId, novelId, StringComparison.Ordinal);
+
         // ★ 会话切换前置检查：若 Agent 正在运行，先中止。
         // 否则旧会话的 LLM 调用会继续写回新会话的上下文（数据污染），
         // 且其 TokenUsageEvent 会让 token 显示错误归属到新会话。
@@ -607,7 +610,8 @@ public sealed partial class TuiApp
                 {
                     Services.TuiLogger.OperationFailed(_logger, ex, "load novel input history");
                 }
-                await RefreshOutline();
+                if (novelChanged)
+                    await RefreshOutline();
                 // ★ 会话切换：token 显示必须按新会话重算（旧会话的 API 实测值作废）
                 InvalidateContextMeasure();
                 UpdateTokenDisplay();
@@ -631,7 +635,8 @@ public sealed partial class TuiApp
         _conversationPanel.Clear();
         // 新会话无历史任务，清空面板（避免残留上个会话的任务）
         _todoStore.Clear();
-        await RefreshOutline();
+        if (novelChanged)
+            await RefreshOutline();
         // ★ 新建会话：上下文为空，重置 token 显示
         InvalidateContextMeasure();
         UpdateTokenDisplay();
@@ -646,6 +651,11 @@ public sealed partial class TuiApp
         {
             // ★ 与 OpenNovelAsync 一致：切换上下文前中止运行中的 Agent
             AbortRunningAgent();
+            var novelChanged = !string.Equals(
+                _agent.CurrentNovelId,
+                novelId,
+                StringComparison.Ordinal
+            );
 
             var sessions = await _sessionStore.GetSessions(novelId);
             var latest = sessions.FirstOrDefault();
@@ -666,7 +676,8 @@ public sealed partial class TuiApp
             {
                 _conversationPanel.Clear();
                 _conversationPanel.RestoreMessages(uiMessages);
-                await RefreshOutline();
+                if (novelChanged)
+                    await RefreshOutline();
             }
             else
             {
