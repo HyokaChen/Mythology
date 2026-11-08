@@ -148,11 +148,12 @@
       </StackPanel>
 
       <!-- 消息流（有消息才显示，避免透明列表覆盖空状态）。
-           虚拟化必须用官方布局：ScrollViewer 在 ItemsControl **外面**，ItemsPanel =
-           VirtualizingStackPanel。把 ScrollViewer 放进 ItemsControl 自己的 Template
-           会让 VSP 的 extent 估算振荡（ScrollToEnd/ScrollIntoView 在 404k~747k px 间来回），
-           标准父子关系下两者都稳定，2000 条只实例化视口内的十几行。
-           行内不要挂 Motion.Enter：虚拟化回收会重播动画，滚动时就是闪烁。 -->
+           不用 VirtualizingStackPanel：stock VSP 的 extent 只按当前 realized 窗口估算，
+           对话行高度差异极大（10k 字用户气泡 + 长表格）时，ScrollToEnd 触发的 realize 会让
+           估算在 30k↔67k px 间来回，offset 被 anchor/coerce 反复拉回，滚动条无限上下跳。
+           Avalonia issue #11989 记录了这个行为，官方 workaround 是可变高度列表退回 StackPanel。
+           这里用 StackPanel + 像素预算窗口（View 代码只保留尾部约 3 屏），
+           窗口内的 Extent 精确，2000 条历史仍通过滚到顶部增量加载。 -->
       <ScrollViewer
         x:Name="MessageScroll"
         IsVisible="{Binding HasMessages}"
@@ -160,7 +161,7 @@
         VerticalScrollBarVisibility="Auto"
         Padding="24,18,24,12"
       >
-        <controls:AutoScrollItemsControl x:Name="MessageList" ItemsSource="{Binding Messages}">
+        <controls:AutoScrollItemsControl x:Name="MessageList">
           <controls:AutoScrollItemsControl.Template>
             <ControlTemplate TargetType="controls:AutoScrollItemsControl">
               <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
@@ -168,7 +169,7 @@
           </controls:AutoScrollItemsControl.Template>
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <VirtualizingStackPanel CacheLength="0.5" />
+              <StackPanel />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <controls:AutoScrollItemsControl.ItemTemplate>

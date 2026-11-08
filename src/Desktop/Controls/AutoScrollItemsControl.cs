@@ -13,9 +13,11 @@ namespace Desktop.Controls;
 /// 自动滚动列表（端口自 LKK AutoScrollItemsControl，去 SignalR 依赖）：
 /// - 新消息自动滚动到底部（初始加载无闪烁）
 /// - 用户手动上滚（滚轮 / 键盘 / 滚动条）时停止自动跟随，滚回底部时恢复
-/// - 必须使用官方虚拟化布局：外层 ScrollViewer 包 ItemsControl（ScrollViewer 是祖先）
+/// - ScrollViewer 必须是 ItemsControl 的祖先（不要求 PART_ 模板）
+/// - 对话列表请用 StackPanel + 像素窗口；不要用 VSP：可变高度下 extent 估算会振荡
+///   （Avalonia issue #11989），表现为滚动条无限上下跳
 ///
-/// 「用户上滚」只认输入意图，不认 offset 负增量：布局校正（内容变矮、虚拟化估算回收）
+/// 「用户上滚」只认输入意图，不认 offset 负增量：布局校正（内容变矮、窗口裁剪）
 /// 也会让 offset 变小，把它当用户滚动会永久关闭跟随，表现为恢复会话/发消息后停在中间。
 /// </summary>
 public class AutoScrollItemsControl : ItemsControl
@@ -24,6 +26,12 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _autoFollow = true;
     private bool _scrollBarDragging;
     private bool _followPostPending;
+
+    /// <summary>用户滚到顶部（历史加载钩子）。只在用户输入意图下触发。</summary>
+    public event Action? ScrolledToTop;
+
+    /// <summary>当前是否处于「跟随尾部」状态。</summary>
+    public bool IsFollowing => _autoFollow;
 
     static AutoScrollItemsControl()
     {
@@ -44,7 +52,7 @@ public class AutoScrollItemsControl : ItemsControl
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
                 _autoFollow = true;
-                Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
+                Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
                 return;
             }
 
@@ -57,14 +65,16 @@ public class AutoScrollItemsControl : ItemsControl
     public void ResetFollow()
     {
         _autoFollow = true;
-        Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        // 官方虚拟化布局：ScrollViewer 是 ItemsControl 的祖先（不是模板子级）。
+        // ScrollViewer 是 ItemsControl 的祖先（不是模板子级）。
         AttachScrollViewer(this.FindAncestorOfType<ScrollViewer>());
+        if (_autoFollow)
+            Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -169,8 +179,9 @@ public class AutoScrollItemsControl : ItemsControl
         // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量 / 虚拟化校正）都重新贴底。
         // 不能再拿「offset + delta >= max - 8」判断：ScrollViewer 的锚点会在插入新行时
         // 把 offset 往回收（保持原内容），此时 offset 已不在旧底部，条件永远不成立。
-        if (_autoFollow && e.ExtentDelta.Y > 0)
-            ScheduleFollowTail();
+        // TEMP: single-shot
+        // if (_autoFollow && e.ExtentDelta.Y > 0)
+        //     ScheduleFollowTail();
 
         // 用户拖动滚动条上移 → 停止跟随。
         // 注意：不能对所有 offset 负增量停跟随——布局校正（内容变矮/虚拟化估算）
@@ -182,6 +193,10 @@ public class AutoScrollItemsControl : ItemsControl
             && _scrollViewer.Offset.Y < maxOffset - 8
         )
             DisableFollow();
+
+        // 用户滚到顶部 → 通知视图加载更早的一页（程序化归零不算）。
+        if (!_autoFollow && e.OffsetDelta.Y < 0 && _scrollViewer.Offset.Y <= 0)
+            ScrolledToTop?.Invoke();
 
         // 用户滚到底部 → 恢复跟随
         if (!_autoFollow && _scrollViewer.Offset.Y >= maxOffset - 8)
@@ -205,20 +220,13 @@ public class AutoScrollItemsControl : ItemsControl
     }
 
     /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>
-    private void FollowTailIfEnabled()
+    private void ScrollToBottomOnce()
     {
         if (!_autoFollow || _scrollViewer is null)
             return;
-
-        var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
-        if (_scrollViewer.Offset.Y >= maxOffset - 0.5)
-            return;
-
-        // 先把最后一条实例化/带入视口（虚拟化下 extent 此时才包含它的真实高度），
-        // 下一帧再 ScrollToEnd 对齐到最后一条的底部（长消息可能高于视口）。
         if (Items.Count > 0)
             ScrollIntoView(Items.Count - 1);
-
+        _scrollViewer.ScrollToEnd();
         Dispatcher.UIThread.Post(
             () =>
             {
@@ -229,6 +237,22 @@ public class AutoScrollItemsControl : ItemsControl
         );
     }
 
+    private void FollowTailIfEnabled()
+    {
+        if (!_autoFollow || _scrollViewer is null)
+            return;
+
+        var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        if (_scrollViewer.Offset.Y >= maxOffset - 0.5)
+            return;
+
+        // 只按 offset 追底，不调用 ScrollIntoView：VSP 的 ScrollIntoView 会把最后一个
+        // 容器设为锚点，高消息/估算校正时又把 offset 拉回旧锚点，形成 29.5k↔65k 的
+        // 无限循环（真实会话 82 条即可复现）。ScrollToEnd 让 VSP 自己按 offset 实现
+        // 底部项，extent 增长时会再次进入本方法，offset 单调收敛到真实 max。
+        _scrollViewer.ScrollToEnd();
+    }
+
     private void DisableFollow()
     {
         _autoFollow = false;
@@ -237,6 +261,6 @@ public class AutoScrollItemsControl : ItemsControl
     private void OnItemsSourceChanged(AvaloniaPropertyChangedEventArgs e)
     {
         _autoFollow = true;
-        Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
     }
 }

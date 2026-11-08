@@ -719,11 +719,16 @@ GitHub Releases 自动更新（仓库公开后生效；私有期匿名 404 → �
 
 ### 10.1 AutoScrollItemsControl
 
-端口自 LKK，封装聊天列表自动滚动行为（已适配官方虚拟化布局）：
-- 布局必须是 `ScrollViewer` 包 `ItemsControl` + `VirtualizingStackPanel`（ScrollViewer 是 ItemsControl 的祖先）
-- 新消息 / 流式增长跟随：`ScrollIntoView(最后一条)` 让其真实高度进入 extent，下一帧 `ScrollToEnd` 对齐底部
-- 只有用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）才停止跟随；布局/虚拟化的 offset 校正不算
-- 消息 ItemTemplate 内不要挂 `Motion.Enter` 等逐行动效：容器回收会重播 = 滚动闪烁
+端口自 LKK，封装聊天列表自动滚动行为。**不要用 `VirtualizingStackPanel`**：
+stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行（10k 字气泡 / 长表格）会让
+估算在 30k↔67k px 间振荡，scroll anchoring 再回拉 offset，滚动条会无限上下跳
+（Avalonia issue #11989；上游修复 PR #20993 未合入 12.1.5/master）。
+
+- 布局：外层 `ScrollViewer` + `ItemsControl` + 普通 `StackPanel`；Extent 是真实高度
+- `ConversationView` 只渲染尾部约 3 屏（像素预算窗口，最多 40 条，最少 4 条）；滚到顶部按页
+  向前补历史，按新增高度下移 offset 保持锚点
+- 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；`ScrollToEnd` 精确贴底
+- 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser
 
