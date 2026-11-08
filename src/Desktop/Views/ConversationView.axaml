@@ -147,19 +147,18 @@
         />
       </StackPanel>
 
-      <!-- 消息流（有消息才显示，避免透明列表覆盖空状态） -->
+      <!-- 消息流（有消息才显示，避免透明列表覆盖空状态）。
+           不要改回 VirtualizingStackPanel：虚拟化下 ScrollViewer.Extent 是估算值，
+           ScrollToEnd 只到估算底部，随后 extent 校正产生的负 offset 增量会被
+           AutoScrollItemsControl 误判成“用户上滚”而永久关闭跟随；
+           结果是恢复会话/发消息后停在中间、流式时反复校正闪烁。
+           对话行含 Markdown、可变高度，虚拟化的估算收益也不成立。 -->
       <controls:AutoScrollItemsControl
         x:Name="MessageList"
         Margin="0,0,0,0"
         ItemsSource="{Binding Messages}"
         IsVisible="{Binding HasMessages}"
       >
-        <controls:AutoScrollItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <!-- 长对话只实例化视口内消息；/new 与切会话不再逐个拆 500+ 个控件 -->
-            <VirtualizingStackPanel />
-          </ItemsPanelTemplate>
-        </controls:AutoScrollItemsControl.ItemsPanel>
         <controls:AutoScrollItemsControl.Template>
           <ControlTemplate TargetType="controls:AutoScrollItemsControl">
             <ScrollViewer
@@ -168,7 +167,6 @@
               VerticalScrollBarVisibility="Auto"
               Padding="24,18,24,12"
             >
-              <!-- 必须绑定 ItemsPanel；漏掉它 ItemsPresenter 会退回默认 StackPanel，虚拟化静默失效。 -->
               <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
             </ScrollViewer>
           </ControlTemplate>

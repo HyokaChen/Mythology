@@ -2,15 +2,21 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Desktop.Controls;
 
 /// <summary>
 /// 自动滚动列表（端口自 LKK AutoScrollItemsControl，去 SignalR 依赖）：
 /// - 新消息自动滚动到底部（初始加载无闪烁）
-/// - 用户手动上滚时停止自动跟随，滚回底部时恢复
+/// - 用户手动上滚（滚轮 / 键盘 / 滚动条）时停止自动跟随，滚回底部时恢复
 /// - 模板要求包含 x:Name="PART_ScrollViewer" 的 ScrollViewer
+///
+/// 「用户上滚」只认输入意图，不认 offset 负增量：布局校正（内容变矮、虚拟化估算回收）
+/// 也会让 offset 变小，把它当用户滚动会永久关闭跟随，表现为恢复会话/发消息后停在中间。
 /// </summary>
 public class AutoScrollItemsControl : ItemsControl
 {
@@ -19,6 +25,7 @@ public class AutoScrollItemsControl : ItemsControl
     private ScrollViewer? _scrollViewer;
     private bool _autoFollow = true;
     private bool _suppressAutoScroll;
+    private bool _scrollBarDragging;
     private DispatcherTimer? _scrollTimer;
     private double _scrollFrom;
     private double _scrollTo;
@@ -33,11 +40,11 @@ public class AutoScrollItemsControl : ItemsControl
 
     public AutoScrollItemsControl()
     {
-        // 内容变化 → 自动滚动（流式追加）
+        // 内容变化 → 自动滚动（流式追加）。投递执行时可能用户已上滚：回调内再查一次意图。
         Items.CollectionChanged += (_, _) =>
         {
             if (_autoFollow && !_suppressAutoScroll)
-                Dispatcher.UIThread.Post(ScrollToEndSmooth, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(FollowTailIfEnabled, DispatcherPriority.Background);
         };
     }
 
@@ -49,11 +56,80 @@ public class AutoScrollItemsControl : ItemsControl
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
+        DetachScrollViewer();
         base.OnApplyTemplate(e);
         _scrollViewer = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
-        if (_scrollViewer is not null)
-            _scrollViewer.ScrollChanged += OnScrollChanged;
+        if (_scrollViewer is null)
+            return;
+
+        _scrollViewer.ScrollChanged += OnScrollChanged;
+        // handledEventsToo：ScrollViewer 自己会处理滚轮/键盘，仍要观察用户意图。
+        _scrollViewer.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnScrollViewerPointerWheel,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        _scrollViewer.AddHandler(
+            InputElement.KeyDownEvent,
+            OnScrollViewerKeyDown,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        _scrollViewer.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnScrollViewerPointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        _scrollViewer.AddHandler(
+            InputElement.PointerReleasedEvent,
+            OnScrollViewerPointerReleased,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
     }
+
+    private void DetachScrollViewer()
+    {
+        if (_scrollViewer is null)
+            return;
+        _scrollViewer.ScrollChanged -= OnScrollChanged;
+        _scrollViewer.RemoveHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnScrollViewerPointerWheel
+        );
+        _scrollViewer.RemoveHandler(InputElement.KeyDownEvent, OnScrollViewerKeyDown);
+        _scrollViewer.RemoveHandler(InputElement.PointerPressedEvent, OnScrollViewerPointerPressed);
+        _scrollViewer.RemoveHandler(
+            InputElement.PointerReleasedEvent,
+            OnScrollViewerPointerReleased
+        );
+        _scrollViewer = null;
+        _scrollBarDragging = false;
+    }
+
+    /// <summary>用户滚轮上滚：停止跟随（滚回底部由 <see cref="OnScrollChanged"/> 恢复）。</summary>
+    private void OnScrollViewerPointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_autoFollow && e.Delta.Y > 0)
+            DisableFollow();
+    }
+
+    /// <summary>键盘上滚：停止跟随。</summary>
+    private void OnScrollViewerKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_autoFollow && e.Key is Key.Up or Key.PageUp or Key.Home)
+            DisableFollow();
+    }
+
+    /// <summary>记录滚动条拖动（拖动上移时 <see cref="OnScrollChanged"/> 停止跟随）。</summary>
+    private void OnScrollViewerPointerPressed(object? sender, PointerPressedEventArgs e) =>
+        _scrollBarDragging =
+            e.Source is Visual source && source.GetVisualAncestors().OfType<ScrollBar>().Any();
+
+    private void OnScrollViewerPointerReleased(object? sender, PointerReleasedEventArgs e) =>
+        _scrollBarDragging = false;
 
     /// <summary>立即滚到底部（无动画，初始加载无闪烁）。</summary>
     public void ScrollToEndImmediate()
@@ -166,7 +242,7 @@ public class AutoScrollItemsControl : ItemsControl
         if (_suppressAutoScroll)
             return;
 
-        var maxOffset = _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height;
+        var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
 
         // 流式输出让内容长高（没有新 item）：原本贴底时继续跟随，否则保持用户位置
         if (
@@ -174,23 +250,40 @@ public class AutoScrollItemsControl : ItemsControl
             && e.ExtentDelta.Y > 0
             && _scrollViewer.Offset.Y + e.ExtentDelta.Y >= maxOffset - 8
         )
-            Dispatcher.UIThread.Post(ScrollToEndSmooth, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(FollowTailIfEnabled, DispatcherPriority.Background);
 
-        // 用户上滚（内容顶部露出）→ 停止跟随
-        if (e.OffsetDelta.Y < 0 && _autoFollow && _scrollViewer.Offset.Y < maxOffset - 8)
-        {
-            StopScrollAnimation();
-            _autoFollow = false;
-            AutoFollowChanged?.Invoke();
-        }
+        // 用户拖动滚动条上移 → 停止跟随。
+        // 注意：不能对所有 offset 负增量停跟随——布局校正（内容变矮/虚拟化估算）
+        // 也会产生负增量，误判后永远回不到跟随状态（恢复会话/发消息停在中间的直接成因）。
+        if (
+            _scrollBarDragging
+            && _autoFollow
+            && e.OffsetDelta.Y < 0
+            && _scrollViewer.Offset.Y < maxOffset - 8
+        )
+            DisableFollow();
 
         // 用户滚到底部 → 恢复跟随
         if (!_autoFollow && _scrollViewer.Offset.Y >= maxOffset - 8)
             _autoFollow = true;
 
-        // 滚动到顶部 → 触发历史加载
-        if (e.OffsetDelta.Y < 0 && _scrollViewer.Offset.Y <= 0)
+        // 用户滚到顶部 → 触发历史加载（程序化归零不算）
+        if (!_autoFollow && e.OffsetDelta.Y < 0 && _scrollViewer.Offset.Y <= 0)
             ScrolledToTop?.Invoke();
+    }
+
+    /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>
+    private void FollowTailIfEnabled()
+    {
+        if (_autoFollow && !_suppressAutoScroll)
+            ScrollToEndSmooth();
+    }
+
+    private void DisableFollow()
+    {
+        StopScrollAnimation();
+        _autoFollow = false;
+        AutoFollowChanged?.Invoke();
     }
 
     private void OnItemsSourceChanged(AvaloniaPropertyChangedEventArgs e)

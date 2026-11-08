@@ -93,6 +93,16 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **对话列表不再自动贴底 / 发消息后停在中间、流式闪烁（Desktop）**：f98c5ad 给对话
+  `AutoScrollItemsControl` 加了 `VirtualizingStackPanel`。虚拟化下 `ScrollViewer.Extent`
+  是估算值：`ScrollToEnd()` 只到估算底部，随后 extent 校正产生的 **offset 负增量**被
+  `OnScrollChanged` 当成「用户上滚」而永久关闭跟随——恢复会话/发消息停在中间，流式
+  增长时反复校正也带出滚动闪烁。对话行含 Markdown、高度差异大，虚拟化估算本身也不准。
+  修法：① 移除对话列表的 `VirtualizingStackPanel`（回到普通 `StackPanel`）；
+  ② `AutoScrollItemsControl` 的「停止跟随」只认用户输入意图（滚轮上滚 / Up·PageUp·Home /
+  拖动滚动条），不再用 offset 负增量判断；投递执行的追底回调在执行时二次检查跟随状态。
+  回归：`ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`（架构锁 + 初始/发消息后贴底）
+  与 `WheelUp_StopsFollow_UntilUserReturnsToBottom`（上滚停跟随、回底恢复）。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

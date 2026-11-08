@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -82,9 +83,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     /// <summary>等 VM 侧的异步文件补全落地（Task.Run IO + 版本守卫）。</summary>
     private static void PumpUntil(Func<bool> condition, string what)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < 150; i++)
         {
             Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Thread.Sleep(10);
             if (condition())
                 return;
@@ -253,18 +255,20 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
-    public void ManyMessages_UseVirtualizingPanel_NotAllContainersRealized()
+    public void ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend()
     {
         Ui.Run(() =>
         {
-            for (var i = 0; i < 200; i++)
+            // 真实高度各不相同、含 Markdown 的对话行：虚拟化的 extent 估算会低估总高，
+            // ScrollToEnd 停在中间，随后的校正还会把跟随状态误判成“用户上滚”。
+            for (var i = 0; i < 120; i++)
             {
                 var message = new Desktop.Models.ChatMessage(
                     i % 2 == 0
                         ? Desktop.Models.MessageSender.User
                         : Desktop.Models.MessageSender.Agent
                 );
-                message.AppendContent($"消息 {i}");
+                message.AppendContent(string.Join(" ", Enumerable.Repeat($"消息 {i} 的正文", 20)));
                 _vm.Messages.Add(message);
             }
             _vm.HasMessages = true;
@@ -279,12 +283,30 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             window.Show();
             try
             {
-                Dispatcher.UIThread.RunJobs();
                 var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList");
                 Assert.NotNull(list);
-                var realized = list!.GetVisualDescendants().OfType<ContentPresenter>().Count();
-                Assert.NotEmpty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
-                Assert.InRange(realized, 1, 40); // 200 条消息只能实例化视口附近
+                var sv = list!
+                    .GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .First(s => s.Name == "PART_ScrollViewer");
+
+                // 架构锁：对话列表不得改回 VirtualizingStackPanel
+                Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+
+                PumpUntil(() => AtBottom(sv), "初始加载自动贴底");
+
+                // 回车发送：用户气泡 + agent 等待行，列表必须继续贴底
+                var sent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+                sent.AppendContent("刚发送的一条消息");
+                _vm.Messages.Add(sent);
+                _vm.Messages.Add(
+                    new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+                    {
+                        IsWaiting = true,
+                    }
+                );
+
+                PumpUntil(() => AtBottom(sv), "发消息后自动贴底");
             }
             finally
             {
@@ -292,6 +314,83 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             }
         });
     }
+
+    [Fact]
+    public void WheelUp_StopsFollow_UntilUserReturnsToBottom()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 80; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(string.Join(" ", Enumerable.Repeat($"历史 {i}", 15)));
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = list.GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .First(s => s.Name == "PART_ScrollViewer");
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5)); // 上滚一格
+                PumpUntil(() => !AtBottom(sv), "用户上滚应停止跟随");
+
+                // 上滚后新增消息不能被强行拉回底部
+                _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+                Assert.False(AtBottom(sv), "用户上滚后仍被自动拉到底部");
+
+                // 用户滚回底部 → 恢复跟随
+                for (var i = 0; i < 10 && !AtBottom(sv); i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -5));
+                    for (var j = 0; j < 20; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(10);
+                    }
+                }
+                Assert.True(AtBottom(sv), "滚轮无法回到底部");
+
+                // 恢复后新消息应继续贴底
+                _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
+                PumpUntil(() => AtBottom(sv), "回到底部后恢复跟随");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    private static bool AtBottom(ScrollViewer scroll) =>
+        scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;
 
     [Fact]
     public void Slash_PopupStartsAtFirstCommand_AndArrowKeysNavigate()
