@@ -159,15 +159,18 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
-    public void Clear_Command_IsCompatibilityAliasForNewConversation()
+    public void Clear_Command_IsUnknown_AfterRemoval()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
         var raised = 0;
+        string? notice = null;
         vm.RequestNewConversation += () => raised++;
+        vm.SystemMessageRequested += text => notice = text;
 
         Assert.True(vm.TryExecuteCommand("/clear"));
-        Assert.Equal(1, raised);
+        Assert.Equal(0, raised);
+        Assert.Contains("未知命令", notice);
     }
 
     [Fact]

@@ -39,7 +39,6 @@ public sealed partial class TuiApp
             SlashCommandParser.Help,
             SlashCommandParser.State,
             SlashCommandParser.History,
-            // /clear 是 /new 的兼容别名，不再进入主补全列表。
             SlashCommandParser.New,
             $"{SlashCommandParser.Theme} {SlashCommandParser.ThemeToggle}",
             SlashCommandParser.Tools,
@@ -87,7 +86,7 @@ public sealed partial class TuiApp
 
     /// <summary>
     /// 注册全局快捷键命令：Ctrl+P 设置、Ctrl+H 帮助、Ctrl+O 项目、Ctrl+E 会话、
-    /// Ctrl+L 清屏、Ctrl+S 中断、Ctrl+T 主题，以及状态/历史/分支树面板命令。
+    /// Ctrl+S 中断、Ctrl+T 主题，以及状态/历史/分支树面板命令。
     /// </summary>
     private void RegisterCommands()
     {
@@ -133,17 +132,6 @@ public sealed partial class TuiApp
                 Gesture = new KeyGesture(TerminalChar.CtrlE, TerminalModifiers.Ctrl),
                 Presentation = CommandPresentation.CommandPalette,
                 Execute = _ => ShowSessionPickerDialog(),
-            }
-        );
-        _rootVisual.AddCommand(
-            new Command
-            {
-                Id = "App.Clear",
-                Name = "clear",
-                LabelMarkup = "[primary]新建会话（/clear 兼容）[/]",
-                Gesture = new KeyGesture(TerminalChar.CtrlL, TerminalModifiers.Ctrl),
-                Presentation = CommandPresentation.CommandPalette,
-                Execute = _ => ClearConversation(),
             }
         );
         _rootVisual.AddCommand(
@@ -271,7 +259,7 @@ public sealed partial class TuiApp
             | `/help` | — | 关于 Mythology |
             | `/state` | — | Agent 状态 + 工具统计 + 写作统计 |
             | `/history` | — | 查看对话历史 |
-            | `/new` | — | 在当前小说下新建会话（`/clear` 兼容别名） |
+            | `/new` | — | 在当前小说下新建会话 |
             | `/theme` | `[dark/light/toggle]` | 切换主题 |
             | `/tools` | `[插件名]` | 列出工具分组或展开插件 |
 
@@ -319,9 +307,9 @@ public sealed partial class TuiApp
 
     /// <summary>
     /// 斜杠命令路由：命令识别与参数解析委托 SlashCommandParser（纯逻辑，可单测），
-    /// 此处只做 UI/异步处理映射。支持 /tools、/session、/state、/history、/clear、
-    /// /stats、/resume、/theme、/compact、/decompress、/context、/read、/chapter、/search、/tree、
-    /// /mode、/variants(/var)、/cloud、/login、/logout 及 :cloud login|status|logout。
+    /// 此处只做 UI/异步处理映射。支持 /tools、/session、/novel、/settings、/state、/history、
+    /// /new、/stats、/resume、/theme、/compact、/decompress、/context、/read、/chapter、/search、
+    /// /tree、/mode、/notes、/variants(/var)、/cloud、/login、/logout 及 :cloud login|status|logout。
     /// </summary>
     private void HandleSlashCommand(string input)
     {
@@ -363,9 +351,7 @@ public sealed partial class TuiApp
             case SlashCommandParser.SlashCommandKind.History:
                 ShowHistoryDialog();
                 break;
-            case SlashCommandParser.SlashCommandKind.Clear:
             case SlashCommandParser.SlashCommandKind.New:
-                // /clear 是兼容别名：两者都开新会话并重置持久化追踪。
                 if (parts.Length > 1)
                 {
                     ToastService.Info($"用法: {parts[0]}（不接受参数）");

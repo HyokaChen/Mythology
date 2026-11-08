@@ -1136,7 +1136,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Ctrl+K / Ctrl+L 面板入口：构建全局动作 + 斜杠命令列表并弹出。</summary>
+    /// <summary>Ctrl+K 面板入口：构建全局动作 + 斜杠命令列表并弹出。</summary>
     public void ShowCommandPalette()
     {
         var owner = GetMainWindow();
@@ -1200,12 +1200,6 @@ public sealed class MainWindowViewModel : ViewModelBase
                 Title = "切换深色 / 浅色主题",
                 Shortcut = "Ctrl+T",
                 Execute = ToggleTheme,
-            },
-            new()
-            {
-                Title = "新建对话（/clear 兼容）",
-                Shortcut = "Ctrl+L",
-                Execute = () => ActiveConversationVm?.TryExecuteCommand("/clear"),
             },
             new()
             {

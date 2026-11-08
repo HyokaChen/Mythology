@@ -62,24 +62,6 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
         Assert.Equal(before, H.ThemeService.Current.Id);
     }
 
-    // ── /clear：清空 Agent 上下文 ──
-
-    [Fact]
-    public async Task Clear_StartsNewSession_AndResetsAgentMessages()
-    {
-        await H.SeedSessionStoreAsync();
-        var before = H.CurrentSessionId;
-        Assert.NotEmpty(H.Agent.State.Messages);
-
-        InvokeSlash("/clear");
-        await TuiSlashTestHarness.WaitUntilAsync(
-            () => H.CurrentSessionId != before && H.Agent.State.Messages.Count == 0,
-            "清空并新建会话"
-        );
-
-        Assert.Empty(H.Agent.State.Messages);
-    }
-
     [Fact]
     public async Task New_StartsFreshSession_AndKeepsCurrentNovel()
     {

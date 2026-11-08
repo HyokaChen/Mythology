@@ -718,19 +718,6 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
     }
 
     [Fact]
-    public async Task Clear_ResetsAgentMessages()
-    {
-        Assert.NotEmpty(_harness.Agent.State.Messages); // 种子会话已恢复消息
-
-        await DispatchAsync("/clear");
-
-        await TuiSlashTestHarness.WaitUntilAsync(
-            () => _harness.Agent.State.Messages.Count == 0,
-            "Agent 消息未清空"
-        );
-    }
-
-    [Fact]
     public async Task Mode_CyclesEnhanceModeAndPersistsNovel()
     {
         // StatusBar 默认 semi → 首次 /mode → full

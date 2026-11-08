@@ -1292,7 +1292,6 @@ public sealed class ProviderConfig
 | `Ctrl+H` | 打开帮助对话框 |
 | `Ctrl+O` | 打开小说项目对话框 |
 | `Ctrl+E` | 打开会话切换对话框 |
-| `Ctrl+L` | 清除对话和工具日志 |
 | `Ctrl+S` | 中断 Agent |
 | `Ctrl+T` | 切换主题 (Dark/Light) |
 | `Ctrl+Q` | 退出程序 |
@@ -1311,7 +1310,7 @@ public sealed class ProviderConfig
 | `/tools <插件ID>:<工具名>` | 列出指定工具详情 |
 | `/state` | 查看 Agent 状态 + 工具统计 + 写作统计（弹窗） |
 | `/history` | 查看对话历史（弹窗） |
-| `/clear` | 清除对话历史 |
+| `/new` | 新建会话 |
 | `/resume <novel-id>` | 恢复会话 |
 | `/theme <dark\|light\|toggle\|id>` | 切换主题 |
 | `/compact [N]` | 压缩上下文（保留最近 N 条，默认 20） |

@@ -195,7 +195,6 @@ public sealed class ConversationViewModel : ViewModelBase
     private static readonly string[] AvailableCommands =
     [
         "/help",
-        // /clear 是 /new 的兼容别名，不再进入主补全列表。
         "/state",
         "/history",
         "/tools",
@@ -331,7 +330,7 @@ public sealed class ConversationViewModel : ViewModelBase
 
     /// <summary>
     /// 执行斜杠命令。返回 true 表示已消费（不再作为消息发送）。
-    /// 对齐 TUI 命令语义：/help /clear /state /history /tools /new /novel /settings /theme
+    /// 对齐 TUI 命令语义：/help /state /history /tools /new /novel /settings /theme
     /// /compact /decompress /tree /mode /commands /resume /stats /variants 与 :cloud 子命令。
     /// </summary>
     public bool TryExecuteCommand(string input)
@@ -343,7 +342,7 @@ public sealed class ConversationViewModel : ViewModelBase
         var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var cmd = parts[0].ToLowerInvariant();
 
-        // /new、/clear 会主动中止当前回合；压缩/模式切换必须等回合结束，避免与流式写回竞争。
+        // /new 会主动中止当前回合；压缩/模式切换必须等回合结束，避免与流式写回竞争。
         if (_bridge.IsProcessing && cmd is "/compact" or "/decompress" or "/context" or "/mode")
         {
             SystemMessageRequested?.Invoke("Agent 正在生成，先中断当前回合后再执行该命令");
@@ -363,7 +362,6 @@ public sealed class ConversationViewModel : ViewModelBase
             case "/help":
                 ShowAbout();
                 break;
-            case "/clear": // 兼容别名：与 /new 一样进入新会话，不再原地复用当前 VM。
             case "/new":
                 if (parts.Length > 1)
                 {
@@ -1326,7 +1324,7 @@ public sealed class ConversationViewModel : ViewModelBase
         if (text.Length == 0)
             return;
 
-        // 斜杠命令优先于 pending refinement：/new、/clear 等不能被当成修改要求发出去。
+        // 斜杠命令优先于 pending refinement：/new 等不能被当成修改要求发出去。
         if (TryExecuteCommand(text))
         {
             InputText = "";

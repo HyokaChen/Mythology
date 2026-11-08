@@ -50,9 +50,9 @@ public partial class MainWindow : Window
         Program.Services?.GetService<Core.Data.ConfigStore>();
 
     /// <summary>
-    /// 全局快捷键（对齐 TUI：Ctrl+P 设置 / Ctrl+O 项目 / Ctrl+N 新建 / Ctrl+H 帮助 / Ctrl+L 清屏 / Ctrl+T 主题）。
+    /// 全局快捷键（对齐 TUI：Ctrl+P 设置 / Ctrl+O 项目 / Ctrl+N 新建 / Ctrl+H 帮助 / Ctrl+T 主题）。
     ///
-    /// 注意：快捷键注册在 Window.KeyDown；输入框内组合键（Ctrl+L 等）由 TextBox 自行处理，
+    /// 注意：快捷键注册在 Window.KeyDown；输入框内组合键由 TextBox 自行处理，
     /// 此处仅捕获未被输入控件消费的全局组合键。
     /// </summary>
     private void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
@@ -85,10 +85,6 @@ public partial class MainWindow : Window
                 break;
             case Key.H:
                 ShowAbout();
-                e.Handled = true;
-                break;
-            case Key.L:
-                vm.ActiveConversationVm?.TryExecuteCommand("/clear");
                 e.Handled = true;
                 break;
             case Key.T:

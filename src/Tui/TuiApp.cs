@@ -958,12 +958,6 @@ public sealed partial class TuiApp : IDisposable
     // ── 操作辅助方法 ──
 
     /// <summary>
-    /// /clear 兼容入口：与 /new 一样进入新会话（新 sessionId、重置持久化追踪）。
-    /// 旧会话保留在 /session 列表。
-    /// </summary>
-    private void ClearConversation() => _ = StartNewSessionAsync();
-
-    /// <summary>
     /// 中断运行中的 Agent：中止 LLM 调用、清空 UI 事件队列和等待占位。
     /// </summary>
     private void AbortAgent()

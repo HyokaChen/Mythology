@@ -653,7 +653,7 @@ public sealed partial class TuiApp
         ToastService.Success("已新建会话");
     }
 
-    /// <summary>/new 与 /clear 共用的新会话入口：先保存/中断旧会话，再创建。</summary>
+    /// <summary>/new 新会话入口：先保存/中断旧会话，再创建。</summary>
     private async Task StartNewSessionAsync()
     {
         var novelId = _agent.CurrentNovelId;

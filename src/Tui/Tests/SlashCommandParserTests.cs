@@ -21,7 +21,6 @@ public sealed class SlashCommandParserTests
     [InlineData("/help", "Help")]
     [InlineData("/state", "State")]
     [InlineData("/history", "History")]
-    [InlineData("/clear", "Clear")]
     [InlineData("/new", "New")]
     [InlineData("/tools", "Tools")]
     [InlineData("/stats", "Stats")] // 别名 → /state
@@ -53,7 +52,7 @@ public sealed class SlashCommandParserTests
     }
 
     [Theory]
-    [InlineData("/CLEAR")]
+    [InlineData("/NEW")]
     [InlineData("/State")]
     [InlineData("/TOOLS")]
     [InlineData("/Compact")]
@@ -69,6 +68,7 @@ public sealed class SlashCommandParserTests
 
     [Theory]
     [InlineData("/bogus")]
+    [InlineData("/clear")] // 已删除的命令
     [InlineData("/notacommand")]
     [InlineData("")]
     [InlineData("/")]
@@ -497,7 +497,6 @@ public sealed class SlashCommandParserTests
         "/help",
         "/state",
         "/history",
-        "/clear",
         "/tools",
         "/resume",
         "/session",
@@ -515,7 +514,6 @@ public sealed class SlashCommandParserTests
     public void FindSimilarCommand_TypoDistance1_SuggestsCommand()
     {
         Assert.Equal("/state", SlashCommandParser.FindSimilarCommand("/stat", CommandNames));
-        Assert.Equal("/clear", SlashCommandParser.FindSimilarCommand("/clea", CommandNames));
     }
 
     [Fact]

@@ -27,7 +27,7 @@ public sealed partial class TuiApp
         _promptEditor.SetHistory(_inputHistory);
         _ = SaveInputHistoryAsync(text);
 
-        // 斜杠命令优先于 pending refinement：/new、/clear 等不能被当成修改要求发出去。
+        // 斜杠命令优先于 pending refinement：/new 等不能被当成修改要求发出去。
         var isColonCloud =
             text.StartsWith(":cloud")
             && (text.Length == ":cloud".Length || text[":cloud".Length] == ' ');
