@@ -70,16 +70,25 @@ public sealed class MotionWiringTests
         );
     }
 
+    /// <summary>
+    /// 对话列表已改为官方虚拟化（VSP）：行容器会被回收复用，逐行 Motion.Enter/Fade/Pop
+    /// 会在滚动时反复重播，表现为闪烁。整个消息 ItemTemplate 不得出现任何 motion 属性；
+    /// 列表外的空状态 / 输入区动效仍保留（见 ConversationEmptyState_PlaysEnter 等）。
+    /// </summary>
     [Fact]
-    public void ConversationMessageRow_PlaysEnter()
+    public void ConversationMessageTemplate_IsAnimationFree_ForVirtualization()
     {
         var template = Single(
             Load("Views/ConversationView.axaml"),
             e => e.Name.LocalName == "AutoScrollItemsControl.ItemTemplate"
         );
-        var row = FirstTemplateChild(template);
+        var animated = template
+            .Descendants()
+            .Where(e => e.Attributes().Any(a => a.Name.NamespaceName == MotionNamespace))
+            .Select(e => e.Name.LocalName)
+            .ToList();
 
-        Assert.Equal("True", Attr(row, "Motion.Enter"));
+        Assert.Empty(animated);
     }
 
     [Fact]
@@ -90,39 +99,6 @@ public sealed class MotionWiringTests
         var panel = anchor.Ancestors().First(a => a.Name.LocalName == "StackPanel");
 
         Assert.Equal("True", Attr(panel, "Motion.Enter"));
-    }
-
-    [Fact]
-    public void ConversationAgentStepRow_PlaysEnterWithSmallRise()
-    {
-        var stepTemplate = Single(
-            Load("Views/ConversationView.axaml"),
-            e =>
-                e.Name.LocalName == "DataTemplate"
-                && e.Attributes()
-                    .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("AgentStep"))
-        );
-        var row = stepTemplate.Elements().First();
-
-        Assert.Equal("True", Attr(row, "Motion.Enter"));
-        Assert.Equal("4", Attr(row, "Motion.EnterRise"));
-    }
-
-    [Fact]
-    public void ConversationSourceChip_PlaysEnterWithSmallRise()
-    {
-        var root = Load("Views/ConversationView.axaml");
-        var sourceTemplate = Single(
-            root,
-            e =>
-                e.Name.LocalName == "DataTemplate"
-                && e.Attributes()
-                    .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("SourceInfo"))
-        );
-        var chip = FirstTemplateChild(sourceTemplate);
-
-        Assert.Equal("True", Attr(chip, "Motion.Enter"));
-        Assert.Equal("4", Attr(chip, "Motion.EnterRise"));
     }
 
     [Theory]
@@ -448,54 +424,6 @@ public sealed class MotionWiringTests
             );
             Assert.Equal("True", Attr(button, "Motion.Fade"));
         }
-    }
-
-    [Fact]
-    public void ConversationAgentStepCompletion_PopsIn()
-    {
-        var stepTemplate = Single(
-            Load("Views/ConversationView.axaml"),
-            e =>
-                e.Name.LocalName == "DataTemplate"
-                && e.Attributes()
-                    .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("AgentStep"))
-        );
-        var icon = stepTemplate
-            .Descendants()
-            .Single(e =>
-                e.Name.LocalName == "LucideIcon"
-                && AttrPlain(e, "IsVisible")
-                    .Contains("InvertedBoolToVisibility", StringComparison.Ordinal)
-            );
-
-        Assert.Equal("True", Attr(icon, "Motion.Pop"));
-    }
-
-    [Fact]
-    public void ConversationResultSummary_FadesIn()
-    {
-        var text = Single(
-            Load("Views/ConversationView.axaml"),
-            e =>
-                e.Name.LocalName == "TextBlock"
-                && AttrPlain(e, "Text").Contains("ResultSummary", StringComparison.Ordinal)
-        );
-
-        Assert.Equal("True", Attr(text, "Motion.Fade"));
-    }
-
-    [Fact]
-    public void ConversationToolDetails_PlaysEnterWithSmallRise()
-    {
-        var details = Single(
-            Load("Views/ConversationView.axaml"),
-            e =>
-                e.Name.LocalName == "StackPanel"
-                && AttrPlain(e, "Classes").Contains("StepDetails", StringComparison.Ordinal)
-        );
-
-        Assert.Equal("True", Attr(details, "Motion.Enter"));
-        Assert.Equal("4", Attr(details, "Motion.EnterRise"));
     }
 
     [Fact]

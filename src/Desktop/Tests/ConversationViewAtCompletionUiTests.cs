@@ -285,13 +285,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             {
                 var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList");
                 Assert.NotNull(list);
-                var sv = list!
-                    .GetVisualDescendants()
-                    .OfType<ScrollViewer>()
-                    .First(s => s.Name == "PART_ScrollViewer");
+                var sv = FindMessageScroll(view);
 
-                // 架构锁：对话列表不得改回 VirtualizingStackPanel
-                Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+                // 架构锁：对话列表必须使用官方虚拟化布局（ScrollViewer 外层 + VSP）
+                Assert.NotEmpty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
 
                 PumpUntil(() => AtBottom(sv), "初始加载自动贴底");
 
@@ -345,9 +342,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
                     "MessageList"
                 )!;
-                var sv = list.GetVisualDescendants()
-                    .OfType<ScrollViewer>()
-                    .First(s => s.Name == "PART_ScrollViewer");
+                var sv = FindMessageScroll(view);
                 PumpUntil(() => AtBottom(sv), "初始贴底");
 
                 var pointer = new Point(450, 350);
@@ -390,11 +385,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
-    /// 2000 条消息的会话：只渲染尾部 40 条（每条约 1MB 视觉树，全量会吃 GB 级内存），
-    /// 自动贴底；滚到顶部自动补一页并保持视口锚点；Clear + 批量恢复后仍是尾部窗口。
+    /// 2000 条消息必须走官方虚拟化布局（ScrollViewer 包 ItemsControl + VSP）：
+    /// 只实例化视口附近的行；列表仍绑定全部消息，可完整上滚；自动贴底可靠。
     /// </summary>
     [Fact]
-    public void LargeConversation_RendersTailWindow_AndLoadsEarlier()
+    public void LargeConversation_VirtualizesAndPinsToBottom()
     {
         Ui.Run(() =>
         {
@@ -430,46 +425,62 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
                     "MessageList"
                 )!;
-                var sv = list.GetVisualDescendants()
-                    .OfType<ScrollViewer>()
-                    .First(s => s.Name == "PART_ScrollViewer");
+                var sv = FindMessageScroll(view);
 
-                PumpUntil(
-                    () => list.Items.Count == 40 && AtBottom(sv),
-                    "2000 条时只渲染尾部窗口并贴底"
-                );
-                Assert.Equal(40, list.Items.Count);
+                PumpUntil(() => AtBottom(sv), "2000 条虚拟化列表贴底");
+                Assert.Equal(2000, list.Items.Count);
+                var containers = list.GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Presenters.ContentPresenter>()
+                    .Count();
+                Assert.InRange(containers, 1, 80);
 
-                // 跟随状态下追加：窗口保持 40，继续贴底
+                // 跟随状态下追加：仍贴底
                 _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
-                PumpUntil(() => AtBottom(sv), "新增消息后贴底");
-                Assert.Equal(40, list.Items.Count);
+                PumpUntil(() => list.Items.Count == 2001 && AtBottom(sv), "新增消息后贴底");
 
-                // 上滚到顶 → 自动补一页，视口锚点保持（offset 不应停在 0）
+                // 完整历史可滚：上滚停跟随，滚回底部恢复
                 var pointer = new Point(450, 350);
                 window.MouseMove(pointer);
                 window.MouseWheel(pointer, new Vector(0, 5));
                 PumpUntil(() => !AtBottom(sv), "滚轮上滚应停跟随");
-                sv.Offset = new Vector(0, 0);
-                PumpUntil(() => list.Items.Count == 80, "滚到顶部自动加载更早一页");
-                Assert.True(sv.Offset.Y > 0, "加载更早一页后视口锚点丢失");
+                Assert.True(sv.Offset.Y < sv.Extent.Height - sv.Viewport.Height - 1);
+                for (var i = 0; i < 20 && !AtBottom(sv); i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -5));
+                    for (var j = 0; j < 10; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(10);
+                    }
+                }
+                Assert.True(AtBottom(sv), "滚轮可回到底部");
+                Assert.InRange(
+                    list.GetVisualDescendants()
+                        .OfType<Avalonia.Controls.Presenters.ContentPresenter>()
+                        .Count(),
+                    1,
+                    80
+                );
 
                 // 同一 VM 上 Clear + 批量 Add（会话切换/恢复的真实形态）
                 _vm.Messages.Clear();
                 AddHistory(2000, "恢复");
-                PumpUntil(
-                    () => list.Items.Count == 40 && AtBottom(sv),
-                    "批量恢复后回到尾部窗口并贴底"
+                PumpUntil(() => AtBottom(sv), "批量恢复后贴底");
+                Assert.Equal(2000, list.Items.Count);
+                Assert.InRange(
+                    list.GetVisualDescendants()
+                        .OfType<Avalonia.Controls.Presenters.ContentPresenter>()
+                        .Count(),
+                    1,
+                    80
                 );
 
-                // 数据上下文卸载/重挂（会话切换的 UI 形态）仍回到尾部窗口
+                // 数据上下文卸载/重挂（会话切换的 UI 形态）仍贴底
                 view.DataContext = null;
                 PumpUntil(() => list.Items.Count == 0, "清空数据上下文");
                 view.DataContext = _vm;
-                PumpUntil(
-                    () => list.Items.Count == 40 && AtBottom(sv),
-                    "重挂数据上下文后回到尾部窗口"
-                );
+                PumpUntil(() => list.Items.Count == 2000 && AtBottom(sv), "重挂数据上下文后贴底");
             }
             finally
             {
@@ -477,6 +488,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             }
         });
     }
+
+    private static ScrollViewer FindMessageScroll(Desktop.Views.ConversationView view) =>
+        view.FindControl<ScrollViewer>("MessageScroll")
+        ?? throw new InvalidOperationException("MessageScroll 未找到");
 
     private static bool AtBottom(ScrollViewer scroll) =>
         scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;

@@ -719,11 +719,11 @@ GitHub Releases 自动更新（仓库公开后生效；私有期匿名 404 → �
 
 ### 10.1 AutoScrollItemsControl
 
-端口自 LKK，封装聊天列表自动滚动行为：
-- 新消息自动滚动到底部 (`ScrollToEndImmediate`)
-- 用户手动上滚时停止自动跟随
-- 流式内容增长时自动滚动
-- 模板要求 `x:Name="PART_ScrollViewer"` 的 ScrollViewer
+端口自 LKK，封装聊天列表自动滚动行为（已适配官方虚拟化布局）：
+- 布局必须是 `ScrollViewer` 包 `ItemsControl` + `VirtualizingStackPanel`（ScrollViewer 是 ItemsControl 的祖先）
+- 新消息 / 流式增长跟随：`ScrollIntoView(最后一条)` 让其真实高度进入 extent，下一帧 `ScrollToEnd` 对齐底部
+- 只有用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）才停止跟随；布局/虚拟化的 offset 校正不算
+- 消息 ItemTemplate 内不要挂 `Motion.Enter` 等逐行动效：容器回收会重播 = 滚动闪烁
 
 ### 10.2 MentionParser / EntityRefParser
 

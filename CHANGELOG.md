@@ -93,24 +93,26 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
-- **对话列表不再自动贴底 / 发消息后停在中间、流式闪烁（Desktop）**：f98c5ad 给对话
-  `AutoScrollItemsControl` 加了 `VirtualizingStackPanel`。虚拟化下 `ScrollViewer.Extent`
-  是估算值：`ScrollToEnd()` 只到估算底部，随后 extent 校正产生的 **offset 负增量**被
-  `OnScrollChanged` 当成「用户上滚」而永久关闭跟随——恢复会话/发消息停在中间，流式
-  增长时反复校正也带出滚动闪烁。对话行含 Markdown、高度差异大，虚拟化估算本身也不准
-  （实测 2000 条时 `ScrollToEnd` 的估算在 404k～747k px 之间来回振荡，`ScrollIntoView`
-  也无法稳定对齐到底部），因此不能只靠修 `ScrollToEnd`。
-  修法（窗口化 + 输入意图）：
-  ① 对话区只渲染**尾部 40 条**，滚到顶部自动向前补一页并保持视口锚点；源 `Messages`
-  仍保留全部历史（LLM/持久化不受影响）。普通 `StackPanel` 精确测量，自动贴底可靠；
-  2000 条实测初始 `~0.7–1.0s / ~50MB`（全量渲染为 `5–9s / 800–970MB`），`/new` 约
-  `25–65ms`，批量恢复（Clear + 2000 Add）合并成一次刷新。
-  ② `AutoScrollItemsControl` 的「停止跟随」只认用户输入意图（滚轮上滚 / Up·PageUp·Home /
-  拖动滚动条），不再用 offset 负增量判断；投递执行的追底回调在执行时二次检查跟随状态，
-  并合并同帧多次追底。
-  回归：`ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`（架构锁 + 初始/发消息后贴底）、
-  `WheelUp_StopsFollow_UntilUserReturnsToBottom`（上滚停跟随、回底恢复）、
-  `LargeConversation_RendersTailWindow_AndLoadsEarlier`（2000 条：尾部窗口/贴底/补页锚点/批量恢复）。
+- **对话列表不自动贴底 / 发消息停在中间、流式闪烁、2000 条 `/new` 卡顿（Desktop）**：
+  f98c5ad 把 `VirtualizingStackPanel` 放进了 `ItemsControl` 自己的 `Template`
+  （ScrollViewer 在 ItemsControl **内部**）。这种父子关系下 VSP 的 extent / `BringIntoView`
+  不稳定：2000 条时 `ScrollToEnd` 的估算在同一批帧里 404k↔747k px 来回振荡，
+  `ScrollIntoView` 会把 offset 往回带 74k；同时每行 `Motion.Enter` 在容器回收时重播，
+  滚动就是闪烁。全量不虚拟化则 1000 条要 5.3s/971MB、2000 条 8.9s/817MB，`/new` 600–700ms。
+  修法（回到 Avalonia 官方布局，见 docs：ItemsControl 默认不虚拟化，虚拟化要
+  `ScrollViewer` 包 `ItemsControl` + `VirtualizingStackPanel`）：
+  ① `ConversationView` 用外层 `ScrollViewer` 包 ItemsControl，`ItemsPanel =
+  VirtualizingStackPanel CacheLength=0.5`；所有消息仍绑定在 `Messages`，完整历史可滚。
+  ② 自动跟随只认用户输入意图（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；追底先
+  `ScrollIntoView(最后一条)` 让其真实高度进入 extent，下一帧再 `ScrollToEnd` 对齐底部；
+  去掉 160ms 平滑滚动 timer（它会与虚拟化的布局校正互相拉扯）。
+  ③ 消息 ItemTemplate 内不再挂 `Motion.Enter/Fade/Pop`（回收重播 = 闪烁）；
+  列表外的空状态 / 输入区动效保留。
+  2000 条实测：9 个容器 / ~26MB，首屏 545–795ms，`/new` 20ms，切回 2000 条约 1.4–1.7s，
+  offset 精确等于 max（可完整上滚）。
+  回归：`LargeConversation_VirtualizesAndPinsToBottom`（2000 条：容器数 <80、贴底、完整历史滚动、
+  Clear+批量恢复、DataContext 重挂）、`ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`、
+  `WheelUp_StopsFollow_UntilUserReturnsToBottom`、`MotionWiringTests`（消息模板无 motion 属性）。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛
