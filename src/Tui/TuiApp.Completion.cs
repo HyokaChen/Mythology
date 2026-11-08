@@ -1,3 +1,4 @@
+using Core.Data;
 using Tui.Controls;
 using Tui.Services;
 using XenoAtom.Terminal.UI.Controls;
@@ -100,7 +101,7 @@ public sealed partial class TuiApp
         {
             var afterAt = input[(atIndex + 1)..];
             var pathCandidates = Core
-                .Shared.FilePathCompletion.GetEntries(afterAt, Directory.GetCurrentDirectory())
+                .Shared.FilePathCompletion.GetEntries(afterAt, CompletionRoot())
                 .Select(e => e.Name)
                 .ToArray();
             if (pathCandidates.Length > 0)
@@ -220,5 +221,20 @@ public sealed partial class TuiApp
             _promptEditor.ShowCompletionPopup(matching, 0, input.Length);
         else
             _promptEditor.CloseMyPopup();
+    }
+
+    /// <summary>
+    /// @ 相对路径的基准：与 Desktop 一致使用小说工作区 ActiveRoot。
+    /// 测试/非文件存储没有 Workspace 时退化为 CWD，避免测试装配依赖真实目录清单。
+    /// </summary>
+    private string CompletionRoot()
+    {
+        if (_store is FileNovelStore fileStore)
+        {
+            var active = fileStore.Workspace.ActiveRoot;
+            if (!string.IsNullOrWhiteSpace(active))
+                return active;
+        }
+        return Directory.GetCurrentDirectory();
     }
 }

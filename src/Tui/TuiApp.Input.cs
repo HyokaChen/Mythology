@@ -27,6 +27,17 @@ public sealed partial class TuiApp
         _promptEditor.SetHistory(_inputHistory);
         _ = SaveInputHistoryAsync(text);
 
+        // 斜杠命令优先于 pending refinement：/new、/clear 等不能被当成修改要求发出去。
+        var isColonCloud =
+            text.StartsWith(":cloud")
+            && (text.Length == ":cloud".Length || text[":cloud".Length] == ' ');
+        if (text.StartsWith('/') || isColonCloud)
+        {
+            _inputText.Value = "";
+            HandleSlashCommand(text);
+            return;
+        }
+
         // Refinement 流程：用户正在响应"继续修改"的变体
         if (_pendingRefinement is not null)
         {
@@ -87,19 +98,6 @@ public sealed partial class TuiApp
 
             var ct = _appCts?.Token ?? CancellationToken.None;
             _ = RunPromptAsync(sb.ToString(), ct);
-            return;
-        }
-
-        var isColonCloud =
-            text.StartsWith(":cloud")
-            && (text.Length == ":cloud".Length || text[":cloud".Length] == ' ');
-        if (text.StartsWith('/') || isColonCloud)
-        {
-            // 斜杠命令 + :cloud 冒号形式（login/status/logout）统一走命令路由；
-            // 修复前仅 '/' 前缀进 HandleSlashCommand，:cloud xxx 实际被当作普通
-            // 用户消息发给 LLM——启动引导 Toast 引导的 ":cloud login" 一直是死路径。
-            _inputText.Value = "";
-            HandleSlashCommand(text);
             return;
         }
 

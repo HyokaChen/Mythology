@@ -752,6 +752,16 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         // 斜杠命令请求 → 主窗口动作
         vm.RequestNewConversation += () => Dispatcher.UIThread.Post(NewConversation);
+        vm.RequestNotes += () =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (string.IsNullOrEmpty(vm.CurrentNovelId))
+                {
+                    vm.AddSystemNotice("当前没有加载小说");
+                    return;
+                }
+                _ = ShowNotesWindowAsync(vm.CurrentNovelId, vm.CurrentNovelTitle);
+            });
         vm.RequestNovelSwitch += () => Dispatcher.UIThread.Post(ShowNovelPicker);
         vm.RequestSessionPicker += () => Dispatcher.UIThread.Post(ShowSessionPicker);
         vm.RequestSettings += () => Dispatcher.UIThread.Post(() => OpenSettings());
@@ -1193,7 +1203,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             },
             new()
             {
-                Title = "清空当前对话",
+                Title = "新建对话（/clear 兼容）",
                 Shortcut = "Ctrl+L",
                 Execute = () => ActiveConversationVm?.TryExecuteCommand("/clear"),
             },

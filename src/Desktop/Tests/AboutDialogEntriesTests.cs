@@ -110,7 +110,10 @@ public sealed class AboutDialogEntriesTests
             .ToHashSet(StringComparer.Ordinal);
 
         // 别名（/stats→/state）与转发入口（/cloud、:cloud 根命令）不必单独进补全
-        var aliases = new HashSet<string>(["/stats", "/cloud", ":cloud"], StringComparer.Ordinal);
+        var aliases = new HashSet<string>(
+            ["/stats", "/cloud", "/clear", ":cloud"],
+            StringComparer.Ordinal
+        );
         var missing = dispatched
             .Where(c => !suggested.Contains(c) && !aliases.Contains(c))
             .Order(StringComparer.Ordinal)

@@ -369,12 +369,15 @@ public sealed class SessionEngine(
         agent.SessionId = _sessionId;
         todoStore.Reset();
         agent.ReplaceMessages([]);
+        agent.SetContextWindowState(ContextWindowState.First);
         _lastParentEntryId = null;
         _persistedMessageCount = 0;
         _sessionPersistenceFaulted = false;
         _nextOrder = 0;
-        AssertOrderInvariant();
+        _noteScanIndex = 0;
+        _lastExploreDetails = null;
         _inputHistory.Clear();
+        AssertOrderInvariant();
     }
 
     /// <summary>保存当前会话 Todo 快照（切换会话前由宿主调用）。</summary>

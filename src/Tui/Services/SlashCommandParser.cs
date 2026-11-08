@@ -29,6 +29,8 @@ internal static class SlashCommandParser
     internal const string Stats = "/stats"; // /stats 别名 → /state
     internal const string Resume = "/resume"; // 恢复
     internal const string Session = "/session"; // 会话
+    internal const string Novel = "/novel"; // 切换小说项目
+    internal const string Settings = "/settings"; // 系统设置
     internal const string Theme = "/theme"; // 主题
     internal const string Compact = "/compact"; // 压缩
     internal const string Decompress = "/decompress"; // 恢复压缩内容
@@ -65,6 +67,8 @@ internal static class SlashCommandParser
         Unknown,
         Tools,
         Session,
+        Novel,
+        Settings,
         State,
         History,
         Clear,
@@ -225,6 +229,8 @@ internal static class SlashCommandParser
         {
             Tools => SlashCommandKind.Tools,
             Session => SlashCommandKind.Session,
+            Novel => SlashCommandKind.Novel,
+            Settings => SlashCommandKind.Settings,
             State => SlashCommandKind.State,
             History => SlashCommandKind.History,
             Clear => SlashCommandKind.Clear,

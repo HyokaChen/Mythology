@@ -144,6 +144,9 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>/new：请求宿主创建新的对话 VM 并切换（保留旧对话历史）。</summary>
     public event Action? RequestNewConversation;
 
+    /// <summary>/notes：请求宿主打开当前小说的作者随手记窗口。</summary>
+    public event Action? RequestNotes;
+
     /// <summary>当前会话 ID（引擎持有）。</summary>
     public string CurrentConversationId => _engine.SessionId;
 
@@ -192,7 +195,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private static readonly string[] AvailableCommands =
     [
         "/help",
-        "/clear",
+        // /clear 是 /new 的兼容别名，不再进入主补全列表。
         "/state",
         "/history",
         "/tools",
@@ -215,6 +218,8 @@ public sealed class ConversationViewModel : ViewModelBase
         "/resume",
         "/stats",
         "/variants",
+        "/var",
+        "/notes",
         ":cloud sync",
         ":cloud pull",
         ":cloud status",
@@ -338,6 +343,14 @@ public sealed class ConversationViewModel : ViewModelBase
         var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var cmd = parts[0].ToLowerInvariant();
 
+        // /new、/clear 会主动中止当前回合；压缩/模式切换必须等回合结束，避免与流式写回竞争。
+        if (_bridge.IsProcessing && cmd is "/compact" or "/decompress" or "/context" or "/mode")
+        {
+            SystemMessageRequested?.Invoke("Agent 正在生成，先中断当前回合后再执行该命令");
+            CommandExecuted?.Invoke();
+            return true;
+        }
+
         if (cmd == ":cloud")
         {
             RequestCloudColon?.Invoke(parts.Length > 1 ? parts[1].ToLowerInvariant() : "");
@@ -350,10 +363,13 @@ public sealed class ConversationViewModel : ViewModelBase
             case "/help":
                 ShowAbout();
                 break;
-            case "/clear":
-                _ = ClearMessagesAsync();
-                break;
+            case "/clear": // 兼容别名：与 /new 一样进入新会话，不再原地复用当前 VM。
             case "/new":
+                if (parts.Length > 1)
+                {
+                    SystemMessageRequested?.Invoke($"用法: {cmd}（不接受参数）");
+                    break;
+                }
                 RequestNewConversation?.Invoke();
                 break;
             case "/session":
@@ -416,7 +432,11 @@ public sealed class ConversationViewModel : ViewModelBase
                 RequestResume?.Invoke(parts.Length > 1 ? parts[1] : null);
                 break;
             case "/variants":
+            case "/var": // 兼容简写（与 TUI 对齐）
                 RequestReopenVariants?.Invoke();
+                break;
+            case "/notes":
+                RequestNotes?.Invoke();
                 break;
             default:
                 // 未知命令：提示
@@ -803,20 +823,6 @@ public sealed class ConversationViewModel : ViewModelBase
         if (owner is null)
             return;
         new AboutDialog().ShowDialog(owner);
-    }
-
-    /// <summary>清除当前对话（对齐 TUI /clear：等旧 turn 退出后清空 UI + 重置 Agent 上下文）。</summary>
-    private async Task ClearMessagesAsync()
-    {
-        await _bridge.StopAsync();
-        _bridge.Agent.Reset();
-        _engine.NewSession();
-        Messages.Clear();
-        Suggestions.Clear();
-        _agentMessage = null;
-        _handler = null;
-        HasMessages = false;
-        ContextStatsChanged?.Invoke();
     }
 
     /// <summary>显示可用的工具列表（对齐 TUI /tools + ToolsDialog）。</summary>
@@ -1320,7 +1326,14 @@ public sealed class ConversationViewModel : ViewModelBase
         if (text.Length == 0)
             return;
 
-        // Refinement 优先于命令检查（对齐 TUI SubmitInput 顺序：pending 时输入必属修改要求）
+        // 斜杠命令优先于 pending refinement：/new、/clear 等不能被当成修改要求发出去。
+        if (TryExecuteCommand(text))
+        {
+            InputText = "";
+            return;
+        }
+
+        // Refinement 流程：用户正在响应"继续修改"的变体
         if (_pendingRefinement is not null)
         {
             var p = _pendingRefinement;
@@ -1352,13 +1365,6 @@ public sealed class ConversationViewModel : ViewModelBase
         // 普通消息：Agent 处理中不排队（发送按钮此时隐藏，Enter 路径由此守卫兜底）
         if (IsProcessing)
             return;
-
-        // 斜杠命令不进入对话循环（对齐 TUI HandleSlashCommand）
-        if (TryExecuteCommand(text))
-        {
-            InputText = "";
-            return;
-        }
 
         var sent = await InlineEntityReferencesAsync(text);
         PushHistory(text);

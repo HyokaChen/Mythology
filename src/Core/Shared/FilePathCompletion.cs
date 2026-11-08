@@ -10,7 +10,7 @@ public readonly record struct FileEntry(string Name, string FullPath);
 ///
 /// 语义（两端对齐，实体提及一律走 <c>#</c> 引用）：
 /// <list type="bullet">
-///   <item>裸 <c>@</c> → 列出基准目录顶层条目（TUI=CWD，Desktop=小说项目根）</item>
+///   <item>裸 <c>@</c> → 列出基准目录顶层条目（两端=小说工作区 ActiveRoot；绝对路径另走 / 与 ~/）</item>
 ///   <item><c>~/</c> → 用户主目录；<c>/</c> → 绝对路径；其余 → 基准目录相对路径</item>
 ///   <item>目录候选名尾加 <c>/</c>（选中后可继续输入下一级）；文件候选保持原名</item>
 ///   <item>查询词与目录名均可含空格（macOS 常见 <c>My Files/</c> 不应断词）</item>

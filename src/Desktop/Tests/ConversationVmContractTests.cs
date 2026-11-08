@@ -158,6 +158,33 @@ public sealed class ConversationVmContractTests
         Assert.Equal(0, vm.Messages.Count);
     }
 
+    [Fact]
+    public void Clear_Command_IsCompatibilityAliasForNewConversation()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var raised = 0;
+        vm.RequestNewConversation += () => raised++;
+
+        Assert.True(vm.TryExecuteCommand("/clear"));
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void New_Command_RejectsArguments()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var raised = 0;
+        string? notice = null;
+        vm.RequestNewConversation += () => raised++;
+        vm.SystemMessageRequested += text => notice = text;
+
+        Assert.True(vm.TryExecuteCommand("/new extra"));
+        Assert.Equal(0, raised);
+        Assert.Contains("不接受参数", notice);
+    }
+
     /// <summary>
     /// 用户气泡先行契约：SendEnginePromptAsync 必须先插 user 气泡再插 Agent 占位（修复前占位先上屏），
     /// 且 Loop 对同一条消息的 MessageStart 回显被吞（一次性内容匹配），不同文本照常渲染。

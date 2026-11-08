@@ -880,7 +880,7 @@ dotnet publish src/Desktop -c Release -r osx-x64 --self-contained
 | 实体管理 | 命令行 | 右侧 8-Tab 面板 + 动态表单编辑 |
 | 云端登录 | `/login` 命令 | OAuth 回调 + 手动 Key |
 | Markdown 实时渲染 | ❌ | ✅ LiveMarkdown |
-| @ 文件路径补全 | ✅ CWD 导航 | ✅ 项目根导航（含空格路径；`~/`、`/` 绝对入口） |
+| @ 文件路径补全 | ✅ 小说工作区根导航（测试装配无 Workspace 时回退 CWD） | ✅ 小说工作区根导航（含空格路径；`~/`、`/` 绝对入口） |
 | # 实体引用补全 | ✅ 两级（类型 → 名称）+ 内联 ID | ✅ EntityRefParser 两级 + 发送内联 ID |
 | 拖放路径 | ❌ | ✅ |
 | 快捷操作 | ❌ | ✅ 空状态快捷按钮 |

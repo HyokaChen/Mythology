@@ -562,6 +562,7 @@ public sealed partial class TuiApp
         // 否则旧会话的 LLM 调用会继续写回新会话的上下文（数据污染），
         // 且其 TokenUsageEvent 会让 token 显示错误归属到新会话。
         AbortRunningAgent();
+        _isPromptPending = false;
 
         // 会话切换前，将当前会话的任务快照落盘（会话间隔离）
         SaveCurrentSessionTodos();
@@ -633,13 +634,36 @@ public sealed partial class TuiApp
         _nextOrder = 0;
         AssertOrderInvariant();
         _conversationPanel.Clear();
-        // 新会话无历史任务，清空面板（避免残留上个会话的任务）
+        // 新会话无历史任务，清空面板并重置会话内 ID（避免残留上个会话的任务）
         _todoStore.Reset();
         if (novelChanged)
             await RefreshOutline();
+
+        // 清空所有属于上一个会话的 UI/追踪状态：输入历史、变体、待续改、随手记游标、上下文页。
+        _inputHistory.Clear();
+        _promptEditor.SetHistory(_inputHistory);
+        _lastExploreDetails = null;
+        _pendingRefinement = null;
+        _noteScanIndex = 0;
+        _agent.SetContextWindowState(ContextWindowState.First);
+
         // ★ 新建会话：上下文为空，重置 token 显示
         InvalidateContextMeasure();
         UpdateTokenDisplay();
+        ToastService.Success("已新建会话");
+    }
+
+    /// <summary>/new 与 /clear 共用的新会话入口：先保存/中断旧会话，再创建。</summary>
+    private async Task StartNewSessionAsync()
+    {
+        var novelId = _agent.CurrentNovelId;
+        if (string.IsNullOrEmpty(novelId))
+        {
+            ToastService.Warning("当前没有加载小说");
+            return;
+        }
+
+        await OpenNovelAsync(novelId);
     }
 
     /// <summary>

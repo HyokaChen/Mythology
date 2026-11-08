@@ -65,15 +65,17 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     // ── /clear：清空 Agent 上下文 ──
 
     [Fact]
-    public void Clear_ResetsAgentMessages()
+    public async Task Clear_StartsNewSession_AndResetsAgentMessages()
     {
-        H.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, "你好"));
-        H.Agent.AppendMessage(
-            new LlmChatMessage(ChatMessageRoles.Assistant, "你好，我是 Mythology")
-        );
-        Assert.Equal(2, H.Agent.State.Messages.Count);
+        await H.SeedSessionStoreAsync();
+        var before = H.CurrentSessionId;
+        Assert.NotEmpty(H.Agent.State.Messages);
 
         InvokeSlash("/clear");
+        await TuiSlashTestHarness.WaitUntilAsync(
+            () => H.CurrentSessionId != before && H.Agent.State.Messages.Count == 0,
+            "清空并新建会话"
+        );
 
         Assert.Empty(H.Agent.State.Messages);
     }
@@ -88,6 +90,17 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
 
         Assert.Equal(TuiSlashTestHarness.NovelId, H.Agent.CurrentNovelId);
         Assert.Empty(H.Agent.State.Messages);
+    }
+
+    [Fact]
+    public async Task New_RejectsArguments()
+    {
+        await H.SeedSessionStoreAsync();
+        var before = H.CurrentSessionId;
+
+        InvokeSlash("/new extra");
+
+        Assert.Equal(before, H.CurrentSessionId);
     }
 
     // ── /logout 与 :cloud logout：清除云端凭据（含死代码修复回归） ──

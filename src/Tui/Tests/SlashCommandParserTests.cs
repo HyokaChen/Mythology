@@ -27,6 +27,8 @@ public sealed class SlashCommandParserTests
     [InlineData("/stats", "Stats")] // 别名 → /state
     [InlineData("/resume", "Resume")]
     [InlineData("/session", "Session")]
+    [InlineData("/novel", "Novel")]
+    [InlineData("/settings", "Settings")]
     [InlineData("/theme", "Theme")]
     [InlineData("/compact", "Compact")]
     [InlineData("/decompress", "Decompress")]

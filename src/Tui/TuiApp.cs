@@ -958,18 +958,10 @@ public sealed partial class TuiApp : IDisposable
     // ── 操作辅助方法 ──
 
     /// <summary>
-    /// 清除当前对话：重置 Agent 上下文、token 显示和对话面板。
+    /// /clear 兼容入口：与 /new 一样进入新会话（新 sessionId、重置持久化追踪）。
+    /// 旧会话保留在 /session 列表。
     /// </summary>
-    private void ClearConversation()
-    {
-        _agent.Reset();
-        // ★ 上下文已清空：token 显示重置为 0 / 窗口
-        InvalidateContextMeasure();
-        UpdateTokenDisplay();
-        _conversationPanel.Clear();
-        _statusBar.SetAgentState(TuiState.Idle);
-        ToastService.Info("已清除");
-    }
+    private void ClearConversation() => _ = StartNewSessionAsync();
 
     /// <summary>
     /// 中断运行中的 Agent：中止 LLM 调用、清空 UI 事件队列和等待占位。

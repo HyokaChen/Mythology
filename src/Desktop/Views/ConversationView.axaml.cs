@@ -282,36 +282,37 @@ public partial class ConversationView : UserControl
         var text = InputBox.Text ?? "";
         var caret = InputBox.CaretIndex;
 
-        var trimmed = text.TrimStart();
-        var isCommand =
-            (trimmed.StartsWith('/') || trimmed.StartsWith(':')) && !text.Contains('\n');
-        if (isCommand)
-        {
-            // 斜杠/冒号命令补全优先于 @ / # 补全
-            vm.IsSuggestionPopupVisible = false;
-            vm.UpdateCommandSuggestions(text);
-            return;
-        }
-
-        // 关闭命令补全（非斜杠输入）
-        vm.IsCommandPopupVisible = false;
-
-        // # 实体引用优先（与 TUI TriggerCompletion 的判定顺序一致）
+        // 当前光标 token 优先：# / @ / slash。斜杠命令不能吞掉正在输入的 @path；
+        // 例如 "/new @src/Desktop/" 应展示文件补全，而不是静默执行 /new 丢弃参数。
         var entityRef = EntityRefParser.TryParse(text, caret);
         if (entityRef.Stage != EntityRefParser.Stage.None)
         {
+            vm.IsCommandPopupVisible = false;
             _ = vm.UpdateEntityRefSuggestionsAsync(entityRef);
             return;
         }
 
         var mention = MentionParser.TryGetMention(text, caret);
-        if (!mention.Found)
+        if (mention.Found)
         {
-            vm.IsSuggestionPopupVisible = false;
+            vm.IsCommandPopupVisible = false;
+            _ = vm.UpdateMentionSuggestionsAsync(mention.Query);
             return;
         }
 
-        _ = vm.UpdateMentionSuggestionsAsync(mention.Query);
+        var trimmed = text.TrimStart();
+        var isCommand =
+            (trimmed.StartsWith('/') || trimmed.StartsWith(':')) && !text.Contains('\n');
+        if (isCommand)
+        {
+            vm.IsSuggestionPopupVisible = false;
+            vm.UpdateCommandSuggestions(text);
+            return;
+        }
+
+        // 非命令、非 @/#：关闭两个补全弹窗。
+        vm.IsCommandPopupVisible = false;
+        vm.IsSuggestionPopupVisible = false;
     }
 
     /// <summary>插入选中命令到输入框（按 VM 给出的替换区间；命令级补空格、/tools 插件级补冒号）。</summary>

@@ -238,6 +238,21 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
+    public void AtToken_TakesPrecedenceOverSlashCommandCompletion()
+    {
+        RunWithInput(
+            "/new @序",
+            (_, _) =>
+            {
+                // 命令不能吞掉 @ token；/new 带参数时 Enter 会拒绝执行（不会丢输入）。
+                Assert.True(_vm.IsSuggestionPopupVisible);
+                Assert.False(_vm.IsCommandPopupVisible);
+                Assert.Contains(_vm.Suggestions, s => s.Name == "序章.txt");
+            }
+        );
+    }
+
+    [Fact]
     public void ManyMessages_UseVirtualizingPanel_NotAllContainersRealized()
     {
         Ui.Run(() =>

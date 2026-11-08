@@ -39,13 +39,15 @@ public sealed partial class TuiApp
             SlashCommandParser.Help,
             SlashCommandParser.State,
             SlashCommandParser.History,
-            SlashCommandParser.Clear,
+            // /clear 是 /new 的兼容别名，不再进入主补全列表。
             SlashCommandParser.New,
             $"{SlashCommandParser.Theme} {SlashCommandParser.ThemeToggle}",
             SlashCommandParser.Tools,
             // /stats 已合并入 /state，不再单独列出
             SlashCommandParser.Resume,
             SlashCommandParser.Session,
+            SlashCommandParser.Novel,
+            SlashCommandParser.Settings,
             SlashCommandParser.Compact,
             SlashCommandParser.Decompress,
             SlashCommandParser.Tree,
@@ -70,6 +72,19 @@ public sealed partial class TuiApp
         return cmds.AsReadOnly();
     }
 
+    /// <summary>系统设置对话框（Ctrl+P / /settings 共用入口）。</summary>
+    private void ShowSettingsDialog() =>
+        new SettingsDialog(
+            _settingsService,
+            _registry,
+            ReloadProvider,
+            ReloadEmbedding,
+            ReloadSystemOne,
+            SyncPluginState,
+            RemovePlugin,
+            _contextModeSwitcher
+        ).Show();
+
     /// <summary>
     /// 注册全局快捷键命令：Ctrl+P 设置、Ctrl+H 帮助、Ctrl+O 项目、Ctrl+E 会话、
     /// Ctrl+L 清屏、Ctrl+S 中断、Ctrl+T 主题，以及状态/历史/分支树面板命令。
@@ -84,17 +99,7 @@ public sealed partial class TuiApp
                 LabelMarkup = "[primary]🔧 系统设置[/]",
                 Gesture = new KeyGesture(TerminalChar.CtrlP, TerminalModifiers.Ctrl),
                 Presentation = CommandPresentation.CommandPalette,
-                Execute = _ =>
-                    new SettingsDialog(
-                        _settingsService,
-                        _registry,
-                        ReloadProvider,
-                        ReloadEmbedding,
-                        ReloadSystemOne,
-                        SyncPluginState,
-                        RemovePlugin,
-                        _contextModeSwitcher
-                    ).Show(),
+                Execute = _ => ShowSettingsDialog(),
             }
         );
         _rootVisual.AddCommand(
@@ -135,7 +140,7 @@ public sealed partial class TuiApp
             {
                 Id = "App.Clear",
                 Name = "clear",
-                LabelMarkup = "[primary]🧹 清屏[/]",
+                LabelMarkup = "[primary]新建会话（/clear 兼容）[/]",
                 Gesture = new KeyGesture(TerminalChar.CtrlL, TerminalModifiers.Ctrl),
                 Presentation = CommandPresentation.CommandPalette,
                 Execute = _ => ClearConversation(),
@@ -265,19 +270,29 @@ public sealed partial class TuiApp
             | `/commands` | — | 显示此帮助 |
             | `/help` | — | 关于 Mythology |
             | `/state` | — | Agent 状态 + 工具统计 + 写作统计 |
-            | `/clear` | — | 清屏 |
-            | `/new` | — | 在当前小说下新建会话 |
+            | `/history` | — | 查看对话历史 |
+            | `/new` | — | 在当前小说下新建会话（`/clear` 兼容别名） |
             | `/theme` | `[dark/light/toggle]` | 切换主题 |
             | `/tools` | `[插件名]` | 列出工具分组或展开插件 |
 
             | `/resume` | `<novelId>` | 恢复会话 |
             | `/session` | — | 切换会话 |
+            | `/novel` | — | 切换小说项目 |
+            | `/settings` | — | 打开系统设置 |
             | `/compact` | `[keepRecent]` | 压缩历史（保留最近 N 条，默认 20） |
             | `/decompress` | `[blockId]` | 恢复被压缩的对话原文 |
             | `/context` | `[compact/continuation]` | 上下文管理模式（立即生效，无需重启） |
+            | `/tree` | — | 对话分支树导航 |
+            | `/mode` | — | 增强模式（手动 / 半自动 / 全自动） |
+            | `/notes` | — | 作者随手记（确认候选 / 查看 / 编辑） |
             | `/read` | `<序号\|ID\|标题片段>` | 只读章节阅读器（细纲 + 正文） |
             | `/chapter` | `<序号\|ID\|标题片段>` | 在大纲面板定位章节 |
             | `/search` | `<关键字>` | 全书检索（正文/细纲/标题，Enter 打开该章） |
+            | `/login` | — | 云端登录 |
+            | `/logout` | — | 云端登出 |
+            | `/cloud` | — | 云端登录（兼容别名） |
+            | `/wechat` | `[bind/status/unbind]` | 微信绑定 |
+            | `:cloud` | `sync/sync all/pull/status/login/logout` | 云端命令 |
 
             ---
             **工具执行**: `/tools <插件名>:<工具名> <JSON参数>`
@@ -314,13 +329,32 @@ public sealed partial class TuiApp
         if (parts.Length == 0)
             return; // 空输入不路由（防御：正常路径不会到达）
 
-        switch (SlashCommandParser.MapCommand(parts[0]))
+        var kind = SlashCommandParser.MapCommand(parts[0]);
+        if (
+            _agent.IsRunning
+            && kind
+                is SlashCommandParser.SlashCommandKind.Compact
+                    or SlashCommandParser.SlashCommandKind.Decompress
+                    or SlashCommandParser.SlashCommandKind.Context
+        )
+        {
+            ToastService.Warning("Agent 正在生成，先按 Esc 中断后再执行该命令");
+            return;
+        }
+
+        switch (kind)
         {
             case SlashCommandParser.SlashCommandKind.Tools:
                 HandleToolsCommand(parts);
                 break;
             case SlashCommandParser.SlashCommandKind.Session:
                 ShowSessionPickerDialog();
+                break;
+            case SlashCommandParser.SlashCommandKind.Novel:
+                ShowNovelProjectDialog();
+                break;
+            case SlashCommandParser.SlashCommandKind.Settings:
+                ShowSettingsDialog();
                 break;
             case SlashCommandParser.SlashCommandKind.State:
             case SlashCommandParser.SlashCommandKind.Stats: // /stats 别名 → 合并到 /state
@@ -330,13 +364,14 @@ public sealed partial class TuiApp
                 ShowHistoryDialog();
                 break;
             case SlashCommandParser.SlashCommandKind.Clear:
-                ClearConversation();
-                break;
             case SlashCommandParser.SlashCommandKind.New:
-                if (string.IsNullOrEmpty(_agent.CurrentNovelId))
-                    ToastService.Warning("当前没有加载小说");
-                else
-                    _ = OpenNovelAsync(_agent.CurrentNovelId);
+                // /clear 是兼容别名：两者都开新会话并重置持久化追踪。
+                if (parts.Length > 1)
+                {
+                    ToastService.Info($"用法: {parts[0]}（不接受参数）");
+                    break;
+                }
+                _ = StartNewSessionAsync();
                 break;
             case SlashCommandParser.SlashCommandKind.Resume:
             {
