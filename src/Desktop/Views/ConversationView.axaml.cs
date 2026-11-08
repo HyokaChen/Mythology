@@ -29,6 +29,10 @@ public partial class ConversationView : UserControl
         // 键盘导航时让选中项保持可见（长列表不丢失视野）
         SuggestionList.SelectionChanged += (_, _) => ScrollSelectionIntoView(SuggestionList);
         CommandList.SelectionChanged += (_, _) => ScrollSelectionIntoView(CommandList);
+        // 弹窗打开时列表可能尚未生成容器，SelectedIndex 绑定会停在 -1。
+        // 打开后显式选中首项，保证 / 与 # 弹窗默认高亮第一行。
+        SuggestionPopup.Opened += (_, _) => SelectFirstSuggestion();
+        CommandPopup.Opened += (_, _) => SelectFirstCommand();
     }
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
@@ -69,6 +73,30 @@ public partial class ConversationView : UserControl
             list.ScrollIntoView(index);
     }
 
+    /// <summary>弹窗打开后默认高亮首项（列表容器此时才完成生成）。</summary>
+    private void SelectFirstSuggestion()
+    {
+        var vm = Vm;
+        if (vm is null || vm.Suggestions.Count == 0)
+            return;
+        if (vm.SelectedSuggestionIndex != 0)
+            vm.SelectedSuggestionIndex = 0;
+        SuggestionList.SelectedIndex = 0;
+        SuggestionList.ScrollIntoView(0);
+    }
+
+    /// <summary>命令弹窗打开后默认高亮首个命令。</summary>
+    private void SelectFirstCommand()
+    {
+        var vm = Vm;
+        if (vm is null || vm.CommandSuggestions.Count == 0)
+            return;
+        if (vm.SelectedCommandIndex != 0)
+            vm.SelectedCommandIndex = 0;
+        CommandList.SelectedIndex = 0;
+        CommandList.ScrollIntoView(0);
+    }
+
     /// <summary>空状态快捷操作：预填输入框（发送由用户确认）。</summary>
     private void QuickAction_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -96,10 +124,11 @@ public partial class ConversationView : UserControl
     /// </summary>
     private void InputBox_OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter || !InputBox.IsFocused)
+        var vm = Vm;
+        if (vm is null)
             return;
 
-        // 中文输入法组合中（拼音未上屏）Enter 属于输入法确认，不能发送
+        // 中文输入法组合中（拼音未上屏）方向键属于候选词导航、Enter 属于确认，不能抢
         if (
             InputBox
                 .GetVisualDescendants()
@@ -108,22 +137,16 @@ public partial class ConversationView : UserControl
         )
             return;
 
-        var vm = Vm;
-        if (vm is null)
+        // 弹窗导航必须在 TextBox 自己的 KeyDown 之前消费；否则多行输入会把
+        // Up/Down 当成光标移动，弹窗永远收不到。
+        if (TryHandlePopupKey(vm, e))
+        {
+            e.Handled = true;
             return;
+        }
 
-        if (vm.IsCommandPopupVisible)
-        {
-            InsertSelectedCommand(vm);
-            e.Handled = true;
+        if (e.Key != Key.Enter || !InputBox.IsFocused)
             return;
-        }
-        if (vm.IsSuggestionPopupVisible)
-        {
-            InsertSelectedSuggestion(vm);
-            e.Handled = true;
-            return;
-        }
 
         // 仅无修饰键发送；Shift/Ctrl/Alt+Enter 留给 TextBox 插入换行
         if (e.KeyModifiers != KeyModifiers.None)
@@ -140,65 +163,72 @@ public partial class ConversationView : UserControl
         e.Handled = true;
     }
 
+    /// <summary>
+    /// 弹窗打开时消费 Enter / Up / Down / Tab / Esc。
+    /// 返回 true 表示按键已归弹窗所有。
+    /// </summary>
+    private bool TryHandlePopupKey(ConversationViewModel vm, KeyEventArgs e)
+    {
+        if (vm.IsCommandPopupVisible)
+        {
+            switch (e.Key)
+            {
+                case Key.Down:
+                    if (vm.CommandSuggestions.Count > 0)
+                        vm.SelectedCommandIndex = Math.Min(
+                            vm.SelectedCommandIndex + 1,
+                            vm.CommandSuggestions.Count - 1
+                        );
+                    return true;
+                case Key.Up:
+                    if (vm.CommandSuggestions.Count > 0)
+                        vm.SelectedCommandIndex = Math.Max(vm.SelectedCommandIndex - 1, 0);
+                    return true;
+                case Key.Tab:
+                case Key.Enter:
+                    InsertSelectedCommand(vm);
+                    return true;
+                case Key.Escape:
+                    vm.IsCommandPopupVisible = false;
+                    return true;
+            }
+        }
+
+        if (vm.IsSuggestionPopupVisible)
+        {
+            switch (e.Key)
+            {
+                case Key.Down:
+                    if (vm.Suggestions.Count > 0)
+                        vm.SelectedSuggestionIndex = Math.Min(
+                            vm.SelectedSuggestionIndex + 1,
+                            vm.Suggestions.Count - 1
+                        );
+                    return true;
+                case Key.Up:
+                    if (vm.Suggestions.Count > 0)
+                        vm.SelectedSuggestionIndex = Math.Max(vm.SelectedSuggestionIndex - 1, 0);
+                    return true;
+                case Key.Tab:
+                case Key.Enter:
+                    InsertSelectedSuggestion(vm);
+                    return true;
+                case Key.Escape:
+                    vm.IsSuggestionPopupVisible = false;
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     private void InputBox_OnKeyDown(object? sender, KeyEventArgs e)
     {
         var vm = Vm;
         if (vm is null)
             return;
 
-        // 斜杠命令补全弹窗打开时：方向键 / Tab / Esc 由弹窗消费（Enter 在隧道处理器中）
-        if (vm.IsCommandPopupVisible)
-        {
-            switch (e.Key)
-            {
-                case Key.Down:
-                    vm.SelectedCommandIndex = Math.Min(
-                        vm.SelectedCommandIndex + 1,
-                        vm.CommandSuggestions.Count - 1
-                    );
-                    e.Handled = true;
-                    return;
-                case Key.Up:
-                    vm.SelectedCommandIndex = Math.Max(vm.SelectedCommandIndex - 1, 0);
-                    e.Handled = true;
-                    return;
-                case Key.Tab:
-                    InsertSelectedCommand(vm);
-                    e.Handled = true;
-                    return;
-                case Key.Escape:
-                    vm.IsCommandPopupVisible = false;
-                    e.Handled = true;
-                    return;
-            }
-        }
-
-        // 输入补全弹窗打开时：方向键 / Tab / Esc 由弹窗消费（Enter 在隧道处理器中）
-        if (vm.IsSuggestionPopupVisible)
-        {
-            switch (e.Key)
-            {
-                case Key.Down:
-                    vm.SelectedSuggestionIndex = Math.Min(
-                        vm.SelectedSuggestionIndex + 1,
-                        vm.Suggestions.Count - 1
-                    );
-                    e.Handled = true;
-                    return;
-                case Key.Up:
-                    vm.SelectedSuggestionIndex = Math.Max(vm.SelectedSuggestionIndex - 1, 0);
-                    e.Handled = true;
-                    return;
-                case Key.Tab:
-                    InsertSelectedSuggestion(vm);
-                    e.Handled = true;
-                    return;
-                case Key.Escape:
-                    vm.IsSuggestionPopupVisible = false;
-                    e.Handled = true;
-                    return;
-            }
-        }
+        // 弹窗内的导航键已在隧道处理器中消费；这里只处理无弹窗时的历史/中断。
 
         // 输入历史导航：无弹窗 + 无多行 + 仅方向键（对齐 TUI 上下键历史）
         if (e.Key is Key.Up or Key.Down && InputBox.Text?.Contains('\n') != true)

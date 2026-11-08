@@ -202,4 +202,67 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             }
         );
     }
+
+    [Fact]
+    public void Hash_PopupStartsAtFirstSuggestion_AndArrowKeysDoNotMoveCaret()
+    {
+        RunWithInput(
+            "第一行\n第二行 #",
+            (view, input) =>
+            {
+                input.Focus();
+                Assert.True(_vm.IsSuggestionPopupVisible, "# 未打开实体引用弹窗");
+
+                var list = view.FindControl<ListBox>("SuggestionList");
+                Assert.NotNull(list);
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+                Assert.Equal(0, list!.SelectedIndex);
+
+                var caret = input.CaretIndex;
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+                );
+                // 多行输入里 Up 必须先被弹窗消费，不能把光标移到上一行
+                Assert.Equal(caret, input.CaretIndex);
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(caret, input.CaretIndex);
+                Assert.Equal(1, _vm.SelectedSuggestionIndex);
+            }
+        );
+    }
+
+    [Fact]
+    public void Slash_PopupStartsAtFirstCommand_AndArrowKeysNavigate()
+    {
+        RunWithInput(
+            "/",
+            (view, input) =>
+            {
+                input.Focus();
+                PumpUntil(
+                    () => _vm.IsCommandPopupVisible && _vm.CommandSuggestions.Count > 0,
+                    "斜杠命令弹窗"
+                );
+
+                var list = view.FindControl<ListBox>("CommandList");
+                Assert.NotNull(list);
+                Assert.Equal(0, _vm.SelectedCommandIndex);
+                Assert.Equal(0, list!.SelectedIndex);
+
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(1, _vm.SelectedCommandIndex);
+
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+                );
+                Assert.Equal(0, _vm.SelectedCommandIndex);
+            }
+        );
+    }
 }
