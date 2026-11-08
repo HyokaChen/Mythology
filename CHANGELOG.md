@@ -97,12 +97,20 @@
   `AutoScrollItemsControl` 加了 `VirtualizingStackPanel`。虚拟化下 `ScrollViewer.Extent`
   是估算值：`ScrollToEnd()` 只到估算底部，随后 extent 校正产生的 **offset 负增量**被
   `OnScrollChanged` 当成「用户上滚」而永久关闭跟随——恢复会话/发消息停在中间，流式
-  增长时反复校正也带出滚动闪烁。对话行含 Markdown、高度差异大，虚拟化估算本身也不准。
-  修法：① 移除对话列表的 `VirtualizingStackPanel`（回到普通 `StackPanel`）；
+  增长时反复校正也带出滚动闪烁。对话行含 Markdown、高度差异大，虚拟化估算本身也不准
+  （实测 2000 条时 `ScrollToEnd` 的估算在 404k～747k px 之间来回振荡，`ScrollIntoView`
+  也无法稳定对齐到底部），因此不能只靠修 `ScrollToEnd`。
+  修法（窗口化 + 输入意图）：
+  ① 对话区只渲染**尾部 40 条**，滚到顶部自动向前补一页并保持视口锚点；源 `Messages`
+  仍保留全部历史（LLM/持久化不受影响）。普通 `StackPanel` 精确测量，自动贴底可靠；
+  2000 条实测初始 `~0.7–1.0s / ~50MB`（全量渲染为 `5–9s / 800–970MB`），`/new` 约
+  `25–65ms`，批量恢复（Clear + 2000 Add）合并成一次刷新。
   ② `AutoScrollItemsControl` 的「停止跟随」只认用户输入意图（滚轮上滚 / Up·PageUp·Home /
-  拖动滚动条），不再用 offset 负增量判断；投递执行的追底回调在执行时二次检查跟随状态。
-  回归：`ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`（架构锁 + 初始/发消息后贴底）
-  与 `WheelUp_StopsFollow_UntilUserReturnsToBottom`（上滚停跟随、回底恢复）。
+  拖动滚动条），不再用 offset 负增量判断；投递执行的追底回调在执行时二次检查跟随状态，
+  并合并同帧多次追底。
+  回归：`ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`（架构锁 + 初始/发消息后贴底）、
+  `WheelUp_StopsFollow_UntilUserReturnsToBottom`（上滚停跟随、回底恢复）、
+  `LargeConversation_RendersTailWindow_AndLoadsEarlier`（2000 条：尾部窗口/贴底/补页锚点/批量恢复）。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

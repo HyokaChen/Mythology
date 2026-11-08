@@ -26,6 +26,7 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _autoFollow = true;
     private bool _suppressAutoScroll;
     private bool _scrollBarDragging;
+    private bool _followPostPending;
     private DispatcherTimer? _scrollTimer;
     private double _scrollFrom;
     private double _scrollTo;
@@ -44,7 +45,7 @@ public class AutoScrollItemsControl : ItemsControl
         Items.CollectionChanged += (_, _) =>
         {
             if (_autoFollow && !_suppressAutoScroll)
-                Dispatcher.UIThread.Post(FollowTailIfEnabled, DispatcherPriority.Background);
+                ScheduleFollowTail();
         };
     }
 
@@ -53,6 +54,17 @@ public class AutoScrollItemsControl : ItemsControl
 
     /// <summary>用户上滚（停止跟随）。</summary>
     public event Action? AutoFollowChanged;
+
+    /// <summary>当前是否处于「跟随尾部」状态（窗口化渲染据它决定是否裁掉最旧的可视消息）。</summary>
+    public bool IsFollowing => _autoFollow;
+
+    /// <summary>会话/数据源切换：恢复跟随并滚到底部（新会话不允许继承上一会话的暂停跟随）。</summary>
+    public void ResetFollow()
+    {
+        _autoFollow = true;
+        StopScrollAnimation();
+        Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
+    }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
@@ -250,7 +262,7 @@ public class AutoScrollItemsControl : ItemsControl
             && e.ExtentDelta.Y > 0
             && _scrollViewer.Offset.Y + e.ExtentDelta.Y >= maxOffset - 8
         )
-            Dispatcher.UIThread.Post(FollowTailIfEnabled, DispatcherPriority.Background);
+            ScheduleFollowTail();
 
         // 用户拖动滚动条上移 → 停止跟随。
         // 注意：不能对所有 offset 负增量停跟随——布局校正（内容变矮/虚拟化估算）
@@ -270,6 +282,22 @@ public class AutoScrollItemsControl : ItemsControl
         // 用户滚到顶部 → 触发历史加载（程序化归零不算）
         if (!_autoFollow && e.OffsetDelta.Y < 0 && _scrollViewer.Offset.Y <= 0)
             ScrolledToTop?.Invoke();
+    }
+
+    /// <summary>把多次追底请求合并成一帧一次；执行时再确认用户仍在跟随。</summary>
+    private void ScheduleFollowTail()
+    {
+        if (_followPostPending)
+            return;
+        _followPostPending = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _followPostPending = false;
+                FollowTailIfEnabled();
+            },
+            DispatcherPriority.Background
+        );
     }
 
     /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>

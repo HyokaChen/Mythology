@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -14,9 +16,27 @@ namespace Desktop.Views;
 
 public partial class ConversationView : UserControl
 {
+    /// <summary>
+    /// 对话区只渲染尾部窗口。2000 条消息的历史每个 Markdown 行约 1MB 视觉树，
+    /// 全量渲染会吃 GB 级内存并让 /new 拆 2000 个容器；这里固定只保留尾部 N 条，
+    /// 滚到顶部时再向前加载（保留视口锚点）。窗口内的行是普通 StackPanel 测量，
+    /// ScrollViewer.Extent 精确，自动贴底才可靠。
+    /// </summary>
+    private const int RenderWindowSize = 40;
+
+    private readonly ObservableCollection<ChatMessage> _visibleMessages = [];
+    private ConversationViewModel? _messagesVm;
+    private int _windowStart;
+    private bool _windowExpanded;
+    private bool _bulkRestore;
+    private bool _refreshScheduled;
+    private bool _loadingEarlier;
+
     public ConversationView()
     {
         InitializeComponent();
+        MessageList.ItemsSource = _visibleMessages;
+        MessageList.ScrolledToTop += MessageList_OnScrolledToTop;
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -34,9 +54,10 @@ public partial class ConversationView : UserControl
         // 打开后显式选中首项，保证 / 与 # 弹窗默认高亮第一行。
         SuggestionPopup.Opened += (_, _) => SelectFirstSuggestion();
         CommandPopup.Opened += (_, _) => SelectFirstCommand();
-        // 会话切换 / /new 后数据上下文换新 VM：整页滑入，避免无反馈的硬切。
+        // 会话切换 / /new 后数据上下文换新 VM：先重挂消息窗口，再整页滑入。
         DataContextChanged += (_, _) =>
         {
+            AttachMessageSource();
             if (!IsLoaded || DataContext is not ConversationViewModel)
                 return;
             Dispatcher.UIThread.Post(
@@ -48,6 +69,187 @@ public partial class ConversationView : UserControl
     }
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
+
+    // ── 消息窗口（尾部 N 条 + 向上加载） ─────────────────────────────
+
+    /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged，窗口先落到最新一页。</summary>
+    private void AttachMessageSource()
+    {
+        var vm = DataContext as ConversationViewModel;
+        if (ReferenceEquals(vm, _messagesVm))
+            return;
+
+        if (_messagesVm is not null)
+            _messagesVm.Messages.CollectionChanged -= OnMessagesChanged;
+
+        _messagesVm = vm;
+        _bulkRestore = false;
+        _loadingEarlier = false;
+        if (_messagesVm is not null)
+            _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
+
+        RebuildWindowToTail();
+    }
+
+    private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_messagesVm is null)
+            return;
+
+        switch (e.Action)
+        {
+            case NotifyCollectionChangedAction.Add when e.NewItems is not null:
+                // Clear + 批量 Add 的会话恢复：等整批落完再一次性取尾部窗口，
+                // 避免逐条 Add/Trim 触发 2000 次容器与布局更新。
+                if (_bulkRestore)
+                    return;
+                AppendWindowMessages(e);
+                break;
+            case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                RemoveWindowMessages(e);
+                break;
+            case NotifyCollectionChangedAction.Reset:
+                _bulkRestore = true;
+                ScheduleWindowRefresh();
+                break;
+            default:
+                ScheduleWindowRefresh();
+                break;
+        }
+    }
+
+    private void AppendWindowMessages(NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is null || _messagesVm is null)
+            return;
+
+        var windowEnd = _windowStart + _visibleMessages.Count;
+        if (e.NewStartingIndex < windowEnd)
+        {
+            // 插到已渲染窗口之前/中间（正常路径只有尾部 Add）：整体重建，
+            // 保证 _visibleMessages 始终是源集合的连续后缀。
+            ScheduleWindowRefresh();
+            return;
+        }
+
+        foreach (var item in e.NewItems)
+        {
+            if (item is ChatMessage message)
+                _visibleMessages.Add(message);
+        }
+
+        // 跟随尾部时维持固定窗口：多余的最旧行从头部丢弃（视口在底部，不会看到位移）。
+        if (_windowExpanded || !MessageList.IsFollowing)
+            return;
+
+        while (_visibleMessages.Count > RenderWindowSize)
+        {
+            _visibleMessages.RemoveAt(0);
+            _windowStart++;
+        }
+    }
+
+    private void RemoveWindowMessages(NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is null)
+            return;
+
+        for (var i = 0; i < e.OldItems.Count; i++)
+        {
+            if (e.OldItems[i] is not ChatMessage message)
+                continue;
+
+            var visibleIndex = _visibleMessages.IndexOf(message);
+            if (visibleIndex >= 0)
+                _visibleMessages.RemoveAt(visibleIndex);
+            else if (e.OldStartingIndex >= 0 && e.OldStartingIndex + i < _windowStart)
+                _windowStart--;
+        }
+    }
+
+    /// <summary>合并批量刷新：Reset / 非尾部变更时只重建一次窗口。</summary>
+    private void ScheduleWindowRefresh()
+    {
+        if (_refreshScheduled)
+            return;
+
+        _refreshScheduled = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _refreshScheduled = false;
+                _bulkRestore = false;
+                RebuildWindowToTail();
+            },
+            DispatcherPriority.Background
+        );
+    }
+
+    /// <summary>窗口重置为最新一页（会话恢复 / /new / 分支切换）。</summary>
+    private void RebuildWindowToTail()
+    {
+        MessageList.ResetFollow();
+        _windowExpanded = false;
+
+        if (_messagesVm is null)
+        {
+            _windowStart = 0;
+            _visibleMessages.Clear();
+            return;
+        }
+
+        var total = _messagesVm.Messages.Count;
+        _windowStart = Math.Max(0, total - RenderWindowSize);
+        _visibleMessages.Clear();
+        for (var i = _windowStart; i < total; i++)
+            _visibleMessages.Add(_messagesVm.Messages[i]);
+    }
+
+    /// <summary>用户滚到顶部：向前补一页；视口锚点按新增内容高度下移。</summary>
+    private void MessageList_OnScrolledToTop()
+    {
+        if (_loadingEarlier || _messagesVm is null || _windowStart <= 0)
+            return;
+
+        var take = Math.Min(RenderWindowSize, _windowStart);
+        var scroll = FindMessageScrollViewer();
+        var beforeOffset = scroll?.Offset.Y ?? 0;
+        var beforeExtent = scroll?.Extent.Height ?? 0;
+
+        _loadingEarlier = true;
+        _windowExpanded = true;
+        _windowStart -= take;
+        for (var i = 0; i < take; i++)
+            _visibleMessages.Insert(i, _messagesVm.Messages[_windowStart + i]);
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                try
+                {
+                    var sv = FindMessageScrollViewer();
+                    if (sv is null)
+                        return;
+                    var addedHeight = sv.Extent.Height - beforeExtent;
+                    if (addedHeight > 0.5)
+                        sv.Offset = sv.Offset.WithY(beforeOffset + addedHeight);
+                }
+                finally
+                {
+                    _loadingEarlier = false;
+                }
+            },
+            // Background 在布局/渲染之后：Extent 已包含新插入的整页，
+            // 用它的增量才能把视口锚点精确落在原内容上。
+            DispatcherPriority.Background
+        );
+    }
+
+    private ScrollViewer? FindMessageScrollViewer() =>
+        MessageList
+            .GetVisualDescendants()
+            .OfType<ScrollViewer>()
+            .FirstOrDefault(s => s.Name == "PART_ScrollViewer");
 
     /// <summary>展开/收起步骤详情（思考全文、完整参数与结果）。</summary>
     private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
@@ -171,6 +373,9 @@ public partial class ConversationView : UserControl
             return;
         }
 
+        // 发送后回到最新内容：用户可能刚在历史里翻看，回车发送应看到自己刚发的消息，
+        // 并让本轮流式输出继续跟随到底部。
+        MessageList.ResetFollow();
         vm.SendMessageCommand.Execute().Subscribe();
         e.Handled = true;
     }

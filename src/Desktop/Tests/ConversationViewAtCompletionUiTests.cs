@@ -389,6 +389,95 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// 2000 条消息的会话：只渲染尾部 40 条（每条约 1MB 视觉树，全量会吃 GB 级内存），
+    /// 自动贴底；滚到顶部自动补一页并保持视口锚点；Clear + 批量恢复后仍是尾部窗口。
+    /// </summary>
+    [Fact]
+    public void LargeConversation_RendersTailWindow_AndLoadsEarlier()
+    {
+        Ui.Run(() =>
+        {
+            void AddHistory(int count, string tag)
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var message = new Desktop.Models.ChatMessage(
+                        i % 2 == 0
+                            ? Desktop.Models.MessageSender.User
+                            : Desktop.Models.MessageSender.Agent
+                    );
+                    message.AppendContent(
+                        $"{tag} {i} " + string.Join(" ", Enumerable.Repeat("正文内容", 20))
+                    );
+                    _vm.Messages.Add(message);
+                }
+                _vm.HasMessages = true;
+            }
+
+            AddHistory(2000, "历史");
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = list.GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .First(s => s.Name == "PART_ScrollViewer");
+
+                PumpUntil(
+                    () => list.Items.Count == 40 && AtBottom(sv),
+                    "2000 条时只渲染尾部窗口并贴底"
+                );
+                Assert.Equal(40, list.Items.Count);
+
+                // 跟随状态下追加：窗口保持 40，继续贴底
+                _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
+                PumpUntil(() => AtBottom(sv), "新增消息后贴底");
+                Assert.Equal(40, list.Items.Count);
+
+                // 上滚到顶 → 自动补一页，视口锚点保持（offset 不应停在 0）
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "滚轮上滚应停跟随");
+                sv.Offset = new Vector(0, 0);
+                PumpUntil(() => list.Items.Count == 80, "滚到顶部自动加载更早一页");
+                Assert.True(sv.Offset.Y > 0, "加载更早一页后视口锚点丢失");
+
+                // 同一 VM 上 Clear + 批量 Add（会话切换/恢复的真实形态）
+                _vm.Messages.Clear();
+                AddHistory(2000, "恢复");
+                PumpUntil(
+                    () => list.Items.Count == 40 && AtBottom(sv),
+                    "批量恢复后回到尾部窗口并贴底"
+                );
+
+                // 数据上下文卸载/重挂（会话切换的 UI 形态）仍回到尾部窗口
+                view.DataContext = null;
+                PumpUntil(() => list.Items.Count == 0, "清空数据上下文");
+                view.DataContext = _vm;
+                PumpUntil(
+                    () => list.Items.Count == 40 && AtBottom(sv),
+                    "重挂数据上下文后回到尾部窗口"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static bool AtBottom(ScrollViewer scroll) =>
         scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;
 
