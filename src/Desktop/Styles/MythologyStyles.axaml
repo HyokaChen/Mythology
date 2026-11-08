@@ -760,20 +760,20 @@
   </Style>
 
   <!-- 提示气泡：Style.Animations 每次附加播一次，故只在新实例时可见。
-       transitions.dev 的 tooltip 是 150ms / scale 0.98 / 从触发器方向长出；
-       Adaline 保留 150ms 与 0.98，但去掉 80ms delay、出场和 blur。 -->
+       只做 Opacity 淡入：Avalonia 的 Animation 没有 RenderTransform 的 animator，
+       在 KeyFrame 里 Set RenderTransform 会在 ToolTip.Open 时抛
+       InvalidOperationException（No animator registered for the property RenderTransform），
+       并且异常从原生鼠标事件分发路径冒出来，直接把输入/渲染帧打断。
+       ToolTip 是框架控件、没有可挂 Motion.Enter 的内容根：这里保持纯淡入，
+       不要再为了「上浮」往 KeyFrame 里塞 RenderTransform。 -->
   <Style Selector="ToolTip">
-    <Setter Property="RenderTransform" Value="translateY(2px) scale(0.98)" />
-    <Setter Property="RenderTransformOrigin" Value="50%,100%" />
     <Style.Animations>
       <Animation Duration="{x:Static motion:Motion.Fast}" FillMode="Forward" Easing="CubicEaseOut">
         <KeyFrame Cue="0%">
           <Setter Property="Opacity" Value="0" />
-          <Setter Property="RenderTransform" Value="translateY(2px) scale(0.98)" />
         </KeyFrame>
         <KeyFrame Cue="100%">
           <Setter Property="Opacity" Value="1" />
-          <Setter Property="RenderTransform" Value="translateY(0) scale(1)" />
         </KeyFrame>
       </Animation>
     </Style.Animations>

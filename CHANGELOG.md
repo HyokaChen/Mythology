@@ -93,6 +93,16 @@
   `UpdatePromptDialogStructureTests`（遮罩 IsHitTestVisible、MainWindow 挂载、设置入口结构锁）。
 
 ### Fixed
+- **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
+  `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
+  没有该属性的 animator。真实打开悬浮提示时必抛
+  `InvalidOperationException: No animator registered for the property RenderTransform`；
+  实机崩溃日志显示异常从 macOS 原生 `RawMouseEvent` 的 `Dispatcher.Send` 路径冒出，
+  鼠标一进窗口（尤其从别的 app 切回来）就会打断当前输入帧，表现为悬浮/滚动像卡死。
+  修法：`ToolTip` 回到纯 `Opacity` 淡入（150ms），不再动画 `RenderTransform`；
+  结构锁 `MotionWiringTests.ToolTip_FadesIn_WithoutRenderTransformAnimation` +
+  运行期锁 `ToolTipStyleRuntimeTests.OpenToolTip_DoesNotThrow_AndWheelStillWorks`
+  （真实主题打开 ToolTip、移开关闭、随后滚轮仍有效）。
 - **大纲树 hover 的纯白浮卡（Desktop）**：SukiUI 7.0.1 的未选中行 `:pointerover` 把
   `Border#SelectionBorder` 刷成 `SukiCardBackground`（`#fdfefb`），在 Bone 卡面上像一块白色浮卡；
   正文 `ContentPresenter` 又叠一层 12% 薄雾，行首箭头格纯白、内容格灰绿，成一条两截色带。

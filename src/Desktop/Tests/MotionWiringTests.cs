@@ -642,8 +642,18 @@ public sealed class MotionWiringTests
         Assert.Equal("True", Attr(text, "Motion.Fade"));
     }
 
+    /// <summary>
+    /// ToolTip 只能动画 Opacity。
+    ///
+    /// Avalonia 的 <c>Style.Animations</c> 没有 RenderTransform 的 animator：
+    /// KeyFrame 里 Set <c>RenderTransform</c> 会在 <c>ToolTip.Open</c> 抛
+    /// <c>InvalidOperationException: No animator registered for the property RenderTransform</c>。
+    /// 实机崩溃日志（myth-desktop-crash.log）显示异常从 macOS 原生 RawMouseEvent 的
+    /// Dispatcher.Send 路径冒出——鼠标一进窗口就打断输入帧，表现为悬浮/滚动全部卡死。
+    /// 回归锁：动画里出现任何 RenderTransform setter 即失败。
+    /// </summary>
     [Fact]
-    public void ToolTip_TravelsUpOnOpen()
+    public void ToolTip_FadesIn_WithoutRenderTransformAnimation()
     {
         var style = Single(
             Load("Styles/MythologyStyles.axaml"),
@@ -652,29 +662,22 @@ public sealed class MotionWiringTests
         var animation = Single(style, e => e.Name.LocalName == "Animation");
         Assert.Contains("Motion.Fast", AttrPlain(animation, "Duration"), StringComparison.Ordinal);
 
-        var keyFrames = animation.Descendants().Where(e => e.Name.LocalName == "KeyFrame").ToList();
-        Assert.True(
-            keyFrames.Any(k =>
-                k.Descendants()
-                    .Any(s =>
-                        AttrPlain(s, "Property") == "RenderTransform"
-                        && AttrPlain(s, "Value")
-                            .Contains("translateY(2px)", StringComparison.Ordinal)
-                        && AttrPlain(s, "Value").Contains("scale(0.98)", StringComparison.Ordinal)
-                    )
-            ),
-            "ToolTip 缺少 translateY(2px) scale(0.98) 起始帧"
+        var setters = animation
+            .Descendants()
+            .Where(e => e.Name.LocalName == "Setter")
+            .Select(e => (Property: AttrPlain(e, "Property"), Value: AttrPlain(e, "Value")))
+            .ToList();
+        Assert.DoesNotContain(
+            setters,
+            s => s.Property.Contains("RenderTransform", StringComparison.Ordinal)
         );
-        Assert.True(
-            keyFrames.Any(k =>
-                k.Descendants()
-                    .Any(s =>
-                        AttrPlain(s, "Property") == "RenderTransform"
-                        && AttrPlain(s, "Value").Contains("translateY(0)", StringComparison.Ordinal)
-                        && AttrPlain(s, "Value").Contains("scale(1)", StringComparison.Ordinal)
-                    )
-            ),
-            "ToolTip 缺少 translateY(0) scale(1) 结束帧"
+        Assert.Equal(
+            new[] { ("Opacity", "0"), ("Opacity", "1") },
+            setters.Select(s => (s.Property, s.Value)).ToArray()
+        );
+        Assert.DoesNotContain(
+            style.Elements(),
+            e => e.Name.LocalName == "Setter" && AttrPlain(e, "Property") == "RenderTransform"
         );
     }
 
