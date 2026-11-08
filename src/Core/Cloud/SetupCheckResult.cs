@@ -28,7 +28,64 @@ public sealed record CheckSetupDetails
 
     /// <summary>分卷大纲指标（服务端 `outline-metrics.volumes`；未同步卷文档/quick → 空表）。</summary>
     public List<VolumeOutlineEntry> Volumes { get; init; } = [];
+
+    /// <summary>
+    /// 变更影响（服务端 `change-impact`；未带 changed-elements 请求或旧服务端 → null）。
+    /// 形态 = 影响面 + 既有建议透传（不生成修订动作）。
+    /// </summary>
+    public ChangeImpactDetails? ChangeImpact { get; init; }
 }
+
+/// <summary>变更影响：改了哪些元素 → 影响了哪些元素 → 哪些既有问题被牵连。</summary>
+public sealed record ChangeImpactDetails(
+    IReadOnlyList<ChangedElementEntry> Changed,
+    IReadOnlyList<ImpactedElementEntry> Impacted,
+    IReadOnlyList<ImpactedFindingEntry> Findings,
+    IReadOnlyList<string> OmittedSources
+)
+{
+    /// <summary>按类型分组的可读摘要（如「角色 3 · 场景 2」）。</summary>
+    public string DescribeImpacted()
+    {
+        if (Impacted.Count == 0)
+            return "无";
+        return string.Join(
+            " · ",
+            Impacted
+                .GroupBy(element => element.Kind)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => $"{KindLabel(group.Key)} {group.Count()}")
+        );
+    }
+
+    /// <summary>中文类型标签（未知 kind 原样返回）。</summary>
+    public static string KindLabel(string kind) =>
+        kind switch
+        {
+            "character" => "角色",
+            "relation" => "关系",
+            "scene" => "场景",
+            "plotline" => "情节线",
+            "location" => "地点",
+            "item" => "道具",
+            "organization" => "组织",
+            "worldrule" => "世界规则",
+            "chapter" => "章节",
+            "volume" => "分卷",
+            "novel" => "总纲",
+            _ => kind,
+        };
+}
+
+public sealed record ChangedElementEntry(string Kind, string Id);
+
+public sealed record ImpactedElementEntry(string Kind, string Id, int Depth);
+
+public sealed record ImpactedFindingEntry(
+    string FindingId,
+    string Suggestion,
+    IReadOnlyList<string>? FixCandidates
+);
 
 /// <summary>
 /// 设定图来源摘要：source="graph" 表示服务端用同步图（卷/章细纲/卷级大纲检查可用）；

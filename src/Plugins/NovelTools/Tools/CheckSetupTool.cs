@@ -77,6 +77,21 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
         var worldRules = await store.GetWorldRules(args.NovelId, ct);
         ThrowIfCancelled(ct);
 
+        // 设定联动：仅显式开启时读取本体日志折叠「本轮被编辑元素」（默认关闭 = 旧行为）。
+        IReadOnlyList<SetupChangedElementInput>? changedElements = null;
+        if (args.IncludeChangeImpact)
+        {
+            var actions = await store.GetOntologyActions(args.NovelId, ct);
+            ThrowIfCancelled(ct);
+            var mapped = SetupChangedElementMapper.FromOntologyActions(
+                novel,
+                actions,
+                relationships,
+                chapters
+            );
+            changedElements = mapped.Count > 0 ? mapped : null;
+        }
+
         var setup = SetupDigestBuilder.Build(
             novel,
             characters,
@@ -88,7 +103,8 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
             timelineEvents,
             locations,
             items,
-            worldRules
+            worldRules,
+            changedElements: changedElements
         );
 
         const string depth = "standard";
@@ -316,6 +332,7 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
         }
 
         // v3 · 锚点覆盖率（harness "能不能按设定写" 总闸仪表）
+        var changeImpact = ParseChangeImpact(element);
 
         return new CheckSetupDetails
         {
@@ -331,7 +348,92 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
             StructureNotes = structureNotes,
             Graph = graph,
             Volumes = volumes,
+            ChangeImpact = changeImpact,
         };
+    }
+
+    /// <summary>
+    /// 解析 `change-impact`（设定联动）：键缺席/形状不符 → null（旧服务端与未请求时零破坏）。
+    /// </summary>
+    private static ChangeImpactDetails? ParseChangeImpact(JsonElement element)
+    {
+        if (
+            element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty("change-impact", out var impactJson)
+            || impactJson.ValueKind != JsonValueKind.Object
+        )
+        {
+            return null;
+        }
+
+        var changed = new List<ChangedElementEntry>();
+        if (
+            impactJson.TryGetProperty("changed", out var changedJson)
+            && changedJson.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var c in changedJson.EnumerateArray())
+            {
+                if (c.ValueKind != JsonValueKind.Object)
+                    continue;
+                changed.Add(new ChangedElementEntry(GetString(c, "kind"), GetString(c, "id")));
+            }
+        }
+
+        var impacted = new List<ImpactedElementEntry>();
+        if (
+            impactJson.TryGetProperty("impacted", out var impactedJson)
+            && impactedJson.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var i in impactedJson.EnumerateArray())
+            {
+                if (i.ValueKind != JsonValueKind.Object)
+                    continue;
+                impacted.Add(
+                    new ImpactedElementEntry(
+                        GetString(i, "kind"),
+                        GetString(i, "id"),
+                        GetInt(i, "depth")
+                    )
+                );
+            }
+        }
+
+        var impactedFindings = new List<ImpactedFindingEntry>();
+        if (
+            impactJson.TryGetProperty("findings", out var findingsJson)
+            && findingsJson.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var f in findingsJson.EnumerateArray())
+            {
+                if (f.ValueKind != JsonValueKind.Object)
+                    continue;
+                impactedFindings.Add(
+                    new ImpactedFindingEntry(
+                        GetString(f, "finding-id"),
+                        GetString(f, "suggestion"),
+                        GetStringList(f, "fix-candidates")
+                    )
+                );
+            }
+        }
+
+        var omitted = new List<string>();
+        if (
+            impactJson.TryGetProperty("omitted-sources", out var omittedJson)
+            && omittedJson.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var item in omittedJson.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                    omitted.Add(item.GetString() ?? "");
+            }
+        }
+
+        return new ChangeImpactDetails(changed, impacted, impactedFindings, omitted);
     }
 
     private static string BuildReportText(CheckSetupDetails details)
@@ -387,6 +489,18 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
             sb.AppendLine("**分卷大纲**");
             foreach (var volume in details.Volumes)
                 sb.AppendLine($"- {volume.Describe()}");
+        }
+        if (details.ChangeImpact is { } impact)
+        {
+            sb.AppendLine("**变更影响**");
+            sb.AppendLine(
+                $"- 本轮修改：{string.Join("、", impact.Changed.Select(c => $"{ChangeImpactDetails.KindLabel(c.Kind)}「{c.Id}」"))}"
+            );
+            sb.AppendLine($"- 受影响：{impact.DescribeImpacted()}");
+            if (impact.OmittedSources.Count > 0)
+                sb.AppendLine("- 说明：未同步卷/章细纲文档，大纲层级联动不可用");
+            foreach (var finding in impact.Findings)
+                sb.AppendLine($"  - 受牵连 `{finding.FindingId}` {finding.Suggestion}");
         }
         return sb.ToString();
     }
@@ -490,4 +604,10 @@ public sealed record CheckSetupParams
 {
     [Description("小说项目ID，留空则自动使用当前项目")]
     public string NovelId { get; init; } = "";
+
+    [Description(
+        "是否附带「变更影响」联动（include_change_impact）：开启后从最近的本体修改日志取被编辑元素，"
+            + "服务端返回这些改动影响到哪些设定/大纲元素、牵连了哪些既有问题。默认 false（旧行为）。"
+    )]
+    public bool IncludeChangeImpact { get; init; }
 }

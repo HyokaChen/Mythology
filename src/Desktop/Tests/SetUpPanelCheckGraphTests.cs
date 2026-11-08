@@ -131,5 +131,37 @@ public sealed class SetUpPanelCheckGraphTests : IDisposable
         Assert.Equal("", vm.GraphSummary);
         Assert.False(vm.HasVolumeSummary);
         Assert.Equal("", vm.VolumeSummary);
+        Assert.False(vm.HasImpactSummary);
+        Assert.Equal("", vm.ImpactSummary);
+    }
+
+    [Fact]
+    public async Task ExecuteCheckSetup_ShowsChangeImpactSummary()
+    {
+        var vm = NewViewModel(
+            new CheckSetupDetails
+            {
+                ChangeImpact = new ChangeImpactDetails(
+                    [new ChangedElementEntry("character", "c1")],
+                    [
+                        new ImpactedElementEntry("scene", "s1", 1),
+                        new ImpactedElementEntry("scene", "s2", 1),
+                        new ImpactedElementEntry("chapter", "ch_1", 2),
+                    ],
+                    [new ImpactedFindingEntry("L2.rhythm.stagnation.s1", "让场景有推进", null)],
+                    ["outline-hierarchy"]
+                ),
+            }
+        );
+
+        await vm.ExecuteCheckSetupAsync();
+
+        Assert.True(vm.HasImpactSummary);
+        Assert.Contains("本轮修改", vm.ImpactSummary);
+        Assert.Contains("角色「c1」", vm.ImpactSummary);
+        Assert.Contains("场景 2", vm.ImpactSummary); // 按类型分组计数
+        Assert.Contains("章节 1", vm.ImpactSummary);
+        Assert.Contains("受牵连问题: 1 条", vm.ImpactSummary);
+        Assert.Contains("大纲层级联动不可用", vm.ImpactSummary);
     }
 }

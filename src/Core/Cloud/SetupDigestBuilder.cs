@@ -27,7 +27,9 @@ public static class SetupDigestBuilder
         IReadOnlyList<WorldRule>? worldRules = null,
         // entity-evolution-lifecycle §6.1 通道①（E4 镜像：有值才上传——云端未实现前调用方不传）
         IReadOnlyList<AppearanceRecord>? appearances = null,
-        IReadOnlyList<EntityStateChange>? stateChanges = null
+        IReadOnlyList<EntityStateChange>? stateChanges = null,
+        // 设定联动（change-impact）：本轮被编辑元素（由 SetupChangedElementMapper 从本体日志折叠）
+        IReadOnlyList<SetupChangedElementInput>? changedElements = null
     )
     {
         // 章节 GUID → ch_{Order} 映射（无 Order 的章节不参与引用规范化）
@@ -249,7 +251,8 @@ public static class SetupDigestBuilder
             Organizations: organizationInputs.Count > 0 ? organizationInputs : null,
             Items: itemInputs is { Count: > 0 } ? itemInputs : null,
             EntityAppearances: appearanceInputs,
-            EntityEvolutionEvents: evolutionInputs
+            EntityEvolutionEvents: evolutionInputs,
+            ChangedElements: changedElements is { Count: > 0 } ? changedElements : null
         );
     }
 

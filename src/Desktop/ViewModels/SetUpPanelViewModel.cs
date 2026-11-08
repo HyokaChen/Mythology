@@ -715,6 +715,23 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
+    /// <summary>
+    /// 变更影响摘要（设定联动 change-impact）：本轮修改的元素 + 受影响元素类型计数 +
+    /// 受牵连问题数；空 = 未请求/旧服务端/无修改 → 隐藏。
+    /// </summary>
+    public string ImpactSummary
+    {
+        get => field;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "";
+
+    /// <summary>是否有变更影响摘要。</summary>
+    public bool HasImpactSummary
+    {
+        get => field;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
     /// <summary>检查结果 findings 集合。</summary>
     public ObservableCollection<SetupFindingItem> Findings { get; } = [];
 
@@ -740,7 +757,7 @@ public sealed class SetUpPanelViewModel : ViewModelBase
             }
 
             using var args = JsonDocument.Parse(
-                $$"""{"novel-id":"{{novelId}}"}""",
+                $$"""{"novel-id":"{{novelId}}","include-change-impact":true}""",
                 new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip }
             );
             var result = await tool.ExecuteAsync(
@@ -827,6 +844,30 @@ public sealed class SetUpPanelViewModel : ViewModelBase
                 : "";
         HasVolumeSummary = VolumeSummary.Length > 0;
 
+        // 变更影响（设定联动）：仅当服务端返回 change-impact 且确有修改时显示。
+        if (details.ChangeImpact is { Changed.Count: > 0 } impact)
+        {
+            var text =
+                "本轮修改: "
+                + string.Join(
+                    "、",
+                    impact.Changed.Select(c => $"{ChangeImpactDetails.KindLabel(c.Kind)}「{c.Id}」")
+                )
+                + "\n受影响: "
+                + impact.DescribeImpacted();
+            if (impact.Findings.Count > 0)
+                text += $"\n受牵连问题: {impact.Findings.Count} 条（见下方列表）";
+            if (impact.OmittedSources.Count > 0)
+                text += "\n说明: 未同步卷/章细纲文档，大纲层级联动不可用";
+            ImpactSummary = text;
+            HasImpactSummary = true;
+        }
+        else
+        {
+            ImpactSummary = "";
+            HasImpactSummary = false;
+        }
+
         HasCheckResult = true;
     }
 
@@ -870,6 +911,8 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         HasGraphSummary = false;
         VolumeSummary = "";
         HasVolumeSummary = false;
+        ImpactSummary = "";
+        HasImpactSummary = false;
         Findings.Clear();
     }
 

@@ -231,8 +231,19 @@ public sealed record SetupCheckInput(
     IReadOnlyList<SetupItemInput>? Items = null, // v2 一等实体（所有权链）
     // entity-evolution-lifecycle §6.1 通道①（E4 镜像；默认不上传，见 SetupDigestBuilder 开关）
     IReadOnlyList<CloudEntityAppearanceInput>? EntityAppearances = null,
-    IReadOnlyList<CloudEvolutionEventInput>? EntityEvolutionEvents = null
+    IReadOnlyList<CloudEvolutionEventInput>? EntityEvolutionEvents = null,
+    // 设定联动（change-impact）：本轮被编辑的设定元素（服务端据此返回影响面）。
+    // 缺省 null = 旧行为（不产生 change-impact 块）。
+    IReadOnlyList<SetupChangedElementInput>? ChangedElements = null
 );
+
+/// <summary>
+/// 一个被编辑的设定元素（云端 <c>CloudChangedElement</c> 镜像）。
+/// Kind ∈ character / relation / scene / plotline / location / item / organization /
+/// worldrule / chapter / volume / novel；关系元素用 <c>source|type|target</c> 复合键
+/// （与云端 SetupLinkageIndex.RelationKey 同格式），章节一律 ch_{Order}。
+/// </summary>
+public sealed record SetupChangedElementInput(string Kind, string Id);
 
 /// <summary>
 /// 实体出场摘要（entity-evolution-lifecycle §6.1）— 云端 CloudEntityAppearance 镜像。

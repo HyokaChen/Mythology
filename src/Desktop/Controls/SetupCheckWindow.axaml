@@ -148,6 +148,13 @@
           TextWrapping="Wrap"
         />
         <TextBlock
+          Text="{Binding ImpactSummary, StringFormat='变更影响：{0}'}"
+          IsVisible="{Binding HasImpactSummary}"
+          FontSize="11"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextWrapping="Wrap"
+        />
+        <TextBlock
           Text="{Binding CoverageSummary}"
           IsVisible="{Binding HasCoverageSummary}"
           FontSize="10"

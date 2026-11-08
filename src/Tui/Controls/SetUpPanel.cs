@@ -1343,6 +1343,40 @@ public sealed partial class SetUpPanel
                     }.Wrap(true)
                 );
         }
+        if (details.ChangeImpact is { } impact)
+        {
+            children.Add(new Markup("[bold]变更影响[/]") { IsSelectable = false });
+            children.Add(
+                new Markup(
+                    $"[dim]本轮修改:[/] {ToolCallRenderer.Escape(string.Join("、", impact.Changed.Select(c => $"{ChangeImpactDetails.KindLabel(c.Kind)}「{c.Id}」")))}"
+                )
+                {
+                    IsSelectable = false,
+                }.Wrap(true)
+            );
+            children.Add(
+                new Markup($"[dim]受影响:[/] {ToolCallRenderer.Escape(impact.DescribeImpacted())}")
+                {
+                    IsSelectable = false,
+                }.Wrap(true)
+            );
+            if (impact.OmittedSources.Count > 0)
+                children.Add(
+                    new Markup("[dim]说明: 未同步卷/章细纲文档，大纲层级联动不可用[/]")
+                    {
+                        IsSelectable = false,
+                    }.Wrap(true)
+                );
+            foreach (var finding in impact.Findings)
+                children.Add(
+                    new Markup(
+                        $"  [dim]受牵连[/] {ToolCallRenderer.Escape(finding.FindingId)} {ToolCallRenderer.Escape(finding.Suggestion)}"
+                    )
+                    {
+                        IsSelectable = false,
+                    }.Wrap(true)
+                );
+        }
         if (details.CoverageSummary.Count > 0)
             children.Add(
                 new Markup(

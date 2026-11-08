@@ -672,4 +672,63 @@ public class SetupDigestBuilderTests
         Assert.Equal("「这条命给你了」", ev.Evidence);
         Assert.Equal("化敌为友", ev.Summary);
     }
+
+    // ── 设定联动（change-impact）：被编辑元素透传 + wire 键 kebab ──
+
+    [Fact]
+    public void Build_WithoutChangedElements_OmitsField()
+    {
+        var (novel, characters, factions, relationships, scenes, plotlines, chapters, timeline) =
+            Sample();
+        var setup = SetupDigestBuilder.Build(
+            novel,
+            characters,
+            factions,
+            relationships,
+            scenes,
+            plotlines,
+            chapters,
+            timeline
+        );
+
+        Assert.Null(setup.ChangedElements);
+    }
+
+    [Fact]
+    public void Build_WithChangedElements_PassesThroughAndSerializesKebabWireKey()
+    {
+        var (novel, characters, factions, relationships, scenes, plotlines, chapters, timeline) =
+            Sample();
+        var changed = new List<SetupChangedElementInput>
+        {
+            new("character", "c1"),
+            new("relation", "c2|parent-of|c1"),
+        };
+
+        var setup = SetupDigestBuilder.Build(
+            novel,
+            characters,
+            factions,
+            relationships,
+            scenes,
+            plotlines,
+            chapters,
+            timeline,
+            changedElements: changed
+        );
+
+        Assert.Equal(2, setup.ChangedElements!.Count);
+
+        // 云端绑定键必须为 kebab（ClientJsonDefaults.Cloud 同款策略）。
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            setup,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.KebabCaseLower,
+            }
+        );
+        Assert.Contains("\"changed-elements\":", json);
+        Assert.Contains("\"kind\":\"character\"", json);
+        Assert.Contains("\"relation\",\"id\":\"c2|parent-of|c1\"", json);
+    }
 }

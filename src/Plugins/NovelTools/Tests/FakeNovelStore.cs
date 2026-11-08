@@ -21,6 +21,7 @@ public sealed class FakeNovelStore : INovelStore
     private readonly ConcurrentDictionary<string, Relationship> _relationships = new();
     private readonly ConcurrentDictionary<string, Novel> _novels = new();
     private readonly ConcurrentDictionary<string, Volume> _volumes = new();
+    private readonly ConcurrentDictionary<string, List<OntologyAction>> _ontologyActions = new();
 
     public event Func<EntityChangeEvent, Task>? OnEntityChanged
     {
@@ -378,12 +379,29 @@ public sealed class FakeNovelStore : INovelStore
         string novelId,
         IReadOnlyList<OntologyAction> actions,
         CancellationToken ct = default
-    ) => Task.CompletedTask;
+    )
+    {
+        _ontologyActions.AddOrUpdate(
+            novelId,
+            _ => [.. actions],
+            (_, existing) =>
+            {
+                existing.AddRange(actions);
+                return existing;
+            }
+        );
+        return Task.CompletedTask;
+    }
 
     public Task<List<OntologyAction>> GetOntologyActions(
         string novelId,
         CancellationToken ct = default
-    ) => Task.FromResult(new List<OntologyAction>());
+    ) =>
+        Task.FromResult(
+            _ontologyActions.TryGetValue(novelId, out var actions)
+                ? actions.ToList()
+                : new List<OntologyAction>()
+        );
 
     public Task<long> GetOntologyJournalStamp(string novelId, CancellationToken ct = default) =>
         Task.FromResult(0L);

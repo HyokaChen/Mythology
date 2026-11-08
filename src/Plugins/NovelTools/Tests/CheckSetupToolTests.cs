@@ -388,6 +388,114 @@ public sealed class CheckSetupToolTests
         Assert.DoesNotContain("**分卷大纲**", text);
     }
 
+    private static readonly string SetupCheckImpactJson = """
+        {
+          "capability": "fiction.setup.check",
+          "status": "pass",
+          "l0-only": false,
+          "findings": [
+            {
+              "id": "L2.rhythm.stagnation.s1",
+              "verdict": "anomaly",
+              "layer": "L2",
+              "description": "章节内场景无推进",
+              "suggestion": "让场景承担一次信息交换",
+              "fix-candidates": [ "调整 ch_1 的场景目标" ]
+            }
+          ],
+          "change-impact": {
+            "changed": [ { "kind": "character", "id": "c1" } ],
+            "impacted": [
+              { "kind": "scene", "id": "s1", "depth": 1 },
+              { "kind": "chapter", "id": "ch_1", "depth": 2 }
+            ],
+            "findings": [
+              {
+                "finding-id": "L2.rhythm.stagnation.s1",
+                "suggestion": "让场景承担一次信息交换",
+                "fix-candidates": [ "调整 ch_1 的场景目标" ]
+              }
+            ],
+            "omitted-sources": [ "outline-hierarchy" ]
+          }
+        }
+        """;
+
+    [Fact]
+    public async Task ExecuteAsync_ChangeImpactRequested_SendsChangedElementsAndParsesImpact()
+    {
+        var store = await SeedStore();
+        await store.AppendOntologyActions(
+            "n1",
+            [
+                new OntologyAction
+                {
+                    TargetEntityType = EntityType.Character,
+                    TargetId = "c1",
+                    NovelId = "n1",
+                    CreatedAt = DateTime.UtcNow,
+                },
+            ]
+        );
+        var harness = new StubHarness(_ => new HarnessResult
+        {
+            Status = "pass",
+            Capability = "fiction.setup.check",
+            Result = JsonDocument.Parse(SetupCheckImpactJson).RootElement.Clone(),
+        });
+        var tool = new CheckSetupTool(store, harness);
+
+        var result = await tool.ExecuteAsync(
+            "call-1",
+            new CheckSetupParams { NovelId = "n1", IncludeChangeImpact = true },
+            CancellationToken.None
+        );
+
+        Assert.False(result.IsError);
+
+        // 请求侧：本体日志 → changed-elements（章节/实体 id 已规范化）
+        var setup = harness.LastRequest!.Context!.Setup!;
+        var sentElement = Assert.Single(setup.ChangedElements!);
+        Assert.Equal("character", sentElement.Kind);
+        Assert.Equal("c1", sentElement.Id);
+
+        // 响应侧：change-impact 解析（changed / impacted / findings / omitted-sources）
+        var details = Assert.IsType<CheckSetupDetails>(result.Details);
+        Assert.NotNull(details.ChangeImpact);
+        Assert.Equal("c1", Assert.Single(details.ChangeImpact!.Changed).Id);
+        Assert.Equal(2, details.ChangeImpact.Impacted.Count);
+        Assert.Contains(details.ChangeImpact.Impacted, i => i.Kind == "chapter" && i.Id == "ch_1");
+        Assert.Equal(["outline-hierarchy"], details.ChangeImpact.OmittedSources.ToArray());
+        var impactFinding = Assert.Single(details.ChangeImpact.Findings);
+        Assert.Equal("L2.rhythm.stagnation.s1", impactFinding.FindingId);
+        Assert.Equal("调整 ch_1 的场景目标", Assert.Single(impactFinding.FixCandidates!));
+
+        // 报告（LLM 可见文本）含变更影响段
+        var text = ExtractText(result.Content);
+        Assert.Contains("**变更影响**", text);
+        Assert.Contains("本轮修改", text);
+        Assert.Contains("受牵连", text);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ChangeImpactNotRequested_OmitsFieldAndHidesBlock()
+    {
+        var store = await SeedStore();
+        var harness = new StubHarness(_ => OkResult());
+        var tool = new CheckSetupTool(store, harness);
+
+        var result = await tool.ExecuteAsync(
+            "call-1",
+            new CheckSetupParams { NovelId = "n1" },
+            CancellationToken.None
+        );
+
+        Assert.Null(harness.LastRequest!.Context!.Setup!.ChangedElements);
+        var details = Assert.IsType<CheckSetupDetails>(result.Details);
+        Assert.Null(details.ChangeImpact);
+        Assert.DoesNotContain("**变更影响**", ExtractText(result.Content));
+    }
+
     private sealed class StubHarness(Func<HarnessRequest, HarnessResult> respond)
         : IFictionHarnessClient
     {
