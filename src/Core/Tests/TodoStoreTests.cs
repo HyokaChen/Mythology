@@ -228,6 +228,92 @@ public class TodoStoreTests
     }
 
     [Fact]
+    /// <summary>新会话重置：清空任务并重置 ID 序列。</summary>
+    public void Reset_ClearsItemsAndResetsIdSequence()
+    {
+        var store = new TodoStore();
+        store.Create("旧1");
+        store.Create("旧2");
+
+        store.Reset();
+
+        Assert.Empty(store.List());
+        var next = store.Create("新任务");
+        Assert.Equal(2, next.Id);
+    }
+
+    [Fact]
+    /// <summary>恢复快照：原子替换全部内容并保留原有 ID。</summary>
+    public void ReplaceAll_ReplacesSnapshotAndPreservesIds()
+    {
+        var store = new TodoStore();
+        store.Create("旧任务");
+
+        store.ReplaceAll([
+            new TodoItem { Id = 10, Subject = "A" },
+            new TodoItem { Id = 11, Subject = "B" },
+        ]);
+
+        var items = store.List();
+        Assert.Equal(["A", "B"], items.Select(i => i.Subject).ToArray());
+        Assert.Equal([10, 11], items.Select(i => i.Id).ToArray());
+    }
+
+    [Fact]
+    /// <summary>新批次替换：旧任务消失，新任务获得全新 ID。</summary>
+    public void ReplaceWithNewIds_ReplacesBatchAndAssignsFreshIds()
+    {
+        var store = new TodoStore();
+        store.Create("旧任务");
+
+        store.ReplaceWithNewIds([
+            new TodoItem { Subject = "A" },
+            new TodoItem { Subject = "B", Status = TodoStatus.InProgress },
+        ]);
+
+        var items = store.List();
+        Assert.Equal(2, items.Count);
+        Assert.DoesNotContain(items, i => i.Subject == "旧任务");
+        Assert.Equal(TodoStatus.InProgress, items[1].Status);
+        Assert.True(items[0].Id > 0);
+        Assert.NotEqual(items[0].Id, items[1].Id);
+    }
+
+    [Fact]
+    /// <summary>目标快照不存在时，加载必须清空而不是继承旧任务。</summary>
+    public void ReplaceFromFileOrEmpty_MissingFile_ClearsExisting()
+    {
+        var store = new TodoStore();
+        store.Create("旧任务");
+        var missing = Path.Combine(Path.GetTempPath(), $"todos-{Guid.NewGuid():N}.json");
+
+        Assert.False(store.ReplaceFromFileOrEmpty(missing));
+
+        Assert.Empty(store.List());
+    }
+
+    [Fact]
+    /// <summary>目标快照损坏时，加载必须清空而不是继承旧任务。</summary>
+    public void ReplaceFromFileOrEmpty_CorruptFile_ClearsExisting()
+    {
+        var store = new TodoStore();
+        store.Create("旧任务");
+        var path = Path.Combine(Path.GetTempPath(), $"todos-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, "{ not valid json");
+
+            Assert.False(store.ReplaceFromFileOrEmpty(path));
+
+            Assert.Empty(store.List());
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     /// <summary>中断回退：in_progress 任务应回到 pending，其他状态不受影响。</summary>
     public void RevertInProgressToPending_ResetsInProgressOnly()
     {

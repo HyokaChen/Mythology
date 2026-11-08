@@ -11,6 +11,7 @@ namespace Core.Shared;
 public sealed class TodoStore
 {
     private readonly ConcurrentDictionary<string, TodoItem> _items = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
     private int _nextId = 1;
 
     /// <summary>存储内容发生变更时触发（Create/Update/Delete/Clear）。事件在变更线程同步触发。</summary>
@@ -35,20 +36,24 @@ public sealed class TodoStore
         TodoStatus? status = null
     )
     {
-        var id = Interlocked.Increment(ref _nextId);
-        var item = new TodoItem
+        TodoItem item;
+        lock (_gate)
         {
-            Id = id,
-            Subject = subject,
-            Description = description ?? "",
-            Owner = owner ?? "",
-            ActiveForm = activeForm ?? "",
-            Status = status ?? TodoStatus.Pending,
-            BlockedBy = blockedBy ?? [],
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
-        _items[id.ToString()] = item;
+            var id = Interlocked.Increment(ref _nextId);
+            item = new TodoItem
+            {
+                Id = id,
+                Subject = subject,
+                Description = description ?? "",
+                Owner = owner ?? "",
+                ActiveForm = activeForm ?? "",
+                Status = status ?? TodoStatus.Pending,
+                BlockedBy = blockedBy ?? [],
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            _items[id.ToString()] = item;
+        }
         NotifyChanged();
         return item;
     }
@@ -79,39 +84,43 @@ public sealed class TodoStore
         string[]? removeBlockedBy = null
     )
     {
-        var key = id.ToString();
-        if (!_items.TryGetValue(key, out var item))
-            return null;
-
-        var updated = item with
+        TodoItem updated;
+        lock (_gate)
         {
-            Subject = subject ?? item.Subject,
-            Description = description ?? item.Description,
-            Owner = owner ?? item.Owner,
-            ActiveForm = activeForm ?? item.ActiveForm,
-            UpdatedAt = DateTime.UtcNow,
-        };
+            var key = id.ToString();
+            if (!_items.TryGetValue(key, out var item))
+                return null;
 
-        if (status is not null && TryParseStatus(status, out var s))
-            updated = updated with { Status = s };
+            updated = item with
+            {
+                Subject = subject ?? item.Subject,
+                Description = description ?? item.Description,
+                Owner = owner ?? item.Owner,
+                ActiveForm = activeForm ?? item.ActiveForm,
+                UpdatedAt = DateTime.UtcNow,
+            };
 
-        if (addBlockedBy is not null)
-        {
-            var set = new HashSet<string>(item.BlockedBy);
-            foreach (var b in addBlockedBy)
-                set.Add(b);
-            updated = updated with { BlockedBy = set.ToArray() };
+            if (status is not null && TryParseStatus(status, out var s))
+                updated = updated with { Status = s };
+
+            if (addBlockedBy is not null)
+            {
+                var set = new HashSet<string>(item.BlockedBy);
+                foreach (var b in addBlockedBy)
+                    set.Add(b);
+                updated = updated with { BlockedBy = set.ToArray() };
+            }
+
+            if (removeBlockedBy is not null)
+            {
+                var set = new HashSet<string>(item.BlockedBy);
+                foreach (var b in removeBlockedBy)
+                    set.Remove(b);
+                updated = updated with { BlockedBy = set.ToArray() };
+            }
+
+            _items[key] = updated;
         }
-
-        if (removeBlockedBy is not null)
-        {
-            var set = new HashSet<string>(item.BlockedBy);
-            foreach (var b in removeBlockedBy)
-                set.Remove(b);
-            updated = updated with { BlockedBy = set.ToArray() };
-        }
-
-        _items[key] = updated;
         NotifyChanged();
         return updated;
     }
@@ -121,7 +130,11 @@ public sealed class TodoStore
     /// <returns>是否成功删除。</returns>
     public bool Delete(int id)
     {
-        var removed = _items.TryRemove(id.ToString(), out _);
+        bool removed;
+        lock (_gate)
+        {
+            removed = _items.TryRemove(id.ToString(), out _);
+        }
         if (removed)
             NotifyChanged();
         return removed;
@@ -141,20 +154,127 @@ public sealed class TodoStore
     /// <summary>清空所有 Todo 条目。</summary>
     public void Clear()
     {
-        _items.Clear();
+        lock (_gate)
+        {
+            _items.Clear();
+        }
         NotifyChanged();
+    }
+
+    /// <summary>清空并重置会话内 ID 序列（新建会话）。</summary>
+    public void Reset()
+    {
+        lock (_gate)
+        {
+            _items.Clear();
+            _nextId = 1;
+        }
+        NotifyChanged();
+    }
+
+    /// <summary>原子替换为指定快照（保留 ID；用于恢复已有会话）。</summary>
+    public void ReplaceAll(IReadOnlyList<TodoItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        lock (_gate)
+        {
+            _items.Clear();
+            _nextId = 1;
+            foreach (var item in items)
+            {
+                _items[item.Id.ToString()] = item;
+                if (item.Id >= _nextId)
+                    _nextId = item.Id + 1;
+            }
+        }
+        NotifyChanged();
+    }
+
+    /// <summary>原子替换并分配新 ID（用于 todo_write replace 新批次）。</summary>
+    public void ReplaceWithNewIds(IReadOnlyList<TodoItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var now = DateTime.UtcNow;
+        lock (_gate)
+        {
+            _items.Clear();
+            _nextId = 1;
+            foreach (var item in items)
+            {
+                var id = Interlocked.Increment(ref _nextId);
+                _items[id.ToString()] = item with
+                {
+                    Id = id,
+                    CreatedAt = item.CreatedAt == default ? now : item.CreatedAt,
+                    UpdatedAt = now,
+                };
+            }
+        }
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// 用目标会话快照替换当前内容；文件不存在/损坏时替换为空，绝不继承上一个会话。
+    /// </summary>
+    public bool ReplaceFromFileOrEmpty(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Reset();
+            return false;
+        }
+
+        TodoItem[]? items;
+        try
+        {
+            items = JsonSerializer.Deserialize<TodoItem[]>(
+                AtomicFile.ReadAllText(path),
+                JsonHelper.JsonOptions
+            );
+        }
+        catch (JsonException)
+        {
+            Reset();
+            return false;
+        }
+        catch (IOException)
+        {
+            Reset();
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Reset();
+            return false;
+        }
+
+        if (items is null)
+        {
+            Reset();
+            return false;
+        }
+
+        ReplaceAll(items);
+        return true;
     }
 
     /// <summary>将全部 in_progress 任务回退为 pending（用户中断/Agent 中止时调用，避免状态卡死在 🔄）。</summary>
     public void RevertInProgressToPending()
     {
         var changed = false;
-        foreach (var (key, item) in _items)
+        lock (_gate)
         {
-            if (item.Status != TodoStatus.InProgress)
-                continue;
-            _items[key] = item with { Status = TodoStatus.Pending, UpdatedAt = DateTime.UtcNow };
-            changed = true;
+            foreach (var (key, item) in _items)
+            {
+                if (item.Status != TodoStatus.InProgress)
+                    continue;
+                _items[key] = item with
+                {
+                    Status = TodoStatus.Pending,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                changed = true;
+            }
         }
         if (changed)
             NotifyChanged();
@@ -204,12 +324,15 @@ public sealed class TodoStore
             );
             if (items is null)
                 return false;
-            _items.Clear();
-            foreach (var item in items)
+            lock (_gate)
             {
-                _items[item.Id.ToString()] = item;
-                if (item.Id >= _nextId)
-                    _nextId = item.Id + 1;
+                _items.Clear();
+                foreach (var item in items)
+                {
+                    _items[item.Id.ToString()] = item;
+                    if (item.Id >= _nextId)
+                        _nextId = item.Id + 1;
+                }
             }
             NotifyChanged();
             return true;

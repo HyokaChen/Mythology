@@ -103,4 +103,33 @@ public sealed class DesktopAgentBridge
             _logger?.LogWarning(ex, "中断 Agent 失败");
         }
     }
+
+    /// <summary>
+    /// 中断并等待当前 turn 退出（有超时兜底），避免旧会话的迟到工具调用写进新会话。
+    /// </summary>
+    public async Task StopAsync(TimeSpan? timeout = null)
+    {
+        if (!IsProcessing)
+            return;
+
+        var stopped = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        void HandleProcessingChanged(bool processing)
+        {
+            if (!processing)
+                stopped.TrySetResult(true);
+        }
+
+        OnProcessingChanged += HandleProcessingChanged;
+        try
+        {
+            Stop();
+            await Task.WhenAny(stopped.Task, Task.Delay(timeout ?? TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            OnProcessingChanged -= HandleProcessingChanged;
+        }
+    }
 }

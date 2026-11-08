@@ -78,6 +78,50 @@ public class TodoWriteToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Replace_ReplacesWholeBatch()
+    {
+        var store = new TodoStore();
+        store.Create("旧任务");
+        var tool = new TodoWriteTool(store);
+
+        var result = await tool.ExecuteAsync(
+            "call_1",
+            new TodoWriteParams
+            {
+                Action = "replace",
+                Items =
+                [
+                    new TodoWriteItem { Subject = "任务A", Status = "pending" },
+                    new TodoWriteItem { Subject = "任务B", Status = "in_progress" },
+                ],
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.IsError);
+        var items = store.List(null);
+        Assert.Equal(2, items.Count);
+        Assert.DoesNotContain(items, i => i.Subject == "旧任务");
+        Assert.Equal(TodoStatus.InProgress, items[1].Status);
+        Assert.Contains("已替换", GetText(result));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReplaceWithoutItems_ReturnsError()
+    {
+        var store = new TodoStore();
+        var tool = new TodoWriteTool(store);
+
+        var result = await tool.ExecuteAsync(
+            "call_1",
+            new TodoWriteParams { Action = "replace" },
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.IsError);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_List_ReturnsItems()
     {
         var store = new TodoStore();

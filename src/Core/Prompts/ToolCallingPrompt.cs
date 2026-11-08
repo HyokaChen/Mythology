@@ -119,12 +119,14 @@ public static class ToolCallingPrompt
     private const string TodoRules = """
 ## 任务追踪（todo_write）
 
-- 中/重任务执行前：todo_write create 建立任务清单，每个执行步骤一条（重任务可加根任务）
+- 中/重任务执行前：todo_write action=replace items=[...] 建立任务清单（整批原子替换旧清单），每个执行步骤一条（重任务可加根任务）
+- 同一会话里开始新计划：再次 replace，旧批次自动被替换；不要逐条 delete 旧任务
+- 同一批次内追加一步：todo_write create
 - 开始某一步：create 时可直接带 status=in_progress（一步到位，推荐）；或 todo_write update 标 in_progress（可带 activeForm 描述正在做什么）
 - 完成某一步：todo_write update 该任务状态为 completed
 - 全部步骤完成时：对每个未完成任务逐一 todo_write update status=completed 收尾，清单不得遗留 ⬜
-- 步骤有先后依赖：create 时用 addBlockedBy 标注，TUI 会展示依赖链
-- 用户改方向/放弃：todo_write delete 或标记 deleted 未完成任务
+- 步骤有先后依赖：replace 的 items 或 create 时用 blockedBy/addBlockedBy 标注，TUI 会展示依赖链
+- 用户改方向/放弃：用 replace 建立新批次；不要逐条删除旧任务
 - 轻任务（改一段、查一个角色）不调用 todo_write，避免噪声
 """;
 

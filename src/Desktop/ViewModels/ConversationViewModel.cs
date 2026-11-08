@@ -351,7 +351,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 ShowAbout();
                 break;
             case "/clear":
-                ClearMessages();
+                _ = ClearMessagesAsync();
                 break;
             case "/new":
                 RequestNewConversation?.Invoke();
@@ -805,10 +805,10 @@ public sealed class ConversationViewModel : ViewModelBase
         new AboutDialog().ShowDialog(owner);
     }
 
-    /// <summary>清除当前对话（对齐 TUI /clear：清空 UI + 重置 Agent 上下文）。</summary>
-    private void ClearMessages()
+    /// <summary>清除当前对话（对齐 TUI /clear：等旧 turn 退出后清空 UI + 重置 Agent 上下文）。</summary>
+    private async Task ClearMessagesAsync()
     {
-        _bridge.Stop();
+        await _bridge.StopAsync();
         _bridge.Agent.Reset();
         _engine.NewSession();
         Messages.Clear();
@@ -1423,10 +1423,10 @@ public sealed class ConversationViewModel : ViewModelBase
         FinalizeAgentMessage(null, interrupted: true);
     }
 
-    /// <summary>新建对话。</summary>
-    private Task NewConversationAsync()
+    /// <summary>新建对话（宿主在切换动画前可直接 await）。</summary>
+    public async Task NewConversationAsync()
     {
-        _bridge.Stop();
+        await _bridge.StopAsync();
         _engine.NewSession();
         Messages.Clear();
         Suggestions.Clear();
@@ -1434,7 +1434,6 @@ public sealed class ConversationViewModel : ViewModelBase
         _handler = null;
         HasMessages = false;
         ContextStatsChanged?.Invoke();
-        return Task.CompletedTask;
     }
 
     /// <summary>加载历史会话：切换引擎上下文（LLM 侧）并重建 UI 消息。</summary>

@@ -61,10 +61,18 @@ public sealed class SessionEngine(
     ConfigStore configStore,
     ILogger log,
     RetrievalKernel? retrievalKernel = null,
-    Core.Interactions.InteractionHub? interactionHub = null
+    Core.Interactions.InteractionHub? interactionHub = null,
+    string? todoRoot = null
 )
 {
     private readonly Agent agent = bridge.Agent;
+    private readonly string _todoRoot = string.IsNullOrWhiteSpace(todoRoot)
+        ? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".mythology",
+            "todos"
+        )
+        : todoRoot;
 
     // ── 会话 ID 与增量持久化追踪 ──
     private string _sessionId = "";
@@ -359,14 +367,40 @@ public sealed class SessionEngine(
         SaveCurrentSessionTodos();
         _sessionId = Guid.NewGuid().ToString("N")[..12];
         agent.SessionId = _sessionId;
+        todoStore.Reset();
         agent.ReplaceMessages([]);
         _lastParentEntryId = null;
         _persistedMessageCount = 0;
         _sessionPersistenceFaulted = false;
         _nextOrder = 0;
         AssertOrderInvariant();
-        todoStore.Clear();
         _inputHistory.Clear();
+    }
+
+    /// <summary>保存当前会话 Todo 快照（切换会话前由宿主调用）。</summary>
+    public void SaveTodos() => SaveCurrentSessionTodos();
+
+    /// <summary>
+    /// 把面板重新绑定到当前会话：优先恢复该会话快照；没有快照则显式清空，
+    /// 绝不保留上一个会话的任务。
+    /// </summary>
+    public void ReloadTodosForCurrentSession()
+    {
+        if (string.IsNullOrEmpty(_sessionId))
+        {
+            todoStore.Reset();
+            return;
+        }
+
+        try
+        {
+            todoStore.ReplaceFromFileOrEmpty(TodoPathFor(_sessionId));
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "load session todos failed");
+            todoStore.Reset();
+        }
     }
 
     /// <summary>切换到已有会话：恢复 UI 消息/LLM 上下文/增量状态/输入历史/任务/变体组。</summary>
@@ -388,6 +422,7 @@ public sealed class SessionEngine(
         agent.SessionId = _sessionId;
         agent.CurrentNovelId = novelId;
         _sessionPersistenceFaulted = false;
+        LoadSessionTodosOrEmpty(_sessionId);
 
         // LLM 仅加载 compact 后的上下文消息
         await RestoreContextFromDbAsync(_sessionId);
@@ -412,7 +447,6 @@ public sealed class SessionEngine(
             log.LogWarning(ex, "load session input history failed");
         }
 
-        LoadSessionTodos(_sessionId);
         await LoadLastVariantSetAsync();
         Activate();
     }
@@ -1672,28 +1706,22 @@ public sealed class SessionEngine(
         }
     }
 
-    private void LoadSessionTodos(string sessionId)
+    private void LoadSessionTodosOrEmpty(string sessionId)
     {
         if (string.IsNullOrEmpty(sessionId))
             return;
         try
         {
-            todoStore.TryLoadFrom(TodoPathFor(sessionId));
+            todoStore.ReplaceFromFileOrEmpty(TodoPathFor(sessionId));
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "load session todos failed");
+            todoStore.Reset();
         }
     }
 
-    private static string TodoPathFor(string sessionId)
-    {
-        var mythDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".mythology"
-        );
-        return Path.Combine(mythDir, "todos", $"{sessionId}.json");
-    }
+    private string TodoPathFor(string sessionId) => Path.Combine(_todoRoot, $"{sessionId}.json");
 
     // ═══════════════════════════════════════════════════════════
     //  上下文接续（Codex context management 语义）— 镜像 TuiApp.NewContext.cs

@@ -467,7 +467,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         // 设定面板实体刷新由 SetUpPanelViewModel 自订阅 OnStreamEvent（避免双重刷新），此处不重复订阅
 
-        NewConversationCommand = ReactiveCommand.Create(NewConversation);
+        NewConversationCommand = ReactiveCommand.CreateFromTask(() => NewConversationAsync());
 
         // 小说选择 → 注入 Agent 上下文 + 刷新设定面板
         this.WhenAnyValue(x => x.SelectedNovel)
@@ -1788,16 +1788,22 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         _activeVms.Remove(session.Id);
         if (ActiveConversationVm?.CurrentConversationId == session.Id)
-            NewConversation();
+            await NewConversationAsync(savePreviousTodos: false);
         RefreshRecentConversations();
     }
 
-    /// <summary>切换到对话。</summary>
-    public void SwitchToConversation(ConversationViewModel vm)
+    /// <summary>保存当前活动对话的 Todo 快照（切换/新建前调用）。</summary>
+    private void SaveActiveTodos() => ActiveConversationVm?.Engine.SaveTodos();
+
+    /// <summary>
+    /// 切换到对话：等待旧 turn 退出 → 取消旧会话交互 → 切换 UI → 重绑目标 Todo。
+    /// 调用方必须先保存旧活动会话的 Todo；本方法不再保存，避免目标快照已加载后误写回旧会话。
+    /// </summary>
+    private async Task SwitchToConversationAsync(ConversationViewModel vm)
     {
-        if (_bridge.IsProcessing)
-            _bridge.Stop();
-        var oldSession = ActiveConversationVm?.CurrentConversationId;
+        await _bridge.StopAsync();
+        var previousVm = ActiveConversationVm;
+        var oldSession = previousVm?.CurrentConversationId;
         if (
             !string.IsNullOrEmpty(oldSession)
             && !string.Equals(oldSession, vm.CurrentConversationId, StringComparison.Ordinal)
@@ -1808,6 +1814,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         ActiveConversationVm = vm;
         vm.Activate();
+        vm.Engine.ReloadTodosForCurrentSession();
         InvalidateContextMeasure();
         _ = UpdateConversationTitleAsync(vm);
     }
@@ -1826,27 +1833,35 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>侧边栏/下拉点击对话。</summary>
     public async Task OpenConversationAsync(Core.Data.AgentSession session)
     {
+        await _bridge.StopAsync();
+        SaveActiveTodos();
+
         if (_activeVms.TryGetValue(session.Id, out var existing))
         {
-            SwitchToConversation(existing);
+            await SwitchToConversationAsync(existing);
         }
         else
         {
             var vm = CreateConversationVm();
             await vm.LoadConversationAsync(session.Id);
             _activeVms[vm.CurrentConversationId] = vm;
-            SwitchToConversation(vm);
+            await SwitchToConversationAsync(vm);
         }
     }
 
-    /// <summary>新建对话。</summary>
-    private void NewConversation()
+    /// <summary>新建对话（会话管理器首行的同步入口）。</summary>
+    private void NewConversation() => NewConversationCommand.Execute().Subscribe();
+
+    private async Task NewConversationAsync(bool savePreviousTodos = true)
     {
+        await _bridge.StopAsync();
+        if (savePreviousTodos)
+            SaveActiveTodos();
+
         var vm = CreateConversationVm();
-        vm.NewConversationCommand.Execute().Subscribe();
+        await vm.NewConversationAsync();
         _activeVms[vm.CurrentConversationId] = vm;
-        SwitchToConversation(vm);
-        InvalidateContextMeasure();
+        await SwitchToConversationAsync(vm);
         RefreshRecentConversations();
     }
 
@@ -1862,18 +1877,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         target ??= sessions.FirstOrDefault();
         if (target is not null)
         {
+            await _bridge.StopAsync();
+            SaveActiveTodos();
+
             if (!_activeVms.TryGetValue(target.Id, out var vm))
             {
                 vm = CreateConversationVm();
                 await vm.LoadConversationAsync(target.Id);
                 _activeVms[vm.CurrentConversationId] = vm;
             }
-            SwitchToConversation(vm);
+            await SwitchToConversationAsync(vm);
         }
         else
         {
             // 无会话 → 自动创建新对话（与 TUI ResumeSessionAsync 新会话分支一致）
-            NewConversation();
+            await NewConversationAsync();
         }
     }
 

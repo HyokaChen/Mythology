@@ -634,7 +634,7 @@ public sealed partial class TuiApp
         AssertOrderInvariant();
         _conversationPanel.Clear();
         // 新会话无历史任务，清空面板（避免残留上个会话的任务）
-        _todoStore.Clear();
+        _todoStore.Reset();
         if (novelChanged)
             await RefreshOutline();
         // ★ 新建会话：上下文为空，重置 token 显示
@@ -794,11 +794,12 @@ public sealed partial class TuiApp
             return;
         try
         {
-            _todoStore.TryLoadFrom(TodoPathFor(sessionId));
+            _todoStore.ReplaceFromFileOrEmpty(TodoPathFor(sessionId));
         }
         catch (Exception ex)
         {
             Services.TuiLogger.OperationFailed(_logger, ex, "load session todos");
+            _todoStore.Reset();
         }
     }
 

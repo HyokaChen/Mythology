@@ -583,7 +583,8 @@ public static class Program
             sp.GetRequiredService<ConfigStore>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SessionEngine>>(),
             sp.GetService<Core.Vector.RetrievalKernel>(), // vector_retrieval 通道（可选）
-            sp.GetRequiredService<Core.Interactions.InteractionHub>()
+            sp.GetRequiredService<Core.Interactions.InteractionHub>(),
+            Path.Combine(mythologyDir, "todos")
         ));
         // ── 云端账号：唯一 CloudSessionStore 单例 + 吊销事件总线（§13.6 DI 单例）+ 状态门面 ──
         // 实例在 Core 装配前创建并传入：云端 embedding 客户端与容器消费者共享同一实例。

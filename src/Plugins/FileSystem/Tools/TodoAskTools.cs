@@ -17,7 +17,7 @@ public sealed class TodoWriteTool(TodoStore store) : AgentTool<TodoWriteParams, 
     public override string Name => "todo_write";
     public override string Label => "管理任务";
     public override string Description =>
-        "创建/更新/删除/列出任务。支持状态流转 (pending→in_progress→completed)、依赖关系 (blockedBy)";
+        "创建/替换/更新/删除/列出任务。replace 用 items 整批替换当前清单；支持状态流转 (pending→in_progress→completed)、依赖关系 (blockedBy)";
 
     public override ToolCategory Category => ToolCategory.Generic;
     public override ToolExecutionMode ExecutionMode => ToolExecutionMode.Sequential; // 写入类：强制串行防并发写冲突
@@ -75,6 +75,44 @@ public sealed class TodoWriteTool(TodoStore store) : AgentTool<TodoWriteParams, 
                     {
                         Content = [new TextContent(sb.ToString())],
                         Details = new TodoWriteDetails { Action = "create", Id = item.Id },
+                    }
+                );
+            }
+
+            case "replace":
+            {
+                if (args.Items is null)
+                {
+                    return Task.FromResult(
+                        new AgentToolResult<TodoWriteDetails>
+                        {
+                            Content = [new TextContent("replace 需要指定 items")],
+                            IsError = true,
+                        }
+                    );
+                }
+
+                var now = DateTime.UtcNow;
+                var items = args
+                    .Items.Select(i => new TodoItem
+                    {
+                        Subject = string.IsNullOrWhiteSpace(i.Subject) ? "(untitled)" : i.Subject!,
+                        Description = i.Description ?? "",
+                        Owner = i.Owner ?? "",
+                        ActiveForm = i.ActiveForm ?? "",
+                        Status = ParseStatus(i.Status) ?? TodoStatus.Pending,
+                        BlockedBy = i.BlockedBy ?? [],
+                        CreatedAt = now,
+                        UpdatedAt = now,
+                    })
+                    .ToArray();
+                store.ReplaceWithNewIds(items);
+                sb.Append($"✅ 任务清单已替换: {items.Length} 项");
+                return Task.FromResult(
+                    new AgentToolResult<TodoWriteDetails>
+                    {
+                        Content = [new TextContent(sb.ToString())],
+                        Details = new TodoWriteDetails { Action = "replace", Count = items.Length },
                     }
                 );
             }
@@ -212,7 +250,7 @@ public sealed class TodoWriteTool(TodoStore store) : AgentTool<TodoWriteParams, 
                         Content =
                         [
                             new TextContent(
-                                $"未知操作: {args.Action}。支持: create/update/delete/list/clear"
+                                $"未知操作: {args.Action}。支持: create/replace/update/delete/list/clear"
                             ),
                         ],
                         IsError = true,
@@ -227,8 +265,11 @@ public sealed class TodoWriteTool(TodoStore store) : AgentTool<TodoWriteParams, 
 /// </summary>
 public sealed record TodoWriteParams
 {
-    [Description("操作: create / update / delete / list / clear")]
+    [Description("操作: create / replace / update / delete / list / clear")]
     public string Action { get; init; } = "list";
+
+    [Description("replace 时的整批任务项（原子替换当前清单）")]
+    public TodoWriteItem[]? Items { get; init; }
 
     [Description("任务 ID（update/delete 时必填）")]
     public int? Id { get; init; }
@@ -253,6 +294,30 @@ public sealed record TodoWriteParams
 
     [Description("移除依赖的任务 ID 列表")]
     public string[]? RemoveBlockedBy { get; init; }
+}
+
+/// <summary>
+/// replace 时的一批任务项。
+/// </summary>
+public sealed record TodoWriteItem
+{
+    [Description("任务标题")]
+    public string? Subject { get; init; }
+
+    [Description("任务详细描述")]
+    public string? Description { get; init; }
+
+    [Description("任务状态: pending / in_progress / completed / deleted")]
+    public string? Status { get; init; }
+
+    [Description("负责人/所有者")]
+    public string? Owner { get; init; }
+
+    [Description("进行中时的显示标签，如 'writing tests'")]
+    public string? ActiveForm { get; init; }
+
+    [Description("依赖的任务 ID 列表")]
+    public string[]? BlockedBy { get; init; }
 }
 
 /// <summary>
