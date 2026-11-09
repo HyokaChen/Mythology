@@ -193,60 +193,78 @@
               Classes="Eyebrow"
               IsVisible="{Binding Step.HasDetailArguments}"
             />
-            <TextBlock
-              Text="{Binding Step.DetailArguments}"
+            <ScrollViewer
               IsVisible="{Binding Step.HasDetailArguments}"
-              FontFamily="{StaticResource FontMono}"
-              FontSize="11"
-              Foreground="{DynamicResource BrushSageGray}"
-              TextWrapping="Wrap"
-            />
+              MaxHeight="240"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+            >
+              <TextBlock
+                Text="{Binding Step.DetailArguments}"
+                FontFamily="{StaticResource FontMono}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushSageGray}"
+                TextWrapping="Wrap"
+              />
+            </ScrollViewer>
             <TextBlock Text="结果" Classes="Eyebrow" IsVisible="{Binding Step.HasResultDetail}" />
-            <TextBlock
-              Text="{Binding Step.DetailResult}"
+            <ScrollViewer
               IsVisible="{Binding Step.ShowRawResultDetail}"
-              FontFamily="{StaticResource FontMono}"
-              FontSize="11"
-              Foreground="{DynamicResource BrushSageGray}"
-              TextWrapping="Wrap"
-            />
+              MaxHeight="320"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+            >
+              <TextBlock
+                Text="{Binding Step.DetailResult}"
+                FontFamily="{StaticResource FontMono}"
+                FontSize="11"
+                Foreground="{DynamicResource BrushSageGray}"
+                TextWrapping="Wrap"
+              />
+            </ScrollViewer>
             <StackPanel IsVisible="{Binding Step.HasDiff}" Spacing="2" Margin="0,2,0,0">
               <TextBlock Text="{Binding Step.DiffSummary}" Classes="Eyebrow" />
-              <ItemsControl ItemsSource="{Binding Step.DiffLines}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="models:DiffLineView">
-                    <Border
-                      Classes="DiffRow"
-                      Classes.DiffDelete="{Binding IsDelete}"
-                      Classes.DiffInsert="{Binding IsInsert}"
-                    >
-                      <Grid ColumnDefinitions="Auto,Auto,*">
-                        <TextBlock
-                          Classes="DiffText DiffPrefix"
-                          Classes.DiffDelete="{Binding IsDelete}"
-                          Classes.DiffInsert="{Binding IsInsert}"
-                          Text="{Binding Prefix}"
-                        />
-                        <TextBlock
-                          Grid.Column="1"
-                          Classes="DiffText DiffLineNumber"
-                          Classes.DiffDelete="{Binding IsDelete}"
-                          Classes.DiffInsert="{Binding IsInsert}"
-                          Text="{Binding LineNumber}"
-                        />
-                        <TextBlock
-                          Grid.Column="2"
-                          Classes="DiffText"
-                          Classes.DiffDelete="{Binding IsDelete}"
-                          Classes.DiffInsert="{Binding IsInsert}"
-                          Text="{Binding Text}"
-                          TextWrapping="Wrap"
-                        />
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+              <ScrollViewer
+                MaxHeight="320"
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+              >
+                <ItemsControl ItemsSource="{Binding Step.DiffLines}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:DiffLineView">
+                      <Border
+                        Classes="DiffRow"
+                        Classes.DiffDelete="{Binding IsDelete}"
+                        Classes.DiffInsert="{Binding IsInsert}"
+                      >
+                        <Grid ColumnDefinitions="Auto,Auto,*">
+                          <TextBlock
+                            Classes="DiffText DiffPrefix"
+                            Classes.DiffDelete="{Binding IsDelete}"
+                            Classes.DiffInsert="{Binding IsInsert}"
+                            Text="{Binding Prefix}"
+                          />
+                          <TextBlock
+                            Grid.Column="1"
+                            Classes="DiffText DiffLineNumber"
+                            Classes.DiffDelete="{Binding IsDelete}"
+                            Classes.DiffInsert="{Binding IsInsert}"
+                            Text="{Binding LineNumber}"
+                          />
+                          <TextBlock
+                            Grid.Column="2"
+                            Classes="DiffText"
+                            Classes.DiffDelete="{Binding IsDelete}"
+                            Classes.DiffInsert="{Binding IsInsert}"
+                            Text="{Binding Text}"
+                            TextWrapping="Wrap"
+                          />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
             </StackPanel>
           </StackPanel>
         </StackPanel>

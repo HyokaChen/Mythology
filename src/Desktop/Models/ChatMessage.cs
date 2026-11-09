@@ -78,6 +78,9 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
         }
     }
 
+    /// <summary>用户手动展开/收起过程后，禁止自动折叠（对齐 ToolCallGroup 的 touched 语义）。</summary>
+    public bool ProcessTouchedByUser { get; set; }
+
     /// <summary>折叠过程行的摘要。</summary>
     public string ProcessSummary
     {

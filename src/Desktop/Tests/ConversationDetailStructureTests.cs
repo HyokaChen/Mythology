@@ -156,11 +156,10 @@ public sealed class ConversationDetailStructureTests
     {
         var details = DetailsBlock();
 
-        // 原始结果文本只在没有结构化 diff 时回退显示。
-        Assert.Equal(
-            "{Binding Step.ShowRawResultDetail}",
-            Attr(TextBlockWithText(details, "{Binding Step.DetailResult}"), "IsVisible")
-        );
+        // 原始结果文本只在没有结构化 diff 时回退显示（外层限高滚动）。
+        var rawResult = TextBlockWithText(details, "{Binding Step.DetailResult}");
+        var rawResultScroll = rawResult.Ancestors().First(e => e.Name.LocalName == "ScrollViewer");
+        Assert.Equal("{Binding Step.ShowRawResultDetail}", Attr(rawResultScroll, "IsVisible"));
 
         var items = details
             .Descendants()

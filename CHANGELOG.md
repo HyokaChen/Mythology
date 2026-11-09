@@ -143,6 +143,14 @@
   新增 `StreamingReasoning_KeepsConversationHeightBounded`：流式追加后对话总高度变化在 ±2px 内，
   展开后高度增量 ≤330px。未直接搬用 `ToolCallGroup` 的 450ms 自动折叠、`AiStreamText` 的
   reserve/reveal 缓存 TextLayout、`AiHeightBox` 的弹簧高度盒；它们记录为后续候选。
+  ⑩ 借鉴 TKCode.Arc `ToolCallGroup` / `ToolCallOutput`：
+  - 完成后 450ms 自动折叠历史过程；用户手动展开/收起后不再自动折叠；失败自动展开；
+    新步骤到达时重新展开（`ChatMessage.ProcessTouchedByUser` + 450ms 定时器）。
+  - 工具详情参数/结果/diff 放入 MaxHeight 240/320 的内部 ScrollViewer，长输出不再继续撑高对话。
+  - 修复实时步骤更新不生效：`CollectionChanged` 的 sender 是集合而不是 ChatMessage，之前
+    `OnMessageStepsChanged/OnMessageSourcesChanged` 直接返回；改为集合→消息 owner map，
+    流式新增步骤/来源现在会实时重建行。
+  新增 `LiveProcess_AutoCollapsesAfterSettled_UnlessTouched`；完整套件 592/592。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

@@ -489,6 +489,65 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;
 
     [Fact]
+    public void LiveProcess_AutoCollapsesAfterSettled_UnlessTouched()
+    {
+        Ui.Run(() =>
+        {
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                message.AppendContent("最终答复");
+                _vm.Messages.Add(message);
+                _vm.HasMessages = true;
+                PumpUntil(
+                    () => view.FindControl<ItemsControl>("MessageList")!.Items.Count > 0,
+                    "新消息行挂载"
+                );
+
+                message.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "编辑",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                    }
+                );
+
+                PumpUntil(() => !message.IsProcessExpanded, "完成后 450ms 自动折叠过程");
+
+                message.ProcessTouchedByUser = true;
+                message.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "搜索",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                    }
+                );
+                for (var i = 0; i < 60; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+                Assert.False(message.IsProcessExpanded, "用户手动操作后不得自动折叠");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void FlattenedRows_RenderContent_AndSwitchLazyMarkdown()
     {
         Ui.Run(() =>

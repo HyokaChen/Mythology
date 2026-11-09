@@ -64,6 +64,7 @@ public partial class ConversationView : UserControl
     {
         _drainTimer?.Stop();
         _richUpgradeTimer?.Stop();
+        CancelProcessFold();
         _earlierQueue.Clear();
         _loadingEarlier = false;
         _idleDrain = false;
@@ -94,6 +95,10 @@ public partial class ConversationView : UserControl
     private readonly Dictionary<ChatMessage, List<ConversationRow>> _rowsByMessage = [];
     private readonly HashSet<ChatMessage> _subscribedMessages = [];
     private readonly HashSet<ChatMessage> _dirtyRowMessages = [];
+    private readonly Dictionary<AgentStep, ChatMessage> _stepOwners = [];
+    private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
+    private System.Threading.Timer? _processFoldTimer;
+    private ChatMessage? _processFoldCandidate;
     private ConversationViewModel? _messagesVm;
     private int _windowStart;
     private bool _windowExpanded;
@@ -307,6 +312,8 @@ public partial class ConversationView : UserControl
         _visibleRows.Clear();
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
+        _stepOwners.Clear();
+        CancelProcessFold();
     }
 
     private void ReplaceRowsForMessage(ChatMessage message)
@@ -341,6 +348,10 @@ public partial class ConversationView : UserControl
         message.PropertyChanged += OnMessagePropertyChanged;
         message.AgentSteps.CollectionChanged += OnMessageStepsChanged;
         message.Sources.CollectionChanged += OnMessageSourcesChanged;
+        _collectionOwners[message.AgentSteps] = message;
+        _collectionOwners[message.Sources] = message;
+        foreach (var step in message.AgentSteps)
+            SubscribeStep(step, message);
     }
 
     private void UnsubscribeMessage(ChatMessage message)
@@ -350,6 +361,10 @@ public partial class ConversationView : UserControl
         message.PropertyChanged -= OnMessagePropertyChanged;
         message.AgentSteps.CollectionChanged -= OnMessageStepsChanged;
         message.Sources.CollectionChanged -= OnMessageSourcesChanged;
+        _collectionOwners.Remove(message.AgentSteps);
+        _collectionOwners.Remove(message.Sources);
+        foreach (var pair in _stepOwners.Where(pair => pair.Value == message).ToArray())
+            UnsubscribeStep(pair.Key);
     }
 
     private void OnMessagePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -362,18 +377,127 @@ public partial class ConversationView : UserControl
                     or nameof(ChatMessage.IsInterrupted)
                     or nameof(ChatMessage.IsProcessExpanded)
         )
+        {
             MarkRowsDirty(message);
+            if (e.PropertyName == nameof(ChatMessage.IsWaiting))
+                TryScheduleProcessFold(message);
+        }
     }
 
     private void OnMessageStepsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (sender is ChatMessage message)
+        if (sender is null || !_collectionOwners.TryGetValue(sender, out var message))
+            return;
+
+        if (e.OldItems is not null)
+        {
+            foreach (var item in e.OldItems)
+                if (item is AgentStep removed)
+                    UnsubscribeStep(removed);
+        }
+        if (e.NewItems is not null)
+        {
+            foreach (var item in e.NewItems)
+                if (item is AgentStep added)
+                    SubscribeStep(added, message);
+        }
+
+        // 新一轮/新工具步骤出现：重新展开过程；用户手动操作过的保持用户意图。
+        if (e.Action == NotifyCollectionChangedAction.Add && !message.ProcessTouchedByUser)
+        {
+            message.IsProcessExpanded = true;
+            CancelProcessFold();
+        }
+
+        MarkRowsDirty(message);
+        TryScheduleProcessFold(message);
+    }
+
+    private void SubscribeStep(AgentStep step, ChatMessage message)
+    {
+        if (!_stepOwners.TryAdd(step, message))
+            return;
+        step.PropertyChanged += OnStepPropertyChanged;
+    }
+
+    private void UnsubscribeStep(AgentStep step)
+    {
+        if (!_stepOwners.Remove(step))
+            return;
+        step.PropertyChanged -= OnStepPropertyChanged;
+    }
+
+    private void OnStepPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not AgentStep step || !_stepOwners.TryGetValue(step, out var message))
+            return;
+        if (e.PropertyName is not (nameof(AgentStep.Status) or nameof(AgentStep.IsProcessing)))
+            return;
+
+        // 失败/审批需要决定：自动展开过程，不再自动收。
+        if (step.Status == AgentStepStatus.Failed)
+        {
+            message.IsProcessExpanded = true;
+            CancelProcessFold();
             MarkRowsDirty(message);
+            return;
+        }
+
+        TryScheduleProcessFold(message);
+    }
+
+    /// <summary>ToolCallGroup 语义：全部步骤结束后 450ms 自动折叠过程，除非用户手动展开过。</summary>
+    private void TryScheduleProcessFold(ChatMessage message)
+    {
+        if (
+            !_subscribedMessages.Contains(message)
+            || message.ProcessTouchedByUser
+            || !message.IsProcessExpanded
+            || message.IsWaiting
+            || message.AgentSteps.Count == 0
+            || message.AgentSteps.Any(step =>
+                step.IsProcessing || step.Status == AgentStepStatus.Failed
+            )
+        )
+            return;
+
+        CancelProcessFold();
+        _processFoldCandidate = message;
+        _processFoldTimer = new System.Threading.Timer(
+            _ => Dispatcher.UIThread.Post(OnProcessFoldTick, DispatcherPriority.Background),
+            null,
+            TimeSpan.FromMilliseconds(450),
+            Timeout.InfiniteTimeSpan
+        );
+    }
+
+    private void OnProcessFoldTick()
+    {
+        var message = _processFoldCandidate;
+        CancelProcessFold();
+        if (
+            message is null
+            || message.ProcessTouchedByUser
+            || !message.IsProcessExpanded
+            || message.IsWaiting
+            || message.AgentSteps.Any(step =>
+                step.IsProcessing || step.Status == AgentStepStatus.Failed
+            )
+        )
+            return;
+        message.IsProcessExpanded = false;
+    }
+
+    private void CancelProcessFold()
+    {
+        _processFoldTimer?.Dispose();
+        _processFoldTimer = null;
+        _processFoldCandidate = null;
     }
 
     private void OnMessageSourcesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (sender is ChatMessage message)
+        if (sender is not null && _collectionOwners.TryGetValue(sender, out var message))
             MarkRowsDirty(message);
     }
 
@@ -698,7 +822,11 @@ public partial class ConversationView : UserControl
     private void ProcessRow_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: ConversationRow { Message: var message } })
+        {
+            message.ProcessTouchedByUser = true;
+            CancelProcessFold();
             message.IsProcessExpanded = true;
+        }
         e.Handled = true;
     }
 
