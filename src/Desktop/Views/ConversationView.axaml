@@ -616,6 +616,7 @@
                 x:Name="SendButton"
                 Classes="Primary"
                 Command="{Binding SendMessageCommand}"
+                Click="SendButton_OnClick"
                 IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
                 motion:Motion.Fade="True"
               >

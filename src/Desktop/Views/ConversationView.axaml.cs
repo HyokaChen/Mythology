@@ -19,8 +19,11 @@ public partial class ConversationView : UserControl
     public ConversationView()
     {
         InitializeComponent();
+        Loaded += (_, _) => ScheduleIdlePrefetch();
         MessageList.ItemsSource = _visibleMessages;
         MessageList.ScrolledToTop += MessageList_OnScrolledToTop;
+        // 距顶部 2 屏就预取下一页：用户撞到顶之前内容已插入，滚动不会在顶部停顿。
+        MessageScroll.ScrollChanged += MessageScroll_OnScrollChanged;
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -67,7 +70,10 @@ public partial class ConversationView : UserControl
     private const int MinWindowMessages = 4;
     private const int MaxPageMessages = 20;
     private const double WindowViewports = 3.0;
-    private const double PageViewports = 1.5;
+    private const double PageViewports = 2.0;
+    private const double PrefetchViewports = 2.0;
+    private const int PrefetchPages = 3;
+    private const int MaxPrefetchedWindowMessages = 80;
     private const double FallbackViewport = 600;
 
     private readonly ObservableCollection<ChatMessage> _visibleMessages = [];
@@ -77,6 +83,11 @@ public partial class ConversationView : UserControl
     private bool _bulkRestore;
     private bool _refreshScheduled;
     private bool _loadingEarlier;
+    private readonly Queue<ChatMessage> _earlierQueue = new();
+    private int _windowGeneration;
+    private int _prefetchedPages;
+    private bool _idlePrefetchScheduled;
+    private bool _idleDrain;
 
     /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged，窗口先落到最新一页。</summary>
     private void AttachMessageSource()
@@ -91,6 +102,11 @@ public partial class ConversationView : UserControl
         _messagesVm = vm;
         _bulkRestore = false;
         _loadingEarlier = false;
+        _earlierQueue.Clear();
+        _idleDrain = false;
+        _windowGeneration++;
+        _prefetchedPages = 0;
+        _idlePrefetchScheduled = false;
         if (_messagesVm is not null)
             _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
 
@@ -219,6 +235,9 @@ public partial class ConversationView : UserControl
         _visibleMessages.Clear();
         for (var i = _windowStart; i < total; i++)
             _visibleMessages.Add(_messagesVm.Messages[i]);
+
+        if (IsLoaded)
+            ScheduleIdlePrefetch();
     }
 
     /// <summary>跟随尾部时维持像素预算：从头部丢弃多余行（底部视口不动）。</summary>
@@ -237,10 +256,58 @@ public partial class ConversationView : UserControl
         }
     }
 
-    /// <summary>用户滚到顶部：向前补一页；视口锚点按新增内容高度下移。</summary>
-    private void MessageList_OnScrolledToTop()
+    /// <summary>用户滚到顶部（精确 0）：向前补页。</summary>
+    private void MessageList_OnScrolledToTop() => PrependEarlierPage(expandWindow: true);
+
+    /// <summary>距顶部 2 屏时提前补页，避免滚到顶后才加载造成停顿。</summary>
+    private void MessageScroll_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_loadingEarlier || _messagesVm is null || _windowStart <= 0)
+            return;
+        if (MessageList.IsFollowing)
+            return;
+        if (MessageScroll.Offset.Y > ViewportHeight() * PrefetchViewports)
+            return;
+
+        PrependEarlierPage(expandWindow: true);
+    }
+
+    /// <summary>
+    /// 空闲时预取更早的一页：大消息的模板实例化/布局（实测单条 ~187ms）发生在用户滚动之前，
+    /// 不占用滚轮帧。ContextIdle 会在用户输入/滚动时让路。
+    /// </summary>
+    private void ScheduleIdlePrefetch()
+    {
+        if (_idlePrefetchScheduled || _messagesVm is null || _windowStart <= 0)
+            return;
+        if (_prefetchedPages >= PrefetchPages)
+            return;
+        // 用户已经上滚时不再静默预取，避免把大消息布局插入滚轮帧。
+        if (!MessageList.IsFollowing)
+            return;
+
+        _idlePrefetchScheduled = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _idlePrefetchScheduled = false;
+                if (_messagesVm is null || _windowStart <= 0 || _loadingEarlier)
+                    return;
+                if (_prefetchedPages >= PrefetchPages || !MessageList.IsFollowing)
+                    return;
+                _prefetchedPages++;
+                PrependEarlierPage(expandWindow: false);
+            },
+            DispatcherPriority.ContextIdle
+        );
+    }
+
+    /// <summary>向前补一页；按新增内容高度下移 offset，视口锚点不跳。</summary>
+    private void PrependEarlierPage(bool expandWindow)
+    {
+        if (_loadingEarlier || _messagesVm is null || _windowStart <= 0)
+            return;
+        if (!expandWindow && _visibleMessages.Count >= MaxPrefetchedWindowMessages)
             return;
 
         var pageBudget = ViewportHeight() * PageViewports;
@@ -252,18 +319,62 @@ public partial class ConversationView : UserControl
             addedHeight += EstimateMessageHeight(_messagesVm.Messages[_windowStart - take]);
         }
 
+        if (!expandWindow)
+            take = Math.Min(
+                take,
+                Math.Max(0, MaxPrefetchedWindowMessages - _visibleMessages.Count)
+            );
         if (take == 0)
             return;
 
-        var scroll = MessageScroll;
-        var beforeOffset = scroll.Offset.Y;
-        var beforeExtent = scroll.Extent.Height;
-
         _loadingEarlier = true;
-        _windowExpanded = true;
+        _idleDrain = !expandWindow;
+        if (expandWindow)
+            _windowExpanded = true;
         _windowStart -= take;
-        for (var i = 0; i < take; i++)
-            _visibleMessages.Insert(i, _messagesVm.Messages[_windowStart + i]);
+
+        // 从最早到最晚入队；每次 Insert(0) 后顺序才与源集合一致。
+        for (var i = take - 1; i >= 0; i--)
+            _earlierQueue.Enqueue(_messagesVm.Messages[_windowStart + i]);
+
+        DrainEarlierQueue();
+    }
+
+    /// <summary>
+    /// 一帧只插入一条：单条大消息的模板实例化不再把整页（几百 ms）压进一个 UI 帧。
+    /// 每插一条按 extent 增量下移 offset，视口锚点保持在原内容。
+    /// </summary>
+    private void DrainEarlierQueue()
+    {
+        if (_messagesVm is null)
+        {
+            _earlierQueue.Clear();
+            _loadingEarlier = false;
+            _idleDrain = false;
+            return;
+        }
+
+        if (_idleDrain && !MessageList.IsFollowing)
+        {
+            _earlierQueue.Clear();
+            _loadingEarlier = false;
+            _idleDrain = false;
+            return;
+        }
+
+        if (_earlierQueue.Count == 0)
+        {
+            _loadingEarlier = false;
+            _idleDrain = false;
+            ScheduleIdlePrefetch();
+            return;
+        }
+
+        var message = _earlierQueue.Dequeue();
+        var generation = _windowGeneration;
+        var scroll = MessageScroll;
+        var beforeExtent = scroll.Extent.Height;
+        _visibleMessages.Insert(0, message);
 
         Dispatcher.UIThread.Post(
             () =>
@@ -272,11 +383,12 @@ public partial class ConversationView : UserControl
                 {
                     var added = scroll.Extent.Height - beforeExtent;
                     if (added > 0.5)
-                        scroll.Offset = scroll.Offset.WithY(beforeOffset + added);
+                        scroll.Offset = scroll.Offset.WithY(scroll.Offset.Y + added);
                 }
                 finally
                 {
-                    _loadingEarlier = false;
+                    if (generation == _windowGeneration)
+                        DrainEarlierQueue();
                 }
             },
             DispatcherPriority.Background
@@ -659,6 +771,9 @@ public partial class ConversationView : UserControl
     }
 
     // ── 拖放：把文件/目录路径插入输入框（@ 路径语义，与补全插入格式一致） ──
+
+    /// <summary>点击发送按钮不经过 Enter 路径，这里补一次跟随重置（命令执行后由 Loaded 追底）。</summary>
+    private void SendButton_OnClick(object? sender, RoutedEventArgs e) => MessageList.ResetFollow();
 
     private void InputBox_OnDragOver(object? sender, DragEventArgs e)
     {

@@ -290,7 +290,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 // 可变高度对话行不用 VSP（extent 估算会振荡）；窗口化 StackPanel 精确贴底。
                 Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
                 Assert.NotEmpty(list.GetVisualDescendants().OfType<StackPanel>());
-                Assert.InRange(list.Items.Count, 1, 40);
+                Assert.InRange(list.Items.Count, 1, 80);
 
                 PumpUntil(() => AtBottom(sv), "初始加载自动贴底");
 
@@ -430,12 +430,12 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var sv = FindMessageScroll(view);
 
                 PumpUntil(() => AtBottom(sv), "2000 条窗口化列表贴底");
-                Assert.InRange(list.Items.Count, 1, 40);
+                Assert.InRange(list.Items.Count, 1, 80);
                 Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
 
                 // 跟随状态下追加：窗口仍受限且贴底
                 _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
-                PumpUntil(() => AtBottom(sv) && list.Items.Count <= 40, "新增消息后贴底");
+                PumpUntil(() => AtBottom(sv) && list.Items.Count <= 80, "新增消息后贴底");
 
                 // 滚到顶部 → 增量补更早的一页（窗口变大，源集合仍是 2001）
                 var firstCount = list.Items.Count;
@@ -463,14 +463,14 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 _vm.Messages.Clear();
                 AddHistory(2000, "恢复");
                 PumpUntil(() => AtBottom(sv), "批量恢复后贴底");
-                Assert.InRange(list.Items.Count, 1, 40);
+                Assert.InRange(list.Items.Count, 1, 80);
 
                 // 数据上下文卸载/重挂（会话切换的 UI 形态）仍贴底
                 view.DataContext = null;
                 PumpUntil(() => list.Items.Count == 0, "清空数据上下文");
                 view.DataContext = _vm;
                 PumpUntil(
-                    () => AtBottom(sv) && list.Items.Count is > 0 and <= 40,
+                    () => AtBottom(sv) && list.Items.Count is > 0 and <= 80,
                     "重挂数据上下文后贴底"
                 );
             }

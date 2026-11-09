@@ -52,7 +52,7 @@ public class AutoScrollItemsControl : ItemsControl
             if (e.Action == NotifyCollectionChangedAction.Reset)
             {
                 _autoFollow = true;
-                Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
+                Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
                 return;
             }
 
@@ -65,7 +65,7 @@ public class AutoScrollItemsControl : ItemsControl
     public void ResetFollow()
     {
         _autoFollow = true;
-        Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -176,12 +176,9 @@ public class AutoScrollItemsControl : ItemsControl
 
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
 
-        // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量 / 虚拟化校正）都重新贴底。
-        // 不能再拿「offset + delta >= max - 8」判断：ScrollViewer 的锚点会在插入新行时
-        // 把 offset 往回收（保持原内容），此时 offset 已不在旧底部，条件永远不成立。
-        // TEMP: single-shot
-        // if (_autoFollow && e.ExtentDelta.Y > 0)
-        //     ScheduleFollowTail();
+        // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量）都重新贴底。
+        if (_autoFollow && e.ExtentDelta.Y > 0)
+            ScheduleFollowTail();
 
         // 用户拖动滚动条上移 → 停止跟随。
         // 注意：不能对所有 offset 负增量停跟随——布局校正（内容变矮/虚拟化估算）
@@ -220,23 +217,6 @@ public class AutoScrollItemsControl : ItemsControl
     }
 
     /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>
-    private void ScrollToBottomOnce()
-    {
-        if (!_autoFollow || _scrollViewer is null)
-            return;
-        if (Items.Count > 0)
-            ScrollIntoView(Items.Count - 1);
-        _scrollViewer.ScrollToEnd();
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                if (_autoFollow)
-                    _scrollViewer?.ScrollToEnd();
-            },
-            DispatcherPriority.Loaded
-        );
-    }
-
     private void FollowTailIfEnabled()
     {
         if (!_autoFollow || _scrollViewer is null)
@@ -246,10 +226,7 @@ public class AutoScrollItemsControl : ItemsControl
         if (_scrollViewer.Offset.Y >= maxOffset - 0.5)
             return;
 
-        // 只按 offset 追底，不调用 ScrollIntoView：VSP 的 ScrollIntoView 会把最后一个
-        // 容器设为锚点，高消息/估算校正时又把 offset 拉回旧锚点，形成 29.5k↔65k 的
-        // 无限循环（真实会话 82 条即可复现）。ScrollToEnd 让 VSP 自己按 offset 实现
-        // 底部项，extent 增长时会再次进入本方法，offset 单调收敛到真实 max。
+        // StackPanel 的 Extent 是真实高度：ScrollToEnd 精确贴底，不做 ScrollIntoView。
         _scrollViewer.ScrollToEnd();
     }
 
@@ -261,6 +238,6 @@ public class AutoScrollItemsControl : ItemsControl
     private void OnItemsSourceChanged(AvaloniaPropertyChangedEventArgs e)
     {
         _autoFollow = true;
-        Dispatcher.UIThread.Post(ScrollToBottomOnce, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 }

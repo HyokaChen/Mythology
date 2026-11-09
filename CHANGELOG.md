@@ -115,6 +115,13 @@
   Clear+批量恢复/DataContext 重挂、断言无 `VirtualizingStackPanel`）、
   `ManyMessages_AutoScrollsToBottom_OnRestoreAndAfterSend`、
   `WheelUp_StopsFollow_UntilUserReturnsToBottom`、`MotionWiringTests`（消息模板无 motion 属性）。
+  ⑤ 自动贴底修复：上一版窗口化清理遗留了实验性的 `ScrollToBottomOnce`
+  （`ScrollIntoView` + 两次 `ScrollToEnd`）且 extent 跟随被注释，导致发送/恢复后不贴底；
+  恢复 `ResetFollow = ScrollToEndImmediate` 与 `ScrollChanged(ExtentDelta > 0) → 追底`。
+  ⑥ 上滚流畅性：空闲时（`ContextIdle`）预取最多 3 页（总量 ≤80 条），用户上滚即暂停并
+  清空预取队列；页面内逐条插入，每插一条按 extent 增量下移 offset；距顶 2 屏提前补页。
+  41 消息会话冷启动只渲染 9 行；页内单条大 Markdown 的布局成本（headless ~200ms）被移到
+  空闲预取，不占用滚轮帧。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛
