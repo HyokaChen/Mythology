@@ -71,16 +71,15 @@ public sealed class MotionWiringTests
     }
 
     /// <summary>
-    /// 对话列表已改为官方虚拟化（VSP）：行容器会被回收复用，逐行 Motion.Enter/Fade/Pop
-    /// 会在滚动时反复重播，表现为闪烁。整个消息 ItemTemplate 不得出现任何 motion 属性；
-    /// 列表外的空状态 / 输入区动效仍保留（见 ConversationEmptyState_PlaysEnter 等）。
+    /// 行窗口会裁剪/重挂行；逐行 Motion.Enter/Fade/Pop 会在重建时重播。
+    /// 整个行模板不得出现任何 motion 属性；列表外的空状态 / 输入区动效仍保留。
     /// </summary>
     [Fact]
-    public void ConversationMessageTemplate_IsAnimationFree_ForVirtualization()
+    public void ConversationMessageTemplate_IsAnimationFree()
     {
         var template = Single(
             Load("Views/ConversationView.axaml"),
-            e => e.Name.LocalName == "AutoScrollItemsControl.ItemTemplate"
+            e => e.Name.LocalName == "DataTemplate" && AttrPlain(e, "Key") == "ConversationRowRoot"
         );
         var animated = template
             .Descendants()

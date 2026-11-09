@@ -18,10 +18,7 @@
     <conv:SenderToBoolConverter x:Key="IsUser" />
     <conv:SenderToBoolConverter x:Key="IsAgent" />
     <conv:SenderToBoolConverter x:Key="IsSystem" />
-    <conv:MarkdownPlainTextConverter x:Key="MarkdownPlainText" />
-
-    <!-- 正文模板：历史预取页先走轻量纯文本，滚动停止后再升级到 LiveMarkdown。
-         这样向窗口前部插入一页时不会创建 Markdown 的完整视觉树。 -->
+    <!-- 正文只有一种模板：LiveMarkdown。历史与实时同构，不做纯文本降级。 -->
     <DataTemplate x:Key="RichAgentBody" x:DataType="models:ChatMessage">
       <md:MarkdownRenderer
         Classes="ConversationMarkdown"
@@ -29,21 +26,6 @@
         CodeBlockColorTheme="LightPlus"
       />
     </DataTemplate>
-    <DataTemplate x:Key="PlainAgentBody" x:DataType="models:ChatMessage">
-      <TextBlock
-        Text="{Binding Content, Converter={StaticResource MarkdownPlainText}}"
-        FontFamily="{StaticResource FontSans}"
-        FontSize="16"
-        LineHeight="24"
-        Foreground="{DynamicResource BrushOlivePress}"
-        TextWrapping="Wrap"
-      />
-    </DataTemplate>
-    <conv:BoolToTemplateConverter
-      x:Key="AgentBodyTemplate"
-      TrueTemplate="{StaticResource RichAgentBody}"
-      FalseTemplate="{StaticResource PlainAgentBody}"
-    />
 
     <DataTemplate x:Key="RowUser" x:DataType="models:ConversationRow">
       <StackPanel Margin="{Binding Margin}" HorizontalAlignment="Right" Spacing="3">
@@ -267,6 +249,13 @@
       </StackPanel>
     </DataTemplate>
 
+    <DataTemplate x:Key="ConversationRowRoot" x:DataType="models:ConversationRow">
+      <ContentControl
+        Content="{Binding}"
+        ContentTemplate="{Binding Kind, Converter={StaticResource ConversationRowTemplate}}"
+      />
+    </DataTemplate>
+
     <DataTemplate x:Key="StepContentMarkdown" x:DataType="models:AgentStep">
       <md:MarkdownRenderer
         Classes="ConversationMarkdown StepContentMarkdown"
@@ -284,7 +273,7 @@
         >
           <ContentControl
             Content="{Binding Message}"
-            ContentTemplate="{Binding Message.IsRichMarkdown, Converter={StaticResource AgentBodyTemplate}}"
+            ContentTemplate="{StaticResource RichAgentBody}"
           />
         </Border>
       </StackPanel>
@@ -499,7 +488,10 @@
         VerticalScrollBarVisibility="Auto"
         Padding="24,18,24,12"
       >
-        <controls:AutoScrollItemsControl x:Name="MessageList">
+        <controls:AutoScrollItemsControl
+          x:Name="MessageList"
+          ItemTemplate="{StaticResource ConversationRowRoot}"
+        >
           <controls:AutoScrollItemsControl.Template>
             <ControlTemplate TargetType="controls:AutoScrollItemsControl">
               <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />

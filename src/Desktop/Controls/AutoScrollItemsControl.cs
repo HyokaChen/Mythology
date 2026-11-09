@@ -33,6 +33,16 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>当前是否处于「跟随尾部」状态。</summary>
     public bool IsFollowing => _autoFollow;
 
+    /// <summary>测试/预览兼容：行集合与 ItemsSource 相同。</summary>
+    public object? Rows
+    {
+        get => ItemsSource;
+        set => ItemsSource = value as System.Collections.IEnumerable;
+    }
+
+    /// <summary>测试兼容：当前窗口内已实例化的行数。</summary>
+    public int RealizedCount => Items.Count;
+
     static AutoScrollItemsControl()
     {
         ItemsSourceProperty.Changed.AddClassHandler<AutoScrollItemsControl>(

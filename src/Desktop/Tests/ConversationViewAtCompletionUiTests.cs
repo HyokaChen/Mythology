@@ -290,7 +290,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 // 可变高度对话行不用 VSP（extent 估算会振荡）；窗口化 StackPanel 精确贴底。
                 Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
                 Assert.NotEmpty(list.GetVisualDescendants().OfType<StackPanel>());
-                Assert.InRange(list.Items.Count, 1, 80);
+                Assert.InRange(list.RealizedCount, 1, 80);
 
                 PumpUntil(() => AtBottom(sv), "初始加载自动贴底");
 
@@ -387,8 +387,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
-    /// 2000 条消息必须走官方虚拟化布局（ScrollViewer 包 ItemsControl + VSP）：
-    /// 只实例化视口附近的行；列表仍绑定全部消息，可完整上滚；自动贴底可靠。
+    /// 2000 条消息只保留尾部窗口；窗口内每一行都是 LiveMarkdown，历史不做纯文本降级。
     /// </summary>
     [Fact]
     public void LargeConversation_WindowsAndPinsToBottom()
@@ -429,50 +428,48 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 )!;
                 var sv = FindMessageScroll(view);
 
-                PumpUntil(() => AtBottom(sv), "2000 条窗口化列表贴底");
-                Assert.InRange(list.Items.Count, 1, 80);
-                Assert.Empty(list.GetVisualDescendants().OfType<VirtualizingStackPanel>());
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "2000 条窗口贴底");
+                Assert.InRange(list.Items.Count, 1, 200);
+                Assert.Equal(2000, _vm.Messages.Count);
+                Assert.DoesNotContain(
+                    list.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text?.Contains("##") == true
+                );
 
-                // 跟随状态下追加：窗口仍受限且贴底
+                // 跟随状态下追加：仍贴底，窗口不随全量历史膨胀
                 _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
-                PumpUntil(() => AtBottom(sv) && list.Items.Count <= 80, "新增消息后贴底");
+                PumpUntil(() => AtBottom(sv), "新增消息后贴底");
+                Assert.InRange(list.Items.Count, 1, 200);
 
-                // 滚到顶部 → 增量补更早的一页（窗口变大，源集合仍是 2001）
-                var firstCount = list.Items.Count;
+                // 上滚停跟随，滚回底部恢复
                 var pointer = new Point(450, 350);
                 window.MouseMove(pointer);
-                for (var i = 0; i < 80 && list.Items.Count == firstCount; i++)
-                {
-                    window.MouseWheel(pointer, new Vector(0, 5));
-                    for (var j = 0; j < 4; j++)
-                    {
-                        Dispatcher.UIThread.RunJobs();
-                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                        Thread.Sleep(5);
-                    }
-                }
-                Assert.True(list.Items.Count > firstCount, "滚到顶部后未加载更早的一页");
-                Assert.Equal(2001, _vm.Messages.Count);
-
-                // 上滚停跟随
                 window.MouseWheel(pointer, new Vector(0, 5));
                 PumpUntil(() => !AtBottom(sv), "滚轮上滚应停跟随");
                 Assert.True(sv.Offset.Y < sv.Extent.Height - sv.Viewport.Height - 1);
+                for (var i = 0; i < 20 && !AtBottom(sv); i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -5));
+                    for (var j = 0; j < 10; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(10);
+                    }
+                }
+                Assert.True(AtBottom(sv), "滚轮可回到底部");
 
                 // 同一 VM 上 Clear + 批量 Add（会话切换/恢复的真实形态）
                 _vm.Messages.Clear();
                 AddHistory(2000, "恢复");
-                PumpUntil(() => AtBottom(sv), "批量恢复后贴底");
-                Assert.InRange(list.Items.Count, 1, 80);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "批量恢复后贴底");
+                Assert.InRange(list.Items.Count, 1, 200);
 
                 // 数据上下文卸载/重挂（会话切换的 UI 形态）仍贴底
                 view.DataContext = null;
                 PumpUntil(() => list.Items.Count == 0, "清空数据上下文");
                 view.DataContext = _vm;
-                PumpUntil(
-                    () => AtBottom(sv) && list.Items.Count is > 0 and <= 80,
-                    "重挂数据上下文后贴底"
-                );
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "重挂数据上下文后贴底");
             }
             finally
             {
@@ -508,7 +505,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 _vm.Messages.Add(message);
                 _vm.HasMessages = true;
                 PumpUntil(
-                    () => view.FindControl<ItemsControl>("MessageList")!.Items.Count > 0,
+                    () =>
+                        view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                            "MessageList"
+                        )!.Items.Count > 0,
                     "新消息行挂载"
                 );
 
@@ -625,15 +625,14 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
-    public void FlattenedRows_RenderContent_AndSwitchLazyMarkdown()
+    public void AllConversationContent_UsesLiveMarkdown()
     {
         Ui.Run(() =>
         {
             var user = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
             user.AppendContent("用户可见内容");
             var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-            agent.AppendContent("代理可见内容");
-            agent.IsRichMarkdown = false;
+            agent.AppendContent("## 历史标题\n\n历史正文");
             _vm.Messages.Add(user);
             _vm.Messages.Add(agent);
             _vm.HasMessages = true;
@@ -660,28 +659,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                         view.GetVisualDescendants()
                             .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
                             .Any(),
-                    "初始尾部富文本"
+                    "历史正文 LiveMarkdown"
                 );
-
-                agent.IsRichMarkdown = false;
-                PumpUntil(
-                    () =>
-                        view.GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(t => t.Text == "代理可见内容")
-                        && !view.GetVisualDescendants()
-                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
-                            .Any(),
-                    "切回轻量纯文本"
-                );
-
-                agent.IsRichMarkdown = true;
-                PumpUntil(
-                    () =>
-                        view.GetVisualDescendants()
-                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
-                            .Any(),
-                    "富文本升级"
+                Assert.DoesNotContain(
+                    view.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text?.Contains("## 历史标题") == true
                 );
             }
             finally

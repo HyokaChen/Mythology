@@ -20,12 +20,10 @@ public partial class ConversationView : UserControl
     public ConversationView()
     {
         InitializeComponent();
-        Loaded += (_, _) => ScheduleIdlePrefetch();
+        Loaded += (_, _) => MessageList.ResetFollow();
         Unloaded += (_, _) => StopBackgroundWork();
-        MessageList.ItemsSource = _visibleRows;
-        MessageList.ScrolledToTop += MessageList_OnScrolledToTop;
-        // 距顶部 2 屏就预取下一页：用户撞到顶之前内容已插入，滚动不会在顶部停顿。
-        MessageScroll.ScrollChanged += MessageScroll_OnScrollChanged;
+        MessageList.ItemsSource = _rows;
+        MessageList.ScrolledToTop += OnScrolledToTop;
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -43,7 +41,7 @@ public partial class ConversationView : UserControl
         // 打开后显式选中首项，保证 / 与 # 弹窗默认高亮第一行。
         SuggestionPopup.Opened += (_, _) => SelectFirstSuggestion();
         CommandPopup.Opened += (_, _) => SelectFirstCommand();
-        // 会话切换 / /new 后数据上下文换新 VM：先重建窗口，再整页滑入。
+        // 会话切换 / /new 后数据上下文换新 VM：先重建行，再整页滑入。
         DataContextChanged += (_, _) =>
         {
             AttachMessageSource();
@@ -59,63 +57,27 @@ public partial class ConversationView : UserControl
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
 
-    /// <summary>窗口关闭/切走时停掉预取与富文本升级定时器，避免后台继续跑布局。</summary>
-    private void StopBackgroundWork()
-    {
-        _drainTimer?.Stop();
-        _richUpgradeTimer?.Stop();
-        CancelProcessFold();
-        _earlierQueue.Clear();
-        _loadingEarlier = false;
-        _idleDrain = false;
-        _idlePrefetchScheduled = false;
-    }
+    /// <summary>窗口关闭/切走时停掉后台折叠定时器。</summary>
+    private void StopBackgroundWork() => CancelProcessFold();
 
-    // ── 消息窗口：尾部约 3 屏 + 滚到顶部增量加载 ─────────────────────────
+    // ── 行窗口：只保留最近 40 条消息的行，全部 LiveMarkdown，不做纯文本降级 ─────────────
 
-    /// <summary>
-    /// 不使用 VirtualizingStackPanel：stock VSP 的 extent 只按当前 realized 窗口估算，
-    /// 对话行高度差异极大时（10k 字用户气泡、长表格/工具结果），ScrollToEnd 触发的 realize
-    /// 会让估算在 30k↔67k px 间来回，offset 被 anchor/coerce 反复拉回，滚动条无限上下跳。
-    /// 这里改回精确测量的 StackPanel + 像素预算窗口，窗口内 Extent 是真实高度。
-    /// </summary>
-    private const int MaxWindowMessages = 40;
-
-    private const int MinWindowMessages = 4;
-    private const int MaxPageMessages = 20;
-    private const double WindowViewports = 3.0;
-    private const double PageViewports = 2.0;
-    private const double PrefetchViewports = 2.0;
-    private const int PrefetchPages = 3;
-    private const int MaxPrefetchedWindowMessages = 80;
-    private const double FallbackViewport = 600;
-
-    private readonly ObservableCollection<ChatMessage> _visibleMessages = [];
-    private readonly ObservableCollection<ConversationRow> _visibleRows = [];
+    private readonly ObservableCollection<ConversationRow> _rows = [];
     private readonly Dictionary<ChatMessage, List<ConversationRow>> _rowsByMessage = [];
     private readonly HashSet<ChatMessage> _subscribedMessages = [];
     private readonly HashSet<ChatMessage> _dirtyRowMessages = [];
     private readonly Dictionary<AgentStep, ChatMessage> _stepOwners = [];
     private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
-    private System.Threading.Timer? _processFoldTimer;
-    private ChatMessage? _processFoldCandidate;
     private ConversationViewModel? _messagesVm;
+    private const int WindowMessages = 40;
     private int _windowStart;
-    private bool _windowExpanded;
     private bool _bulkRestore;
     private bool _refreshScheduled;
-    private bool _loadingEarlier;
-    private readonly Queue<ConversationRow> _earlierQueue = new();
     private bool _rowRefreshScheduled;
-    private int _windowGeneration;
-    private int _prefetchedPages;
-    private bool _idlePrefetchScheduled;
-    private bool _idleDrain;
-    private DispatcherTimer? _drainTimer;
-    private DispatcherTimer? _richUpgradeTimer;
-    private long _lastScrollTicks;
+    private System.Threading.Timer? _processFoldTimer;
+    private ChatMessage? _processFoldCandidate;
 
-    /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged，窗口先落到最新一页。</summary>
+    /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged 并重建全部行。</summary>
     private void AttachMessageSource()
     {
         var vm = DataContext as ConversationViewModel;
@@ -130,23 +92,16 @@ public partial class ConversationView : UserControl
 
         _messagesVm = vm;
         _bulkRestore = false;
-        _loadingEarlier = false;
-        _earlierQueue.Clear();
         _dirtyRowMessages.Clear();
-        _idleDrain = false;
-        _windowGeneration++;
         ClearRows();
-        _prefetchedPages = 0;
-        _idlePrefetchScheduled = false;
-        _drainTimer?.Stop();
-        _richUpgradeTimer?.Stop();
+        CancelProcessFold();
         if (_messagesVm is not null)
         {
             _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
             _messagesVm.PropertyChanged += OnMessagesVmPropertyChanged;
         }
 
-        RebuildWindowToTail();
+        RebuildRows();
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -157,20 +112,47 @@ public partial class ConversationView : UserControl
         switch (e.Action)
         {
             case NotifyCollectionChangedAction.Add when e.NewItems is not null:
-                // Clear + 批量 Add 的会话恢复：等整批落完再一次性取尾部窗口。
                 if (_bulkRestore)
                     return;
-                AppendWindowMessages(e);
+                // 仅尾部追加可以直接插行；中间插入（例如实体提示）走一次完整重建。
+                if (e.NewStartingIndex >= _messagesVm.Messages.Count - e.NewItems.Count)
+                {
+                    foreach (var item in e.NewItems)
+                        if (item is ChatMessage message)
+                            AppendRowsForMessage(message);
+
+                    // 跟随尾部时维持固定消息窗口；所有窗口内行仍是 LiveMarkdown。
+                    if (MessageList.IsFollowing)
+                    {
+                        while (
+                            _windowStart < _messagesVm.Messages.Count - WindowMessages
+                            && _messagesVm.Messages.Count > WindowMessages
+                        )
+                        {
+                            var oldest = _messagesVm.Messages[_windowStart];
+                            RemoveRowsForMessage(oldest);
+                            _windowStart++;
+                        }
+                    }
+                }
+                else
+                {
+                    ScheduleRowsRefresh();
+                }
                 break;
             case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
-                RemoveWindowMessages(e);
+                foreach (var item in e.OldItems)
+                    if (item is ChatMessage message)
+                        RemoveRowsForMessage(message);
+                if (e.OldStartingIndex >= 0 && e.OldStartingIndex < _windowStart)
+                    _windowStart = Math.Max(0, _windowStart - e.OldItems.Count);
                 break;
             case NotifyCollectionChangedAction.Reset:
                 _bulkRestore = true;
-                ScheduleWindowRefresh();
+                ScheduleRowsRefresh();
                 break;
             default:
-                ScheduleWindowRefresh();
+                ScheduleRowsRefresh();
                 break;
         }
     }
@@ -182,15 +164,13 @@ public partial class ConversationView : UserControl
 
         if (_messagesVm.IsProcessing)
         {
-            // 新回合开始：取消任何尚未触发的完成折叠，过程保持可见。
             CancelProcessFold();
             return;
         }
 
-        // 整个 Turn 结束才允许自动折叠过程；中途步骤结束不折。
-        for (var i = _visibleMessages.Count - 1; i >= 0; i--)
+        for (var i = _rows.Count - 1; i >= 0; i--)
         {
-            var message = _visibleMessages[i];
+            var message = _rows[i].Message;
             if (message.Sender == MessageSender.Agent && message.AgentSteps.Count > 0)
             {
                 TryScheduleProcessFold(message);
@@ -199,115 +179,74 @@ public partial class ConversationView : UserControl
         }
     }
 
-    private void AppendWindowMessages(NotifyCollectionChangedEventArgs e)
-    {
-        if (e.NewItems is null || _messagesVm is null)
-            return;
-
-        var windowEnd = _windowStart + _visibleMessages.Count;
-        if (e.NewStartingIndex < windowEnd)
-        {
-            // 插到已渲染窗口之前/中间：整体重建，保证窗口始终是源集合的连续后缀。
-            ScheduleWindowRefresh();
-            return;
-        }
-
-        foreach (var item in e.NewItems)
-        {
-            if (item is ChatMessage message)
-            {
-                _visibleMessages.Add(message);
-                AppendRowsForMessage(message);
-            }
-        }
-
-        // 用户回到底部后，下次追加恢复固定窗口，避免向上翻过的历史永久驻留。
-        if (_windowExpanded && MessageList.IsFollowing)
-            _windowExpanded = false;
-
-        if (_windowExpanded || !MessageList.IsFollowing)
-            return;
-
-        TrimWindowToBudget();
-    }
-
-    private void RemoveWindowMessages(NotifyCollectionChangedEventArgs e)
-    {
-        if (e.OldItems is null)
-            return;
-
-        for (var i = 0; i < e.OldItems.Count; i++)
-        {
-            if (e.OldItems[i] is not ChatMessage message)
-                continue;
-
-            var visibleIndex = _visibleMessages.IndexOf(message);
-            if (visibleIndex >= 0)
-            {
-                RemoveRowsForMessage(message);
-                _visibleMessages.RemoveAt(visibleIndex);
-            }
-            else if (e.OldStartingIndex >= 0 && e.OldStartingIndex + i < _windowStart)
-                _windowStart--;
-        }
-    }
-
-    /// <summary>合并批量刷新：Reset / 非尾部变更时只重建一次窗口。</summary>
-    private void ScheduleWindowRefresh()
+    private void ScheduleRowsRefresh()
     {
         if (_refreshScheduled)
             return;
-
         _refreshScheduled = true;
         Dispatcher.UIThread.Post(
             () =>
             {
                 _refreshScheduled = false;
                 _bulkRestore = false;
-                RebuildWindowToTail();
+                RebuildRows();
             },
             DispatcherPriority.Background
         );
     }
 
-    /// <summary>窗口重置为最新一页（会话恢复 / /new / 分支切换）。</summary>
-    private void RebuildWindowToTail()
+    private void OnScrolledToTop()
     {
-        MessageList.ResetFollow();
-        _windowExpanded = false;
+        // 行窗口向上补一页；所有补入行仍是 LiveMarkdown，不做纯文本占位。
+        if (_messagesVm is null || _windowStart <= 0)
+            return;
 
+        var take = Math.Min(8, _windowStart);
+        var scroll = MessageScroll;
+        var beforeOffset = scroll.Offset.Y;
+        var beforeExtent = scroll.Extent.Height;
+        _windowStart -= take;
+        for (var i = _windowStart + take - 1; i >= _windowStart; i--)
+        {
+            var message = _messagesVm.Messages[i];
+            var rows = ConversationRow.FromMessage(message);
+            _rowsByMessage[message] = rows;
+            SubscribeMessage(message);
+            for (var r = rows.Count - 1; r >= 0; r--)
+                _rows.Insert(0, rows[r]);
+        }
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                var added = scroll.Extent.Height - beforeExtent;
+                if (added > 0.5)
+                    scroll.Offset = scroll.Offset.WithY(beforeOffset + added);
+            },
+            DispatcherPriority.Background
+        );
+    }
+
+    /// <summary>重建行窗口：只创建最近一批消息的行，窗口内全部是 LiveMarkdown。</summary>
+    private void RebuildRows()
+    {
         if (_messagesVm is null)
         {
-            _windowStart = 0;
-            _visibleMessages.Clear();
+            ClearRows();
             return;
         }
 
-        var total = _messagesVm.Messages.Count;
-        var budget = ViewportHeight() * WindowViewports;
-        var start = total;
-        var height = 0d;
-        var count = 0;
-        while (
-            start > 0 && count < MaxWindowMessages && (height < budget || count < MinWindowMessages)
-        )
-        {
-            start--;
-            height += EstimateMessageHeight(_messagesVm.Messages[start]);
-            count++;
-        }
-
         ClearRows();
-        _windowStart = start;
-        _visibleMessages.Clear();
+        var total = _messagesVm.Messages.Count;
+        _windowStart = Math.Max(0, total - WindowMessages);
         for (var i = _windowStart; i < total; i++)
-            _visibleMessages.Add(_messagesVm.Messages[i]);
-
-        ApplyInitialRichState();
-        foreach (var message in _visibleMessages)
+        {
+            var message = _messagesVm.Messages[i];
+            // 历史过程默认折叠；最后 4 条消息保留过程展开，当前回合随流式展开。
+            message.IsProcessExpanded = i >= total - 4;
             AppendRowsForMessage(message);
-        if (IsLoaded)
-            ScheduleIdlePrefetch();
+        }
+        MessageList.ResetFollow();
     }
 
     // ── 扁平化行：一条消息拆成用户行/等待行/步骤行/正文行/中断行/来源行 ──
@@ -320,7 +259,7 @@ public partial class ConversationView : UserControl
         var rows = BuildRows(message);
         _rowsByMessage[message] = rows;
         foreach (var row in rows)
-            _visibleRows.Add(row);
+            _rows.Add(row);
         SubscribeMessage(message);
     }
 
@@ -329,7 +268,7 @@ public partial class ConversationView : UserControl
         if (_rowsByMessage.Remove(message, out var rows))
         {
             foreach (var row in rows)
-                _visibleRows.Remove(row);
+                _rows.Remove(row);
         }
         UnsubscribeMessage(message);
         _dirtyRowMessages.Remove(message);
@@ -339,7 +278,7 @@ public partial class ConversationView : UserControl
     {
         foreach (var message in _subscribedMessages.ToArray())
             UnsubscribeMessage(message);
-        _visibleRows.Clear();
+        _rows.Clear();
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
         _stepOwners.Clear();
@@ -352,14 +291,15 @@ public partial class ConversationView : UserControl
     /// </summary>
     private void ReplaceRowsForMessage(ChatMessage message)
     {
-        var messageIndex = _visibleMessages.IndexOf(message);
-        if (messageIndex < 0)
+        var messages = _messagesVm?.Messages;
+        var messageIndex = messages?.IndexOf(message) ?? -1;
+        if (messages is null || messageIndex < 0)
             return;
 
         var start = 0;
         for (var i = 0; i < messageIndex; i++)
         {
-            if (_rowsByMessage.TryGetValue(_visibleMessages[i], out var previous))
+            if (_rowsByMessage.TryGetValue(messages[i], out var previous))
                 start += previous.Count;
         }
 
@@ -388,21 +328,21 @@ public partial class ConversationView : UserControl
         for (var i = oldRows.Count - 1; i >= 0; i--)
         {
             if (!keep.Contains(oldRows[i]))
-                _visibleRows.Remove(oldRows[i]);
+                _rows.Remove(oldRows[i]);
         }
 
         for (var i = 0; i < selected.Count; i++)
         {
             var row = selected[i];
-            var current = _visibleRows.IndexOf(row);
+            var current = _rows.IndexOf(row);
             if (current >= 0)
             {
                 if (current != start + i)
-                    _visibleRows.Move(current, start + i);
+                    _rows.Move(current, start + i);
             }
             else
             {
-                _visibleRows.Insert(start + i, row);
+                _rows.Insert(start + i, row);
             }
         }
 
@@ -575,7 +515,7 @@ public partial class ConversationView : UserControl
 
     private void MarkRowsDirty(ChatMessage message)
     {
-        if (!_visibleMessages.Contains(message))
+        if (!_rowsByMessage.ContainsKey(message))
             return;
         if (!_dirtyRowMessages.Add(message) || _rowRefreshScheduled)
             return;
@@ -594,303 +534,6 @@ public partial class ConversationView : UserControl
         );
     }
 
-    /// <summary>跟随尾部时维持像素预算：从头部丢弃多余行（底部视口不动）。</summary>
-    private void TrimWindowToBudget()
-    {
-        // 向前补页正在逐行插入时不要同时裁头，避免队列中的行指向已移除的消息。
-        if (_loadingEarlier)
-            return;
-        var budget = ViewportHeight() * WindowViewports + ViewportHeight();
-        var height = _visibleMessages.Sum(EstimateMessageHeight);
-        while (
-            _visibleMessages.Count > MinWindowMessages
-            && (height > budget || _visibleMessages.Count > MaxWindowMessages)
-        )
-        {
-            var oldest = _visibleMessages[0];
-            height -= EstimateMessageHeight(oldest);
-            RemoveRowsForMessage(oldest);
-            _visibleMessages.RemoveAt(0);
-            _windowStart++;
-        }
-    }
-
-    /// <summary>用户滚到顶部（精确 0）：向前补页。</summary>
-    private void MessageList_OnScrolledToTop() => PrependEarlierPage(expandWindow: true);
-
-    /// <summary>距顶部 2 屏时提前补页，避免滚到顶后才加载造成停顿。</summary>
-    private void MessageScroll_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
-    {
-        _lastScrollTicks = Environment.TickCount64;
-        ScheduleRichUpgradeAfterScroll();
-
-        if (_loadingEarlier || _messagesVm is null || _windowStart <= 0)
-            return;
-        if (MessageList.IsFollowing)
-            return;
-        if (MessageScroll.Offset.Y > ViewportHeight() * PrefetchViewports)
-            return;
-
-        PrependEarlierPage(expandWindow: true);
-    }
-
-    /// <summary>初始窗口只在尾部约 2 屏内使用 Markdown；更早的行先纯文本。</summary>
-    private void ApplyInitialRichState()
-    {
-        var budget = ViewportHeight() * 2;
-        var height = 0d;
-        for (var i = _visibleMessages.Count - 1; i >= 0; i--)
-        {
-            var message = _visibleMessages[i];
-            var messageHeight = EstimateMessageHeight(message);
-            // 初始窗口内正文一律使用 Markdown：历史正文回退成纯文本会让用户
-            // 在最近历史里看到裸 ## / > / ---。纯文本只用于尚未滚到的预取页。
-            message.IsRichMarkdown = true;
-            message.IsProcessExpanded = height < budget || i == _visibleMessages.Count - 1;
-            height += messageHeight;
-        }
-    }
-
-    /// <summary>滚动停止 180ms 后升级当前可见的历史消息；滚动中只走纯文本。</summary>
-    private void ScheduleRichUpgradeAfterScroll()
-    {
-        if (_richUpgradeTimer is null)
-        {
-            _richUpgradeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
-            _richUpgradeTimer.Tick += (_, _) => OnRichUpgradeTick();
-        }
-        _richUpgradeTimer.Stop();
-        _richUpgradeTimer.Start();
-    }
-
-    private void OnRichUpgradeTick()
-    {
-        if (_richUpgradeTimer is null)
-            return;
-        if (_loadingEarlier || _messagesVm is null || MessageList.IsFollowing)
-        {
-            _richUpgradeTimer.Stop();
-            return;
-        }
-        if (Environment.TickCount64 - _lastScrollTicks < 120)
-            return;
-
-        _richUpgradeTimer.Stop();
-        UpgradeOneVisibleRichMessage();
-    }
-
-    /// <summary>一次只升级一条，避免把一条大 Markdown 的布局塞进同一帧。</summary>
-    private void UpgradeOneVisibleRichMessage()
-    {
-        var offset = MessageScroll.Offset.Y;
-        var viewport = ViewportHeight();
-        var y = 0d;
-        var target = -1;
-        var targetTop = 0d;
-        for (var i = 0; i < _visibleMessages.Count; i++)
-        {
-            var message = _visibleMessages[i];
-            var height = EstimateMessageHeight(message);
-            if (y + height >= offset - viewport && y <= offset + viewport)
-            {
-                if (!message.IsRichMarkdown)
-                {
-                    target = i;
-                    targetTop = y;
-                    break;
-                }
-            }
-            y += height;
-        }
-
-        if (target < 0)
-            return;
-
-        var scroll = MessageScroll;
-        var beforeExtent = scroll.Extent.Height;
-        var messageToUpgrade = _visibleMessages[target];
-        var aboveViewport = targetTop + EstimateMessageHeight(messageToUpgrade) < offset;
-        messageToUpgrade.IsRichMarkdown = true;
-
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                if (aboveViewport)
-                {
-                    var added = scroll.Extent.Height - beforeExtent;
-                    if (added > 0.5)
-                        scroll.Offset = scroll.Offset.WithY(scroll.Offset.Y + added);
-                }
-                ScheduleRichUpgradeAfterScroll();
-            },
-            DispatcherPriority.Loaded
-        );
-    }
-
-    /// <summary>
-    /// 空闲时预取更早的一页：大消息的模板实例化/布局（实测单条 ~187ms）发生在用户滚动之前，
-    /// 不占用滚轮帧。ContextIdle 会在用户输入/滚动时让路。
-    /// </summary>
-    private void ScheduleIdlePrefetch()
-    {
-        if (_idlePrefetchScheduled || _messagesVm is null || _windowStart <= 0)
-            return;
-        if (_prefetchedPages >= PrefetchPages)
-            return;
-        // 用户已经上滚时不再静默预取，避免把大消息布局插入滚轮帧。
-        if (!MessageList.IsFollowing)
-            return;
-
-        _idlePrefetchScheduled = true;
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                _idlePrefetchScheduled = false;
-                if (_messagesVm is null || _windowStart <= 0 || _loadingEarlier)
-                    return;
-                if (_prefetchedPages >= PrefetchPages || !MessageList.IsFollowing)
-                    return;
-                _prefetchedPages++;
-                PrependEarlierPage(expandWindow: false);
-            },
-            DispatcherPriority.ContextIdle
-        );
-    }
-
-    /// <summary>向前补一页；按新增内容高度下移 offset，视口锚点不跳。</summary>
-    private void PrependEarlierPage(bool expandWindow)
-    {
-        if (_loadingEarlier || _messagesVm is null || _windowStart <= 0)
-            return;
-        if (!expandWindow && _visibleMessages.Count >= MaxPrefetchedWindowMessages)
-            return;
-
-        var pageBudget = ViewportHeight() * PageViewports;
-        var take = 0;
-        var addedHeight = 0d;
-        while (_windowStart - take > 0 && take < MaxPageMessages && addedHeight < pageBudget)
-        {
-            take++;
-            addedHeight += EstimateMessageHeight(_messagesVm.Messages[_windowStart - take]);
-        }
-
-        if (!expandWindow)
-            take = Math.Min(
-                take,
-                Math.Max(0, MaxPrefetchedWindowMessages - _visibleMessages.Count)
-            );
-        if (take == 0)
-            return;
-
-        _loadingEarlier = true;
-        _idleDrain = !expandWindow;
-        if (expandWindow)
-            _windowExpanded = true;
-        _windowStart -= take;
-
-        // 消息先按窗口顺序插到 _visibleMessages 头部；行按逆序入队，
-        // 每 16ms Insert(0) 一行，最终顺序与源集合一致。
-        // 预取页先走轻量纯文本，等滚动停止后再升级 Markdown。
-        for (var i = take - 1; i >= 0; i--)
-        {
-            var message = _messagesVm.Messages[_windowStart + i];
-            message.IsRichMarkdown = false;
-            message.IsProcessExpanded = false;
-            _visibleMessages.Insert(0, message);
-            SubscribeMessage(message);
-            var rows = BuildRows(message);
-            _rowsByMessage[message] = rows;
-            for (var r = rows.Count - 1; r >= 0; r--)
-                _earlierQueue.Enqueue(rows[r]);
-        }
-
-        StartEarlierDrain();
-    }
-
-    /// <summary>
-    /// 每 16ms 只插入一行：步骤多的消息也不会把整条消息的控件树压进一个滚轮帧。
-    /// 每插一行按 extent 增量下移 offset，视口锚点保持在原内容。
-    /// </summary>
-    private void StartEarlierDrain()
-    {
-        if (_drainTimer is null)
-        {
-            _drainTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
-            _drainTimer.Tick += (_, _) => DrainOneEarlierRow();
-        }
-        _drainTimer.Start();
-    }
-
-    private void DrainOneEarlierRow()
-    {
-        if (_drainTimer is null)
-            return;
-        if (_messagesVm is null || _idleDrain && !MessageList.IsFollowing)
-        {
-            _earlierQueue.Clear();
-            _loadingEarlier = false;
-            _idleDrain = false;
-            _drainTimer.Stop();
-            return;
-        }
-
-        if (_earlierQueue.Count == 0)
-        {
-            _loadingEarlier = false;
-            _idleDrain = false;
-            _drainTimer.Stop();
-            ScheduleIdlePrefetch();
-            return;
-        }
-
-        var row = _earlierQueue.Dequeue();
-        var generation = _windowGeneration;
-        var scroll = MessageScroll;
-        var beforeExtent = scroll.Extent.Height;
-        _visibleRows.Insert(0, row);
-
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                if (generation != _windowGeneration)
-                    return;
-                var added = scroll.Extent.Height - beforeExtent;
-                if (added > 0.5)
-                    scroll.Offset = scroll.Offset.WithY(scroll.Offset.Y + added);
-            },
-            DispatcherPriority.Loaded
-        );
-    }
-
-    /// <summary>
-    /// 粗略高度预算（只用于决定窗口边界，不参与布局）：
-    /// 按 16px/24 行高、约 70 字符/行估算正文，再给步骤/卡片留固定开销。
-    /// </summary>
-    private static double EstimateMessageHeight(ChatMessage message)
-    {
-        var chars = message.Content.ToString().Length;
-        var height = 80 + Math.Max(0, chars) / 70.0 * 24;
-        foreach (var step in message.AgentSteps)
-        {
-            height += 44;
-            var thinking = step.ThinkingBuilder.ToString().Length;
-            var result = step.FullResult?.Length ?? 0;
-            var details = step.IsDetailsExpanded ? thinking + result : 0;
-            height += details / 70.0 * 24;
-        }
-        return Math.Max(64, Math.Min(height, 20_000));
-    }
-
-    private double ViewportHeight()
-    {
-        var height = MessageScroll.Viewport.Height;
-        if (height > 1)
-            return height;
-        height = MessageScroll.Bounds.Height;
-        return height > 1 ? height : FallbackViewport;
-    }
-
-    /// <summary>展开/收起步骤详情（思考全文、完整参数与结果）。</summary>
     /// <summary>展开历史过程的折叠行。</summary>
     private void ProcessRow_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -1017,8 +660,8 @@ public partial class ConversationView : UserControl
         if (e.KeyModifiers != KeyModifiers.None)
             return;
 
-        // 处理中且没有待发变体：不发送，也不让 TextBox 插入空换行
-        if (vm.IsProcessing && !vm.HasPendingRefinement)
+        // 处理中（含提交准备阶段）且没有待发变体：不发送，也不让 TextBox 插入空换行
+        if (vm.IsBusy && !vm.HasPendingRefinement)
         {
             e.Handled = true;
             return;
@@ -1118,7 +761,7 @@ public partial class ConversationView : UserControl
         switch (e.Key)
         {
             case Key.Escape:
-                if (vm.IsProcessing)
+                if (vm.IsBusy)
                     vm.StopProcessingCommand.Execute().Subscribe();
                 e.Handled = true;
                 break;

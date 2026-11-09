@@ -72,7 +72,7 @@ public sealed class TuiInteractionParityTests
 
         Assert.Equal("Stretch", Attr(bubble, "HorizontalAlignment"));
         Assert.Equal(
-            "{Binding Message.IsRichMarkdown, Converter={StaticResource AgentBodyTemplate}}",
+            "{StaticResource RichAgentBody}",
             Attr(Descendants(bubble, "ContentControl").Single(), "ContentTemplate")
         );
     }

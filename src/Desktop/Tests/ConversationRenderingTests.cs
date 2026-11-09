@@ -722,7 +722,7 @@ public class ConversationRenderingTests
         return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
     }
 
-    private static void PumpUntilRows(ItemsControl list, int count)
+    private static void PumpUntilRows(Desktop.Controls.AutoScrollItemsControl list, int count)
     {
         for (var i = 0; i < 100 && list.Items.Count < count; i++)
             PumpOnce();
