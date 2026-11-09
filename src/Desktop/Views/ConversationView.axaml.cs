@@ -316,29 +316,70 @@ public partial class ConversationView : UserControl
         CancelProcessFold();
     }
 
+    /// <summary>
+    /// 增量同步行拓扑：只插入/移除变化的行，保留 Content 行与其中的 MarkdownRenderer 实例。
+    /// 步骤追加、状态变化、过程折叠都不再重建整条消息的行树（对齐 TKCode.Arc 的原地 step view）。
+    /// </summary>
     private void ReplaceRowsForMessage(ChatMessage message)
     {
         var messageIndex = _visibleMessages.IndexOf(message);
         if (messageIndex < 0)
             return;
 
-        var rowIndex = 0;
+        var start = 0;
         for (var i = 0; i < messageIndex; i++)
         {
             if (_rowsByMessage.TryGetValue(_visibleMessages[i], out var previous))
-                rowIndex += previous.Count;
+                start += previous.Count;
         }
 
-        if (_rowsByMessage.Remove(message, out var oldRows))
+        var oldRows = _rowsByMessage.TryGetValue(message, out var existing) ? existing : [];
+        var desired = BuildRows(message);
+        var selected = new List<ConversationRow>(desired.Count);
+        var available = new Dictionary<(ConversationRowKind, AgentStep?), Queue<ConversationRow>>();
+        foreach (var row in oldRows)
         {
-            foreach (var row in oldRows)
-                _visibleRows.Remove(row);
+            var key = (row.Kind, row.Step);
+            if (!available.TryGetValue(key, out var queue))
+                available[key] = queue = new Queue<ConversationRow>();
+            queue.Enqueue(row);
+        }
+        foreach (var template in desired)
+        {
+            var key = (template.Kind, template.Step);
+            selected.Add(
+                available.TryGetValue(key, out var queue) && queue.Count > 0
+                    ? queue.Dequeue()
+                    : template
+            );
         }
 
-        var rows = BuildRows(message);
-        _rowsByMessage[message] = rows;
-        for (var i = 0; i < rows.Count; i++)
-            _visibleRows.Insert(rowIndex + i, rows[i]);
+        var keep = new HashSet<ConversationRow>(selected);
+        for (var i = oldRows.Count - 1; i >= 0; i--)
+        {
+            if (!keep.Contains(oldRows[i]))
+                _visibleRows.Remove(oldRows[i]);
+        }
+
+        for (var i = 0; i < selected.Count; i++)
+        {
+            var row = selected[i];
+            var current = _visibleRows.IndexOf(row);
+            if (current >= 0)
+            {
+                if (current != start + i)
+                    _visibleRows.Move(current, start + i);
+            }
+            else
+            {
+                _visibleRows.Insert(start + i, row);
+            }
+        }
+
+        // 最后一行留白标记只影响 Margin，重建失败时也不影响内容行稳定性。
+        for (var i = 0; i < selected.Count; i++)
+            selected[i].IsLastInMessage = i == selected.Count - 1;
+        _rowsByMessage[message] = selected;
     }
 
     private void SubscribeMessage(ChatMessage message)

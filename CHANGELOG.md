@@ -151,6 +151,17 @@
     `OnMessageStepsChanged/OnMessageSourcesChanged` 直接返回；改为集合→消息 owner map，
     流式新增步骤/来源现在会实时重建行。
   新增 `LiveProcess_AutoCollapsesAfterSettled_UnlessTouched`；完整套件 592/592。
+  ⑪ LiveMarkdown 深度修正：`AiStreamText` 的 Reserve/Reveal 需要**完整文本**先布局再揭示，
+  对未知长度的 LLM 流式正文不成立；强行固定只能隐藏内容或内部滚动，没有阅读意义，因此不搬。
+  LiveMarkdown 本身已经做了后台增量解析（`MarkdownUpdateProducer` 在 Task.Run 解析快照）、
+  `DocumentNode.Update` / `ContainerBlockNode.UpdateCore` 原地更新节点、每个
+  `MarkdownTextBlock` 缓存自己的 `TextLayout`，只失效变化块。
+  真正的性能 bug 是：新增步骤/来源时 `ReplaceRowsForMessage` 重建整条消息的行，把 Content 行的
+  `MarkdownRenderer` 一起销毁，LiveMarkdown 的缓存和节点复用全部丢失。现改为**增量行拓扑同步**：
+  只插入/移除变化的步骤/来源行，Content 行与其 MarkdownRenderer 实例保持不动。
+  新增 `LiveStream_PreservesMarkdownRenderer_WhenStepsArrive`：追加步骤 + 12 段流式正文后，
+  同一个 MarkdownRenderer 仍在视觉树中。结论：固定高度只用于思考/历史过程/工具详情；
+  最终正文保持自然增长，但不再反复重建渲染器。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

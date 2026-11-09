@@ -548,6 +548,74 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
+    public void LiveStream_PreservesMarkdownRenderer_WhenStepsArrive()
+    {
+        Ui.Run(() =>
+        {
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                message.AppendContent("最终答复");
+                _vm.Messages.Add(message);
+                _vm.HasMessages = true;
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "正文 MarkdownRenderer"
+                );
+                var renderer = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                    .Single();
+
+                message.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "编辑",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                    }
+                );
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+
+                for (var i = 0; i < 12; i++)
+                {
+                    message.AppendContent($"\n\n流式段落 {i}");
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                Assert.Single(
+                    view.GetVisualDescendants().OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                );
+                Assert.Contains(
+                    renderer,
+                    view.GetVisualDescendants().OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void FlattenedRows_RenderContent_AndSwitchLazyMarkdown()
     {
         Ui.Run(() =>

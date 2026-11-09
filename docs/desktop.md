@@ -738,6 +738,8 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   （借鉴 TKCode.Arc ReasoningBlock）
 - 历史过程完成后 450ms 自动折叠；用户手动操作后不自动折叠；失败自动展开；参数/结果/diff
   各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
+- 流式步骤/来源变化用**增量行拓扑同步**，不重建 Content 行；LiveMarkdown 的
+  DocumentNode/TextLayout 缓存因此能跨步骤保留。最终正文不做固定高度（未知长度只能隐藏或内滚）
 - 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；`ScrollToEnd` 精确贴底；
   发送/恢复必须 `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
