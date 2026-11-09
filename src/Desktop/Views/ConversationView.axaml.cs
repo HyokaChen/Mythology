@@ -643,9 +643,10 @@ public partial class ConversationView : UserControl
         {
             var message = _visibleMessages[i];
             var messageHeight = EstimateMessageHeight(message);
-            var keepRich = height < budget || i == _visibleMessages.Count - 1;
-            message.IsRichMarkdown = keepRich;
-            message.IsProcessExpanded = keepRich;
+            // 初始窗口内正文一律使用 Markdown：历史正文回退成纯文本会让用户
+            // 在最近历史里看到裸 ## / > / ---。纯文本只用于尚未滚到的预取页。
+            message.IsRichMarkdown = true;
+            message.IsProcessExpanded = height < budget || i == _visibleMessages.Count - 1;
             height += messageHeight;
         }
     }

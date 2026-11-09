@@ -89,7 +89,10 @@
     <DataTemplate x:Key="RowStep" x:DataType="models:ConversationRow">
       <StackPanel Margin="{Binding Margin}" Spacing="2">
         <Border Classes="AgentBubble" IsVisible="{Binding Step.IsContentStep}" Margin="0,4,0,4">
-          <TextBlock Classes="StepContentText" Text="{Binding Step.ContentText}" />
+          <ContentControl
+            Content="{Binding Step}"
+            ContentTemplate="{StaticResource StepContentMarkdown}"
+          />
         </Border>
 
         <TextBlock
@@ -154,18 +157,11 @@
             TextWrapping="Wrap"
             Margin="18,0,0,0"
           />
-          <!-- 流式思考只显示固定两行尾部预览：文字变化不改变行高，滚轮不因 token 增长而抖。 -->
-          <TextBlock
+          <!-- 流式思考只显示固定两行尾部预览：底部对齐 + 裁剪，最新行始终在底部。 -->
+          <controls:StreamingReasoningPreview
             IsVisible="{Binding Step.ShowStreamingPreview}"
             Text="{Binding Step.ReasoningPreview}"
-            Height="40"
-            MaxHeight="40"
-            ClipToBounds="True"
-            FontSize="12"
-            LineHeight="20"
-            Foreground="{DynamicResource BrushSageGray}"
-            TextWrapping="Wrap"
-            TextTrimming="CharacterEllipsis"
+            TextForeground="{DynamicResource BrushSageGray}"
             Margin="18,0,0,0"
           />
           <StackPanel
@@ -271,6 +267,14 @@
       </StackPanel>
     </DataTemplate>
 
+    <DataTemplate x:Key="StepContentMarkdown" x:DataType="models:AgentStep">
+      <md:MarkdownRenderer
+        Classes="ConversationMarkdown StepContentMarkdown"
+        MarkdownBuilder="{Binding ContentMarkdown}"
+        CodeBlockColorTheme="LightPlus"
+      />
+    </DataTemplate>
+
     <DataTemplate x:Key="RowContent" x:DataType="models:ConversationRow">
       <StackPanel Margin="{Binding Margin}">
         <Border
@@ -367,13 +371,12 @@
       <Setter Property="Margin" Value="0,0,0,8" />
     </Style>
     <!-- 中间正文：只做时间线留痕，字号小于最终答复；外层复用 AgentBubble 的
-         Bone 卡片（16/12 padding），普通 TextBlock 渲染以避免 Markdown 渲染器卡顿。 -->
-    <Style Selector="TextBlock.StepContentText">
+         Bone 卡片（16/12 padding），用 LiveMarkdown 渲染，避免出现裸 Markdown 标记。 -->
+    <Style Selector="md|MarkdownRenderer.StepContentMarkdown md|MarkdownTextBlock">
       <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="LineHeight" Value="24" />
       <Setter Property="Foreground" Value="{DynamicResource BrushOlivePress}" />
-      <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <!-- 引用块不再嵌套第二张卡片：Markdown 默认深灰底 + 本文件的深色正文会变成深底深字，
          放进 AgentBubble 后还会形成双层边框。引用语义由 LiveMarkdown 的「▎」前缀承担，

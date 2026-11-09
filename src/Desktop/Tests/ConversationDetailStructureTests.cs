@@ -118,14 +118,17 @@ public sealed class ConversationDetailStructureTests
         var root = LoadConversationView();
         var content = root.Descendants()
             .Single(e =>
-                e.Name.LocalName == "TextBlock"
-                && Attr(e, "Classes") == "StepContentText"
-                && Attr(e, "Text") == "{Binding Step.ContentText}"
+                e.Name.LocalName == "MarkdownRenderer"
+                && Attr(e, "MarkdownBuilder") == "{Binding ContentMarkdown}"
             );
 
-        Assert.Equal("StepContentText", Attr(content, "Classes"));
-        var card = content
-            .Ancestors()
+        Assert.Contains("StepContentMarkdown", Attr(content, "Classes"));
+        var host = root.Descendants()
+            .Single(e =>
+                e.Name.LocalName == "ContentControl"
+                && Attr(e, "ContentTemplate") == "{StaticResource StepContentMarkdown}"
+            );
+        var card = host.Ancestors()
             .Single(e => e.Name.LocalName == "Border" && Attr(e, "Classes") == "AgentBubble");
         Assert.Equal("{Binding Step.IsContentStep}", Attr(card, "IsVisible"));
         Assert.Contains(

@@ -241,8 +241,9 @@ public class ConversationRenderingTests
                 Assert.Contains("这是思考内容，流式中也必须直接可见。", streaming);
                 Assert.Contains("展开", streaming);
                 var preview = view.GetVisualDescendants()
-                    .OfType<TextBlock>()
-                    .Single(t => t.Text == "这是思考内容，流式中也必须直接可见。");
+                    .OfType<Desktop.Controls.StreamingReasoningPreview>()
+                    .Single();
+                Assert.Equal("这是思考内容，流式中也必须直接可见。", preview.Text);
                 Assert.Equal(40, preview.Height);
 
                 step.IsDetailsExpanded = true;
@@ -309,8 +310,9 @@ public class ConversationRenderingTests
 
                 Assert.InRange(scroll.Extent.Height - before, -2, 2);
                 var preview = view.GetVisualDescendants()
-                    .OfType<TextBlock>()
-                    .Single(t => t.Text == step.ReasoningPreview);
+                    .OfType<Desktop.Controls.StreamingReasoningPreview>()
+                    .Single();
+                Assert.Equal(step.ReasoningPreview, preview.Text);
                 Assert.Equal(40, preview.Height);
 
                 step.IsDetailsExpanded = true;
@@ -380,15 +382,17 @@ public class ConversationRenderingTests
 
                 // 中间正文与最终流式正文同一张 Bone 卡：冻结到步骤列表时背景不再从
                 // 黄色突变为无底色。文字仍用 14/24 轻量排版，不抢最终答复。
-                var body = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t =>
-                        t.Text == "I'll start with the first search now."
-                        && t.Classes.Contains("StepContentText")
+                var markdown = Assert.Single(
+                    view.GetVisualDescendants().OfType<LiveMarkdown.Avalonia.MarkdownRenderer>(),
+                    m => m.Classes.Contains("StepContentMarkdown")
                 );
+                var body = markdown
+                    .GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownTextBlock>()
+                    .First();
                 Assert.Equal(14, body.FontSize);
                 Assert.Equal(24, body.LineHeight);
-                Assert.Equal(new Thickness(0), body.Margin);
+                Assert.Equal(new Thickness(0, 0, 0, 8), body.Margin);
 
                 var contentCard = Assert.Single(
                     body.GetVisualAncestors().OfType<Border>(),

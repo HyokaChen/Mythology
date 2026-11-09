@@ -90,7 +90,20 @@ public sealed class AgentStep : INotifyPropertyChanged
     /// 保证时间线是「思考 → 正文 → 工具 → 思考 → 最终正文」；提示步骤则把
     /// 「📝 修改情节线…」插在触发它的工具步骤之后，而不是堆到回合末尾。
     /// </summary>
-    public string ContentText { get; init; } = "";
+    private string _contentText = "";
+
+    public string ContentText
+    {
+        get => _contentText;
+        init
+        {
+            _contentText = value;
+            ContentMarkdown.Append(value);
+        }
+    }
+
+    /// <summary>阶段正文的 Markdown 源（冻结后不再变化；供 LiveMarkdown 渲染）。</summary>
+    public LiveMarkdown.Avalonia.ObservableStringBuilder ContentMarkdown { get; } = new();
 
     /// <summary>状态图标（Lucide 单色描边，与 TodoPanel 状态同款体系）。</summary>
     public LucideIconKind StatusIcon =>
