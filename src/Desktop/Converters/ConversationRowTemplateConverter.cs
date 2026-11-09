@@ -15,6 +15,7 @@ public sealed class ConversationRowTemplateConverter : IValueConverter
     public IDataTemplate? ContentTemplate { get; set; }
     public IDataTemplate? InterruptedTemplate { get; set; }
     public IDataTemplate? SourcesTemplate { get; set; }
+    public IDataTemplate? ProcessTemplate { get; set; }
 
     public object? Convert(
         object? value,
@@ -32,6 +33,7 @@ public sealed class ConversationRowTemplateConverter : IValueConverter
                 ConversationRowKind.Content => ContentTemplate,
                 ConversationRowKind.Interrupted => InterruptedTemplate,
                 ConversationRowKind.Sources => SourcesTemplate,
+                ConversationRowKind.Process => ProcessTemplate,
                 _ => null,
             }
             : null;

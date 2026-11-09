@@ -266,13 +266,11 @@ public partial class ConversationView : UserControl
         _windowStart = start;
         _visibleMessages.Clear();
         for (var i = _windowStart; i < total; i++)
-        {
-            var message = _messagesVm.Messages[i];
-            _visibleMessages.Add(message);
-            AppendRowsForMessage(message);
-        }
+            _visibleMessages.Add(_messagesVm.Messages[i]);
 
         ApplyInitialRichState();
+        foreach (var message in _visibleMessages)
+            AppendRowsForMessage(message);
         if (IsLoaded)
             ScheduleIdlePrefetch();
     }
@@ -362,6 +360,7 @@ public partial class ConversationView : UserControl
                 is nameof(ChatMessage.IsWaiting)
                     or nameof(ChatMessage.HasVisibleContent)
                     or nameof(ChatMessage.IsInterrupted)
+                    or nameof(ChatMessage.IsProcessExpanded)
         )
             MarkRowsDirty(message);
     }
@@ -450,6 +449,7 @@ public partial class ConversationView : UserControl
             var messageHeight = EstimateMessageHeight(message);
             var keepRich = height < budget || i == _visibleMessages.Count - 1;
             message.IsRichMarkdown = keepRich;
+            message.IsProcessExpanded = keepRich;
             height += messageHeight;
         }
     }
@@ -598,6 +598,7 @@ public partial class ConversationView : UserControl
         {
             var message = _messagesVm.Messages[_windowStart + i];
             message.IsRichMarkdown = false;
+            message.IsProcessExpanded = false;
             _visibleMessages.Insert(0, message);
             SubscribeMessage(message);
             var rows = BuildRows(message);
@@ -693,6 +694,14 @@ public partial class ConversationView : UserControl
     }
 
     /// <summary>展开/收起步骤详情（思考全文、完整参数与结果）。</summary>
+    /// <summary>展开历史过程的折叠行。</summary>
+    private void ProcessRow_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: ConversationRow { Message: var message } })
+            message.IsProcessExpanded = true;
+        e.Handled = true;
+    }
+
     private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: ConversationRow { Step: { } step } })

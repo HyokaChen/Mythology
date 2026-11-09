@@ -43,6 +43,7 @@ public sealed class ConversationRowCollection : ObservableCollection<Conversatio
             is nameof(ChatMessage.IsWaiting)
                 or nameof(ChatMessage.HasVisibleContent)
                 or nameof(ChatMessage.IsInterrupted)
+                or nameof(ChatMessage.IsProcessExpanded)
         )
             Rebuild();
     }

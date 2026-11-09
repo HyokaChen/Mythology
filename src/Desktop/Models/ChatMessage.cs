@@ -14,6 +14,7 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _hasVisibleContent;
     private bool _isInterrupted;
     private bool _isRichMarkdown = true;
+    private bool _isProcessExpanded = true;
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
@@ -58,6 +59,37 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
                 return;
             _isRichMarkdown = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRichMarkdown)));
+        }
+    }
+
+    /// <summary>
+    /// 是否展开历史过程（步骤行）。历史预取页默认折叠成一行「过程 · N 步」；
+    /// 点击后展开。当前 Turn 保持展开。
+    /// </summary>
+    public bool IsProcessExpanded
+    {
+        get => _isProcessExpanded;
+        set
+        {
+            if (_isProcessExpanded == value)
+                return;
+            _isProcessExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProcessExpanded)));
+        }
+    }
+
+    /// <summary>折叠过程行的摘要。</summary>
+    public string ProcessSummary
+    {
+        get
+        {
+            if (AgentSteps.Count == 0)
+                return "";
+            var titles = AgentSteps.Take(3).Select(step => step.Title).Where(t => t.Length > 0);
+            var head = string.Join(" · ", titles);
+            var suffix =
+                AgentSteps.Count > 3 ? $" 等 {AgentSteps.Count} 步" : $" · {AgentSteps.Count} 步";
+            return head + suffix;
         }
     }
 

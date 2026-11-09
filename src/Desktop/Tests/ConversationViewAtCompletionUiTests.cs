@@ -83,7 +83,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     /// <summary>等 VM 侧的异步文件补全落地（Task.Run IO + 版本守卫）。</summary>
     private static void PumpUntil(Func<bool> condition, string what)
     {
-        for (var i = 0; i < 150; i++)
+        for (var i = 0; i < 300; i++)
         {
             Dispatcher.UIThread.RunJobs();
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();

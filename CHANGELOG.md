@@ -129,6 +129,14 @@
   上滚 60 次滚轮的最大单帧 ~117ms（headless，重内容单行），不再整页 200ms+。
   测试：`ConversationRowCollection` 提供实时扁平行；`FlattenedRows_RenderContent_AndSwitchLazyMarkdown`
   覆盖纯文本 ↔ Markdown 切换；结构锁改为新行模板。
+  ⑧ 历史过程折叠（对齐 DSH Desktop）：DSH Desktop 不是 Electron 抄一套虚拟列表，而是
+  Electron 壳 + Web UI 的原生浏览器滚动；其 transcript 用 **completed Turn folding**
+  （`foldCompletedTurns` / `foldedReplies` / transcript view modes）把完成过程收成一行，
+  并在跟随尾部时 `overflow-anchor: none`、用 `ResizeObserver` 追内容增长；TurnNavigator
+  的 TanStack virtual 只用于轮次导航条，不用于 transcript。对应到 Avalonia：历史 Agent
+  步骤默认折叠成「过程 · N 步」一行，点击展开；尾部约 2 屏保持展开。
+  真实 41 消息会话：首屏行数 12→9；上滚 60 次滚轮最大单帧 117ms→**9ms**，行数 9→11；
+  发送/追加后 offset 仍精确等于 max。新增 `ConversationRowTests` 锁定折叠/展开。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

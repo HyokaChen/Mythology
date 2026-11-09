@@ -255,6 +255,36 @@
       </StackPanel>
     </DataTemplate>
 
+    <DataTemplate x:Key="RowProcess" x:DataType="models:ConversationRow">
+      <Button
+        Margin="{Binding Margin}"
+        Classes="IconButton"
+        HorizontalAlignment="Stretch"
+        HorizontalContentAlignment="Stretch"
+        Padding="0,2"
+        Click="ProcessRow_OnClick"
+      >
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+          <TextBlock Classes="Eyebrow" Text="过程" VerticalAlignment="Center" />
+          <TextBlock
+            Grid.Column="1"
+            Text="{Binding Message.ProcessSummary}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageMist}"
+            TextWrapping="Wrap"
+            VerticalAlignment="Center"
+          />
+          <lucide:LucideIcon
+            Grid.Column="2"
+            Kind="ChevronRight"
+            Size="12"
+            StrokeWidth="1.6"
+            VerticalAlignment="Center"
+          />
+        </Grid>
+      </Button>
+    </DataTemplate>
+
     <DataTemplate x:Key="RowSources" x:DataType="models:ConversationRow">
       <ItemsControl
         Margin="{Binding Margin}"
@@ -283,6 +313,7 @@
       ContentTemplate="{StaticResource RowContent}"
       InterruptedTemplate="{StaticResource RowInterrupted}"
       SourcesTemplate="{StaticResource RowSources}"
+      ProcessTemplate="{StaticResource RowProcess}"
     />
   </UserControl.Resources>
 
