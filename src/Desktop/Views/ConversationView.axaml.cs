@@ -28,6 +28,13 @@ public partial class ConversationView : UserControl
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        // 光标移动也会改变当前 @ / # token；只监听 TextChanged 会让
+        // “先设置文本、后设置 CaretIndex”的路径停在旧建议上。
+        InputBox.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBox.CaretIndexProperty)
+                RefreshSuggestions();
+        };
         // Avalonia 12：拖放事件通过附加事件路由注册
         AddHandler(DragDrop.DragOverEvent, InputBox_OnDragOver);
         AddHandler(DragDrop.DropEvent, InputBox_OnDrop);
@@ -216,7 +223,12 @@ public partial class ConversationView : UserControl
             {
                 _captureScheduled = false;
                 CaptureMeasuredRows();
-                if (MessageList.IsFollowing)
+                if (
+                    MessageList.IsFollowing
+                    && MessageScroll.Offset.Y
+                        < Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height)
+                            - 0.5
+                )
                     MessageList.ScrollToEndImmediate();
             },
             DispatcherPriority.Background

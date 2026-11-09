@@ -733,6 +733,9 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   `anchorRow + anchorDelta` 抵消 spacer 高度修正，避免越补历史越跳
 - 窗口换页只增量 `RemoveAt/Insert`，保留相同行对象与 Content 行里的 `MarkdownRenderer`；
   不调用 `Clear()`，避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
+- 单条超长正文（>16k 字符）由 `VirtualizedMarkdownBody` 按 Markdig 顶层 block 拆分，
+  只实例化视口附近的 segment（最多 32 个），普通消息仍走单个 `MarkdownRenderer`
+  以保留流式增量、选择与链接行为；block 内不产生裸 Markdown 占位
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
   尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，

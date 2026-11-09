@@ -95,7 +95,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>在真实视图里把输入框文本设成 <paramref name="text"/> 并等补全弹窗状态就绪。</summary>
-    private void RunWithInput(string text, Action<Desktop.Views.ConversationView, TextBox> assert)
+    private void RunWithInput(
+        string text,
+        Action<Desktop.Views.ConversationView, TextBox> assert,
+        Func<bool>? ready = null
+    )
     {
         Ui.Run(() =>
         {
@@ -115,7 +119,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 input!.Text = text;
                 input.CaretIndex = text.Length;
                 PumpUntil(
-                    () => !_vm.IsSuggestionPopupVisible || _vm.Suggestions.Count > 0,
+                    ready ?? (() => !_vm.IsSuggestionPopupVisible || _vm.Suggestions.Count > 0),
                     "补全建议刷新"
                 );
 
@@ -146,7 +150,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 // 右列展示真实绝对路径（不是把条目名拼到项目根就完事）
                 var dirEntry = _vm.Suggestions.Single(s => s.Name == "卷一 风起/");
                 Assert.Equal(Path.Combine(_novelsRoot, "卷一 风起"), dirEntry.FullPath);
-            }
+            },
+            () => _vm.Suggestions.Count > 0
         );
     }
 
@@ -169,7 +174,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 // 目录应用后自动展开下一级（细纲.md）
                 PumpUntil(() => _vm.Suggestions.Any(s => s.Name == "细纲.md"), "下一级补全");
                 Assert.True(_vm.IsSuggestionPopupVisible, "目录应用后未级联下一级弹窗");
-            }
+            },
+            () => _vm.Suggestions.Count > 0
         );
     }
 
@@ -203,7 +209,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 );
                 var popup = view.FindControl<Popup>("SuggestionPopup");
                 Assert.True(popup!.IsOpen);
-            }
+            },
+            () => _vm.Suggestions.Count > 0
         );
     }
 
@@ -235,7 +242,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 );
                 Assert.Equal(caret, input.CaretIndex);
                 Assert.Equal(1, _vm.SelectedSuggestionIndex);
-            }
+            },
+            () => _vm.Suggestions.Count > 0
         );
     }
 
@@ -250,7 +258,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.True(_vm.IsSuggestionPopupVisible);
                 Assert.False(_vm.IsCommandPopupVisible);
                 Assert.Contains(_vm.Suggestions, s => s.Name == "序章.txt");
-            }
+            },
+            () => _vm.Suggestions.Any(s => s.Name == "序章.txt")
         );
     }
 
@@ -689,6 +698,109 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     );
                     Assert.InRange(list.Items.Count, 1, 200);
                 }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 单条 100k+ 字符消息必须按 Markdown block 虚拟化：视口附近才创建 MarkdownRenderer，
+    /// 不能把整条正文变回一棵巨大视觉树；滚到首尾仍能读到对应段落。
+    /// </summary>
+    [Fact]
+    public void LongMessage_BlockVirtualization_BoundsLiveRenderers()
+    {
+        Ui.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            for (var i = 0; i < 260; i++)
+            {
+                message.AppendContent($"## 段落 {i}\n\n");
+                message.AppendContent(
+                    string.Join(" ", Enumerable.Repeat($"第 {i} 段长文正文内容。", 12))
+                );
+                message.AppendContent("\n\n");
+            }
+            message.AppendContent("结尾标记");
+            _vm.Messages.Add(message);
+            _vm.HasMessages = true;
+            Assert.True(message.Content.Length > 30_000);
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "长消息挂载"
+                );
+
+                var body = Assert.Single(
+                    view.GetVisualDescendants().OfType<Desktop.Controls.VirtualizedMarkdownBody>()
+                );
+                var live = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                    .Count();
+                Assert.True(
+                    live is >= 1 and <= 40,
+                    $"live={live}, children={body.Children.Count}, visual blocks={body.GetVisualDescendants().OfType<LiveMarkdown.Avalonia.MarkdownRenderer>().Count()}"
+                );
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(t =>
+                                t.Text?.Contains("结尾标记") == true
+                                || (
+                                    t is LiveMarkdown.Avalonia.MarkdownTextBlock block
+                                    && block.ActualText.Contains(
+                                        "结尾标记",
+                                        StringComparison.Ordinal
+                                    )
+                                )
+                            ),
+                    "长消息尾部段落"
+                );
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止长消息跟随");
+                sv.Offset = sv.Offset.WithY(0);
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(t =>
+                                t.Text?.Contains("段落 0") == true
+                                || (
+                                    t is LiveMarkdown.Avalonia.MarkdownTextBlock block
+                                    && block.ActualText.Contains("段落 0", StringComparison.Ordinal)
+                                )
+                            ),
+                    "长消息顶部段落"
+                );
+                live = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                    .Count();
+                Assert.InRange(live, 1, 40);
+                Assert.InRange(list.Items.Count, 1, 10);
             }
             finally
             {

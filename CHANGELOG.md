@@ -15,7 +15,14 @@
   每次布局/extent 增长后重新 `ScrollToEnd`，LiveMarkdown 异步长高不再停在半路。
   回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
   `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
-  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 606/606。
+  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 607/607。
+- **单条超长 AI 回复 block 级虚拟化**：`VirtualizedMarkdownBody` 对超过 16k 字符的正文
+  用 Markdig 顶层 block 拆分，只实例化视口附近的 segment（最多 32 个），每个 segment 独立
+  `MarkdownRenderer`；普通消息仍是一个 renderer，保留流式增量/选择/链接。block 之间共享
+  选择 scope，超大消息不再生成整篇 Markdown 视觉树。回归：
+  `LongMessage_BlockVirtualization_BoundsLiveRenderers`。
+- **@ 补全测试消除时序竞态**：View 同时监听 `CaretIndex` 变化；测试在 `@`/`#` 输入上
+  等待真实建议出现后再断言，不再依赖异步文件枚举恰好先完成。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

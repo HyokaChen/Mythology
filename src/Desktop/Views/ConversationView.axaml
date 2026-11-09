@@ -20,11 +20,7 @@
     <conv:SenderToBoolConverter x:Key="IsSystem" />
     <!-- 正文只有一种模板：LiveMarkdown。历史与实时同构，不做纯文本降级。 -->
     <DataTemplate x:Key="RichAgentBody" x:DataType="models:ChatMessage">
-      <md:MarkdownRenderer
-        Classes="ConversationMarkdown"
-        MarkdownBuilder="{Binding Content}"
-        CodeBlockColorTheme="LightPlus"
-      />
+      <controls:VirtualizedMarkdownBody MarkdownBuilder="{Binding Content}" />
     </DataTemplate>
 
     <DataTemplate x:Key="RowUser" x:DataType="models:ConversationRow">
