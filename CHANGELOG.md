@@ -7,6 +7,15 @@
 ## [Unreleased]
 
 ### Changed
+- **Desktop 对话区改为全量历史 spacer 虚拟化（Rich-only）**：全量消息只保留扁平行模型，
+  `ItemsControl` 只实例化视口前后各一屏的行；未实例化历史用 `TopSpacerHeight` /
+  `BottomSpacerHeight` 撑起完整滚动条，窗口外不创建控件，也不再用纯文本降级历史正文。
+  行高度采用「估算 + 实测缓存 + anchorRow/anchorDelta」修正；窗口换页增量 `RemoveAt/Insert`
+  保留相同行对象与 Content 行 `MarkdownRenderer`。自动贴底只在显式用户手势后停止跟随，
+  每次布局/extent 增长后重新 `ScrollToEnd`，LiveMarkdown 异步长高不再停在半路。
+  回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
+  `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
+  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 605/605。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

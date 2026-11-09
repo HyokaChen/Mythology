@@ -22,8 +22,9 @@ public partial class ConversationView : UserControl
         InitializeComponent();
         Loaded += (_, _) => MessageList.ResetFollow();
         Unloaded += (_, _) => StopBackgroundWork();
-        MessageList.ItemsSource = _rows;
-        MessageList.ScrolledToTop += OnScrolledToTop;
+        MessageList.ItemsSource = _windowRows;
+        MessageScroll.ScrollChanged += OnMessageScrollChanged;
+        MessageList.LayoutUpdated += OnMessageListLayoutUpdated;
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -60,17 +61,23 @@ public partial class ConversationView : UserControl
     /// <summary>窗口关闭/切走时停掉后台折叠定时器。</summary>
     private void StopBackgroundWork() => CancelProcessFold();
 
-    // ── 行窗口：只保留最近 40 条消息的行，全部 LiveMarkdown，不做纯文本降级 ─────────────
+    // ── 全量行模型 + 可见窗口 ────────────────────────────────────────────
+    // _rows 保存所有消息的行模型（不挂控件）；_windowRows 只保存视口附近的行，
+    // 由上下 spacer 撑起完整滚动高度。窗口外永远没有控件，更没有纯文本降级。
 
     private readonly ObservableCollection<ConversationRow> _rows = [];
+    private readonly ObservableCollection<ConversationRow> _windowRows = [];
+    private readonly Dictionary<ConversationRow, double> _measuredHeights = [];
     private readonly Dictionary<ChatMessage, List<ConversationRow>> _rowsByMessage = [];
     private readonly HashSet<ChatMessage> _subscribedMessages = [];
     private readonly HashSet<ChatMessage> _dirtyRowMessages = [];
     private readonly Dictionary<AgentStep, ChatMessage> _stepOwners = [];
     private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
     private ConversationViewModel? _messagesVm;
-    private const int WindowMessages = 40;
-    private int _windowStart;
+    private bool _windowSyncScheduled;
+    private bool _syncingWindow;
+    private bool _captureScheduled;
+    private bool _restoringOffset;
     private bool _bulkRestore;
     private bool _refreshScheduled;
     private bool _rowRefreshScheduled;
@@ -121,19 +128,12 @@ public partial class ConversationView : UserControl
                         if (item is ChatMessage message)
                             AppendRowsForMessage(message);
 
-                    // 跟随尾部时维持固定消息窗口；所有窗口内行仍是 LiveMarkdown。
+                    // 跟随尾部时窗口滚到最新；阅读历史时只把新行计入底部 spacer，
+                    // 用户当前视口不动。
                     if (MessageList.IsFollowing)
-                    {
-                        while (
-                            _windowStart < _messagesVm.Messages.Count - WindowMessages
-                            && _messagesVm.Messages.Count > WindowMessages
-                        )
-                        {
-                            var oldest = _messagesVm.Messages[_windowStart];
-                            RemoveRowsForMessage(oldest);
-                            _windowStart++;
-                        }
-                    }
+                        SyncWindowToTail();
+                    else
+                        UpdateWindowSpacers();
                 }
                 else
                 {
@@ -144,8 +144,7 @@ public partial class ConversationView : UserControl
                 foreach (var item in e.OldItems)
                     if (item is ChatMessage message)
                         RemoveRowsForMessage(message);
-                if (e.OldStartingIndex >= 0 && e.OldStartingIndex < _windowStart)
-                    _windowStart = Math.Max(0, _windowStart - e.OldItems.Count);
+                RequestWindowSync();
                 break;
             case NotifyCollectionChangedAction.Reset:
                 _bulkRestore = true;
@@ -195,39 +194,208 @@ public partial class ConversationView : UserControl
         );
     }
 
-    private void OnScrolledToTop()
+    // ── 可见窗口：全量行模型 + 上下 spacer 虚拟化 ─────────────────────────
+
+    private const double FallbackViewport = 600;
+    private const double TailViewports = 3;
+
+    private void OnMessageScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        // 行窗口向上补一页；所有补入行仍是 LiveMarkdown，不做纯文本占位。
-        if (_messagesVm is null || _windowStart <= 0)
+        if (_syncingWindow || _restoringOffset)
             return;
+        RequestWindowSync();
+    }
 
-        var take = Math.Min(8, _windowStart);
-        var scroll = MessageScroll;
-        var beforeOffset = scroll.Offset.Y;
-        var beforeExtent = scroll.Extent.Height;
-        _windowStart -= take;
-        for (var i = _windowStart + take - 1; i >= _windowStart; i--)
-        {
-            var message = _messagesVm.Messages[i];
-            var rows = ConversationRow.FromMessage(message);
-            _rowsByMessage[message] = rows;
-            SubscribeMessage(message);
-            for (var r = rows.Count - 1; r >= 0; r--)
-                _rows.Insert(0, rows[r]);
-        }
-
+    private void OnMessageListLayoutUpdated(object? sender, EventArgs e)
+    {
+        if (_captureScheduled)
+            return;
+        _captureScheduled = true;
         Dispatcher.UIThread.Post(
             () =>
             {
-                var added = scroll.Extent.Height - beforeExtent;
-                if (added > 0.5)
-                    scroll.Offset = scroll.Offset.WithY(beforeOffset + added);
+                _captureScheduled = false;
+                CaptureMeasuredRows();
+                if (MessageList.IsFollowing)
+                    MessageList.ScrollToEndImmediate();
             },
             DispatcherPriority.Background
         );
     }
 
-    /// <summary>重建行窗口：只创建最近一批消息的行，窗口内全部是 LiveMarkdown。</summary>
+    private void RequestWindowSync()
+    {
+        if (_windowSyncScheduled || _syncingWindow)
+            return;
+        _windowSyncScheduled = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _windowSyncScheduled = false;
+                SyncWindowForCurrentState();
+            },
+            DispatcherPriority.Background
+        );
+    }
+
+    private void SyncWindowForCurrentState()
+    {
+        if (_syncingWindow)
+            return;
+        if (_rows.Count == 0)
+        {
+            SetWindow(0, 0);
+            return;
+        }
+        if (MessageList.IsFollowing)
+            SyncWindowToTail();
+        else
+            SyncWindowToViewport();
+    }
+
+    /// <summary>尾部窗口：保证最后一屏和预取缓冲全部可见，全部 LiveMarkdown。</summary>
+    private void SyncWindowToTail()
+    {
+        if (_rows.Count == 0)
+        {
+            SetWindow(0, 0);
+            return;
+        }
+
+        var viewport = ViewportHeight();
+        var budget = viewport * TailViewports;
+        var start = _rows.Count;
+        var height = 0.0;
+        while (start > 0 && (height < budget || start == _rows.Count))
+        {
+            start--;
+            height += RowHeight(_rows[start]);
+        }
+        SetWindow(start, _rows.Count);
+    }
+
+    /// <summary>用户阅读历史：只实例化视口前后各一屏的行。</summary>
+    private void SyncWindowToViewport()
+    {
+        if (_rows.Count == 0)
+        {
+            SetWindow(0, 0);
+            return;
+        }
+
+        var viewport = ViewportHeight();
+        var offset = MessageScroll.Offset.Y;
+        var anchor = CaptureAnchor(offset);
+        var rangeTop = Math.Max(0, offset - viewport);
+        var rangeBottom = offset + viewport * 2;
+
+        var start = 0;
+        var top = 0.0;
+        while (start < _rows.Count)
+        {
+            var next = top + RowHeight(_rows[start]);
+            if (next > rangeTop)
+                break;
+            top = next;
+            start++;
+        }
+
+        var end = start;
+        var bottom = top;
+        while (end < _rows.Count && bottom < rangeBottom)
+        {
+            bottom += RowHeight(_rows[end]);
+            end++;
+        }
+
+        if (end == start && start < _rows.Count)
+            end = start + 1;
+        if (start >= _rows.Count)
+        {
+            start = Math.Max(0, _rows.Count - 1);
+            end = _rows.Count;
+        }
+        SetWindow(start, end);
+        if (!MessageList.IsFollowing && anchor is { } value)
+            RestoreAnchor(value.Row, value.Delta);
+    }
+
+    /// <summary>设置可见窗口并同步上下 spacer；窗口外没有控件，也没有纯文本。</summary>
+    private void SetWindow(int start, int end)
+    {
+        start = Math.Clamp(start, 0, _rows.Count);
+        end = Math.Clamp(end, start, _rows.Count);
+        var desired = new List<ConversationRow>(end - start);
+        for (var i = start; i < end; i++)
+            desired.Add(_rows[i]);
+
+        var top = TopOf(start);
+        var bottom = Math.Max(0, TotalHeight() - TopOf(end));
+
+        _syncingWindow = true;
+        try
+        {
+            ReconcileWindowRows(desired);
+            MessageList.TopSpacerHeight = top;
+            MessageList.BottomSpacerHeight = bottom;
+        }
+        finally
+        {
+            _syncingWindow = false;
+        }
+    }
+
+    /// <summary>
+    /// 保留相同行对象的增量替换；只移除/插入差异，避免重建 Content 行里的
+    /// MarkdownRenderer。窗口换页不调用 Clear()，否则 AutoScroll 会把 Reset
+    /// 当成新会话并强制贴底。
+    /// </summary>
+    private void ReconcileWindowRows(List<ConversationRow> desired)
+    {
+        var old = _windowRows;
+        var prefix = 0;
+        while (
+            prefix < old.Count
+            && prefix < desired.Count
+            && ReferenceEquals(old[prefix], desired[prefix])
+        )
+            prefix++;
+
+        var suffix = 0;
+        while (
+            suffix < old.Count - prefix
+            && suffix < desired.Count - prefix
+            && ReferenceEquals(old[old.Count - 1 - suffix], desired[desired.Count - 1 - suffix])
+        )
+            suffix++;
+
+        for (var i = old.Count - suffix - 1; i >= prefix; i--)
+            old.RemoveAt(i);
+
+        var oldCount = old.Count;
+        for (var i = prefix; i < desired.Count - suffix; i++)
+            old.Insert(oldCount + (i - prefix), desired[i]);
+    }
+
+    /// <summary>全量行模型变化但窗口对象不需要变化时，重算上下 spacer。</summary>
+    private void UpdateWindowSpacers()
+    {
+        if (_windowRows.Count == 0)
+        {
+            MessageList.TopSpacerHeight = 0;
+            MessageList.BottomSpacerHeight = _rows.Count == 0 ? 0 : TotalHeight();
+            return;
+        }
+
+        var start = _rows.IndexOf(_windowRows[0]);
+        if (start < 0)
+            return;
+        var end = Math.Min(_rows.Count, start + _windowRows.Count);
+        MessageList.TopSpacerHeight = TopOf(start);
+        MessageList.BottomSpacerHeight = Math.Max(0, TotalHeight() - TopOf(end));
+    }
+
+    /// <summary>重建全量行模型；行对象不挂控件，控件只由可见窗口创建。</summary>
     private void RebuildRows()
     {
         if (_messagesVm is null)
@@ -238,15 +406,151 @@ public partial class ConversationView : UserControl
 
         ClearRows();
         var total = _messagesVm.Messages.Count;
-        _windowStart = Math.Max(0, total - WindowMessages);
-        for (var i = _windowStart; i < total; i++)
+        for (var i = 0; i < total; i++)
         {
             var message = _messagesVm.Messages[i];
             // 历史过程默认折叠；最后 4 条消息保留过程展开，当前回合随流式展开。
             message.IsProcessExpanded = i >= total - 4;
             AppendRowsForMessage(message);
         }
+        SyncWindowToTail();
         MessageList.ResetFollow();
+    }
+
+    // ── 高度索引：估算 + 实测缓存 + 锚点 ────────────────────────────────
+
+    private double ViewportHeight() => Math.Max(FallbackViewport, MessageScroll.Viewport.Height);
+
+    private double RowHeight(ConversationRow row)
+    {
+        if (_measuredHeights.TryGetValue(row, out var measured) && measured > 0.5)
+            return measured;
+        return EstimateRowHeight(row);
+    }
+
+    private static double EstimateRowHeight(ConversationRow row)
+    {
+        var contentLength = row.Message.Content?.Length ?? 0;
+        return row.Kind switch
+        {
+            ConversationRowKind.Content => 32 + Math.Min(6000, contentLength * 0.52),
+            ConversationRowKind.User => 42 + Math.Min(2400, contentLength * 0.5),
+            ConversationRowKind.Step => 54,
+            ConversationRowKind.Process => 30,
+            ConversationRowKind.Waiting => 30,
+            ConversationRowKind.Interrupted => 28,
+            ConversationRowKind.Sources => 20 + row.Message.Sources.Count * 16,
+            ConversationRowKind.System => 28,
+            _ => 32,
+        };
+    }
+
+    private double TopOf(int index)
+    {
+        var top = 0.0;
+        var limit = Math.Clamp(index, 0, _rows.Count);
+        for (var i = 0; i < limit; i++)
+            top += RowHeight(_rows[i]);
+        return top;
+    }
+
+    private double TotalHeight()
+    {
+        var total = 0.0;
+        foreach (var row in _rows)
+            total += RowHeight(row);
+        return total;
+    }
+
+    /// <summary>
+    /// 从已安排的行容器读回真实高度。只取 DataContext 为行、视觉层级最浅的
+    /// ContentPresenter，避免把 Markdown 内部同 DataContext 的控件误当成整行。
+    /// </summary>
+    private void CaptureMeasuredRows()
+    {
+        if (_windowRows.Count == 0)
+            return;
+
+        var candidates = MessageList
+            .GetVisualDescendants()
+            .OfType<ContentPresenter>()
+            .Where(p => p.DataContext is ConversationRow && p.Bounds.Height > 0.5)
+            .Select(p => new
+            {
+                Row = (ConversationRow)p.DataContext!,
+                Height = p.Bounds.Height,
+                Depth = p.GetVisualAncestors().Count(),
+            })
+            .GroupBy(x => x.Row)
+            .Select(g => g.OrderBy(x => x.Depth).First())
+            .ToList();
+        if (candidates.Count == 0)
+            return;
+
+        var following = MessageList.IsFollowing;
+        var anchor = following ? null : CaptureAnchor(MessageScroll.Offset.Y);
+        var changed = false;
+        foreach (var candidate in candidates)
+        {
+            if (
+                _measuredHeights.TryGetValue(candidate.Row, out var old)
+                && Math.Abs(old - candidate.Height) <= 0.5
+            )
+                continue;
+            _measuredHeights[candidate.Row] = candidate.Height;
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        // 高度修正会改变 spacer 总高度；阅读状态下用锚点抵消。
+        UpdateWindowSpacers();
+        if (following)
+            MessageList.ScrollToEndImmediate();
+        else if (anchor is { } value)
+            RestoreAnchor(value.Row, value.Delta);
+    }
+
+    private (ConversationRow Row, double Delta)? CaptureAnchor(double offset)
+    {
+        if (_rows.Count == 0)
+            return null;
+
+        var top = 0.0;
+        foreach (var row in _rows)
+        {
+            var height = RowHeight(row);
+            if (offset < top + height)
+                return (row, offset - top);
+            top += height;
+        }
+
+        var last = _rows[^1];
+        return (last, Math.Max(0, offset - (top - RowHeight(last))));
+    }
+
+    private void RestoreAnchor(ConversationRow row, double delta)
+    {
+        var index = _rows.IndexOf(row);
+        if (index < 0)
+            return;
+
+        var target = TopOf(index) + delta;
+        var max = Math.Max(0, TotalHeight() - ViewportHeight());
+        target = Math.Clamp(target, 0, max);
+        if (Math.Abs(MessageScroll.Offset.Y - target) <= 0.5)
+            return;
+
+        _restoringOffset = true;
+        try
+        {
+            MessageScroll.Offset = MessageScroll.Offset.WithY(target);
+        }
+        finally
+        {
+            _restoringOffset = false;
+        }
     }
 
     // ── 扁平化行：一条消息拆成用户行/等待行/步骤行/正文行/中断行/来源行 ──
@@ -279,9 +583,13 @@ public partial class ConversationView : UserControl
         foreach (var message in _subscribedMessages.ToArray())
             UnsubscribeMessage(message);
         _rows.Clear();
+        _windowRows.Clear();
+        _measuredHeights.Clear();
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
         _stepOwners.Clear();
+        MessageList.TopSpacerHeight = 0;
+        MessageList.BottomSpacerHeight = 0;
         CancelProcessFold();
     }
 
@@ -350,6 +658,7 @@ public partial class ConversationView : UserControl
         for (var i = 0; i < selected.Count; i++)
             selected[i].IsLastInMessage = i == selected.Count - 1;
         _rowsByMessage[message] = selected;
+        RequestWindowSync();
     }
 
     private void SubscribeMessage(ChatMessage message)

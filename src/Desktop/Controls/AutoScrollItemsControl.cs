@@ -14,8 +14,8 @@ namespace Desktop.Controls;
 /// - 新消息自动滚动到底部（初始加载无闪烁）
 /// - 用户手动上滚（滚轮 / 键盘 / 滚动条）时停止自动跟随，滚回底部时恢复
 /// - ScrollViewer 必须是 ItemsControl 的祖先（不要求 PART_ 模板）
-/// - 对话列表请用 StackPanel + 像素窗口；不要用 VSP：可变高度下 extent 估算会振荡
-///   （Avalonia issue #11989），表现为滚动条无限上下跳
+/// - 对话列表请用 StackPanel + 上下 spacer 窗口；不要用 VSP：可变高度下 extent
+///   估算会振荡（Avalonia issue #11989），表现为滚动条无限上下跳
 ///
 /// 「用户上滚」只认输入意图，不认 offset 负增量：布局校正（内容变矮、窗口裁剪）
 /// 也会让 offset 变小，把它当用户滚动会永久关闭跟随，表现为恢复会话/发消息后停在中间。
@@ -27,8 +27,25 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _scrollBarDragging;
     private bool _followPostPending;
 
-    /// <summary>用户滚到顶部（历史加载钩子）。只在用户输入意图下触发。</summary>
-    public event Action? ScrolledToTop;
+    /// <summary>窗口之前所有未实例化行的总高度；由上层布局模型计算。</summary>
+    public static readonly StyledProperty<double> TopSpacerHeightProperty =
+        AvaloniaProperty.Register<AutoScrollItemsControl, double>(nameof(TopSpacerHeight));
+
+    /// <summary>窗口之后所有未实例化行的总高度；由上层布局模型计算。</summary>
+    public static readonly StyledProperty<double> BottomSpacerHeightProperty =
+        AvaloniaProperty.Register<AutoScrollItemsControl, double>(nameof(BottomSpacerHeight));
+
+    public double TopSpacerHeight
+    {
+        get => GetValue(TopSpacerHeightProperty);
+        set => SetValue(TopSpacerHeightProperty, value);
+    }
+
+    public double BottomSpacerHeight
+    {
+        get => GetValue(BottomSpacerHeightProperty);
+        set => SetValue(BottomSpacerHeightProperty, value);
+    }
 
     /// <summary>当前是否处于「跟随尾部」状态。</summary>
     public bool IsFollowing => _autoFollow;
@@ -48,6 +65,16 @@ public class AutoScrollItemsControl : ItemsControl
         ItemsSourceProperty.Changed.AddClassHandler<AutoScrollItemsControl>(
             static (control, e) => control.OnItemsSourceChanged(e)
         );
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (
+            change.Property == TopSpacerHeightProperty
+            || change.Property == BottomSpacerHeightProperty
+        )
+            InvalidateMeasure();
     }
 
     public AutoScrollItemsControl()
@@ -200,10 +227,6 @@ public class AutoScrollItemsControl : ItemsControl
             && _scrollViewer.Offset.Y < maxOffset - 8
         )
             DisableFollow();
-
-        // 用户滚到顶部 → 通知视图加载更早的一页（程序化归零不算）。
-        if (!_autoFollow && e.OffsetDelta.Y < 0 && _scrollViewer.Offset.Y <= 0)
-            ScrolledToTop?.Invoke();
 
         // 用户滚到底部 → 恢复跟随
         if (!_autoFollow && _scrollViewer.Offset.Y >= maxOffset - 8)

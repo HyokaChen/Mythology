@@ -430,6 +430,14 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
 
                 PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "2000 条窗口贴底");
                 Assert.InRange(list.Items.Count, 1, 200);
+                Assert.True(
+                    list.TopSpacerHeight > 0,
+                    $"尾部窗口应有顶部 spacer：top={list.TopSpacerHeight}, items={list.Items.Count}, extent={sv.Extent.Height}"
+                );
+                Assert.True(
+                    sv.Extent.Height > 10_000,
+                    $"滚动条应覆盖全量历史：extent={sv.Extent.Height}, viewport={sv.Viewport.Height}"
+                );
                 Assert.Equal(2000, _vm.Messages.Count);
                 Assert.DoesNotContain(
                     list.GetVisualDescendants().OfType<TextBlock>(),
@@ -447,17 +455,27 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 window.MouseWheel(pointer, new Vector(0, 5));
                 PumpUntil(() => !AtBottom(sv), "滚轮上滚应停跟随");
                 Assert.True(sv.Offset.Y < sv.Extent.Height - sv.Viewport.Height - 1);
-                for (var i = 0; i < 20 && !AtBottom(sv); i++)
-                {
-                    window.MouseWheel(pointer, new Vector(0, -5));
-                    for (var j = 0; j < 10; j++)
-                    {
-                        Dispatcher.UIThread.RunJobs();
-                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                        Thread.Sleep(10);
-                    }
-                }
-                Assert.True(AtBottom(sv), "滚轮可回到底部");
+
+                // 全量历史可达：程序化归零后窗口应换到最早一段，顶部 spacer 归零。
+                sv.Offset = sv.Offset.WithY(0);
+                PumpUntil(
+                    () => list.TopSpacerHeight <= 0.5 && list.Items.Count > 0,
+                    "滚到顶部应实例化最早的行"
+                );
+                Assert.Contains(
+                    list.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text?.Contains("历史 0") == true
+                );
+                Assert.DoesNotContain(
+                    list.GetVisualDescendants().OfType<TextBlock>(),
+                    t => t.Text?.Contains("##") == true
+                );
+
+                sv.Offset = sv.Offset.WithY(Math.Max(0, sv.Extent.Height - sv.Viewport.Height));
+                PumpUntil(
+                    () => AtBottom(sv) && list.BottomSpacerHeight <= 0.5,
+                    "滚回底部应换回尾部窗口"
+                );
 
                 // 同一 VM 上 Clear + 批量 Add（会话切换/恢复的真实形态）
                 _vm.Messages.Clear();
@@ -470,6 +488,140 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 PumpUntil(() => list.Items.Count == 0, "清空数据上下文");
                 view.DataContext = _vm;
                 PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "重挂数据上下文后贴底");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 完整历史虚拟化下，用户停在历史位置时追加消息只增长底部 spacer，
+    /// 不能把视口拉回底部；这是自动跟随与虚拟化窗口的共同边界。
+    /// </summary>
+    [Fact]
+    public void VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 300; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 8))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "滚轮上滚");
+
+                var beforeOffset = sv.Offset.Y;
+                var beforeExtent = sv.Extent.Height;
+                var newMessage = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                newMessage.AppendContent("新消息");
+                _vm.Messages.Add(newMessage);
+
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+
+                Assert.InRange(sv.Offset.Y, beforeOffset - 2, beforeOffset + 2);
+                Assert.True(sv.Extent.Height > beforeExtent, "底部 spacer 应增长");
+                Assert.True(!list.IsFollowing, "用户阅读历史时不得恢复跟随");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// LiveMarkdown 流式长高时，虚拟窗口和 extent 每帧变化，但跟随尾部必须始终贴底；
+    /// 同时窗口不能因为正文长高而膨胀到全量行。
+    /// </summary>
+    [Fact]
+    public void VirtualizedScroll_StreamingLiveMarkdown_StaysPinned()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 120; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 8))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+
+                var stream = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                _vm.Messages.Add(stream);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "流式行挂载");
+
+                for (var i = 0; i < 80; i++)
+                {
+                    stream.AppendContent($"第 {i} 段流式正文，包含 **Markdown**。\n\n");
+                    for (var j = 0; j < 4; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.True(
+                        AtBottom(sv),
+                        $"流式第 {i} 段后应贴底：offset={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    Assert.InRange(list.Items.Count, 1, 200);
+                }
             }
             finally
             {

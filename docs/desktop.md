@@ -724,13 +724,15 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 估算在 30k↔67k px 间振荡，scroll anchoring 再回拉 offset，滚动条会无限上下跳
 （Avalonia issue #11989；上游修复 PR #20993 未合入 12.1.5/master）。
 
-- 布局：外层 `ScrollViewer` + `ItemsControl` + 普通 `StackPanel`；Extent 是真实高度
-- `ConversationView` 只渲染尾部约 3 屏（像素预算窗口，最多 40 条，最少 4 条）；滚到顶部按页
-  向前补历史，按新增高度下移 offset 保持锚点
-- 消息先扁平化成行（User/System/Waiting/Step/Content/Interrupted/Sources），补页按 16ms 一行插入
-- 空闲时（`ContextIdle`）预取最多 3 页/80 条；用户上滚即暂停预取队列
-- 历史预取行先用轻量纯文本（`ChatMessage.IsRichMarkdown=false`）；滚动停止 180ms 后一次升级
-  一条可见消息到 LiveMarkdown，滚动中不创建 Markdown 视觉树
+- 布局：外层 `ScrollViewer` + `AutoScrollItemsControl` + 普通 `StackPanel` + 上下 spacer；
+  Extent = 已实例化窗口高度 + 未实例化行估算高度，滚动条覆盖完整历史
+- **全量行模型 + 可见窗口**：所有消息先扁平化成行（User/System/Waiting/Step/Content/
+  Interrupted/Sources），但只有视口前后各一屏（尾部约 3 屏）的行会创建控件；窗口外只是
+  `TopSpacerHeight` / `BottomSpacerHeight`，不创建任何控件，更不做纯文本降级
+- 行高度用「估算 + 实测缓存」：可见行布局后从行容器回读真实高度；阅读历史时用
+  `anchorRow + anchorDelta` 抵消 spacer 高度修正，避免越补历史越跳
+- 窗口换页只增量 `RemoveAt/Insert`，保留相同行对象与 Content 行里的 `MarkdownRenderer`；
+  不调用 `Clear()`，避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
   尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
@@ -741,8 +743,9 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   参数/结果/diff 各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
 - 流式步骤/来源变化用**增量行拓扑同步**，不重建 Content 行；LiveMarkdown 的
   DocumentNode/TextLayout 缓存因此能跨步骤保留。最终正文不做固定高度（未知长度只能隐藏或内滚）
-- 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；`ScrollToEnd` 精确贴底；
-  发送/恢复必须 `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
+- 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；每次布局/extent 增长后
+  都重新 `ScrollToEnd` 贴底，LiveMarkdown 异步长高不会停在半路；发送/恢复必须
+  `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

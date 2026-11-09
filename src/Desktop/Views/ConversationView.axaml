@@ -479,8 +479,8 @@
            对话行高度差异极大（10k 字用户气泡 + 长表格）时，ScrollToEnd 触发的 realize 会让
            估算在 30k↔67k px 间来回，offset 被 anchor/coerce 反复拉回，滚动条无限上下跳。
            Avalonia issue #11989 记录了这个行为，官方 workaround 是可变高度列表退回 StackPanel。
-           这里用 StackPanel + 像素预算窗口（View 代码只保留尾部约 3 屏），
-           窗口内的 Extent 精确，2000 条历史仍通过滚到顶部增量加载。 -->
+           这里用 StackPanel + 上下 spacer：全量行模型只保留数据，视口窗口外的历史只占高度，
+           窗口内全部是 LiveMarkdown；滚动条覆盖 2000 条完整历史。 -->
       <ScrollViewer
         x:Name="MessageScroll"
         IsVisible="{Binding HasMessages}"
@@ -494,7 +494,15 @@
         >
           <controls:AutoScrollItemsControl.Template>
             <ControlTemplate TargetType="controls:AutoScrollItemsControl">
-              <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+              <!--
+                虚拟化窗口的三段式：未实例化历史只占高度，可见窗口才创建 LiveMarkdown。
+                spacer 不做数据项，避免窗口换页时 Reset 触发“强制跟随底部”。
+              -->
+              <StackPanel>
+                <Border Height="{TemplateBinding TopSpacerHeight}" />
+                <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                <Border Height="{TemplateBinding BottomSpacerHeight}" />
+              </StackPanel>
             </ControlTemplate>
           </controls:AutoScrollItemsControl.Template>
           <ItemsControl.ItemsPanel>
@@ -502,14 +510,6 @@
               <StackPanel />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-          <controls:AutoScrollItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="models:ConversationRow">
-              <ContentControl
-                Content="{Binding}"
-                ContentTemplate="{Binding Kind, Converter={StaticResource ConversationRowTemplate}}"
-              />
-            </DataTemplate>
-          </controls:AutoScrollItemsControl.ItemTemplate>
         </controls:AutoScrollItemsControl>
       </ScrollViewer>
     </Grid>
