@@ -512,6 +512,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     "新消息行挂载"
                 );
 
+                _vm.IsProcessing = true;
                 message.AgentSteps.Add(
                     new Desktop.Models.AgentStep
                     {
@@ -520,8 +521,16 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                         Status = Desktop.Models.AgentStepStatus.Completed,
                     }
                 );
+                for (var i = 0; i < 60; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+                Assert.True(message.IsProcessExpanded, "回合未结束不得自动折叠过程");
 
-                PumpUntil(() => !message.IsProcessExpanded, "完成后 450ms 自动折叠过程");
+                _vm.IsProcessing = false;
+                PumpUntil(() => !message.IsProcessExpanded, "Turn 完成后 450ms 自动折叠过程");
 
                 message.ProcessTouchedByUser = true;
                 message.AgentSteps.Add(

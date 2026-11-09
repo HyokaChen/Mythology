@@ -123,7 +123,10 @@ public partial class ConversationView : UserControl
             return;
 
         if (_messagesVm is not null)
+        {
             _messagesVm.Messages.CollectionChanged -= OnMessagesChanged;
+            _messagesVm.PropertyChanged -= OnMessagesVmPropertyChanged;
+        }
 
         _messagesVm = vm;
         _bulkRestore = false;
@@ -138,7 +141,10 @@ public partial class ConversationView : UserControl
         _drainTimer?.Stop();
         _richUpgradeTimer?.Stop();
         if (_messagesVm is not null)
+        {
             _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
+            _messagesVm.PropertyChanged += OnMessagesVmPropertyChanged;
+        }
 
         RebuildWindowToTail();
     }
@@ -166,6 +172,30 @@ public partial class ConversationView : UserControl
             default:
                 ScheduleWindowRefresh();
                 break;
+        }
+    }
+
+    private void OnMessagesVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ConversationViewModel.IsProcessing) || _messagesVm is null)
+            return;
+
+        if (_messagesVm.IsProcessing)
+        {
+            // 新回合开始：取消任何尚未触发的完成折叠，过程保持可见。
+            CancelProcessFold();
+            return;
+        }
+
+        // 整个 Turn 结束才允许自动折叠过程；中途步骤结束不折。
+        for (var i = _visibleMessages.Count - 1; i >= 0; i--)
+        {
+            var message = _visibleMessages[i];
+            if (message.Sender == MessageSender.Agent && message.AgentSteps.Count > 0)
+            {
+                TryScheduleProcessFold(message);
+                break;
+            }
         }
     }
 
@@ -491,7 +521,8 @@ public partial class ConversationView : UserControl
     private void TryScheduleProcessFold(ChatMessage message)
     {
         if (
-            !_subscribedMessages.Contains(message)
+            _messagesVm?.IsProcessing == true
+            || !_subscribedMessages.Contains(message)
             || message.ProcessTouchedByUser
             || !message.IsProcessExpanded
             || message.IsWaiting

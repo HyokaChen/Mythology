@@ -162,6 +162,11 @@
   新增 `LiveStream_PreservesMarkdownRenderer_WhenStepsArrive`：追加步骤 + 12 段流式正文后，
   同一个 MarkdownRenderer 仍在视觉树中。结论：固定高度只用于思考/历史过程/工具详情；
   最终正文保持自然增长，但不再反复重建渲染器。
+  ⑫ 修复过程“先折叠、再展开”的交互抖动：自动折叠改为只在**整个 Turn 完成**后触发
+  （`ConversationViewModel.IsProcessing == false`），不再在任何一批步骤刚结束时折叠。
+  回合进行中步骤结束/新工具开始都保持展开；失败自动展开；用户手动点过则不折；
+  回合完成后再等 450ms 折一次。`LiveProcess_AutoCollapsesAfterSettled_UnlessTouched`
+  增加“回合未结束不得自动折叠”断言。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛
