@@ -115,11 +115,11 @@ public sealed class SessionMessageMapperDisplayTests
         Assert.Equal("历史思考正文", step.ThinkingText);
         Assert.True(step.HasThinking);
         Assert.True(step.HasDetails);
-        Assert.True(step.IsDetailsExpanded);
-        Assert.Equal("收起", step.DetailsToggleLabel);
-
-        step.IsDetailsExpanded = false;
+        Assert.False(step.IsDetailsExpanded);
         Assert.Equal("展开", step.DetailsToggleLabel);
+
+        step.IsDetailsExpanded = true;
+        Assert.Equal("收起", step.DetailsToggleLabel);
     }
 
     [Fact]

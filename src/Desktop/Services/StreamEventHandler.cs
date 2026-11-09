@@ -49,7 +49,7 @@ public sealed class StreamEventHandler(
                     {
                         Kind = StepKind.Thinking,
                         Status = AgentStepStatus.Processing,
-                        IsDetailsExpanded = true,
+                        IsDetailsExpanded = false,
                     };
                     target.AgentSteps.Add(_thinkingStep);
                 }

@@ -94,7 +94,7 @@ public static class SessionMessageMapper
                             Kind = StepKind.Thinking,
                             Title = "思考过程",
                             Status = AgentStepStatus.Completed,
-                            IsDetailsExpanded = true,
+                            IsDetailsExpanded = false,
                         };
                         thinking.ThinkingBuilder.Append(m.ReasoningContent);
                         thinking.NotifyThinkingChanged();

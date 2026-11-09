@@ -202,7 +202,7 @@ public class ConversationRenderingTests
     }
 
     [Fact]
-    public void ThinkingStep_DefaultsExpanded_AndCanCollapse()
+    public void ThinkingStep_StreamsFixedPreview_AndCanExpand()
     {
         Ui.Value.Run(() =>
         {
@@ -210,7 +210,7 @@ public class ConversationRenderingTests
             {
                 Kind = Desktop.Models.StepKind.Thinking,
                 Status = Desktop.Models.AgentStepStatus.Processing,
-                IsDetailsExpanded = true,
+                IsDetailsExpanded = false,
             };
             step.ThinkingBuilder.Append("这是思考内容，流式中也必须直接可见。");
             step.NotifyThinkingChanged();
@@ -234,35 +234,93 @@ public class ConversationRenderingTests
             {
                 Pump();
                 var streaming = RenderedText(view);
-                _output.WriteLine("思考步骤流式态（默认展开）：");
+                _output.WriteLine("思考步骤流式态（固定预览）：");
                 _output.WriteLine(streaming);
 
                 Assert.Contains("思考中…", streaming);
                 Assert.Contains("这是思考内容，流式中也必须直接可见。", streaming);
-                Assert.Contains("收起", streaming);
-                Assert.DoesNotContain(VisibleTexts(view), text => text == "思考");
-
-                step.IsDetailsExpanded = false;
-                Pump();
-                var collapsed = RenderedText(view);
-                _output.WriteLine("思考步骤收起态：");
-                _output.WriteLine(collapsed);
-
-                Assert.Contains("思考中…", collapsed);
-                Assert.Contains("展开", collapsed);
-                Assert.DoesNotContain("这是思考内容，流式中也必须直接可见。", collapsed);
+                Assert.Contains("展开", streaming);
+                var preview = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(t => t.Text == "这是思考内容，流式中也必须直接可见。");
+                Assert.Equal(40, preview.Height);
 
                 step.IsDetailsExpanded = true;
+                Pump();
+                var expanded = RenderedText(view);
+                _output.WriteLine("思考步骤展开态：");
+                _output.WriteLine(expanded);
+                Assert.Contains("收起", expanded);
+                Assert.Contains("这是思考内容，流式中也必须直接可见。", expanded);
+
                 step.Status = Desktop.Models.AgentStepStatus.Completed;
                 Pump();
                 var completed = RenderedText(view);
                 _output.WriteLine("思考步骤完成态：");
                 _output.WriteLine(completed);
-
                 Assert.Contains("思考过程", completed);
                 Assert.Contains("这是思考内容，流式中也必须直接可见。", completed);
                 Assert.DoesNotContain("思考中…", completed);
-                Assert.Contains("收起", completed);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void StreamingReasoning_KeepsConversationHeightBounded()
+    {
+        Ui.Value.Run(() =>
+        {
+            var step = new Desktop.Models.AgentStep
+            {
+                Kind = Desktop.Models.StepKind.Thinking,
+                Status = Desktop.Models.AgentStepStatus.Processing,
+                IsDetailsExpanded = false,
+            };
+            step.ThinkingBuilder.Append("开始思考。");
+            step.NotifyThinkingChanged();
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            message.AgentSteps.Add(step);
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<ItemsControl>("MessageList")!;
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                var scroll = view.FindControl<ScrollViewer>("MessageScroll")!;
+                var before = scroll.Extent.Height;
+
+                for (var i = 0; i < 40; i++)
+                    step.ThinkingBuilder.Append("模型继续推理，这一行不会改变预览高度。 ");
+                step.NotifyThinkingChanged();
+                Pump();
+
+                Assert.InRange(scroll.Extent.Height - before, -2, 2);
+                var preview = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(t => t.Text == step.ReasoningPreview);
+                Assert.Equal(40, preview.Height);
+
+                step.IsDetailsExpanded = true;
+                Pump();
+                var expandedBefore = scroll.Extent.Height;
+                for (var i = 0; i < 100; i++)
+                    step.ThinkingBuilder.Append("展开后继续推理，内部滚动而不是继续撑高对话。 ");
+                step.NotifyThinkingChanged();
+                Pump();
+                Assert.InRange(scroll.Extent.Height - expandedBefore, -2, 330);
             }
             finally
             {

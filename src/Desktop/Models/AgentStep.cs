@@ -16,6 +16,7 @@ public sealed class AgentStep : INotifyPropertyChanged
     private IReadOnlyList<DiffLineView> _diffLines = [];
     private string? _diffSummary;
     private bool _isDetailsExpanded;
+    private string _reasoningPreview = "";
 
     /// <summary>步骤类型。</summary>
     public StepKind Kind { get; init; }
@@ -47,6 +48,10 @@ public sealed class AgentStep : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusIcon)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProcessing)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Title)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
+            );
         }
     } = AgentStepStatus.Processing;
 
@@ -209,6 +214,10 @@ public sealed class AgentStep : INotifyPropertyChanged
             _isDetailsExpanded = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDetailsExpanded)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailsToggleLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
+            );
         }
     }
 
@@ -226,9 +235,51 @@ public sealed class AgentStep : INotifyPropertyChanged
     /// <summary>通知 UI 内容已变化（流式思考文本追加后调用）。</summary>
     public void NotifyThinkingChanged()
     {
+        _reasoningPreview = ReasoningPreviewTail(ThinkingBuilder.ToString());
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThinkingText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ReasoningPreview)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowStreamingPreview)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasThinking)));
         NotifyDetailsChanged();
+    }
+
+    /// <summary>
+    /// 流式思考预览：只取最新约 220 字符，空白折成单空格。行高固定为两行，
+    /// 模型持续输出时 TextBlock 只换文字、不改变布局高度（借鉴 TKCode.Arc ReasoningBlock）。
+    /// </summary>
+    public string ReasoningPreview => _reasoningPreview;
+
+    /// <summary>处理中且未展开详情时，显示固定高度的最新推理预览。</summary>
+    public bool ShowStreamingPreview =>
+        Kind == StepKind.Thinking && IsProcessing && !IsDetailsExpanded && HasThinking;
+
+    private static string ReasoningPreviewTail(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+        var folded = new System.Text.StringBuilder(text.Length);
+        var space = false;
+        foreach (var c in text.AsSpan().Trim())
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                if (!space && folded.Length > 0)
+                {
+                    folded.Append(' ');
+                    space = true;
+                }
+                continue;
+            }
+            folded.Append(c);
+            space = false;
+        }
+        const int max = 220;
+        if (folded.Length <= max)
+            return folded.ToString();
+        var whole = folded.ToString();
+        var start = whole.Length - max;
+        var gap = whole.IndexOf(' ', start);
+        return "…" + (gap < 0 ? whole[start..] : whole[(gap + 1)..]);
     }
 
     /// <summary>思考文本（UI 绑定）。</summary>

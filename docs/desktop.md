@@ -733,6 +733,9 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   一条可见消息到 LiveMarkdown，滚动中不创建 Markdown 视觉树
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
   尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding
+- 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
+  展开后的完整推理放在 `MaxHeight=320` 的内部 ScrollViewer，token 增长不改变对话总高度
+  （借鉴 TKCode.Arc ReasoningBlock）
 - 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；`ScrollToEnd` 精确贴底；
   发送/恢复必须 `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）

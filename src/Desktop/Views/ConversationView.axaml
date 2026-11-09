@@ -154,6 +154,20 @@
             TextWrapping="Wrap"
             Margin="18,0,0,0"
           />
+          <!-- 流式思考只显示固定两行尾部预览：文字变化不改变行高，滚轮不因 token 增长而抖。 -->
+          <TextBlock
+            IsVisible="{Binding Step.ShowStreamingPreview}"
+            Text="{Binding Step.ReasoningPreview}"
+            Height="40"
+            MaxHeight="40"
+            ClipToBounds="True"
+            FontSize="12"
+            LineHeight="20"
+            Foreground="{DynamicResource BrushSageGray}"
+            TextWrapping="Wrap"
+            TextTrimming="CharacterEllipsis"
+            Margin="18,0,0,0"
+          />
           <StackPanel
             Classes="StepDetails"
             IsVisible="{Binding Step.IsDetailsExpanded}"
@@ -161,13 +175,19 @@
             Margin="18,2,0,0"
             HorizontalAlignment="Stretch"
           >
-            <TextBlock
-              Text="{Binding Step.ThinkingText}"
+            <ScrollViewer
               IsVisible="{Binding Step.HasThinking}"
-              FontSize="12"
-              Foreground="{DynamicResource BrushSageGray}"
-              TextWrapping="Wrap"
-            />
+              MaxHeight="320"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+            >
+              <TextBlock
+                Text="{Binding Step.ThinkingText}"
+                FontSize="12"
+                Foreground="{DynamicResource BrushSageGray}"
+                TextWrapping="Wrap"
+              />
+            </ScrollViewer>
             <TextBlock
               Text="参数"
               Classes="Eyebrow"

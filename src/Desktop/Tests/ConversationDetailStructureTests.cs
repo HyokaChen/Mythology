@@ -76,10 +76,11 @@ public sealed class ConversationDetailStructureTests
         Assert.Contains("{Binding Step.ThinkingText}", textual);
         Assert.DoesNotContain("思考", textual);
 
-        Assert.Equal(
-            "{Binding Step.HasThinking}",
-            Attr(TextBlockWithText(details, "{Binding Step.ThinkingText}"), "IsVisible")
-        );
+        var thinkingBody = TextBlockWithText(details, "{Binding Step.ThinkingText}");
+        var thinkingScroll = thinkingBody
+            .Ancestors()
+            .Single(e => e.Name.LocalName == "ScrollViewer");
+        Assert.Equal("{Binding Step.HasThinking}", Attr(thinkingScroll, "IsVisible"));
 
         // 工具详情的两个标题只在各自内容存在时出现。
         Assert.Equal(
@@ -98,7 +99,12 @@ public sealed class ConversationDetailStructureTests
         var root = LoadConversationView();
         var thinking = TextBlockWithText(root, "{Binding Step.ThinkingText}");
 
-        Assert.Equal("{Binding Step.HasThinking}", Attr(thinking, "IsVisible"));
+        Assert.Contains(
+            thinking.Ancestors(),
+            e =>
+                e.Name.LocalName == "ScrollViewer"
+                && Attr(e, "IsVisible") == "{Binding Step.HasThinking}"
+        );
         Assert.Contains("TextWrapping", thinking.Attributes().Select(a => a.Name.LocalName));
         Assert.Contains(
             thinking.Ancestors(),

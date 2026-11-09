@@ -137,6 +137,12 @@
   步骤默认折叠成「过程 · N 步」一行，点击展开；尾部约 2 屏保持展开。
   真实 41 消息会话：首屏行数 12→9；上滚 60 次滚轮最大单帧 117ms→**9ms**，行数 9→11；
   发送/追加后 offset 仍精确等于 max。新增 `ConversationRowTests` 锁定折叠/展开。
+  ⑨ 借鉴 TKCode.Arc `ReasoningBlock`：流式思考不再展开整段正文，而是显示固定 2 行
+  （`Height=40`）的最新推理预览——只取尾部约 220 字符、空白折叠，token 增长只换文字不改变行高；
+  详情默认折叠，展开后的完整推理放进 `MaxHeight=320` 的内部 ScrollViewer，也不会继续撑高对话。
+  新增 `StreamingReasoning_KeepsConversationHeightBounded`：流式追加后对话总高度变化在 ±2px 内，
+  展开后高度增量 ≤330px。未直接搬用 `ToolCallGroup` 的 450ms 自动折叠、`AiStreamText` 的
+  reserve/reveal 缓存 TextLayout、`AiHeightBox` 的弹簧高度盒；它们记录为后续候选。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛

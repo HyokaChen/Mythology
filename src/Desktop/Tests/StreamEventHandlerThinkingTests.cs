@@ -24,8 +24,8 @@ public sealed class StreamEventHandlerThinkingTests
         Assert.Equal("思考中…", step.Title);
         Assert.True(step.IsProcessing);
         Assert.True(step.HasDetails);
-        Assert.True(step.IsDetailsExpanded);
-        Assert.Equal("收起", step.DetailsToggleLabel);
+        Assert.False(step.IsDetailsExpanded);
+        Assert.Equal("展开", step.DetailsToggleLabel);
 
         var changed = new List<string?>();
         step.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
