@@ -497,6 +497,73 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 滚动到历史中段后，实测高度回写不能改变当前 offset（anchorRow/anchorDelta）。
+    /// </summary>
+    [Fact]
+    public void VirtualizedScroll_MiddleAnchor_StableAfterMeasure()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 300; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 8))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.5));
+                PumpUntil(
+                    () => list.TopSpacerHeight > 0 && list.BottomSpacerHeight > 0,
+                    "中段窗口"
+                );
+                var before = sv.Offset.Y;
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                Assert.InRange(sv.Offset.Y, before - 3, before + 3);
+                Assert.True(list.TopSpacerHeight > 0);
+                Assert.True(list.BottomSpacerHeight > 0);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 完整历史虚拟化下，用户停在历史位置时追加消息只增长底部 spacer，
     /// 不能把视口拉回底部；这是自动跟随与虚拟化窗口的共同边界。
     /// </summary>

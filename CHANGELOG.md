@@ -15,7 +15,7 @@
   每次布局/extent 增长后重新 `ScrollToEnd`，LiveMarkdown 异步长高不再停在半路。
   回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
   `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
-  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 605/605。
+  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 606/606。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。
