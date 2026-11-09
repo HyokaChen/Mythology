@@ -489,6 +489,73 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;
 
     [Fact]
+    public void FlattenedRows_RenderContent_AndSwitchLazyMarkdown()
+    {
+        Ui.Run(() =>
+        {
+            var user = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+            user.AppendContent("用户可见内容");
+            var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            agent.AppendContent("代理可见内容");
+            agent.IsRichMarkdown = false;
+            _vm.Messages.Add(user);
+            _vm.Messages.Add(agent);
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(t => t.Text == "用户可见内容"),
+                    "用户消息行"
+                );
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "初始尾部富文本"
+                );
+
+                agent.IsRichMarkdown = false;
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(t => t.Text == "代理可见内容")
+                        && !view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "切回轻量纯文本"
+                );
+
+                agent.IsRichMarkdown = true;
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "富文本升级"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void Slash_PopupStartsAtFirstCommand_AndArrowKeysNavigate()
     {
         RunWithInput(

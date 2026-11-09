@@ -13,6 +13,7 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isWaiting;
     private bool _hasVisibleContent;
     private bool _isInterrupted;
+    private bool _isRichMarkdown = true;
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
@@ -41,6 +42,22 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
             _isInterrupted = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInterrupted)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEmpty)));
+        }
+    }
+
+    /// <summary>
+    /// 是否用 LiveMarkdown 渲染正文。历史预取页先置 false（轻量纯文本），
+    /// 滚动停止后只对当前可见消息升级，避免把 Markdown 布局压进滚轮帧。
+    /// </summary>
+    public bool IsRichMarkdown
+    {
+        get => _isRichMarkdown;
+        set
+        {
+            if (_isRichMarkdown == value)
+                return;
+            _isRichMarkdown = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRichMarkdown)));
         }
     }
 

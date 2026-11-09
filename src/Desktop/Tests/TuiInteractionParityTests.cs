@@ -47,8 +47,8 @@ public sealed class TuiInteractionParityTests
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         var spinners = Descendants(root, "BusySpinner");
 
-        Assert.Contains(spinners, s => Attr(s, "IsActive") == "{Binding IsWaiting}");
-        Assert.Contains(spinners, s => Attr(s, "IsActive") == "{Binding IsProcessing}");
+        Assert.Contains(spinners, s => Attr(s, "IsActive") == "{Binding Message.IsWaiting}");
+        Assert.Contains(spinners, s => Attr(s, "IsActive") == "{Binding Step.IsProcessing}");
         Assert.DoesNotContain(spinners, s => Attr(s, "IsActive").Contains("{Binding Loading}"));
         Assert.Contains(Descendants(root, "TextBlock"), t => Attr(t, "Text") == "执行中");
         Assert.DoesNotContain(Descendants(root, "TextBlock"), t => Attr(t, "Text") == "写作中");
@@ -64,17 +64,17 @@ public sealed class TuiInteractionParityTests
     public void ConversationView_AgentMessages_UseFullMessageWidth()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        var agent = Descendants(root, "StackPanel")
-            .Single(s => Attr(s, "IsVisible").Contains("IsAgent"));
         var bubble = Descendants(root, "Border")
             .Single(b =>
                 Attr(b, "Classes") == "AgentBubble"
-                && Attr(b, "IsVisible") == "{Binding HasVisibleContent}"
+                && Attr(b, "IsVisible") == "{Binding Message.HasVisibleContent}"
             );
 
-        Assert.Equal("Stretch", Attr(agent, "HorizontalAlignment"));
         Assert.Equal("Stretch", Attr(bubble, "HorizontalAlignment"));
-        Assert.Equal("0,2,0,0", Attr(agent, "Margin"));
+        Assert.Equal(
+            "{Binding Message.IsRichMarkdown, Converter={StaticResource AgentBodyTemplate}}",
+            Attr(Descendants(bubble, "ContentControl").Single(), "ContentTemplate")
+        );
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class TuiInteractionParityTests
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         var arguments = Descendants(root, "TextBlock")
-            .Single(t => Attr(t, "Text") == "{Binding ArgumentsSummary}");
+            .Single(t => Attr(t, "Text") == "{Binding Step.ArgumentsSummary}");
         var details = Descendants(root, "StackPanel")
             .Single(s => Attr(s, "Classes") == "StepDetails");
 
@@ -98,13 +98,13 @@ public sealed class TuiInteractionParityTests
     public void ConversationView_UserMessages_HaveNoWidthCap()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        var user = Descendants(root, "StackPanel")
-            .Single(s => Attr(s, "IsVisible").Contains("IsUser"));
         var bubble = Descendants(root, "Border").Single(b => Attr(b, "Classes") == "UserBubble");
 
-        Assert.Equal("0,2,0,0", Attr(user, "Margin"));
-        Assert.Equal("Right", Attr(user, "HorizontalAlignment"));
         Assert.Equal("Right", Attr(bubble, "HorizontalAlignment"));
+        Assert.Equal(
+            "{Binding Message.Content, Converter={StaticResource StringBuilderToString}}",
+            Attr(Descendants(bubble, "TextBlock").Single(), "Text")
+        );
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public sealed class TuiInteractionParityTests
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         // 静态回退图标 = LucideIcon（Kind 绑定 StatusIcon），不再是 emoji 文本
         var icon = Descendants(root, "LucideIcon")
-            .Single(t => Attr(t, "Kind") == "{Binding StatusIcon}");
+            .Single(t => Attr(t, "Kind") == "{Binding Step.StatusIcon}");
 
         Assert.Contains("IsProcessing", Attr(icon, "IsVisible"));
         Assert.Contains("InvertedBoolToVisibility", Attr(icon, "IsVisible"));
@@ -123,20 +123,12 @@ public sealed class TuiInteractionParityTests
     public void ConversationView_SystemNotice_UsesFullMessageWidth()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        var branch = Descendants(root, "StackPanel")
-            .Single(b =>
-                Attr(b, "IsVisible").Contains("ConverterParameter=System", StringComparison.Ordinal)
+        var content = Descendants(root, "TextBlock")
+            .Single(t =>
+                Attr(t, "Classes").Contains("SystemNoticeText", StringComparison.Ordinal)
+                && Attr(t, "Text").Contains("StringBuilderToString", StringComparison.Ordinal)
             );
-        var eyebrow = Descendants(branch, "TextBlock").Single(t => Attr(t, "Text") == "系统");
 
-        Assert.Equal("StackPanel", branch.Name.LocalName);
-        Assert.Equal("Stretch", Attr(branch, "HorizontalAlignment"));
-        Assert.Equal("0,2,0,0", Attr(branch, "Margin"));
-        Assert.Contains("IsSystem", Attr(branch, "IsVisible"));
-        Assert.Contains("ConverterParameter=System", Attr(branch, "IsVisible"));
-
-        var content = Descendants(branch, "TextBlock")
-            .Single(t => Attr(t, "Text").Contains("StringBuilderToString"));
         Assert.Equal("", Attr(content, "MaxWidth"));
         Assert.Equal("Stretch", Attr(content, "HorizontalAlignment"));
         Assert.Equal("Left", Attr(content, "TextAlignment"));

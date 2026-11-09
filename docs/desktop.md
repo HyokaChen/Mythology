@@ -727,9 +727,12 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 布局：外层 `ScrollViewer` + `ItemsControl` + 普通 `StackPanel`；Extent 是真实高度
 - `ConversationView` 只渲染尾部约 3 屏（像素预算窗口，最多 40 条，最少 4 条）；滚到顶部按页
   向前补历史，按新增高度下移 offset 保持锚点
-- 空闲时（`ContextIdle`）预取最多 3 页/80 条；用户上滚即暂停预取队列；页面内逐条插入
+- 消息先扁平化成行（User/System/Waiting/Step/Content/Interrupted/Sources），补页按 16ms 一行插入
+- 空闲时（`ContextIdle`）预取最多 3 页/80 条；用户上滚即暂停预取队列
+- 历史预取行先用轻量纯文本（`ChatMessage.IsRichMarkdown=false`）；滚动停止 180ms 后一次升级
+  一条可见消息到 LiveMarkdown，滚动中不创建 Markdown 视觉树
 - 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；`ScrollToEnd` 精确贴底；
-  发送/恢复必须 `ResetFollow`，否则不会自动到底
+  发送/恢复必须 `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

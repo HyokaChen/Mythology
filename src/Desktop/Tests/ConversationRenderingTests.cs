@@ -171,7 +171,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -220,7 +220,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -293,7 +293,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -385,7 +385,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -454,7 +454,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var input = view.FindControl<TextBox>("InputBox")!;
@@ -498,7 +498,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -555,7 +555,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -603,7 +603,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -660,6 +660,19 @@ public class ConversationRenderingTests
         return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
     }
 
+    private static void PumpUntilRows(ItemsControl list, int count)
+    {
+        for (var i = 0; i < 100 && list.Items.Count < count; i++)
+            PumpOnce();
+    }
+
+    private static void PumpOnce()
+    {
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        Thread.Sleep(5);
+    }
+
     [Fact]
     public void WaitingRow_ShowsSpinnerAndRunningText_AndHidesAfterFirstActivity()
     {
@@ -672,7 +685,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -694,7 +707,9 @@ public class ConversationRenderingTests
 
                 var spinner = Assert.Single(
                     view.GetVisualDescendants().OfType<Desktop.Controls.BusySpinner>(),
-                    s => s.DataContext == message
+                    s =>
+                        s.DataContext is Desktop.Models.ConversationRow { Message: var m }
+                        && ReferenceEquals(m, message)
                 );
                 Assert.True(spinner.IsEffectivelyVisible);
 
@@ -721,7 +736,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -734,24 +749,22 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
+                Assert.Empty(list.Items);
+
+                // 流式首批 chunk 常是换行/空格：不得因此渲染空白 Bone 卡。
+                message.AppendContent("\n\n  ");
+                Pump();
+                Assert.Empty(list.Items);
+
+                message.AppendContent("收到，我来处理。");
+                PumpUntilRows(list, 1);
+                Pump();
+
                 var bubble = Assert.Single(
                     view.GetVisualDescendants()
                         .OfType<Border>()
                         .Where(border => border.Classes.Contains("AgentBubble"))
                 );
-                Assert.False(bubble.IsEffectivelyVisible);
-                Assert.Equal(0, bubble.Bounds.Width);
-
-                // 流式首批 chunk 常是换行/空格：不得因此渲染一张空白 Bone 卡。
-                message.AppendContent("\n\n  ");
-                Pump();
-                Assert.False(bubble.IsEffectivelyVisible);
-                Assert.Equal(0, bubble.Bounds.Width);
-
-                message.AppendContent("收到，我来处理。");
-                Pump();
-
-                Assert.True(bubble.IsEffectivelyVisible);
                 Assert.True(bubble.Bounds.Width > 0 && bubble.Bounds.Height > 0);
                 Assert.Contains("收到，我来处理。", RenderedText(view));
 
@@ -1004,7 +1017,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1067,7 +1080,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1084,7 +1097,9 @@ public class ConversationRenderingTests
                 var inputCard = view.FindControl<Border>("InputCard")!;
                 var stepHost = view.GetVisualDescendants()
                     .OfType<StackPanel>()
-                    .First(panel => panel.DataContext is AgentStep);
+                    .First(panel =>
+                        panel.DataContext is Desktop.Models.ConversationRow { Step: not null }
+                    );
                 var inputX = inputCard.TranslatePoint(new Point(0, 0), view)!.Value.X;
                 var stepX = stepHost.TranslatePoint(new Point(0, 0), view)!.Value.X;
                 var details = view.GetVisualDescendants()
@@ -1130,7 +1145,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1145,7 +1160,11 @@ public class ConversationRenderingTests
                 Pump();
                 var arguments = view.GetVisualDescendants()
                     .OfType<TextBlock>()
-                    .Single(text => text.DataContext == step && text.Text == step.ArgumentsSummary);
+                    .Single(text =>
+                        text.DataContext is Desktop.Models.ConversationRow { Step: var rowStep }
+                        && ReferenceEquals(rowStep, step)
+                        && text.Text == step.ArgumentsSummary
+                    );
                 _output.WriteLine($"步骤参数摘要宽度={arguments.Bounds.Width:F1}");
                 Assert.True(
                     arguments.Bounds.Width > 600,
@@ -1228,7 +1247,7 @@ public class ConversationRenderingTests
 
             var view = new Desktop.Views.ConversationView();
             var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new[] { message };
+            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window

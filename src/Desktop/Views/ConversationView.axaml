@@ -18,6 +18,272 @@
     <conv:SenderToBoolConverter x:Key="IsUser" />
     <conv:SenderToBoolConverter x:Key="IsAgent" />
     <conv:SenderToBoolConverter x:Key="IsSystem" />
+    <conv:MarkdownPlainTextConverter x:Key="MarkdownPlainText" />
+
+    <!-- 正文模板：历史预取页先走轻量纯文本，滚动停止后再升级到 LiveMarkdown。
+         这样向窗口前部插入一页时不会创建 Markdown 的完整视觉树。 -->
+    <DataTemplate x:Key="RichAgentBody" x:DataType="models:ChatMessage">
+      <md:MarkdownRenderer
+        Classes="ConversationMarkdown"
+        MarkdownBuilder="{Binding Content}"
+        CodeBlockColorTheme="LightPlus"
+      />
+    </DataTemplate>
+    <DataTemplate x:Key="PlainAgentBody" x:DataType="models:ChatMessage">
+      <TextBlock
+        Text="{Binding Content, Converter={StaticResource MarkdownPlainText}}"
+        FontFamily="{StaticResource FontSans}"
+        FontSize="16"
+        LineHeight="24"
+        Foreground="{DynamicResource BrushOlivePress}"
+        TextWrapping="Wrap"
+      />
+    </DataTemplate>
+    <conv:BoolToTemplateConverter
+      x:Key="AgentBodyTemplate"
+      TrueTemplate="{StaticResource RichAgentBody}"
+      FalseTemplate="{StaticResource PlainAgentBody}"
+    />
+
+    <DataTemplate x:Key="RowUser" x:DataType="models:ConversationRow">
+      <StackPanel Margin="{Binding Margin}" HorizontalAlignment="Right" Spacing="3">
+        <TextBlock Classes="Eyebrow" HorizontalAlignment="Right" Text="你" />
+        <Border Classes="UserBubble" HorizontalAlignment="Right">
+          <TextBlock
+            Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
+            TextWrapping="Wrap"
+          />
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowSystem" x:DataType="models:ConversationRow">
+      <StackPanel Margin="{Binding Margin}" Spacing="3">
+        <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+        <TextBlock
+          Classes="SystemNoticeText"
+          Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
+          TextAlignment="Left"
+          HorizontalAlignment="Stretch"
+        />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowWaiting" x:DataType="models:ConversationRow">
+      <StackPanel
+        Margin="{Binding Margin}"
+        Orientation="Horizontal"
+        Spacing="8"
+        IsVisible="{Binding Message.IsWaiting}"
+      >
+        <controls:BusySpinner
+          IsActive="{Binding Message.IsWaiting}"
+          FontSize="12"
+          Foreground="{DynamicResource BrushSageLeaf}"
+          VerticalAlignment="Center"
+        />
+        <TextBlock Classes="Eyebrow" Text="执行中" VerticalAlignment="Center" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowStep" x:DataType="models:ConversationRow">
+      <StackPanel Margin="{Binding Margin}" Spacing="2">
+        <Border Classes="AgentBubble" IsVisible="{Binding Step.IsContentStep}" Margin="0,4,0,4">
+          <TextBlock Classes="StepContentText" Text="{Binding Step.ContentText}" />
+        </Border>
+
+        <TextBlock
+          Classes="SystemNoticeText AgentStepNoticeText"
+          IsVisible="{Binding Step.IsNoticeStep}"
+          Text="{Binding Step.ContentText}"
+          TextAlignment="Left"
+          Margin="18,1,0,1"
+        />
+
+        <StackPanel Spacing="2" IsVisible="{Binding Step.IsStepHeader}">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6" Margin="0,1,0,0">
+            <Grid Grid.Column="0" Width="12" Height="12" VerticalAlignment="Center">
+              <controls:BusySpinner
+                IsActive="{Binding Step.IsProcessing}"
+                IsVisible="{Binding Step.IsProcessing}"
+                FontSize="12"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+              />
+              <lucide:LucideIcon
+                Kind="{Binding Step.StatusIcon}"
+                Size="11"
+                StrokeWidth="1.6"
+                IsVisible="{Binding Step.IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+              />
+            </Grid>
+            <TextBlock
+              Grid.Column="1"
+              Text="{Binding Step.Title}"
+              Classes="Tag"
+              VerticalAlignment="Center"
+            />
+            <TextBlock
+              Grid.Column="2"
+              Text="{Binding Step.ArgumentsSummary}"
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              TextWrapping="Wrap"
+              VerticalAlignment="Center"
+            />
+            <Button
+              Grid.Column="3"
+              Content="{Binding Step.DetailsToggleLabel}"
+              IsVisible="{Binding Step.HasDetails}"
+              Classes="IconButton"
+              Padding="6,1"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageLeaf}"
+              VerticalAlignment="Center"
+              Click="StepDetails_OnClick"
+            />
+          </Grid>
+          <TextBlock
+            Text="{Binding Step.ResultSummary}"
+            IsVisible="{Binding Step.HasResult}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            TextWrapping="Wrap"
+            Margin="18,0,0,0"
+          />
+          <StackPanel
+            Classes="StepDetails"
+            IsVisible="{Binding Step.IsDetailsExpanded}"
+            Spacing="4"
+            Margin="18,2,0,0"
+            HorizontalAlignment="Stretch"
+          >
+            <TextBlock
+              Text="{Binding Step.ThinkingText}"
+              IsVisible="{Binding Step.HasThinking}"
+              FontSize="12"
+              Foreground="{DynamicResource BrushSageGray}"
+              TextWrapping="Wrap"
+            />
+            <TextBlock
+              Text="参数"
+              Classes="Eyebrow"
+              IsVisible="{Binding Step.HasDetailArguments}"
+            />
+            <TextBlock
+              Text="{Binding Step.DetailArguments}"
+              IsVisible="{Binding Step.HasDetailArguments}"
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              TextWrapping="Wrap"
+            />
+            <TextBlock Text="结果" Classes="Eyebrow" IsVisible="{Binding Step.HasResultDetail}" />
+            <TextBlock
+              Text="{Binding Step.DetailResult}"
+              IsVisible="{Binding Step.ShowRawResultDetail}"
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageGray}"
+              TextWrapping="Wrap"
+            />
+            <StackPanel IsVisible="{Binding Step.HasDiff}" Spacing="2" Margin="0,2,0,0">
+              <TextBlock Text="{Binding Step.DiffSummary}" Classes="Eyebrow" />
+              <ItemsControl ItemsSource="{Binding Step.DiffLines}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:DiffLineView">
+                    <Border
+                      Classes="DiffRow"
+                      Classes.DiffDelete="{Binding IsDelete}"
+                      Classes.DiffInsert="{Binding IsInsert}"
+                    >
+                      <Grid ColumnDefinitions="Auto,Auto,*">
+                        <TextBlock
+                          Classes="DiffText DiffPrefix"
+                          Classes.DiffDelete="{Binding IsDelete}"
+                          Classes.DiffInsert="{Binding IsInsert}"
+                          Text="{Binding Prefix}"
+                        />
+                        <TextBlock
+                          Grid.Column="1"
+                          Classes="DiffText DiffLineNumber"
+                          Classes.DiffDelete="{Binding IsDelete}"
+                          Classes.DiffInsert="{Binding IsInsert}"
+                          Text="{Binding LineNumber}"
+                        />
+                        <TextBlock
+                          Grid.Column="2"
+                          Classes="DiffText"
+                          Classes.DiffDelete="{Binding IsDelete}"
+                          Classes.DiffInsert="{Binding IsInsert}"
+                          Text="{Binding Text}"
+                          TextWrapping="Wrap"
+                        />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowContent" x:DataType="models:ConversationRow">
+      <StackPanel Margin="{Binding Margin}">
+        <Border
+          Classes="AgentBubble"
+          HorizontalAlignment="Stretch"
+          IsVisible="{Binding Message.HasVisibleContent}"
+        >
+          <ContentControl
+            Content="{Binding Message}"
+            ContentTemplate="{Binding Message.IsRichMarkdown, Converter={StaticResource AgentBodyTemplate}}"
+          />
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowInterrupted" x:DataType="models:ConversationRow">
+      <StackPanel Margin="{Binding Margin}" Spacing="3" IsVisible="{Binding Message.IsInterrupted}">
+        <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+        <TextBlock Classes="SystemNoticeText" Text="⏹ 中断生成" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowSources" x:DataType="models:ConversationRow">
+      <ItemsControl
+        Margin="{Binding Margin}"
+        ItemsSource="{Binding Message.Sources}"
+        IsVisible="{Binding Message.Sources.Count, Converter={StaticResource CountToVisibility}}"
+      >
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="models:SourceInfo">
+            <TextBlock
+              FontFamily="{StaticResource FontMono}"
+              FontSize="11"
+              Foreground="{DynamicResource BrushSageMist}"
+              Text="{Binding Title}"
+            />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </DataTemplate>
+
+    <conv:ConversationRowTemplateConverter
+      x:Key="ConversationRowTemplate"
+      UserTemplate="{StaticResource RowUser}"
+      SystemTemplate="{StaticResource RowSystem}"
+      WaitingTemplate="{StaticResource RowWaiting}"
+      StepTemplate="{StaticResource RowStep}"
+      ContentTemplate="{StaticResource RowContent}"
+      InterruptedTemplate="{StaticResource RowInterrupted}"
+      SourcesTemplate="{StaticResource RowSources}"
+    />
   </UserControl.Resources>
 
   <UserControl.Styles>
@@ -173,291 +439,11 @@
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <controls:AutoScrollItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="models:ChatMessage">
-              <StackPanel Margin="0,0,0,12">
-                <!-- 用户消息：右对齐 Forest Ink 气泡；不设左侧留白/宽度上限，长回复可用满整行 -->
-                <StackPanel
-                  Margin="0,2,0,0"
-                  HorizontalAlignment="Right"
-                  Spacing="3"
-                  IsVisible="{Binding Sender, Converter={StaticResource IsUser}, ConverterParameter=User}"
-                >
-                  <TextBlock Classes="Eyebrow" HorizontalAlignment="Right" Text="你" />
-                  <Border Classes="UserBubble" HorizontalAlignment="Right">
-                    <TextBlock
-                      Text="{Binding Content, Converter={StaticResource StringBuilderToString}}"
-                      TextWrapping="Wrap"
-                    />
-                  </Border>
-                </StackPanel>
-
-                <!-- 助手消息：Bone 卡 + LiveMarkdown（UI.md 5.2）；正文铺满消息区宽度 -->
-                <StackPanel
-                  Margin="0,2,0,0"
-                  HorizontalAlignment="Stretch"
-                  Spacing="6"
-                  IsVisible="{Binding Sender, Converter={StaticResource IsAgent}, ConverterParameter=Agent}"
-                >
-                  <!-- 用户消息后、首个 token/步骤前：只显示 spinner + 执行中。
-                     诗词与 loading 统一回到左下角状态栏。 -->
-                  <StackPanel
-                    Orientation="Horizontal"
-                    Spacing="8"
-                    Margin="0,2,0,4"
-                    IsVisible="{Binding IsWaiting}"
-                  >
-                    <controls:BusySpinner
-                      IsActive="{Binding IsWaiting}"
-                      FontSize="12"
-                      Foreground="{DynamicResource BrushSageLeaf}"
-                      VerticalAlignment="Center"
-                    />
-                    <TextBlock Classes="Eyebrow" Text="执行中" VerticalAlignment="Center" />
-                  </StackPanel>
-
-                  <!-- Agent 步骤（思考/工具调用，UI.md 5.3-5.8） -->
-                  <ItemsControl
-                    ItemsSource="{Binding AgentSteps}"
-                    IsVisible="{Binding AgentSteps.Count, Converter={StaticResource CountToVisibility}}"
-                  >
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="models:AgentStep">
-                        <StackPanel Spacing="2">
-                          <!-- 阶段正文：与最终流式正文同一张 Bone 卡片，避免冻结到步骤列表时
-                             背景从黄色突然变成无底色；无步骤头，只保留正文。 -->
-                          <Border
-                            Classes="AgentBubble"
-                            IsVisible="{Binding IsContentStep}"
-                            Margin="0,4,0,4"
-                          >
-                            <TextBlock Classes="StepContentText" Text="{Binding ContentText}" />
-                          </Border>
-
-                          <!-- 实体变更提示：不另起「系统」气泡，直接作为当前 Agent 时间线的一步，
-                             插在触发它的工具步骤之后；后续思考/工具步骤自然排在它下面。 -->
-                          <TextBlock
-                            Classes="SystemNoticeText AgentStepNoticeText"
-                            IsVisible="{Binding IsNoticeStep}"
-                            Text="{Binding ContentText}"
-                            TextAlignment="Left"
-                            Margin="18,1,0,1"
-                          />
-
-                          <StackPanel Spacing="2" IsVisible="{Binding IsStepHeader}">
-                            <!-- 步骤头：图标/标题/参数与「详情」同一行；参数列吃满剩余宽度并换行 -->
-                            <Grid
-                              ColumnDefinitions="Auto,Auto,*,Auto"
-                              ColumnSpacing="6"
-                              Margin="0,1,0,0"
-                            >
-                              <Grid
-                                Grid.Column="0"
-                                Width="12"
-                                Height="12"
-                                VerticalAlignment="Center"
-                              >
-                                <controls:BusySpinner
-                                  IsActive="{Binding IsProcessing}"
-                                  IsVisible="{Binding IsProcessing}"
-                                  FontSize="12"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                />
-                                <lucide:LucideIcon
-                                  Kind="{Binding StatusIcon}"
-                                  Size="11"
-                                  StrokeWidth="1.6"
-                                  IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                />
-                              </Grid>
-                              <TextBlock
-                                Grid.Column="1"
-                                Text="{Binding Title}"
-                                Classes="Tag"
-                                VerticalAlignment="Center"
-                              />
-                              <TextBlock
-                                Grid.Column="2"
-                                Text="{Binding ArgumentsSummary}"
-                                FontFamily="{StaticResource FontMono}"
-                                FontSize="11"
-                                Foreground="{DynamicResource BrushSageMist}"
-                                TextWrapping="Wrap"
-                                VerticalAlignment="Center"
-                              />
-                              <Button
-                                Grid.Column="3"
-                                Content="{Binding DetailsToggleLabel}"
-                                IsVisible="{Binding HasDetails}"
-                                Classes="IconButton"
-                                Padding="6,1"
-                                FontSize="11"
-                                Foreground="{DynamicResource BrushSageLeaf}"
-                                VerticalAlignment="Center"
-                                Click="StepDetails_OnClick"
-                              />
-                            </Grid>
-                            <TextBlock
-                              Text="{Binding ResultSummary}"
-                              IsVisible="{Binding HasResult}"
-                              FontSize="11"
-                              Foreground="{DynamicResource BrushSageGray}"
-                              TextWrapping="Wrap"
-                              Margin="18,0,0,0"
-                            />
-                            <!-- 详情默认折叠：工具原始参数/结果与结构化 diff 不铺在对话里；
-                             思考正文在详情区默认展开（步骤创建时置 true），可点「收起」折叠。
-                             不使用卡片底色/边框，直接落在页面背景上，和输入卡片左缘对齐。 -->
-                            <StackPanel
-                              Classes="StepDetails"
-                              IsVisible="{Binding IsDetailsExpanded}"
-                              Spacing="4"
-                              Margin="18,2,0,0"
-                              HorizontalAlignment="Stretch"
-                            >
-                              <TextBlock
-                                Text="{Binding ThinkingText}"
-                                IsVisible="{Binding HasThinking}"
-                                FontSize="12"
-                                Foreground="{DynamicResource BrushSageGray}"
-                                TextWrapping="Wrap"
-                              />
-                              <TextBlock
-                                Text="参数"
-                                Classes="Eyebrow"
-                                IsVisible="{Binding HasDetailArguments}"
-                              />
-                              <TextBlock
-                                Text="{Binding DetailArguments}"
-                                IsVisible="{Binding HasDetailArguments}"
-                                FontFamily="{StaticResource FontMono}"
-                                FontSize="11"
-                                Foreground="{DynamicResource BrushSageGray}"
-                                TextWrapping="Wrap"
-                              />
-                              <TextBlock
-                                Text="结果"
-                                Classes="Eyebrow"
-                                IsVisible="{Binding HasResultDetail}"
-                              />
-                              <TextBlock
-                                Text="{Binding DetailResult}"
-                                IsVisible="{Binding ShowRawResultDetail}"
-                                FontFamily="{StaticResource FontMono}"
-                                FontSize="11"
-                                Foreground="{DynamicResource BrushSageGray}"
-                                TextWrapping="Wrap"
-                              />
-                              <!-- 工具 Details 的结构化 diff：红删绿增，算法与 TUI 共用 -->
-                              <StackPanel
-                                IsVisible="{Binding HasDiff}"
-                                Spacing="2"
-                                Margin="0,2,0,0"
-                              >
-                                <TextBlock Text="{Binding DiffSummary}" Classes="Eyebrow" />
-                                <ItemsControl ItemsSource="{Binding DiffLines}">
-                                  <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="models:DiffLineView">
-                                      <Border
-                                        Classes="DiffRow"
-                                        Classes.DiffDelete="{Binding IsDelete}"
-                                        Classes.DiffInsert="{Binding IsInsert}"
-                                      >
-                                        <Grid ColumnDefinitions="Auto,Auto,*">
-                                          <TextBlock
-                                            Classes="DiffText DiffPrefix"
-                                            Classes.DiffDelete="{Binding IsDelete}"
-                                            Classes.DiffInsert="{Binding IsInsert}"
-                                            Text="{Binding Prefix}"
-                                          />
-                                          <TextBlock
-                                            Grid.Column="1"
-                                            Classes="DiffText DiffLineNumber"
-                                            Classes.DiffDelete="{Binding IsDelete}"
-                                            Classes.DiffInsert="{Binding IsInsert}"
-                                            Text="{Binding LineNumber}"
-                                          />
-                                          <TextBlock
-                                            Grid.Column="2"
-                                            Classes="DiffText"
-                                            Classes.DiffDelete="{Binding IsDelete}"
-                                            Classes.DiffInsert="{Binding IsInsert}"
-                                            Text="{Binding Text}"
-                                            TextWrapping="Wrap"
-                                          />
-                                        </Grid>
-                                      </Border>
-                                    </DataTemplate>
-                                  </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                              </StackPanel>
-                            </StackPanel>
-                          </StackPanel>
-                        </StackPanel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-
-                  <!-- 流式 Markdown 正文（仅非空白正文渲染，避免先到的换行/空格撑出空白卡片） -->
-                  <Border
-                    Classes="AgentBubble"
-                    HorizontalAlignment="Stretch"
-                    IsVisible="{Binding HasVisibleContent}"
-                  >
-                    <md:MarkdownRenderer
-                      Classes="ConversationMarkdown"
-                      MarkdownBuilder="{Binding Content}"
-                      CodeBlockColorTheme="LightPlus"
-                    />
-                  </Border>
-
-                  <!-- 中断与系统消息同一套呈现：系统标签 + 13px 状态行，不再用红色独立卡片。 -->
-                  <StackPanel
-                    HorizontalAlignment="Stretch"
-                    Spacing="3"
-                    Margin="0,2,0,0"
-                    IsVisible="{Binding IsInterrupted}"
-                  >
-                    <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-                    <TextBlock Classes="SystemNoticeText" Text="⏹ 中断生成" />
-                  </StackPanel>
-
-                  <!-- 信息来源 -->
-                  <ItemsControl
-                    ItemsSource="{Binding Sources}"
-                    IsVisible="{Binding Sources.Count, Converter={StaticResource CountToVisibility}}"
-                  >
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="models:SourceInfo">
-                        <TextBlock
-                          FontFamily="{StaticResource FontMono}"
-                          FontSize="11"
-                          Foreground="{DynamicResource BrushSageMist}"
-                          Text="{Binding Title}"
-                        />
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </StackPanel>
-
-                <!-- 系统提示：铺满消息区的内联行（压缩/溢出重试/持久化故障等,对齐 TUI 系统行语义） -->
-                <StackPanel
-                  HorizontalAlignment="Stretch"
-                  Spacing="3"
-                  Margin="0,2,0,0"
-                  IsVisible="{Binding Sender, Converter={StaticResource IsSystem}, ConverterParameter=System}"
-                >
-                  <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-                  <TextBlock
-                    Classes="SystemNoticeText"
-                    Text="{Binding Content, Converter={StaticResource StringBuilderToString}}"
-                    TextAlignment="Left"
-                    HorizontalAlignment="Stretch"
-                  />
-                </StackPanel>
-              </StackPanel>
+            <DataTemplate x:DataType="models:ConversationRow">
+              <ContentControl
+                Content="{Binding}"
+                ContentTemplate="{Binding Kind, Converter={StaticResource ConversationRowTemplate}}"
+              />
             </DataTemplate>
           </controls:AutoScrollItemsControl.ItemTemplate>
         </controls:AutoScrollItemsControl>

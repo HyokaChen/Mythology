@@ -38,7 +38,7 @@ public sealed class ConversationDetailStructureTests
             .Single(e =>
                 e.Name.LocalName == "StackPanel"
                 && Attr(e, "Classes") == "StepDetails"
-                && Attr(e, "IsVisible") == "{Binding IsDetailsExpanded}"
+                && Attr(e, "IsVisible") == "{Binding Step.IsDetailsExpanded}"
             );
     }
 
@@ -73,21 +73,21 @@ public sealed class ConversationDetailStructureTests
 
         Assert.Contains("参数", textual);
         Assert.Contains("结果", textual);
-        Assert.Contains("{Binding ThinkingText}", textual);
+        Assert.Contains("{Binding Step.ThinkingText}", textual);
         Assert.DoesNotContain("思考", textual);
 
         Assert.Equal(
-            "{Binding HasThinking}",
-            Attr(TextBlockWithText(details, "{Binding ThinkingText}"), "IsVisible")
+            "{Binding Step.HasThinking}",
+            Attr(TextBlockWithText(details, "{Binding Step.ThinkingText}"), "IsVisible")
         );
 
         // 工具详情的两个标题只在各自内容存在时出现。
         Assert.Equal(
-            "{Binding HasDetailArguments}",
+            "{Binding Step.HasDetailArguments}",
             Attr(TextBlockWithText(details, "参数"), "IsVisible")
         );
         Assert.Equal(
-            "{Binding HasResultDetail}",
+            "{Binding Step.HasResultDetail}",
             Attr(TextBlockWithText(details, "结果"), "IsVisible")
         );
     }
@@ -96,9 +96,9 @@ public sealed class ConversationDetailStructureTests
     public void ThinkingBody_IsVisibleOnlyWithThinkingContent_AndInsideCollapsibleDetails()
     {
         var root = LoadConversationView();
-        var thinking = TextBlockWithText(root, "{Binding ThinkingText}");
+        var thinking = TextBlockWithText(root, "{Binding Step.ThinkingText}");
 
-        Assert.Equal("{Binding HasThinking}", Attr(thinking, "IsVisible"));
+        Assert.Equal("{Binding Step.HasThinking}", Attr(thinking, "IsVisible"));
         Assert.Contains("TextWrapping", thinking.Attributes().Select(a => a.Name.LocalName));
         Assert.Contains(
             thinking.Ancestors(),
@@ -114,18 +114,19 @@ public sealed class ConversationDetailStructureTests
             .Single(e =>
                 e.Name.LocalName == "TextBlock"
                 && Attr(e, "Classes") == "StepContentText"
-                && Attr(e, "Text") == "{Binding ContentText}"
+                && Attr(e, "Text") == "{Binding Step.ContentText}"
             );
 
         Assert.Equal("StepContentText", Attr(content, "Classes"));
         var card = content
             .Ancestors()
             .Single(e => e.Name.LocalName == "Border" && Attr(e, "Classes") == "AgentBubble");
-        Assert.Equal("{Binding IsContentStep}", Attr(card, "IsVisible"));
+        Assert.Equal("{Binding Step.IsContentStep}", Attr(card, "IsVisible"));
         Assert.Contains(
             root.Descendants(),
             e =>
-                e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding IsStepHeader}"
+                e.Name.LocalName == "StackPanel"
+                && Attr(e, "IsVisible") == "{Binding Step.IsStepHeader}"
         );
     }
 
@@ -140,8 +141,8 @@ public sealed class ConversationDetailStructureTests
             );
 
         Assert.Contains("SystemNoticeText", Attr(notice, "Classes"));
-        Assert.Equal("{Binding ContentText}", Attr(notice, "Text"));
-        Assert.Equal("{Binding IsNoticeStep}", Attr(notice, "IsVisible"));
+        Assert.Equal("{Binding Step.ContentText}", Attr(notice, "Text"));
+        Assert.Equal("{Binding Step.IsNoticeStep}", Attr(notice, "IsVisible"));
     }
 
     [Fact]
@@ -151,19 +152,20 @@ public sealed class ConversationDetailStructureTests
 
         // 原始结果文本只在没有结构化 diff 时回退显示。
         Assert.Equal(
-            "{Binding ShowRawResultDetail}",
-            Attr(TextBlockWithText(details, "{Binding DetailResult}"), "IsVisible")
+            "{Binding Step.ShowRawResultDetail}",
+            Attr(TextBlockWithText(details, "{Binding Step.DetailResult}"), "IsVisible")
         );
 
         var items = details
             .Descendants()
             .Single(e =>
                 e.Name.LocalName == "ItemsControl"
-                && Attr(e, "ItemsSource") == "{Binding DiffLines}"
+                && Attr(e, "ItemsSource") == "{Binding Step.DiffLines}"
             );
         Assert.Contains(
             items.Ancestors(),
-            e => e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding HasDiff}"
+            e =>
+                e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding Step.HasDiff}"
         );
 
         var template = items.Descendants().Single(e => e.Name.LocalName == "DataTemplate");
@@ -193,10 +195,11 @@ public sealed class ConversationDetailStructureTests
         var button = LoadConversationView()
             .Descendants()
             .Single(e =>
-                e.Name.LocalName == "Button" && Attr(e, "Content") == "{Binding DetailsToggleLabel}"
+                e.Name.LocalName == "Button"
+                && Attr(e, "Content") == "{Binding Step.DetailsToggleLabel}"
             );
 
         Assert.Equal("StepDetails_OnClick", Attr(button, "Click"));
-        Assert.Equal("{Binding HasDetails}", Attr(button, "IsVisible"));
+        Assert.Equal("{Binding Step.HasDetails}", Attr(button, "IsVisible"));
     }
 }

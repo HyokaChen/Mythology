@@ -122,6 +122,13 @@
   清空预取队列；页面内逐条插入，每插一条按 extent 增量下移 offset；距顶 2 屏提前补页。
   41 消息会话冷启动只渲染 9 行；页内单条大 Markdown 的布局成本（headless ~200ms）被移到
   空闲预取，不占用滚轮帧。
+  ⑦ 行级扁平化 + 懒 Markdown：一条消息拆成 User / System / Waiting / Step / Content /
+  Interrupted / Sources 行；预取页只建轻量纯文本正文，尾部约 2 屏才用 LiveMarkdown；
+  滚动停止 180ms 后一次升级一条可见消息（`ChatMessage.IsRichMarkdown`），滚动中永不升级。
+  补页按 16ms 一行插入，每行按 extent 增量下移 offset；实测 41 消息会话首屏 12 行，
+  上滚 60 次滚轮的最大单帧 ~117ms（headless，重内容单行），不再整页 200ms+。
+  测试：`ConversationRowCollection` 提供实时扁平行；`FlattenedRows_RenderContent_AndSwitchLazyMarkdown`
+  覆盖纯文本 ↔ Markdown 切换；结构锁改为新行模板。
 - **ToolTip 打开即抛异常，输入/渲染帧被打断（Desktop）**：b205976 的动效层在
   `ToolTip` 的 `Style.Animations` KeyFrame 里写了 `RenderTransform`，但 Avalonia 12
   没有该属性的 animator。真实打开悬浮提示时必抛
