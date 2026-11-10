@@ -751,16 +751,10 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     "长消息挂载"
                 );
 
-                var body = Assert.Single(
-                    view.GetVisualDescendants().OfType<Desktop.Controls.VirtualizedMarkdownBody>()
-                );
                 var live = view.GetVisualDescendants()
                     .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
                     .Count();
-                Assert.True(
-                    live is >= 1 and <= 40,
-                    $"live={live}, children={body.Children.Count}, visual blocks={body.GetVisualDescendants().OfType<LiveMarkdown.Avalonia.MarkdownRenderer>().Count()}"
-                );
+                Assert.True(live is >= 1 and <= 40, $"长消息应保持 block 窗口，实际 live={live}");
                 PumpUntil(
                     () =>
                         view.GetVisualDescendants()

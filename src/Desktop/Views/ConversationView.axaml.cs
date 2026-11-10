@@ -85,6 +85,7 @@ public partial class ConversationView : UserControl
     private bool _syncingWindow;
     private bool _captureScheduled;
     private bool _restoringOffset;
+    private double _lastObservedOffset = double.NaN;
     private bool _bulkRestore;
     private bool _refreshScheduled;
     private bool _rowRefreshScheduled;
@@ -134,6 +135,7 @@ public partial class ConversationView : UserControl
                     foreach (var item in e.NewItems)
                         if (item is ChatMessage message)
                             AppendRowsForMessage(message);
+                    RebuildHeightIndex();
 
                     // 跟随尾部时窗口滚到最新；阅读历史时只把新行计入底部 spacer，
                     // 用户当前视口不动。
@@ -151,6 +153,7 @@ public partial class ConversationView : UserControl
                 foreach (var item in e.OldItems)
                     if (item is ChatMessage message)
                         RemoveRowsForMessage(message);
+                RebuildHeightIndex();
                 RequestWindowSync();
                 break;
             case NotifyCollectionChangedAction.Reset:
@@ -204,12 +207,22 @@ public partial class ConversationView : UserControl
     // ── 可见窗口：全量行模型 + 上下 spacer 虚拟化 ─────────────────────────
 
     private const double FallbackViewport = 600;
-    private const double TailViewports = 3;
+    private const int MinLiveRows = 48;
+    private const int MaxLiveRows = 200;
+    private const int LiveBufferRows = 20;
+    private readonly HeightIndex<ConversationRow> _heightIndex = new();
 
     private void OnMessageScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (_syncingWindow || _restoringOffset)
             return;
+
+        // 流式正文/spacer 只改变 extent 时 offset 不变；不要因此重算窗口并
+        // 触发 anchor 修正，否则阅读历史时新增消息也会被拉走。
+        var offset = MessageScroll.Offset.Y;
+        if (double.IsFinite(_lastObservedOffset) && Math.Abs(offset - _lastObservedOffset) < 0.5)
+            return;
+        _lastObservedOffset = offset;
         RequestWindowSync();
     }
 
@@ -274,15 +287,8 @@ public partial class ConversationView : UserControl
             return;
         }
 
-        var viewport = ViewportHeight();
-        var budget = viewport * TailViewports;
-        var start = _rows.Count;
-        var height = 0.0;
-        while (start > 0 && (height < budget || start == _rows.Count))
-        {
-            start--;
-            height += RowHeight(_rows[start]);
-        }
+        var maxLive = GetMaxLiveRows();
+        var start = Math.Max(0, _rows.Count - maxLive);
         SetWindow(start, _rows.Count);
     }
 
@@ -298,35 +304,10 @@ public partial class ConversationView : UserControl
         var viewport = ViewportHeight();
         var offset = MessageScroll.Offset.Y;
         var anchor = CaptureAnchor(offset);
-        var rangeTop = Math.Max(0, offset - viewport);
-        var rangeBottom = offset + viewport * 2;
-
-        var start = 0;
-        var top = 0.0;
-        while (start < _rows.Count)
-        {
-            var next = top + RowHeight(_rows[start]);
-            if (next > rangeTop)
-                break;
-            top = next;
-            start++;
-        }
-
-        var end = start;
-        var bottom = top;
-        while (end < _rows.Count && bottom < rangeBottom)
-        {
-            bottom += RowHeight(_rows[end]);
-            end++;
-        }
-
-        if (end == start && start < _rows.Count)
-            end = start + 1;
-        if (start >= _rows.Count)
-        {
-            start = Math.Max(0, _rows.Count - 1);
-            end = _rows.Count;
-        }
+        var focus = _heightIndex.IndexAtOffset(offset + viewport * 0.5);
+        var maxLive = GetMaxLiveRows();
+        var start = Math.Clamp(focus - LiveBufferRows, 0, Math.Max(0, _rows.Count - maxLive));
+        var end = Math.Min(_rows.Count, start + maxLive);
         SetWindow(start, end);
         if (!MessageList.IsFollowing && anchor is { } value)
             RestoreAnchor(value.Row, value.Delta);
@@ -425,6 +406,7 @@ public partial class ConversationView : UserControl
             message.IsProcessExpanded = i >= total - 4;
             AppendRowsForMessage(message);
         }
+        RebuildHeightIndex();
         SyncWindowToTail();
         MessageList.ResetFollow();
     }
@@ -457,22 +439,20 @@ public partial class ConversationView : UserControl
         };
     }
 
-    private double TopOf(int index)
+    private double TopOf(int index) => _heightIndex.OffsetOf(index);
+
+    private double TotalHeight() => _heightIndex.Total;
+
+    private int GetMaxLiveRows()
     {
-        var top = 0.0;
-        var limit = Math.Clamp(index, 0, _rows.Count);
-        for (var i = 0; i < limit; i++)
-            top += RowHeight(_rows[i]);
-        return top;
+        if (_heightIndex.Count == 0)
+            return MinLiveRows;
+        var average = Math.Max(24, _heightIndex.Total / _heightIndex.Count);
+        var target = (int)Math.Ceiling(ViewportHeight() * 3 / average);
+        return Math.Clamp(target, MinLiveRows, MaxLiveRows);
     }
 
-    private double TotalHeight()
-    {
-        var total = 0.0;
-        foreach (var row in _rows)
-            total += RowHeight(row);
-        return total;
-    }
+    private void RebuildHeightIndex() => _heightIndex.Rebuild(_rows, RowHeight);
 
     /// <summary>
     /// 从已安排的行容器读回真实高度。只取 DataContext 为行、视觉层级最浅的
@@ -510,6 +490,7 @@ public partial class ConversationView : UserControl
             )
                 continue;
             _measuredHeights[candidate.Row] = candidate.Height;
+            _heightIndex.Update(candidate.Row, candidate.Height);
             changed = true;
         }
 
@@ -529,17 +510,10 @@ public partial class ConversationView : UserControl
         if (_rows.Count == 0)
             return null;
 
-        var top = 0.0;
-        foreach (var row in _rows)
-        {
-            var height = RowHeight(row);
-            if (offset < top + height)
-                return (row, offset - top);
-            top += height;
-        }
-
-        var last = _rows[^1];
-        return (last, Math.Max(0, offset - (top - RowHeight(last))));
+        var index = _heightIndex.IndexAtOffset(offset);
+        var row = _rows[index];
+        var top = _heightIndex.OffsetOf(index);
+        return (row, Math.Max(0, offset - top));
     }
 
     private void RestoreAnchor(ConversationRow row, double delta)
@@ -597,11 +571,13 @@ public partial class ConversationView : UserControl
         _rows.Clear();
         _windowRows.Clear();
         _measuredHeights.Clear();
+        _heightIndex.Rebuild([], RowHeight);
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
         _stepOwners.Clear();
         MessageList.TopSpacerHeight = 0;
         MessageList.BottomSpacerHeight = 0;
+        _lastObservedOffset = double.NaN;
         CancelProcessFold();
     }
 
@@ -670,6 +646,7 @@ public partial class ConversationView : UserControl
         for (var i = 0; i < selected.Count; i++)
             selected[i].IsLastInMessage = i == selected.Count - 1;
         _rowsByMessage[message] = selected;
+        RebuildHeightIndex();
         RequestWindowSync();
     }
 

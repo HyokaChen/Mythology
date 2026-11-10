@@ -25,8 +25,10 @@ public sealed class VirtualizedMarkdownBody : Panel
     private const int MaxSegmentChars = 8_000;
 
     private const double FallbackViewport = 600;
-    private const double BufferViewports = 1.0;
-    private const int InitialSegments = 8;
+    private const int MinLiveSegments = 16;
+    private const int MaxLiveSegments = 40;
+    private const int LiveBufferSegments = 8;
+    private const int HeavyDeferCharacters = 12_000;
 
     private static readonly ThemeName CodeTheme = ThemeName.LightPlus;
 
@@ -42,6 +44,7 @@ public sealed class VirtualizedMarkdownBody : Panel
     }
 
     private readonly List<Block> _blocks = [];
+    private readonly HeightIndex<Block> _heightIndex = new();
     private MarkdownRenderer? _singleRenderer;
     private ScrollViewer? _scrollViewer;
     private DispatcherTimer? _rebuildTimer;
@@ -51,9 +54,12 @@ public sealed class VirtualizedMarkdownBody : Panel
     private bool _realizing;
     private (int Start, int End) _realizedRange = (-1, -1);
     private (int Start, int End) _pendingRange;
+    private long _realizeSignature;
     private bool _realizeScheduled;
     private bool _measureScheduled;
     private double _lastScrollOffset = double.NaN;
+    private double _visibleTop;
+    private double _visibleBottom;
 
     static VirtualizedMarkdownBody()
     {
@@ -68,6 +74,18 @@ public sealed class VirtualizedMarkdownBody : Panel
             if (_scrollViewer is not null)
                 _scrollViewer.ScrollChanged += OnScrollChanged;
             QueueRebuild(immediate: true);
+            // First measure may happen before Arrange, so TranslatePoint cannot yet
+            // map this body into the scroll viewport. Recompute once after the
+            // first arranged frame; otherwise a bottom-pinned long message starts
+            // at block 0.
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (!_singleMode)
+                        InvalidateMeasure();
+                },
+                DispatcherPriority.Loaded
+            );
         };
         DetachedFromVisualTree += (_, _) =>
         {
@@ -147,7 +165,7 @@ public sealed class VirtualizedMarkdownBody : Panel
         try
         {
             var text = MarkdownBuilder.ToString();
-            var longDocument = text.Length > SingleRendererLimit;
+            var longDocument = ShouldUseBlocks(text);
             if (!longDocument)
             {
                 _singleMode = true;
@@ -164,15 +182,17 @@ public sealed class VirtualizedMarkdownBody : Panel
             _blocks.Clear();
             Children.Clear();
             _realizedRange = (-1, -1);
+            _realizeSignature = 0;
 
             foreach (var segment in SplitSegments(text))
             {
                 if (segment.Length == 0)
                     continue;
-                _blocks.Add(new Block(segment));
+                _blocks.Add(new Block(segment, IsHeavySegment(segment)));
             }
             if (_blocks.Count == 0)
-                _blocks.Add(new Block(text));
+                _blocks.Add(new Block(text, IsHeavySegment(text)));
+            _heightIndex.Rebuild(_blocks, BlockHeight);
             InvalidateMeasure();
         }
         finally
@@ -235,7 +255,7 @@ public sealed class VirtualizedMarkdownBody : Panel
         if (_blocks.Count == 0)
             return default;
 
-        var range = GetVisibleRange(width);
+        var range = GetVisibleRange();
         ScheduleRealize(range);
 
         var total = 0.0;
@@ -245,8 +265,17 @@ public sealed class VirtualizedMarkdownBody : Panel
             if (block.Control is { } control && block.MeasurePasses < 2)
             {
                 control.Measure(new Size(width, double.PositiveInfinity));
-                block.Height = Math.Max(1, control.DesiredSize.Height);
-                block.MeasurePasses++;
+                if (control.DesiredSize.Height > 1)
+                {
+                    block.Height = control.DesiredSize.Height;
+                    _heightIndex.Update(block, block.Height);
+                    block.MeasurePasses++;
+                }
+                else
+                {
+                    block.Height = EstimateHeight(block.Text);
+                    block.MeasurePasses = 0;
+                }
             }
             else if (block.Height <= 0.5)
             {
@@ -277,59 +306,79 @@ public sealed class VirtualizedMarkdownBody : Panel
         return finalSize;
     }
 
-    private (int Start, int End) GetVisibleRange(double width)
+    private (int Start, int End) GetVisibleRange()
     {
         var top = 0.0;
         var viewport = FallbackViewport;
         if (
             _scrollViewer is not null
             && this.TranslatePoint(new Point(0, 0), _scrollViewer) is { } origin
+            && double.IsFinite(origin.Y)
         )
         {
             top = -origin.Y;
-            viewport = Math.Max(1, _scrollViewer.Viewport.Height);
+            if (double.IsFinite(_scrollViewer.Viewport.Height) && _scrollViewer.Viewport.Height > 0)
+                viewport = _scrollViewer.Viewport.Height;
         }
+        if (!double.IsFinite(top))
+            top = 0;
 
-        var rangeTop = Math.Max(0, top - viewport * BufferViewports);
-        var rangeBottom = top + viewport * (1 + BufferViewports);
+        _visibleTop = top;
+        _visibleBottom = top + viewport;
 
-        var start = 0;
-        var y = 0.0;
-        while (start < _blocks.Count)
-        {
-            var next = y + BlockHeight(_blocks[start]);
-            if (next > rangeTop)
-                break;
-            y = next;
-            start++;
-        }
-
-        var end = start;
-        var bottom = y;
-        while (end < _blocks.Count && bottom < rangeBottom)
-        {
-            bottom += BlockHeight(_blocks[end]);
-            end++;
-        }
-
-        if (end == start && start < _blocks.Count)
-            end = start + 1;
-        if (start >= _blocks.Count)
-        {
-            start = Math.Max(0, _blocks.Count - 1);
-            end = _blocks.Count;
-        }
-
-        // 估算高度不等于实测高度时，range 可能膨胀；硬上限避免一次 realize 整篇。
-        const int MaxRealizedSegments = 32;
-        if (end - start > MaxRealizedSegments)
-        {
-            if (start > _blocks.Count / 2)
-                start = Math.Max(0, end - MaxRealizedSegments);
-            else
-                end = start + MaxRealizedSegments;
-        }
+        var focus = _heightIndex.IndexAtOffset(top + viewport * 0.5);
+        var maxLive = GetMaxLiveSegments(viewport);
+        var start = Math.Clamp(focus - LiveBufferSegments, 0, Math.Max(0, _blocks.Count - maxLive));
+        var end = Math.Min(_blocks.Count, start + maxLive);
         return (start, end);
+    }
+
+    private int GetMaxLiveSegments(double viewport)
+    {
+        if (_blocks.Count == 0)
+            return MinLiveSegments;
+        var average = Math.Max(24, _heightIndex.Total / _blocks.Count);
+        var target = (int)Math.Ceiling(viewport * 2 / average);
+        return Math.Clamp(target, MinLiveSegments, MaxLiveSegments);
+    }
+
+    private bool ShouldRealizeHeavy(int index)
+    {
+        if (index < 0 || index >= _blocks.Count || !_blocks[index].IsHeavy)
+            return true;
+
+        var top = _heightIndex.OffsetOf(index);
+        var bottom = top + BlockHeight(_blocks[index]);
+        var margin = Math.Max(120, (_visibleBottom - _visibleTop) * 0.5);
+        return bottom >= _visibleTop - margin && top <= _visibleBottom + margin;
+    }
+
+    private static bool ShouldUseBlocks(string text) =>
+        text.Length > SingleRendererLimit
+        || (
+            text.Length > 4_000
+            && (
+                text.Contains("```mermaid", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("$$", StringComparison.Ordinal)
+                || text.Contains("\\begin{", StringComparison.Ordinal)
+            )
+        );
+
+    private static bool IsHeavySegment(string text)
+    {
+        var trimmed = text.TrimStart();
+        if (trimmed.Length >= HeavyDeferCharacters)
+            return true;
+        if (
+            trimmed.StartsWith("```mermaid", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("```math", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("```latex", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("```d2", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("$$", StringComparison.Ordinal)
+            || trimmed.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+        )
+            return true;
+        return text.Contains("\\begin{", StringComparison.Ordinal);
     }
 
     private static double BlockHeight(Block block)
@@ -341,8 +390,11 @@ public sealed class VirtualizedMarkdownBody : Panel
 
     private void ScheduleRealize((int Start, int End) range)
     {
-        if (range == _realizedRange)
+        var signature = HashCode.Combine(range.Start, range.End, _visibleTop, _visibleBottom);
+        if (signature == _realizeSignature)
             return;
+
+        _realizeSignature = signature;
         _pendingRange = range;
         if (_realizeScheduled)
             return;
@@ -370,6 +422,8 @@ public sealed class VirtualizedMarkdownBody : Panel
             for (var i = range.Start; i < range.End && i < _blocks.Count; i++)
             {
                 var block = _blocks[i];
+                if (!ShouldRealizeHeavy(i))
+                    continue;
                 block.Control ??= CreateRenderer(new ObservableStringBuilder(block.Text));
                 desired.Add(block.Control);
             }
@@ -388,7 +442,9 @@ public sealed class VirtualizedMarkdownBody : Panel
                 {
                     Children.Remove(block.Control);
                     block.Control = null;
-                    block.Height = 0;
+                    block.Height = EstimateHeight(block.Text);
+                    block.MeasurePasses = 0;
+                    _heightIndex.Update(block, block.Height);
                 }
             }
 
@@ -553,9 +609,10 @@ public sealed class VirtualizedMarkdownBody : Panel
             yield return current.ToString();
     }
 
-    private sealed class Block(string text)
+    private sealed class Block(string text, bool isHeavy)
     {
         public string Text { get; } = text;
+        public bool IsHeavy { get; } = isHeavy;
         public double Height { get; set; }
         public int MeasurePasses { get; set; }
         public MarkdownRenderer? Control { get; set; }

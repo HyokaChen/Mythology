@@ -57,6 +57,12 @@
   执行期的 `:disabled` 灰态，右侧同帧切换为「停止」；Enter 与 Esc 守卫同步改用 `IsBusy`
   （提交准备阶段 Enter 不重发、Esc 可中断；引擎在进入 Agent 循环前兑现已受理的取消）。回归：`ComposerBusyStateUiTests`（门控
   `INovelStore.GetNovel` 卡住引擎准备，断言 StopButton 已可见、SendButton 已隐藏；停止后 bridge 不得开始处理）；Desktop 598/598。
+- **Desktop 虚拟化补齐 Fenwick + focusIndex + 重型 block 延迟**：行/block 高度索引改为
+  Fenwick 前缀树，scroll offset 通过二分求 focusIndex；行窗口为 `focusIndex ± buffer`
+  的固定窗口，最大行数按视口/平均高度动态计算（48–200）；超长消息 block 窗口为
+  16–40 个 segment。Mermaid/KaTeX/超大代码块/大 SVG 在离屏时只保留 spacer，
+  接近视口才创建 renderer。回归：`HeightIndexTests`、长消息首尾可达、
+  `LargeConversation` 全量 extent。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

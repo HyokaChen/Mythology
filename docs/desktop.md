@@ -736,8 +736,13 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 窗口换页只增量 `RemoveAt/Insert`，保留相同行对象与 Content 行里的 `MarkdownRenderer`；
   不调用 `Clear()`，避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
 - 单条超长正文（>16k 字符）由 `VirtualizedMarkdownBody` 按 Markdig 顶层 block 拆分，
-  只实例化视口附近的 segment（最多 32 个），普通消息仍走单个 `MarkdownRenderer`
+  只实例化视口附近的 segment；普通消息仍走单个 `MarkdownRenderer`
   以保留流式增量、选择与链接行为；block 内不产生裸 Markdown 占位
+- 行/block 高度用 Fenwick 前缀索引维护，scroll offset → focusIndex 走二分；
+  live window 是 `focusIndex ± buffer` 的固定节点窗口，最大节点数按视口/平均高度动态计算
+  （行 48–200，block 16–40），不再每次全表扫描
+- 离屏重型 block（Mermaid / KaTeX / 超大代码块 / SVG）延迟创建；只有接近可见范围才挂
+  `MarkdownRenderer`，其余仅保留 spacer 高度
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
   尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
