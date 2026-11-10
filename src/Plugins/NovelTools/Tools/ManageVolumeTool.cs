@@ -167,11 +167,11 @@ public sealed class ManageVolumeTool(INovelStore store)
 梗概: {volume.Summary}
 描述: {volume.Description}
 目标: {volume.Goal}
-推进情节线: {string.Join(
+计划推进情节线: {string.Join(
                 "、",
                 volume.PlotlineIds.Select(id => plotlineNames.GetValueOrDefault(id, id))
             )}
-关键角色: {string.Join("、", volume.CharacterIds.Select(id => charNames.GetValueOrDefault(id, id)))}
+计划关键角色: {string.Join("、", volume.CharacterIds.Select(id => charNames.GetValueOrDefault(id, id)))}
 备注: {volume.Notes}
 包含章节（{chapters.Count}）: {string.Join(", ", chapters.Select(c => $"第{c.Order}章 {c.Title}"))}
 """;
@@ -244,10 +244,10 @@ public sealed record ManageVolumeParams
     [Description("本卷目标 / 核心冲突（读完这一卷读者获得什么）")]
     public string? Goal { get; init; }
 
-    [Description("本卷推进的情节线 ID 列表")]
+    [Description("本卷计划推进的情节线 ID 列表")]
     public List<string>? PlotlineIds { get; init; }
 
-    [Description("本卷关键角色 ID 列表")]
+    [Description("本卷计划关键角色 ID 列表")]
     public List<string>? CharacterIds { get; init; }
 
     [Description("备注（节奏/伏笔/卷末钩子提示）")]

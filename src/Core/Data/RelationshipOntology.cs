@@ -210,12 +210,18 @@ public static class RelationshipOntology
             new("in-volume", "章所属卷", chapters, volumes, true),
             new(
                 "advances",
-                "章/卷推进情节线",
+                "章/卷计划推进情节线",
                 [EntityType.Chapter, EntityType.Volume],
                 plotlines,
                 true
             ),
-            new("features", "章/卷聚焦角色", [EntityType.Chapter, EntityType.Volume], chars, true),
+            new(
+                "features",
+                "章/卷计划聚焦角色",
+                [EntityType.Chapter, EntityType.Volume],
+                chars,
+                true
+            ),
             new("reveals-at", "情节线计划揭示章", plotlines, chapters, true),
             new("resolves-at", "情节线回收章", plotlines, chapters, true),
             new("occurs-in", "时间线事件发生章", timeline, chapters, true),

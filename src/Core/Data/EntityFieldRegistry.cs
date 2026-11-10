@@ -357,8 +357,8 @@ public static class EntityFieldRegistry
         new(
             "本卷规划",
             [
-                new("PlotlineIds", "推进情节线", FieldType.MultiSelect),
-                new("CharacterIds", "关键角色", FieldType.MultiSelect),
+                new("PlotlineIds", "计划推进情节线", FieldType.MultiSelect),
+                new("CharacterIds", "计划关键角色", FieldType.MultiSelect),
             ]
         ),
     ];

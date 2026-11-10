@@ -60,4 +60,35 @@ public sealed class EntityFieldRegistryTests
 
         Assert.Equal(expectedIndex, Array.IndexOf(options, legacyValue));
     }
+
+    /// <summary>
+    /// 计划字段与实际事实字段必须使用不同标签：章节/分卷写「计划…」，
+    /// 场景仍写「推进情节线」，避免把场景事实误读成分卷计划。
+    /// </summary>
+    [Fact]
+    public void PlanningFields_AreDistinctFromSceneFacts()
+    {
+        var chapter = EntityFieldRegistry.ChapterTabs.Single(tab => tab.Name == "细纲");
+        Assert.Equal(
+            "计划推进情节线",
+            chapter.Fields.Single(field => field.Prop == "PlotlineIds").Label
+        );
+        Assert.Equal(
+            "计划出场角色",
+            chapter.Fields.Single(field => field.Prop == "CharacterIds").Label
+        );
+
+        var volume = EntityFieldRegistry.VolumeTabs.Single(tab => tab.Name == "本卷规划");
+        Assert.Equal(
+            "计划推进情节线",
+            volume.Fields.Single(field => field.Prop == "PlotlineIds").Label
+        );
+        Assert.Equal(
+            "计划关键角色",
+            volume.Fields.Single(field => field.Prop == "CharacterIds").Label
+        );
+
+        var scene = EntityFieldRegistry.SceneTabs.Single(tab => tab.Name == "叙事内容");
+        Assert.Equal("推进情节线", scene.Fields.Single(field => field.Prop == "PlotlineIds").Label);
+    }
 }

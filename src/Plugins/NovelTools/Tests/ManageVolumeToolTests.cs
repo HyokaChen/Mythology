@@ -128,6 +128,8 @@ public sealed class ManageVolumeToolTests
         var gotText = string.Join("", got.Content.OfType<TextContent>().Select(t => t.Text));
         Assert.Contains("第1卷 风起", gotText);
         Assert.Contains("第1章 雨夜寄北", gotText);
+        Assert.Contains("计划推进情节线: 夺宝线", gotText);
+        Assert.Contains("计划关键角色: 林长歌", gotText);
 
         // list
         var listed = await tool.ExecuteAsync(

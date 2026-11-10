@@ -432,8 +432,8 @@ public sealed class EntityEditDialog(
         new(
             "关系",
             [
-                new FieldDef("PlotlineIds", "推进情节线", FieldType.MultiSelect),
-                new FieldDef("CharacterIds", "关键角色", FieldType.MultiSelect),
+                new FieldDef("PlotlineIds", "计划推进情节线", FieldType.MultiSelect),
+                new FieldDef("CharacterIds", "计划关键角色", FieldType.MultiSelect),
             ]
         ),
     ];

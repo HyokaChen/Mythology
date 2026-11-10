@@ -776,12 +776,12 @@ public static class OutlineRows
         var plotlines = ResolveNames(volume.PlotlineIds, plotlineNames);
         if (plotlines.Count > 0)
         {
-            lines.Add($"推进情节线: {string.Join("、", plotlines)}");
+            lines.Add($"计划推进情节线: {string.Join("、", plotlines)}");
         }
         var characters = ResolveNames(volume.CharacterIds, characterNames);
         if (characters.Count > 0)
         {
-            lines.Add($"关键角色: {string.Join("、", characters)}");
+            lines.Add($"计划关键角色: {string.Join("、", characters)}");
         }
         if (!string.IsNullOrWhiteSpace(volume.Notes))
         {
@@ -832,10 +832,10 @@ public static class OutlineRows
     {
         var chips = new List<string>();
         chips.AddRange(
-            ResolveNames(volume.PlotlineIds, plotlineNames).Select(name => $"推进 {name}")
+            ResolveNames(volume.PlotlineIds, plotlineNames).Select(name => $"计划推进 {name}")
         );
         chips.AddRange(
-            ResolveNames(volume.CharacterIds, characterNames).Select(name => $"关键角色 {name}")
+            ResolveNames(volume.CharacterIds, characterNames).Select(name => $"计划关键角色 {name}")
         );
         return chips;
     }

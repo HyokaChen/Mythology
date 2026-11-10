@@ -137,7 +137,7 @@ public partial class ChapterReaderWindow : Window
     }
 
     /// <summary>
-    /// 渲染细纲信息带：梗概（细纲）/ 计划关系胶囊（所属分卷·推进情节线·计划出场角色）/
+    /// 渲染细纲信息带：梗概（细纲）/ 计划关系胶囊（所属分卷·计划推进情节线·计划出场角色）/
     /// 实际记录（出场章节模式 + 状态变化）。全部为空时整带隐藏。
     /// </summary>
     private void RenderOutlineInfo(Chapter chapter)

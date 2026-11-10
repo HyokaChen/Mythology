@@ -1129,7 +1129,7 @@ public static class RelationWriteThrough
         }
     }
 
-    /// <summary>分卷侧：包含章节（写对端·不重排）/ 推进情节线、关键角色（own）。</summary>
+    /// <summary>分卷侧：包含章节（写对端·不重排）/ 计划推进情节线、计划关键角色（own）。</summary>
     private static async Task ApplyVolumeEditAsync(
         ApplyContext context,
         Volume volume,

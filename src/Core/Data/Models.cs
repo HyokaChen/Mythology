@@ -153,10 +153,10 @@ public class Volume : Entity
     /// <summary>本卷目标 / 核心冲突（读完这一卷读者获得什么）。</summary>
     public string Goal { get; set; } = "";
 
-    /// <summary>本卷推进的情节线 ID 列表。</summary>
+    /// <summary>本卷计划推进的情节线 ID 列表。</summary>
     public List<string> PlotlineIds { get; set; } = [];
 
-    /// <summary>本卷关键角色 ID 列表。</summary>
+    /// <summary>本卷计划关键角色 ID 列表。</summary>
     public List<string> CharacterIds { get; set; } = [];
 
     /// <summary>备注（节奏/伏笔/钩子提示）。</summary>

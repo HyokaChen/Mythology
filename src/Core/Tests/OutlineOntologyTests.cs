@@ -572,6 +572,14 @@ public sealed class OutlineOntologyTests : IAsyncDisposable
             "被推进卷",
             EntityRelationIndex.LabelFor(volumeAdvance, EntityType.Plotline, "pl1")
         );
+        Assert.Equal(
+            "计划推进情节线",
+            EntityRelationIndex.LabelFor(chapterAdvance, EntityType.Chapter, "ch1")
+        );
+        Assert.Equal(
+            "计划推进情节线",
+            EntityRelationIndex.LabelFor(volumeAdvance, EntityType.Volume, "vol1")
+        );
 
         var chapterFeature = index
             .GetRelations(EntityType.Chapter, "ch1")
@@ -579,6 +587,22 @@ public sealed class OutlineOntologyTests : IAsyncDisposable
         Assert.Equal(
             "计划出场",
             EntityRelationIndex.LabelFor(chapterFeature, EntityType.Chapter, "ch1")
+        );
+
+        var volumeFeature = index
+            .GetRelations(EntityType.Volume, "vol1")
+            .Single(r => r.EdgeType == "features");
+        Assert.Equal(
+            "计划关键角色",
+            EntityRelationIndex.LabelFor(volumeFeature, EntityType.Volume, "vol1")
+        );
+
+        var sceneBelongs = index
+            .GetRelations(EntityType.Scene, "sc1")
+            .Single(r => r.EdgeType == "belongs-to");
+        Assert.Equal(
+            "推进情节线",
+            EntityRelationIndex.LabelFor(sceneBelongs, EntityType.Scene, "sc1")
         );
 
         var membership = index

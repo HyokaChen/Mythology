@@ -430,10 +430,11 @@ public sealed class OutlineRowsTests
 
         var volume = rows.Single(r => r.Kind == OutlineRowKind.VolumeHeader);
         Assert.Equal(
-            ["卷目标: 第1卷目标", "推进情节线: 复仇线", "关键角色: 林月如", "备注: 备注"],
+            ["卷目标: 第1卷目标", "计划推进情节线: 复仇线", "计划关键角色: 林月如", "备注: 备注"],
             volume.DetailLines
         );
-        Assert.Contains("推进 复仇线", volume.Chips);
+        Assert.Contains("计划推进 复仇线", volume.Chips);
+        Assert.Contains("计划关键角色 林月如", volume.Chips);
     }
 
     [Fact]

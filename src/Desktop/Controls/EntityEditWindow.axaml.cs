@@ -40,6 +40,20 @@ public partial class EntityEditWindow : Window
     /// <summary>MultiSelect：prop → 实体当前已选 ID（候选加载时用于勾选）。</summary>
     private readonly Dictionary<string, List<string>> _selectedMultiSelectIds = [];
 
+    /// <summary>MultiSelect：prop → “已选 / 候选 / 下级已标注”说明。</summary>
+    private readonly Dictionary<string, TextBlock> _multiSelectSummaries = [];
+
+    /// <summary>MultiSelect：prop → “从下级同步”按钮（仅章节 / 分卷的多选字段）。</summary>
+    private readonly Dictionary<string, Button> _multiSelectSyncButtons = [];
+
+    /// <summary>
+    /// MultiSelect：prop → 下级数据（章节 / 场景）已标注的 ID。
+    /// 只用于提示与一键勾选；打开窗口时不自动写回实体，保存仍由用户显式触发。
+    /// </summary>
+    private readonly Dictionary<string, HashSet<string>> _derivedMultiSelectIds = new(
+        StringComparer.Ordinal
+    );
+
     private Entity? _entity;
 
     /// <summary>编辑模式：关联节（挂起编辑 → 保存时写穿透）。</summary>
@@ -248,16 +262,49 @@ public partial class EntityEditWindow : Window
         return wrapper;
     }
 
-    /// <summary>MultiSelect：复选框列表（Border 容器 + 可滚动候选）。候选由 LoadMultiSelectCandidatesAsync 填充。</summary>
-    private Border BuildMultiSelect(FieldDef def)
+    /// <summary>MultiSelect：说明行 +（章节/分卷）同步按钮 + 可滚动候选列表。</summary>
+    private Control BuildMultiSelect(FieldDef def)
     {
         var panel = new StackPanel { Spacing = 4 };
         _multiSelectPanels[def.Prop] = panel;
 
-        return new Border
+        var summary = new TextBlock
         {
-            BorderBrush = Application.Current!.TryFindResource("BrushMist", out var mist)
+            FontSize = 11,
+            Foreground = Application.Current!.TryFindResource("BrushSageMist", out var mist)
                 ? mist as IBrush
+                : Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _multiSelectSummaries[def.Prop] = summary;
+
+        var syncButton = new Button
+        {
+            Content = "同步",
+            Classes = { "Ghost" },
+            FontSize = 11,
+            Padding = new Thickness(8, 2, 8, 2),
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        syncButton.Click += (_, _) => SyncMultiSelectFromLowerLevel(def.Prop);
+        ToolTip.SetTip(syncButton, "把下级章节/场景中已标注的 ID 勾选进来；保存后写入当前计划。");
+        _multiSelectSyncButtons[def.Prop] = syncButton;
+
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 8,
+        };
+        header.Children.Add(summary);
+        header.Children.Add(syncButton);
+        Grid.SetColumn(syncButton, 1);
+
+        var border = new Border
+        {
+            BorderBrush = Application.Current!.TryFindResource("BrushMist", out var borderMist)
+                ? borderMist as IBrush
                 : Brushes.Gray,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(4),
@@ -269,6 +316,11 @@ public partial class EntityEditWindow : Window
                 Content = panel,
             },
         };
+
+        var root = new StackPanel { Spacing = 6 };
+        root.Children.Add(header);
+        root.Children.Add(border);
+        return root;
     }
 
     /// <summary>
@@ -296,10 +348,16 @@ public partial class EntityEditWindow : Window
                     Tag = id,
                     IsChecked = selected.Contains(id),
                 };
+                box.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property == ToggleButton.IsCheckedProperty)
+                        UpdateMultiSelectSummary(def.Prop);
+                };
                 boxes.Add((id, box));
                 panel.Children.Add(box);
             }
             _multiSelectBoxes[def.Prop] = boxes;
+            UpdateMultiSelectSummary(def.Prop);
             if (boxes.Count == 0)
                 panel.Children.Add(
                     new TextBlock
@@ -346,6 +404,190 @@ public partial class EntityEditWindow : Window
             _selectedMultiSelectIds[def.Prop] = value as List<string> ?? [];
         }
     }
+
+    /// <summary>刷新多选说明与「同步」按钮：已选 / 候选 / 下级已标注但尚未勾选。</summary>
+    private void UpdateMultiSelectSummary(string prop)
+    {
+        if (!_multiSelectSummaries.TryGetValue(prop, out var summary))
+            return;
+
+        var boxes = _multiSelectBoxes.GetValueOrDefault(prop, []);
+        var total = boxes.Count;
+        var selected = boxes.Count(b => b.Box.IsChecked == true);
+        var candidateIds = boxes.Select(b => b.Id).ToHashSet(StringComparer.Ordinal);
+        var checkedIds = boxes
+            .Where(b => b.Box.IsChecked == true)
+            .Select(b => b.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var derived = _derivedMultiSelectIds.GetValueOrDefault(prop, []);
+        var derivedAvailable = derived
+            .Where(candidateIds.Contains)
+            .ToHashSet(StringComparer.Ordinal);
+        var pending = derivedAvailable.Count(id => !checkedIds.Contains(id));
+
+        summary.Text = BuildMultiSelectSummary(
+            total,
+            selected,
+            derived.Count,
+            derivedAvailable.Count,
+            pending,
+            _type == EntityType.Volume
+        );
+
+        if (_multiSelectSyncButtons.TryGetValue(prop, out var button))
+        {
+            button.IsVisible = pending > 0;
+            button.Content = $"同步 {pending}";
+            button.IsEnabled = pending > 0;
+        }
+    }
+
+    /// <summary>
+    /// 多选说明的纯文本口径。抽成静态方法便于回归测试：
+    /// 有候选时必须出现“候选”二字，避免用户把列表误读为已推进事实；
+    /// 下级引用全部失效时只提示一次，不重复计数。
+    /// </summary>
+    internal static string BuildMultiSelectSummary(
+        int total,
+        int selected,
+        int derivedTotal,
+        int derivedAvailable,
+        int pending,
+        bool isVolume
+    )
+    {
+        var parts = new List<string>(2);
+        if (total == 0)
+            parts.Add("无候选");
+        else if (selected == 0)
+            parts.Add($"未选择（下列为全部 {total} 条候选）");
+        else
+            parts.Add($"已选 {selected} / {total} 条候选");
+
+        if (derivedTotal > 0)
+        {
+            var source = isVolume ? "章节/场景" : "场景";
+            if (derivedAvailable == 0)
+            {
+                parts.Add($"{source}标注的 {derivedTotal} 条引用已失效");
+            }
+            else
+            {
+                parts.Add(
+                    pending == 0
+                        ? $"{source}已标注 {derivedAvailable} 条，已全部勾选"
+                        : $"{source}已标注 {derivedAvailable} 条，{pending} 条尚未勾选"
+                );
+                if (derivedTotal > derivedAvailable)
+                    parts.Add($"另有 {derivedTotal - derivedAvailable} 条引用已失效");
+            }
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// 只勾选、不取消：把下级章节/场景已标注的 ID 并入选区，随后仍由用户点“保存”落盘。
+    /// </summary>
+    private void SyncMultiSelectFromLowerLevel(string prop)
+    {
+        if (!_derivedMultiSelectIds.TryGetValue(prop, out var derived) || derived.Count == 0)
+            return;
+
+        foreach (var (id, box) in _multiSelectBoxes.GetValueOrDefault(prop, []))
+        {
+            if (derived.Contains(id))
+                box.IsChecked = true;
+        }
+        UpdateMultiSelectSummary(prop);
+    }
+
+    /// <summary>
+    /// 汇总下级数据中已标注的关联 ID：章节 ← 场景；分卷 ← 本卷章节 + 这些章节的场景。
+    /// 该结果是“提示 + 同步”的来源，不是自动写回；计划字段与场景实际事实保持分离。
+    /// </summary>
+    private async Task LoadDerivedMultiSelectIdsAsync()
+    {
+        if (_entityId is null)
+            return;
+
+        try
+        {
+            switch (_type)
+            {
+                case EntityType.Chapter:
+                {
+                    var scenes = await _store.GetScenesByChapter(_entityId);
+                    AddDerivedIds("PlotlineIds", CollectScenePlotlineIds(scenes));
+                    AddDerivedIds("CharacterIds", CollectSceneCharacterIds(scenes));
+                    break;
+                }
+                case EntityType.Volume:
+                {
+                    var chapters = (await _store.GetChapters(_novelId))
+                        .Where(c => string.Equals(c.VolumeId, _entityId, StringComparison.Ordinal))
+                        .ToList();
+                    var chapterIds = chapters.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+                    var scenes = (await _store.GetScenesByNovel(_novelId))
+                        .Where(s => s.ChapterId is { Length: > 0 } id && chapterIds.Contains(id))
+                        .ToList();
+
+                    AddDerivedIds("PlotlineIds", CollectVolumePlotlineIds(chapters, scenes));
+                    AddDerivedIds("CharacterIds", CollectVolumeCharacterIds(chapters, scenes));
+                    break;
+                }
+            }
+        }
+        catch
+        {
+            // 下级数据只用于辅助提示；读取失败不应阻止主编辑窗打开。
+        }
+    }
+
+    private void AddDerivedIds(string prop, IEnumerable<string> ids)
+    {
+        if (!_derivedMultiSelectIds.TryGetValue(prop, out var set))
+            _derivedMultiSelectIds[prop] = set = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var id in ids)
+        {
+            if (!string.IsNullOrWhiteSpace(id))
+                set.Add(id);
+        }
+    }
+
+    internal static HashSet<string> CollectScenePlotlineIds(IEnumerable<SceneDefinition> scenes) =>
+        scenes
+            .SelectMany(s => s.PlotlineIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+    internal static HashSet<string> CollectSceneCharacterIds(IEnumerable<SceneDefinition> scenes) =>
+        scenes
+            .SelectMany(s => s.ParticipantIds)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+    internal static HashSet<string> CollectVolumePlotlineIds(
+        IEnumerable<Chapter> chapters,
+        IEnumerable<SceneDefinition> scenes
+    ) =>
+        chapters
+            .SelectMany(c => c.PlotlineIds)
+            .Concat(scenes.SelectMany(s => s.PlotlineIds))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+    internal static HashSet<string> CollectVolumeCharacterIds(
+        IEnumerable<Chapter> chapters,
+        IEnumerable<SceneDefinition> scenes
+    ) =>
+        chapters
+            .SelectMany(c => c.CharacterIds)
+            .Concat(scenes.SelectMany(s => s.ParticipantIds))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
 
     /// <summary>下拉选择：枚举选项 或 ID 引用（异步加载候选）。</summary>
     private ComboBox BuildSelect(FieldDef def)
@@ -467,6 +709,7 @@ public partial class EntityEditWindow : Window
                 _membershipSnapshot = RelationWriteThrough.Capture(_entity);
             }
 
+            await LoadDerivedMultiSelectIdsAsync();
             await LoadMultiSelectCandidatesAsync();
             await Task.WhenAll(_selectLoadTasks);
 
