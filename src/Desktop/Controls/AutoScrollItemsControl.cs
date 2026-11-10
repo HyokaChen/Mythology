@@ -294,16 +294,16 @@ public class AutoScrollItemsControl : ItemsControl
             DisableFollow();
 
         // 用户滚到底部 → 恢复跟随。
-        // 只认“用户输入产生的正向 offset 增量 + extent 未变化 + 真正到底部”；
-        // 虚拟化窗口换页、高度校正也会改变 offset/extent，不能当成用户回到底部，
-        // 否则历史中段稍一下滚就会突然被接到页面尾部。
+        // 快速滚动时先到的是“当前估算 extent 的底部”；随后 block/行实测
+        // 会让 extent 继续增长。不能在接近底部时因为 extent 同时变化就拒绝
+        // 恢复跟随，否则会出现“回弹一下、差一点到底，要再滚一次”。
+        // 仍然排除程序的窗口/锚点更新（_layoutUpdateDepth）和向上回弹。
         if (
             !_autoFollow
             && _resumeOnBottom
             && _layoutUpdateDepth == 0
-            && e.OffsetDelta.Y > 0
-            && Math.Abs(e.ExtentDelta.Y) < 0.5
-            && _scrollViewer.Offset.Y >= maxOffset - 0.5
+            && (e.OffsetDelta.Y >= 0 || e.ExtentDelta.Y > 0)
+            && _scrollViewer.Offset.Y >= maxOffset - 2
         )
             SetFollow(true);
     }

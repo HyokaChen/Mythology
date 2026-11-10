@@ -778,6 +778,11 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 窗口失焦/激活：失焦期间忽略 ScrollChanged 的跟随判定；离开时在底部（或正在跟随）
   则激活后 `ResetFollow` 回到底部，阅读中段则保持原位置。回归：
   `WindowDeactivateReactivate_AtBottom_StaysAtBottom`
+- 步骤详情展开后的延迟 `BringStepDetailsIntoView` 只处理“详情在视口下方”的情况；
+  用户已经继续下滚、详情跑到视口上方时直接放弃，避免快速滚到底时被反向拽回。
+  快速滚动在估算 extent 底部时即使 extent 仍在增长也恢复跟随，不能停在差一点到底。
+  回归：`ExpandDetailsThenFastWheel_DoesNotBounceBack`、
+  `FastWheelToBottom_AfterExpansion_ReachesRealBottom`
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

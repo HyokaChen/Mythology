@@ -825,6 +825,183 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     before = sv.Offset.Y;
                 }
                 Assert.True(AtBottom(sv), "展开过程后无法滚到底部");
+
+                // 再次到中段，做一次大跨度快速滚轮：先在估算底部停住，
+                // 随后的实测高度增长必须继续贴底，不能留下底部空隙。
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.45));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+                window.MouseWheel(pointer, new Vector(0, -60));
+                PumpUntil(() => AtBottom(sv), "快速滚到底后不应留底部空隙");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 点击思考「展开」后立刻快速下滚：延迟的 BringStepDetailsIntoView
+    /// 不能因为详情已跑到视口上方而把视口反向拽回。
+    /// </summary>
+    [Fact]
+    public void ExpandDetailsThenFastWheel_DoesNotBounceBack()
+    {
+        Ui.Run(() =>
+        {
+            for (var m = 0; m < 30; m++)
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                for (var s = 0; s < 8; s++)
+                {
+                    var step = new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.Thinking,
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                        Title = $"思考 {m}-{s}",
+                    };
+                    step.ThinkingBuilder.Append(
+                        string.Join(" ", Enumerable.Repeat("展开后快速滚到底部的思考。", 20))
+                    );
+                    step.NotifyThinkingChanged();
+                    message.AgentSteps.Add(step);
+                }
+                message.IsProcessExpanded = true;
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 1000,
+                Height = 760,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv), "初始详情贴底");
+                var pointer = new Point(500, 380);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.4));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var detailButton = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext
+                            is Desktop.Models.ConversationRow
+                            {
+                                Step: { Kind: Desktop.Models.StepKind.Thinking },
+                            }
+                        && Equals(b.Content, "展开")
+                    )
+                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
+                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
+                    .FirstOrDefault();
+                Assert.NotNull(detailButton);
+                var click = detailButton!.Button.TranslatePoint(
+                    new Point(
+                        detailButton.Button.Bounds.Width / 2,
+                        detailButton.Button.Bounds.Height / 2
+                    ),
+                    window
+                );
+                Assert.NotNull(click);
+                window.MouseMove(click!.Value);
+                window.MouseDown(click.Value, MouseButton.Left);
+                window.MouseUp(click.Value, MouseButton.Left);
+
+                // 不等延迟 reveal 执行，立刻快速下滚。
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, -60));
+                PumpUntil(() => AtBottom(sv), "展开后快速下滚应到底且不回弹");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 展开大量步骤后快速滚到底：先到估算 extent 底部，随后实测高度继续增长，
+    /// 不能因此停在离底部一小段的位置，必须继续跟随到真实底部。
+    /// </summary>
+    [Fact]
+    public void FastWheelToBottom_AfterExpansion_ReachesRealBottom()
+    {
+        Ui.Run(() =>
+        {
+            for (var m = 0; m < 30; m++)
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                for (var s = 0; s < 12; s++)
+                {
+                    var step = new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.Thinking,
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                        Title = $"思考 {m}-{s}",
+                    };
+                    step.ThinkingBuilder.Append(
+                        string.Join(" ", Enumerable.Repeat("快速滚到底部的步骤正文。", 24))
+                    );
+                    step.NotifyThinkingChanged();
+                    step.IsDetailsExpanded = true;
+                    message.AgentSteps.Add(step);
+                }
+                message.IsProcessExpanded = true;
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 1000,
+                Height = 760,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "快速滚动初始贴底");
+
+                var pointer = new Point(500, 380);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.5));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                window.MouseWheel(pointer, new Vector(0, -60));
+                PumpUntil(() => AtBottom(sv), "快速滚到底后应贴住真实底部");
+                Assert.True(list.IsFollowing || AtBottom(sv));
             }
             finally
             {

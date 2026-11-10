@@ -28,6 +28,26 @@ public partial class ConversationView : UserControl
         MessageList.FollowChanged += OnFollowChanged;
         MessageScroll.ScrollChanged += OnMessageScrollChanged;
         MessageList.LayoutUpdated += OnMessageListLayoutUpdated;
+        // 详情展开后的延迟 reveal 需要知道“点击之后用户是否自己滚动过”；
+        // 布局/高度校正不算用户手势。
+        MessageScroll.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnMessageScrollUserInput,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        MessageScroll.AddHandler(
+            InputElement.KeyDownEvent,
+            OnMessageScrollUserInput,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        MessageScroll.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnMessageScrollUserInput,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -115,6 +135,8 @@ public partial class ConversationView : UserControl
         return MessageScroll.Offset.Y >= max - 1;
     }
 
+    private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e) => _userScrollEpoch++;
+
     private void OnFollowChanged(object? sender, EventArgs e)
     {
         if (_syncingWindow || !MessageList.IsFollowing)
@@ -143,6 +165,7 @@ public partial class ConversationView : UserControl
     private bool _syncingWindow;
     private Window? _hostWindow;
     private bool _restoreBottomOnActivate;
+    private int _userScrollEpoch;
     private bool _captureScheduled;
     private bool _restoringOffset;
     private double _lastObservedOffset = double.NaN;
@@ -1106,8 +1129,9 @@ public partial class ConversationView : UserControl
             step.IsDetailsExpanded = expand;
             if (expand)
             {
+                var scrollEpoch = _userScrollEpoch;
                 Dispatcher.UIThread.Post(
-                    () => BringStepDetailsIntoView(row),
+                    () => BringStepDetailsIntoView(row, scrollEpoch),
                     DispatcherPriority.Loaded
                 );
             }
@@ -1115,9 +1139,11 @@ public partial class ConversationView : UserControl
         e.Handled = true;
     }
 
-    private void BringStepDetailsIntoView(ConversationRow row)
+    private void BringStepDetailsIntoView(ConversationRow row, int scrollEpoch)
     {
         if (row.Step is not { IsDetailsExpanded: true })
+            return;
+        if (_userScrollEpoch != scrollEpoch)
             return;
         var details = this.GetVisualDescendants()
             .OfType<StackPanel>()
@@ -1128,7 +1154,8 @@ public partial class ConversationView : UserControl
             return;
 
         // 详情顶部已经在视口上部（或完整可见）时不打扰用户；只有贴近/越过底边
-        // 或已经跑到视口上方时，才把它拉回可读位置。
+        // 或已经跑到视口上方时，才把它拉回可读位置。用户点击后自己滚动过则
+        // 由上面的 scrollEpoch 直接放弃，避免快速下滚时被延迟 reveal 反向拽回。
         var viewport = MessageScroll.Viewport.Height;
         if (top.Y >= 8 && top.Y < viewport - 24)
             return;
