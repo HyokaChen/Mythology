@@ -892,6 +892,8 @@ public partial class ConversationView : UserControl
     {
         if (sender is Control { DataContext: ConversationRow { Message: var message } })
         {
+            // 展开历史过程会改变行高；先退出尾部跟随，避免把视口拉回最后一条。
+            MessageList.PauseFollow();
             message.ProcessTouchedByUser = true;
             CancelProcessFold();
             message.IsProcessExpanded = true;

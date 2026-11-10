@@ -24,6 +24,7 @@ public class AutoScrollItemsControl : ItemsControl
 {
     private ScrollViewer? _scrollViewer;
     private bool _autoFollow = true;
+    private bool _resumeOnBottom = true;
     private bool _scrollBarDragging;
     private bool _followPostPending;
 
@@ -49,6 +50,18 @@ public class AutoScrollItemsControl : ItemsControl
 
     /// <summary>当前是否处于「跟随尾部」状态。</summary>
     public bool IsFollowing => _autoFollow;
+
+    /// <summary>
+    /// 停止尾部跟随但保留当前视口。用于用户点击历史过程行展开：
+    /// 内容高度变化不应把用户拉回底部。
+    /// </summary>
+    public void PauseFollow()
+    {
+        _autoFollow = false;
+        // 这次暂停来自内容操作（展开历史过程），不能让布局校正自动恢复跟随；
+        // 用户主动向下滚/拖回底部后才恢复。
+        _resumeOnBottom = false;
+    }
 
     /// <summary>测试/预览兼容：行集合与 ItemsSource 相同。</summary>
     public object? Rows
@@ -102,6 +115,7 @@ public class AutoScrollItemsControl : ItemsControl
     public void ResetFollow()
     {
         _autoFollow = true;
+        _resumeOnBottom = true;
         Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
@@ -181,15 +195,29 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>用户滚轮上滚：停止跟随（滚回底部由 <see cref="OnScrollChanged"/> 恢复）。</summary>
     private void OnScrollViewerPointerWheel(object? sender, PointerWheelEventArgs e)
     {
-        if (_autoFollow && e.Delta.Y > 0)
-            DisableFollow();
+        if (e.Delta.Y > 0)
+        {
+            if (_autoFollow)
+                DisableFollow();
+        }
+        else if (e.Delta.Y < 0)
+        {
+            _resumeOnBottom = true;
+        }
     }
 
     /// <summary>键盘上滚：停止跟随。</summary>
     private void OnScrollViewerKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_autoFollow && e.Key is Key.Up or Key.PageUp or Key.Home)
-            DisableFollow();
+        if (e.Key is Key.Up or Key.PageUp or Key.Home)
+        {
+            if (_autoFollow)
+                DisableFollow();
+        }
+        else if (e.Key is Key.Down or Key.PageDown or Key.End)
+        {
+            _resumeOnBottom = true;
+        }
     }
 
     /// <summary>记录滚动条拖动（拖动上移时 <see cref="OnScrollChanged"/> 停止跟随）。</summary>
@@ -229,7 +257,7 @@ public class AutoScrollItemsControl : ItemsControl
             DisableFollow();
 
         // 用户滚到底部 → 恢复跟随
-        if (!_autoFollow && _scrollViewer.Offset.Y >= maxOffset - 8)
+        if (!_autoFollow && _resumeOnBottom && _scrollViewer.Offset.Y >= maxOffset - 8)
             _autoFollow = true;
     }
 

@@ -25,6 +25,9 @@
   回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
   `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
   `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 605/605。
+- **Desktop 过程行展开不再抢滚动**：点击历史「过程」折叠行时先 `PauseFollow`，展开步骤
+  导致的总高度变化不再把视口拉回最后一条；用户主动滚轮下滚/PageDown/End 到底部后才恢复
+  跟随。回归：`ProcessRows_ExpandClickedMessage_NotBottomMessage`。
 - **Desktop 设置窗口保存后自动关闭**：`保存并生效` 成功落盘后触发
   `SettingsViewModel.Saved`，`SettingsView` 收到即关闭窗口（与 TUI SettingsDialog 保存后关闭一致）；
   `SettingsWindow` 支持 Esc 关闭；窗口退场动画加 400ms 看门狗：
@@ -72,7 +75,8 @@
   表格 cell padding/行高、引用/代码块模板）估算正文高度；表格按每行最大 cell 高度求和。
   估算值进入 Fenwick 高度索引，可见行实测后覆盖；回归：
   `MarkdownEstimator_MatchesRenderedNovelTextAndTable`（正文+标题+列表+表格+引用+代码块，
-  与真实 `MarkdownRenderer.DesiredSize` 误差 ≤2px）；Desktop 613/613。
+  与真实 `MarkdownRenderer.DesiredSize` 误差 ≤2px）；代码块按
+  `Styles/MarkdownStyles.axaml` 的 header/字体/margin 校准；Desktop 616/616。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

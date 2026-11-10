@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
@@ -46,6 +47,12 @@ public static class MarkdownHeightEstimator
         4
     );
 
+    // Vectorized (SearchValues) fast path for plain novel prose; Markdown syntax
+    // falls through to Markdig.
+    private static readonly SearchValues<char> MarkdownMarkers = SearchValues.Create(
+        "#*_`[]()!>|~\\"
+    );
+
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .UseCodeBlockSpanFixer()
@@ -59,16 +66,33 @@ public static class MarkdownHeightEstimator
     private const double QuotePaddingVertical = 0;
     private const double QuoteMarginVertical = 16; // base margin 0,8
     private const double QuoteHorizontalPadding = 0;
-    private const double CodeHeaderHeight = 24;
-    private const double CodeTextMarginVertical = 8;
-    private const double CodeBorderHeight = 2;
+
+    // 对齐 Desktop/Styles/MarkdownStyles.axaml 的代码块模板：
+    // 头部 = 22px 图标按钮 + 上下 5px padding + 1px 发丝分隔线；
+    // 正文 = MarkdownTextBlock 的 12,10 外边距 + 代码块 1px 外框。
+    private const double CodeHeaderHeight = 33;
+    private const double CodeHorizontalPadding = 26; // 12px × 2 + 1px × 2 外框
+    private const double CodeVerticalPadding = 22; // 10px × 2 + 1px × 2 外框
+    private const double CodeFontSize = 11;
+    private const double CodeLineHeight = 18;
+
+    // MarkdownStyles.axaml sets CodeBlock Margin=0,2; the renderer's StackPanel
+    // spacing is already counted separately by EstimateContainer.
+    private const double CodeMarginVertical = 4;
+    private static readonly FontFamily CodeFontFamily = new(
+        "Fragment Mono, Menlo, Consolas, monospace"
+    );
     private const double ThematicHeight = 1;
     private const double ThematicMarginVertical = 4;
 
     public static double EstimateDocument(string markdown, double width, Style? style = null)
     {
         var resolved = style ?? Conversation;
-        var document = Markdown.Parse(markdown ?? "", Pipeline);
+        var source = markdown ?? "";
+        if (source.AsSpan().IndexOfAny(MarkdownMarkers) < 0)
+            return EstimatePlainDocument(source, width, resolved);
+
+        var document = Markdown.Parse(source, Pipeline);
         var estimator = new Estimator(width, resolved);
         return estimator.EstimateContainer(document, width);
     }
@@ -90,6 +114,41 @@ public static class MarkdownHeightEstimator
         };
         probe.Measure(new Size(Math.Max(1, width), double.PositiveInfinity));
         return Math.Max(lineHeight, probe.DesiredSize.Height);
+    }
+
+    private static double EstimatePlainDocument(string source, double width, Style style)
+    {
+        var span = source.AsSpan();
+        var total = 0.0;
+        var paragraphs = 0;
+        while (!span.IsEmpty)
+        {
+            var separator = span.IndexOf("\n\n".AsSpan());
+            var end = separator < 0 ? span.Length : separator;
+            var paragraph = span[..end].Trim();
+            if (!paragraph.IsEmpty)
+            {
+                var text = paragraph.ToString();
+                var probe = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    FontFamily = style.FontFamily,
+                    FontSize = style.FontSize,
+                    LineHeight = style.LineHeight,
+                    Text = text,
+                };
+                probe.Measure(new Size(Math.Max(1, width), double.PositiveInfinity));
+                total +=
+                    Math.Max(style.LineHeight, probe.DesiredSize.Height) + style.ParagraphMargin;
+                paragraphs++;
+            }
+            if (separator < 0)
+                break;
+            span = span[(separator + 2)..];
+        }
+        if (paragraphs == 0)
+            return 0;
+        return total + Math.Max(0, paragraphs - 1) * style.ContainerSpacing;
     }
 
     /// <summary>Estimate one top-level block/segment (no document-level spacing).</summary>
@@ -187,11 +246,12 @@ public static class MarkdownHeightEstimator
             var text = ExtractCode(code);
             var codeHeight = MeasureText(
                 text,
-                _style.FontSize,
-                _style.LineHeight,
-                Math.Max(1, width - CodeTextMarginVertical)
+                CodeFontSize,
+                CodeLineHeight,
+                Math.Max(1, width - CodeHorizontalPadding),
+                CodeFontFamily
             );
-            return CodeHeaderHeight + CodeTextMarginVertical + codeHeight + CodeBorderHeight;
+            return CodeHeaderHeight + CodeVerticalPadding + CodeMarginVertical + codeHeight;
         }
 
         private double MeasureList(ListBlock list, double width)
@@ -259,11 +319,18 @@ public static class MarkdownHeightEstimator
             return Math.Max(1, width);
         }
 
-        private double MeasureText(string text, double fontSize, double lineHeight, double width)
+        private double MeasureText(
+            string text,
+            double fontSize,
+            double lineHeight,
+            double width,
+            FontFamily? fontFamily = null
+        )
         {
             if (string.IsNullOrEmpty(text))
                 return lineHeight;
 
+            _probe.FontFamily = fontFamily ?? _style.FontFamily;
             _probe.FontSize = fontSize;
             _probe.LineHeight = lineHeight;
             _probe.Text = text;

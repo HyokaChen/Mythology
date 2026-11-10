@@ -880,6 +880,87 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
+    [Fact]
+    public void ProcessRows_ExpandClickedMessage_NotBottomMessage()
+    {
+        Ui.Run(() =>
+        {
+            var messages = new List<Desktop.Models.ChatMessage>();
+            for (var i = 0; i < 10; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                message.AppendContent($"第 {i} 条回答");
+                message.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = $"工具 {i}",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                    }
+                );
+                message.IsProcessExpanded = false;
+                messages.Add(message);
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(b =>
+                                b.DataContext
+                                    is Desktop.Models.ConversationRow
+                                    {
+                                        Kind: Desktop.Models.ConversationRowKind.Process
+                                    }
+                            ),
+                    "过程行挂载"
+                );
+                var processButtons = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext
+                            is Desktop.Models.ConversationRow
+                            {
+                                Kind: Desktop.Models.ConversationRowKind.Process
+                            }
+                    )
+                    .ToList();
+                Assert.True(processButtons.Count >= 2);
+                processButtons[0]
+                    .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                for (var i = 0; i < 10; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+                Assert.True(messages[0].IsProcessExpanded);
+                Assert.False(messages[1].IsProcessExpanded);
+                Assert.False(
+                    view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                        "MessageList"
+                    )!.IsFollowing
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static ScrollViewer FindMessageScroll(Desktop.Views.ConversationView view) =>
         view.FindControl<ScrollViewer>("MessageScroll")
         ?? throw new InvalidOperationException("MessageScroll 未找到");

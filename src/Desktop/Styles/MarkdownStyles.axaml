@@ -1,0 +1,186 @@
+<!-- Adaline Markdown surfaces (DESIGN.md §Code Block Panel / §Category Tag)
+     LiveMarkdown 自带的是深色终端皮肤（#99000000 代码底 + #D7BA7D 内联字），
+     套在 Linen/Bone 的纸面消息里就是一块突兀的黑板。这里在第三方 Styles.axaml
+     之后重绘代码块与内联代码：
+       · 代码块 = 近白纸面 + 1px Mist 发丝线 + 0 圆角 + Fragment Mono 11px；
+       · 内联代码 = Eucalyptus 薄底 + Lichen 发丝边 + Forest Ink 字；
+     全部走 DynamicResource，深色主题切换时跟随 DesktopThemeService 的调色板。 -->
+<Styles
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:md="clr-namespace:LiveMarkdown.Avalonia;assembly=LiveMarkdown.Avalonia"
+>
+  <!-- ── 内联代码：字段注记，不是第二块黑板 ── -->
+  <Style Selector="md|MarkdownRenderer md|CodeInline">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptus}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="4,1" />
+    <Setter Property="Margin" Value="1,0" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+  </Style>
+
+  <!-- ── 代码块：印在纸上的终端片段，不是悬浮的深色卡片 ── -->
+  <Style Selector="md|CodeBlock">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="0" />
+    <!-- renderer 的 StackPanel 间距是 4；补 2 凑 DESIGN.md 的 6px 元素节奏 -->
+    <Setter Property="Margin" Value="0,2" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="md:CodeBlock">
+          <Border
+            x:Name="PART_CodePanel"
+            Background="{DynamicResource BrushSurfaceGlow}"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="1"
+            CornerRadius="0"
+          >
+            <Grid RowDefinitions="Auto,Auto">
+              <!-- 语言 / 控件行：与正文用 1px 发丝线分开，不另起一块色带 -->
+              <Border
+                x:Name="PART_CodeHeader"
+                Grid.Row="0"
+                Background="Transparent"
+                BorderBrush="{DynamicResource BrushMist}"
+                BorderThickness="0,0,0,1"
+                Padding="10,5"
+              >
+                <DockPanel LastChildFill="True">
+                  <TextBlock
+                    x:Name="PART_LanguageTextBlock"
+                    DockPanel.Dock="Left"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Center"
+                    Text="{TemplateBinding Language}"
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="10"
+                    LetterSpacing="0.4"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextTrimming="CharacterEllipsis"
+                  />
+
+                  <StackPanel
+                    DockPanel.Dock="Right"
+                    HorizontalAlignment="Right"
+                    Orientation="Horizontal"
+                    Spacing="2"
+                  >
+                    <ToggleButton
+                      x:Name="PART_ToggleTextWrapButton"
+                      Width="22"
+                      Height="22"
+                      Padding="0"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      CornerRadius="4"
+                      Focusable="False"
+                      IsChecked="{TemplateBinding IsCodeWrapped, Mode=TwoWay}"
+                      ToolTip.Tip="切换换行"
+                    >
+                      <Viewbox Width="13" Height="13">
+                        <Path
+                          Width="24"
+                          Height="24"
+                          Stroke="{DynamicResource BrushSageGray}"
+                          StrokeThickness="1.5"
+                        >
+                          <Path.Data>
+                            <GeometryGroup>
+                              <StreamGeometry>F1 M24,24z M0,0z M16,16L14,18 16,20</StreamGeometry>
+                              <StreamGeometry>
+                                F1 M24,24z M0,0z M3,12L18,12A3,3,0,1,1,18,18L14,18
+                              </StreamGeometry>
+                              <StreamGeometry>F1 M24,24z M0,0z M3,18L10,18</StreamGeometry>
+                              <StreamGeometry>F1 M24,24z M0,0z M3,6L21,6</StreamGeometry>
+                            </GeometryGroup>
+                          </Path.Data>
+                        </Path>
+                      </Viewbox>
+                    </ToggleButton>
+
+                    <Button
+                      x:Name="PART_CopyButton"
+                      Width="22"
+                      Height="22"
+                      Padding="0"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      CornerRadius="4"
+                      Focusable="False"
+                      ToolTip.Tip="复制"
+                    >
+                      <Viewbox Width="13" Height="13">
+                        <Path
+                          Width="24"
+                          Height="24"
+                          Stroke="{DynamicResource BrushSageGray}"
+                          StrokeThickness="1.5"
+                        >
+                          <Path.Data>
+                            <GeometryGroup>
+                              <RectangleGeometry RadiusX="2" RadiusY="2" Rect="8,8,14,14" />
+                              <StreamGeometry>
+                                F1 M24,24z M0,0z M4,16C2.9,16,2,15.1,2,14L2,4C2,2.9,2.9,2,4,2L14,2C15.1,2,16,2.9,16,4
+                              </StreamGeometry>
+                            </GeometryGroup>
+                          </Path.Data>
+                        </Path>
+                      </Viewbox>
+                    </Button>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+
+              <!-- 正文：Fragment Mono 11/18，行间不画卡片，只留纸面 -->
+              <ScrollViewer
+                x:Name="PART_ScrollViewer"
+                Grid.Row="1"
+                HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
+                VerticalScrollBarVisibility="Auto"
+              >
+                <md:MarkdownTextBlock
+                  x:Name="PART_CodeTextBlock"
+                  Classes="CodeBlockText"
+                  Margin="12,10"
+                  FontFamily="{TemplateBinding FontFamily}"
+                  FontSize="{TemplateBinding FontSize}"
+                  Foreground="{TemplateBinding Foreground}"
+                  LineHeight="18"
+                  TextWrapping="{TemplateBinding TextWrapping}"
+                />
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 头部按钮：透明底、Sage Gray 图标；hover 只给一层极淡的 Eucalyptus 雾，
+       不再沿用 SukiUI 的实色主色块（截图里那块深绿方格就是它）。 -->
+  <Style Selector="md|CodeBlock /template/ Button#PART_CopyButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="md|CodeBlock /template/ Button#PART_CopyButton:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+  <Style Selector="md|CodeBlock /template/ ToggleButton#PART_ToggleTextWrapButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="md|CodeBlock /template/ ToggleButton#PART_ToggleTextWrapButton:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+  </Style>
+  <Style Selector="md|CodeBlock /template/ ToggleButton#PART_ToggleTextWrapButton:checked">
+    <Setter Property="Background" Value="{DynamicResource BrushSageMistSelected}" />
+  </Style>
+</Styles>

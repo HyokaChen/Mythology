@@ -30,5 +30,8 @@
 
     <!-- LiveMarkdown 流式 Markdown 样式 -->
     <StyleInclude Source="avares://LiveMarkdown.Avalonia/Styles.axaml" />
+
+    <!-- Adaline 代码面：必须在第三方样式之后覆盖深色终端皮肤 -->
+    <StyleInclude Source="avares://MythDesktop/Styles/MarkdownStyles.axaml" />
   </Application.Styles>
 </Application>
