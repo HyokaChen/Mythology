@@ -240,10 +240,7 @@ src/Desktop/
     <PackageReference Include="ReactiveUI.Avalonia.Microsoft.Extensions.DependencyInjection" Version="12.1.1" />
 
     <!-- LiveMarkdown 流式渲染 -->
-    <PackageReference Include="LiveMarkdown.Avalonia" Version="2.4.0" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Math" Version="2.4.0" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Mermaid" Version="2.4.0" />
-    <PackageReference Include="LiveMarkdown.Avalonia.Svg" Version="2.4.0" />
+    <PackageReference Include="LiveMarkdown.Avalonia" Version="2.5.1" />
 
     <!-- 图标 -->
     <PackageReference Include="Lucide.Avalonia" Version="0.2.19" />
@@ -422,8 +419,7 @@ App.axaml
 ├── Application.Styles
 │   ├── suki:SukiTheme (Light 基色)
 │   ├── MythologyStyles.axaml (PillButton / Card / Eyebrow / 气泡 / 全局样式)
-│   ├── LiveMarkdown.Styles
-│   └── LiveMarkdown.Mermaid.Styles
+│   └── LiveMarkdown.Styles
 ```
 
 ### 6.3 MythologyTheme.axaml — Token 映射
@@ -741,7 +737,7 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 行/block 高度用 Fenwick 前缀索引维护，scroll offset → focusIndex 走二分；
   live window 是 `focusIndex ± buffer` 的固定节点窗口，最大节点数按视口/平均高度动态计算
   （行 48–200，block 16–40），不再每次全表扫描
-- 离屏重型 block（Mermaid / KaTeX / 超大代码块 / SVG）延迟创建；只有接近可见范围才挂
+- 离屏超大 block（>12k 字符的代码块/正文）延迟创建；只有接近可见范围才挂
   `MarkdownRenderer`，其余仅保留 spacer 高度
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
   尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding

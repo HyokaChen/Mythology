@@ -353,33 +353,9 @@ public sealed class VirtualizedMarkdownBody : Panel
         return bottom >= _visibleTop - margin && top <= _visibleBottom + margin;
     }
 
-    private static bool ShouldUseBlocks(string text) =>
-        text.Length > SingleRendererLimit
-        || (
-            text.Length > 4_000
-            && (
-                text.Contains("```mermaid", StringComparison.OrdinalIgnoreCase)
-                || text.Contains("$$", StringComparison.Ordinal)
-                || text.Contains("\\begin{", StringComparison.Ordinal)
-            )
-        );
+    private static bool ShouldUseBlocks(string text) => text.Length > SingleRendererLimit;
 
-    private static bool IsHeavySegment(string text)
-    {
-        var trimmed = text.TrimStart();
-        if (trimmed.Length >= HeavyDeferCharacters)
-            return true;
-        if (
-            trimmed.StartsWith("```mermaid", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("```math", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("```latex", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("```d2", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("$$", StringComparison.Ordinal)
-            || trimmed.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
-        )
-            return true;
-        return text.Contains("\\begin{", StringComparison.Ordinal);
-    }
+    private static bool IsHeavySegment(string text) => text.Length >= HeavyDeferCharacters;
 
     private static double BlockHeight(Block block)
     {

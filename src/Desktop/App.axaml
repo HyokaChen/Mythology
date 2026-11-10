@@ -30,6 +30,5 @@
 
     <!-- LiveMarkdown 流式 Markdown 样式 -->
     <StyleInclude Source="avares://LiveMarkdown.Avalonia/Styles.axaml" />
-    <StyleInclude Source="avares://LiveMarkdown.Avalonia.Mermaid/Styles.axaml" />
   </Application.Styles>
 </Application>

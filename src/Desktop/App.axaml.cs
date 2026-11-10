@@ -21,15 +21,8 @@ public class App : Application
     {
         AvaloniaXamlLoader.Load(this);
 
-        // ── LiveMarkdown 扩展节点注册（Math / Mermaid / Svg，与 LKK 一致） ──
-        MarkdownNode.Edit(builder =>
-            builder
-                .Register<MathInlineNode>()
-                .Register<MathBlockNode>()
-                .Register<MermaidBlockNode>()
-        );
-        MarkdownRenderer.ConfigurePipeline += x => x.UseMermaid();
-        AsyncImageLoader.DefaultDecoders = [SvgImageDecoder.Shared, DefaultBitmapDecoder.Shared];
+        // 小说正文只需要基础 Markdown（段落/标题/列表/表格/代码块/图片）。
+        // Math / Mermaid / Svg 扩展会引入不可估高的异步/图形控件，桌面端不注册。
     }
 
     public override void OnFrameworkInitializationCompleted()

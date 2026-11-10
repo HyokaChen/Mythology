@@ -7,7 +7,7 @@ namespace Desktop.Controls;
 /// <summary>
 /// 通用 Markdown 内容对话框（移植 TUI MarkdownDialog）：
 /// 显示 /help、/state、/history、/commands 等命令的富文本输出。
-/// 复用 LiveMarkdown.Avalonia 渲染器（已注册 Math/Mermaid 扩展节点）。
+/// 复用 LiveMarkdown.Avalonia 基础渲染器（小说正文不需要 Math/Mermaid 扩展）。
 /// 布局对齐 DESIGN.md（Adaline）：Linen 底 · 可滚动内容区。
 /// </summary>
 public partial class MarkdownDialog : Window
