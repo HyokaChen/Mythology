@@ -770,6 +770,11 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   突跳，外层 anchor 会把视口甩到另一段。回归：
   `BlockVirtualizedLongMessage_ScrollDownAtBoundary_DoesNotJumpToTail`、
   `VirtualizedScroll_WheelDownMidHistory_DoesNotJumpToTail`
+- 阅读窗口带滞回：焦点仍在当前窗口安全区时不 Remove/Insert，避免每一像素滚动都
+  触发 spacer + anchor 重算。Step 行不再是固定 54px：正文、思考详情、工具参数/
+  结果/diff 都按内容估算，展开过程后不再用固定值把总高度估错。回归：
+  `ExpandedProcess_ScrollDown_DoesNotGetPulledUp`、
+  `ProcessExpand_ThenScrollDown_DoesNotGetPulledUp`
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

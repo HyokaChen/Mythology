@@ -655,6 +655,290 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
+    [Fact]
+    public void ProcessExpand_ThenScrollDown_DoesNotGetPulledUp()
+    {
+        Ui.Run(() =>
+        {
+            for (var m = 0; m < 60; m++)
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                for (var s = 0; s < 8; s++)
+                {
+                    if (s % 2 == 0)
+                    {
+                        var step = new Desktop.Models.AgentStep
+                        {
+                            Kind = Desktop.Models.StepKind.Thinking,
+                            Status = Desktop.Models.AgentStepStatus.Completed,
+                            Title = $"思考 {m}-{s}",
+                        };
+                        step.ThinkingBuilder.Append(
+                            string.Join(" ", Enumerable.Repeat("展开后的详细过程正文。", 30))
+                        );
+                        step.NotifyThinkingChanged();
+                        message.AgentSteps.Add(step);
+                    }
+                    else
+                    {
+                        message.AgentSteps.Add(
+                            new Desktop.Models.AgentStep
+                            {
+                                Kind = Desktop.Models.StepKind.ToolCall,
+                                Title = $"工具 {m}-{s}",
+                                Status = Desktop.Models.AgentStepStatus.Completed,
+                                ArgumentsSummary = $"参数 {m}-{s}",
+                                ResultSummary = $"结果 {m}-{s}",
+                            }
+                        );
+                    }
+                }
+                message.IsProcessExpanded = false;
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 1000,
+                Height = 760,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始过程折叠");
+
+                var pointer = new Point(500, 380);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.45));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var button = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext
+                            is Desktop.Models.ConversationRow
+                            {
+                                Kind: Desktop.Models.ConversationRowKind.Process
+                            }
+                    )
+                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
+                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
+                    .OrderBy(x => x.Point!.Value.Y)
+                    .FirstOrDefault();
+                Assert.NotNull(button);
+                var processRow = (Desktop.Models.ConversationRow)button!.Button.DataContext!;
+                var processMessage = processRow.Message;
+                var click = button.Button.TranslatePoint(
+                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(click);
+                window.MouseMove(click!.Value);
+                window.MouseDown(click.Value, MouseButton.Left);
+                window.MouseUp(click.Value, MouseButton.Left);
+                for (var i = 0; i < 40; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+                Assert.True(processMessage.IsProcessExpanded);
+                Assert.False(list.IsFollowing);
+
+                // 再展开当前可见的思考详情：详情内部是 320px 限高滚动区，
+                // 外层行高变化最容易把 anchor 拉回上方。
+                var detailsButton = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext
+                            is Desktop.Models.ConversationRow
+                            {
+                                Step: { Kind: Desktop.Models.StepKind.Thinking },
+                            }
+                        && Equals(b.Content, "展开")
+                    )
+                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
+                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
+                    .FirstOrDefault();
+                if (detailsButton is not null)
+                {
+                    var detailsClick = detailsButton.Button.TranslatePoint(
+                        new Point(
+                            detailsButton.Button.Bounds.Width / 2,
+                            detailsButton.Button.Bounds.Height / 2
+                        ),
+                        window
+                    );
+                    Assert.NotNull(detailsClick);
+                    window.MouseMove(detailsClick!.Value);
+                    window.MouseDown(detailsClick.Value, MouseButton.Left);
+                    window.MouseUp(detailsClick.Value, MouseButton.Left);
+                    for (var i = 0; i < 40; i++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.True(
+                        ((Desktop.Models.ConversationRow)detailsButton.Button.DataContext!)
+                            .Step!
+                            .IsDetailsExpanded
+                    );
+                    Assert.False(list.IsFollowing);
+                }
+
+                window.MouseMove(pointer);
+                var before = sv.Offset.Y;
+                for (var i = 0; i < 20; i++)
+                {
+                    if (AtBottom(sv))
+                        break;
+                    window.MouseWheel(pointer, new Vector(0, -2));
+                    for (var j = 0; j < 12; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.False(
+                        list.IsFollowing && !AtBottom(sv),
+                        $"展开后第 {i} 次下滚在未到底时恢复跟随：offset={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    Assert.True(
+                        sv.Offset.Y >= before - 3,
+                        $"展开后下滚被拉回上方：before={before}, now={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    before = sv.Offset.Y;
+                }
+                Assert.True(AtBottom(sv), "展开过程后无法滚到底部");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 过程展开后大量 Step 行的真实高度与固定估算差异很大；用户向下滚动时
+    /// anchor 不能因为高度修正把视口反复拉回上方。
+    /// </summary>
+    [Fact]
+    public void ExpandedProcess_ScrollDown_DoesNotGetPulledUp()
+    {
+        Ui.Run(() =>
+        {
+            for (var m = 0; m < 40; m++)
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                for (var s = 0; s < 16; s++)
+                {
+                    if (s % 2 == 0)
+                    {
+                        var step = new Desktop.Models.AgentStep
+                        {
+                            Kind = Desktop.Models.StepKind.Thinking,
+                            Status = Desktop.Models.AgentStepStatus.Completed,
+                            Title = $"思考 {m}-{s}",
+                        };
+                        step.ThinkingBuilder.Append(
+                            string.Join(" ", Enumerable.Repeat("这是一段较长的思考正文。", 20))
+                        );
+                        step.NotifyThinkingChanged();
+                        step.IsDetailsExpanded = true;
+                        message.AgentSteps.Add(step);
+                    }
+                    else
+                    {
+                        message.AgentSteps.Add(
+                            new Desktop.Models.AgentStep
+                            {
+                                Kind = Desktop.Models.StepKind.ToolCall,
+                                Title = $"工具 {m}-{s}",
+                                Status = Desktop.Models.AgentStepStatus.Completed,
+                                ArgumentsSummary = $"参数 {m}-{s}",
+                                ResultSummary = $"结果 {m}-{s}",
+                                FullResult = string.Join(
+                                    "\n",
+                                    Enumerable.Repeat("工具完整结果", 40)
+                                ),
+                            }
+                        );
+                    }
+                }
+                message.IsProcessExpanded = true;
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "展开过程贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止过程跟随");
+
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.45));
+                for (var i = 0; i < 40; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var before = sv.Offset.Y;
+                for (var i = 0; i < 8; i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -2));
+                    for (var j = 0; j < 12; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.False(list.IsFollowing, $"过程第 {i} 次下滚不应恢复跟随");
+                    Assert.True(
+                        sv.Offset.Y >= before - 2,
+                        $"过程下滚被拉回上方：before={before}, now={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    before = sv.Offset.Y;
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     /// <summary>
     /// 单条超长消息会进入 block 级虚拟化；滚动到 block 边界时不能把外层
     /// 视口甩到尾部（block 高度在 realize 边界必须保持稳定）。
@@ -1147,8 +1431,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.True(messages[0].IsProcessExpanded);
                 Assert.False(messages[1].IsProcessExpanded);
                 Assert.False(list.IsFollowing);
-                var stepRow = list.Items
-                    .OfType<Desktop.Models.ConversationRow>()
+                var stepRow = list
+                    .Items.OfType<Desktop.Models.ConversationRow>()
                     .FirstOrDefault(row =>
                         ReferenceEquals(row.Message, messages[0])
                         && row.Kind == Desktop.Models.ConversationRowKind.Step

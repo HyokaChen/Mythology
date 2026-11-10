@@ -90,6 +90,7 @@ public partial class ConversationView : UserControl
     private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
     private ConversationViewModel? _messagesVm;
     private bool _windowSyncScheduled;
+    private bool _forceWindowSync;
     private bool _syncingWindow;
     private bool _captureScheduled;
     private bool _restoringOffset;
@@ -162,6 +163,7 @@ public partial class ConversationView : UserControl
                     if (item is ChatMessage message)
                         RemoveRowsForMessage(message);
                 RebuildHeightIndex();
+                _forceWindowSync = true;
                 RequestWindowSync();
                 break;
             case NotifyCollectionChangedAction.Reset:
@@ -319,6 +321,21 @@ public partial class ConversationView : UserControl
         var offset = MessageScroll.Offset.Y;
         var anchor = CaptureAnchor(offset);
         var focus = _heightIndex.IndexAtOffset(offset + viewport * 0.5);
+
+        // 阅读历史时保留当前窗口，只有焦点接近窗口边缘才换页。
+        // 每滚一个像素就 Remove/Insert + RestoreAnchor，会让高度估算误差
+        // 变成持续的“往下滚反而被拉回上方”。
+        var currentStart = _windowRows.Count > 0 ? _rows.IndexOf(_windowRows[0]) : -1;
+        var currentEnd = currentStart < 0 ? -1 : currentStart + _windowRows.Count;
+        if (!_forceWindowSync && currentStart >= 0 && currentEnd <= _rows.Count)
+        {
+            var safeStart = currentStart + LiveBufferRows;
+            var safeEnd = currentEnd - LiveBufferRows;
+            if (focus >= safeStart && focus <= safeEnd)
+                return;
+        }
+        _forceWindowSync = false;
+
         var maxLive = GetMaxLiveRows();
         var start = Math.Clamp(focus - LiveBufferRows, 0, Math.Max(0, _rows.Count - maxLive));
         var end = Math.Min(_rows.Count, start + maxLive);
@@ -471,9 +488,11 @@ public partial class ConversationView : UserControl
             return height;
         }
 
+        if (row.Kind == ConversationRowKind.Step && row.Step is { } step)
+            return EstimateStepHeight(step, row);
+
         return row.Kind switch
         {
-            ConversationRowKind.Step => 54,
             ConversationRowKind.Process => 30,
             ConversationRowKind.Waiting => 30,
             ConversationRowKind.Interrupted => 28,
@@ -500,6 +519,105 @@ public partial class ConversationView : UserControl
         return MarkdownHeightEstimator.EstimatePlainText(content, textWidth, 15, 24)
             + 20 // Bubble padding 10*2
             + row.Margin.Bottom;
+    }
+
+    private double EstimateStepHeight(AgentStep step, ConversationRow row)
+    {
+        var width = Math.Max(160, _estimateWidth);
+        var bodyWidth = Math.Max(160, width - 18);
+        var height = 0.0;
+
+        if (step.IsContentStep)
+        {
+            // AgentBubble: 16,12 padding + 1px border；Border 模板内还有 0,4 外边距。
+            height +=
+                MarkdownHeightEstimator.EstimateDocument(
+                    step.ContentText,
+                    Math.Max(160, width - 34),
+                    MarkdownHeightEstimator.Step
+                ) + 34;
+        }
+        else if (step.IsNoticeStep)
+        {
+            height +=
+                MarkdownHeightEstimator.EstimatePlainText(step.ContentText, bodyWidth, 11, 16) + 2;
+        }
+        else if (step.IsStepHeader)
+        {
+            height += 20; // 12px status icon / 11px title line + grid margin
+            if (step.HasResult)
+                height +=
+                    2
+                    + MarkdownHeightEstimator.EstimatePlainText(
+                        step.ResultSummary ?? "",
+                        bodyWidth,
+                        11,
+                        16
+                    );
+            if (step.ShowStreamingPreview)
+                height += 42; // StreamingReasoningPreview 固定 40 + spacing
+            if (step.IsDetailsExpanded)
+                height += EstimateStepDetailsHeight(step, bodyWidth);
+        }
+
+        return Math.Max(24, height) + row.Margin.Bottom;
+    }
+
+    private static double EstimateStepDetailsHeight(AgentStep step, double bodyWidth)
+    {
+        var height = 2.0; // StepDetails.Margin top
+        var items = 0;
+
+        void Add(double value)
+        {
+            if (items++ > 0)
+                height += 4; // StepDetails.Spacing
+            height += value;
+        }
+
+        if (step.HasThinking)
+            Add(
+                Math.Min(
+                    320,
+                    MarkdownHeightEstimator.EstimatePlainText(step.ThinkingText, bodyWidth, 12, 16)
+                )
+            );
+        if (step.HasDetailArguments)
+        {
+            Add(16); // 「参数」Eyebrow
+            Add(
+                Math.Min(
+                    240,
+                    MarkdownHeightEstimator.EstimatePlainText(
+                        step.DetailArguments ?? "",
+                        bodyWidth,
+                        11,
+                        16
+                    )
+                )
+            );
+        }
+        if (step.HasResultDetail && step.ShowRawResultDetail)
+        {
+            Add(16); // 「结果」Eyebrow
+            Add(
+                Math.Min(
+                    320,
+                    MarkdownHeightEstimator.EstimatePlainText(
+                        step.DetailResult ?? "",
+                        bodyWidth,
+                        11,
+                        16
+                    )
+                )
+            );
+        }
+        if (step.HasDiff)
+        {
+            Add(16); // DiffSummary
+            Add(Math.Min(320, step.DiffLines.Count * 18 + 8));
+        }
+        return height;
     }
 
     private void UpdateEstimateWidth()
@@ -724,6 +842,7 @@ public partial class ConversationView : UserControl
             selected[i].IsLastInMessage = i == selected.Count - 1;
         _rowsByMessage[message] = selected;
         RebuildHeightIndex();
+        _forceWindowSync = true;
         RequestWindowSync();
     }
 
