@@ -1458,6 +1458,7 @@ public sealed class ConversationLoop(
         var fullText = new StringBuilder(2048);
         var reasoningText = new StringBuilder(512);
         var toolCallsCollected = new List<(string Id, string Name, string Arguments)>(4);
+        var toolStreamTracker = new ToolCallStreamTracker();
 
         // 记录调用前的消息数量，用于后续同步新增消息（必须在 nudge 注入之前）
         var messagesBeforeCall = _conversation?.Messages.Count ?? 0;
@@ -1579,6 +1580,26 @@ public sealed class ConversationLoop(
                 }
             },
 
+            // 工具调用参数开始流式生成：这是 ToolExecutionStart 之前的真实边界。
+            // 不解析/不转发原始 JSON，只发出一次 Started，让 UI 立即建 pending 卡。
+            FunctionCallDeltaHandler = async update =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var started = toolStreamTracker.Observe(update);
+                if (started is null)
+                    return;
+                if (HiddenTools.IsHidden(started.ToolName))
+                    return;
+
+                logger?.LogDebug(
+                    "Tool call stream started: {Tool} key={Key} index={Index}",
+                    started.ToolName,
+                    started.ToolCallKey,
+                    started.Index
+                );
+                await emit(started, ct);
+            },
+
             // 处理 Function Calls（工具调用）
             FunctionCallHandler = async calls =>
             {
@@ -1594,6 +1615,14 @@ public sealed class ConversationLoop(
                 // 根据工具执行模式选择并行或串行执行。
                 // 全局 Parallel + 多调用 → 混合调度：ExecutionMode=Sequential 的写入类工具
                 // 先逐个串行执行（避免并发读改写同一文件），其余 Parallel 工具再并发执行。
+                Task ExecuteAsync(FunctionCall call) =>
+                    ExecuteFunctionCallAsync(
+                        call,
+                        emit,
+                        ct,
+                        toolStreamTracker.ResolveExecutionKey(call)
+                    );
+
                 if (toolExecution == ToolExecutionMode.Parallel && calls.Count > 1)
                 {
                     var (sequential, parallel) = PartitionByExecutionMode(
@@ -1602,13 +1631,11 @@ public sealed class ConversationLoop(
                     );
 
                     foreach (var call in sequential)
-                        await ExecuteFunctionCallAsync(call, emit, ct);
+                        await ExecuteAsync(call);
 
                     if (parallel.Count > 0)
                     {
-                        var tasks = parallel
-                            .Select(call => ExecuteFunctionCallAsync(call, emit, ct))
-                            .ToArray();
+                        var tasks = parallel.Select(call => ExecuteAsync(call)).ToArray();
                         await Task.WhenAll(tasks);
                     }
                 }
@@ -1616,7 +1643,7 @@ public sealed class ConversationLoop(
                 {
                     foreach (var call in calls)
                     {
-                        await ExecuteFunctionCallAsync(call, emit, ct);
+                        await ExecuteAsync(call);
                     }
                 }
             },
@@ -1654,6 +1681,25 @@ public sealed class ConversationLoop(
                 }
 
                 _continueLoop = !_stopAfterTool;
+            },
+
+            // 本次 LLM 流结束：真实 OnFinished 边界，不是计时器/静默推断。
+            // 该回调在 v3.8.82 中位于工具执行之后；UI 用它重新亮起等待行，
+            // 直到 ReAct loop 的下一轮 TurnStart 或 AgentEnd。
+            OnFinished = async data =>
+            {
+                if (ct.IsCancellationRequested)
+                    return;
+
+                await emit(
+                    new LlmStreamFinished(
+                        data.FinishReason,
+                        toolCallsCollected.Count > 0,
+                        fullText.Length > 0,
+                        reasoningText.Length > 0
+                    ),
+                    ct
+                );
             },
 
             // Token 用量追踪（thinking-aware）
@@ -2034,6 +2080,7 @@ public sealed class ConversationLoop(
         FunctionCall call,
         string toolCallId,
         string toolName,
+        string toolCallKey,
         Func<AgentEvent, CancellationToken, Task> emit,
         CancellationToken ct
     )
@@ -2047,7 +2094,10 @@ public sealed class ConversationLoop(
             [new FunctionResultBlockText(message)],
             invocationSucceeded: false
         );
-        await emit(new ToolExecutionEnd(toolCallId, true, message), ct);
+        await emit(
+            new ToolExecutionEnd(toolCallId, true, message) { ToolCallKey = toolCallKey },
+            ct
+        );
     }
 
     /// <summary>
@@ -2057,12 +2107,14 @@ public sealed class ConversationLoop(
     internal async Task ExecuteFunctionCallAsync(
         FunctionCall call,
         Func<AgentEvent, CancellationToken, Task> emit,
-        CancellationToken ct
+        CancellationToken ct,
+        string? streamKey = null
     )
     {
         ct.ThrowIfCancellationRequested();
 
         var toolCallId = call.ToolCall?.Id ?? Guid.NewGuid().ToString("N")[..12];
+        var toolCallKey = streamKey ?? ToolCallStreamTracker.ResolveKey(call);
         var toolName = call.Name;
         var rawArguments = call.Arguments;
         var arguments = string.IsNullOrWhiteSpace(rawArguments) ? "{}" : rawArguments;
@@ -2071,7 +2123,10 @@ public sealed class ConversationLoop(
         // 未注册工具的 End 会带 IsError（下面那条分支），卡片据此渲染失败态。
         // 若只在注册成功后发 Start，未注册工具就变成「只有 End 的孤儿」——
         // Cli/Tui/Desktop 三端都会静默丢弃，用户看不到任何痕迹。
-        await emit(new ToolExecutionStart(toolCallId, toolName, arguments), ct);
+        await emit(
+            new ToolExecutionStart(toolCallId, toolName, arguments) { ToolCallKey = toolCallKey },
+            ct
+        );
 
         var tool = _toolRegistry.TryGet(toolName);
 
@@ -2083,7 +2138,13 @@ public sealed class ConversationLoop(
                 [new FunctionResultBlockText($"错误：未找到工具「{toolName}」")],
                 invocationSucceeded: false
             );
-            await emit(new ToolExecutionEnd(toolCallId, true, $"未找到工具「{toolName}」"), ct);
+            await emit(
+                new ToolExecutionEnd(toolCallId, true, $"未找到工具「{toolName}」")
+                {
+                    ToolCallKey = toolCallKey,
+                },
+                ct
+            );
             return;
         }
 
@@ -2096,7 +2157,7 @@ public sealed class ConversationLoop(
                 "工具 {Tool} 的 arguments 为空，已拒绝执行并规范化为 {{}}",
                 toolName
             );
-            await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, emit, ct);
+            await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, toolCallKey, emit, ct);
             return;
         }
 
@@ -2127,7 +2188,7 @@ public sealed class ConversationLoop(
                     "工具 {Tool} 的 arguments 非法且无法修复，已拒绝执行并规范化为 {{}}",
                     toolName
                 );
-                await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, emit, ct);
+                await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, toolCallKey, emit, ct);
                 return;
             }
         }
@@ -2170,7 +2231,10 @@ public sealed class ConversationLoop(
                 );
 
                 await emit(
-                    new ToolExecutionEnd(toolCallId, true, beforeResult.Reason ?? "blocked"),
+                    new ToolExecutionEnd(toolCallId, true, beforeResult.Reason ?? "blocked")
+                    {
+                        ToolCallKey = toolCallKey,
+                    },
                     ct
                 );
                 return;
@@ -2249,7 +2313,10 @@ public sealed class ConversationLoop(
                     false,
                     ToolDispatcher.ExtractText(toolResult.Content),
                     toolResult.Details
-                ),
+                )
+                {
+                    ToolCallKey = toolCallKey,
+                },
                 ct
             );
         }
@@ -2265,7 +2332,10 @@ public sealed class ConversationLoop(
                 Content = [new TextContent($"工具执行失败：{ex.Message}")],
                 IsError = true,
             };
-            await emit(new ToolExecutionEnd(toolCallId, true, ex.Message), ct);
+            await emit(
+                new ToolExecutionEnd(toolCallId, true, ex.Message) { ToolCallKey = toolCallKey },
+                ct
+            );
         }
 
         // 设置 FunctionCall.Result，供 LlmTornado 后续处理

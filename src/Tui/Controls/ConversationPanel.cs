@@ -29,6 +29,7 @@ public sealed class ConversationPanel
     private readonly Dictionary<string, int> _toolCallItemIndices = new(); // 工具调用项索引
     private readonly Dictionary<string, string> _toolCallNames = new(); // 工具调用名称
     private readonly Dictionary<string, string> _toolCallArgs = new(); // 工具调用参数
+    private readonly HashSet<string> _pendingToolKeys = new(); // 参数生成中、尚未开始执行的工具 key
     private readonly Dictionary<string, int> _steerWaitingIndices = new(); // steerId → waiting 占位索引
     private readonly Queue<string> _steerWaitingIds = new(); // Waiting 占位 ID 的 FIFO 队列
     private int? _compactProgressIndex; // compact 进行中的占位索引
@@ -233,12 +234,50 @@ public sealed class ConversationPanel
 
         _adapter.OnAssistantEnd += _ => _streamBubbleManager.FinalizeAssistant();
 
-        _adapter.OnToolStart += (id, name, args) =>
+        _adapter.OnToolPending += (id, name) =>
         {
             // 上下文接续机制对用户隐藏（new_context / history_* 不渲染）
             if (HiddenTools.IsHidden(name))
+            {
+                _pendingToolKeys.Remove(id);
+                return;
+            }
+
+            // 参数流一旦开始，思考阶段已经确定结束；收口 thinking 泡泡的 spinner。
+            _streamBubbleManager.FinalizeThinking();
+
+            // Started 只发一次；防御性去重，避免 provider alias 变化导致重复卡。
+            if (_toolCallItemIndices.ContainsKey(id))
                 return;
 
+            _toolCallNames[id] = name;
+            _toolCallArgs[id] = "";
+            _pendingToolKeys.Add(id);
+
+            var item = ToolCallRenderer.BuildToolCallItem(
+                name,
+                "正在生成参数…",
+                "",
+                isRunning: true,
+                isError: false,
+                _colors
+            );
+
+            Flow.Items.Add(item);
+            _toolCallItemIndices[id] = Flow.Items.Count - 1;
+        };
+
+        _adapter.OnToolStart += (id, name, args) =>
+        {
+            // 与 OnToolPending 对称：隐藏工具从未建卡
+            if (HiddenTools.IsHidden(name))
+            {
+                _pendingToolKeys.Remove(id);
+                return;
+            }
+
+            _streamBubbleManager.FinalizeThinking();
+            _pendingToolKeys.Remove(id);
             _toolCallNames[id] = name;
             _toolCallArgs[id] = args;
 
@@ -253,16 +292,30 @@ public sealed class ConversationPanel
                 argsJson: args
             );
 
+            // pending 卡已由参数流事件建好：原地切换为执行中，绝不新增第二张卡。
+            if (
+                _toolCallItemIndices.TryGetValue(id, out var idx)
+                && idx >= 0
+                && idx < Flow.Items.Count
+            )
+            {
+                Flow.Items[idx] = item;
+                return;
+            }
+
             Flow.Items.Add(item);
             _toolCallItemIndices[id] = Flow.Items.Count - 1;
         };
 
         _adapter.OnToolEnd += (id, _, isError, result, details) =>
         {
+            _pendingToolKeys.Remove(id);
+
             // 与 OnToolStart 对称：隐藏工具从未建卡，End 直接早退
             if (!_toolCallNames.ContainsKey(id))
             {
                 _toolCallArgs.Remove(id);
+                _toolCallItemIndices.Remove(id);
                 return;
             }
 
@@ -306,12 +359,14 @@ public sealed class ConversationPanel
 
         _adapter.OnInterrupted += () =>
         {
+            FinalizeToolCalls(interrupted: true);
             AgentStateChanged?.Invoke(TuiState.Idle);
             AddInterruptMessage();
         };
 
         _adapter.OnError += (rawMessage, httpStatusCode, isContextOverflow, recoverable) =>
         {
+            FinalizeToolCalls(interrupted: false);
             AgentStateChanged?.Invoke(TuiState.Idle);
             AddErrorMessage(rawMessage, httpStatusCode, isContextOverflow, recoverable);
         };
@@ -319,6 +374,7 @@ public sealed class ConversationPanel
         _adapter.OnAgentStart += () => AgentStateChanged?.Invoke(TuiState.Run);
         _adapter.OnAgentEnd += () =>
         {
+            FinalizeToolCalls(interrupted: false);
             AgentStateChanged?.Invoke(TuiState.Idle);
             AgentTurnEnded?.Invoke();
         };
@@ -399,6 +455,57 @@ public sealed class ConversationPanel
     }
 
     /// <summary>
+    /// 收口仍处于 pending/执行中的工具卡。AgentEnd / 中断 / 错误时调用，
+    /// 避免参数流或执行流缺少 End 事件时留下永久 spinner。
+    /// </summary>
+    private void FinalizeToolCalls(bool interrupted)
+    {
+        _streamBubbleManager.FinalizeThinking();
+
+        if (_toolCallItemIndices.Count == 0)
+        {
+            _pendingToolKeys.Clear();
+            return;
+        }
+
+        foreach (var key in _toolCallItemIndices.Keys.ToList())
+        {
+            var wasPending = _pendingToolKeys.Contains(key);
+            var toolName = _toolCallNames.GetValueOrDefault(key, "tool");
+            var argsStr = _toolCallArgs.GetValueOrDefault(key, "");
+
+            _toolCallNames.Remove(key);
+            _toolCallArgs.Remove(key);
+            _pendingToolKeys.Remove(key);
+
+            if (!_toolCallItemIndices.Remove(key, out var idx))
+                continue;
+            if (idx < 0 || idx >= Flow.Items.Count)
+                continue;
+
+            var tool = _registry.TryGet(toolName);
+            var reason = interrupted ? "已中断" : wasPending ? "未执行" : "未完成";
+            var (subtitle, paramDisplay) = ToolCallRenderer.ParseToolArgs(argsStr);
+
+            Flow.Items[idx] = ToolCallRenderer.BuildToolCallResultItem(
+                tool?.Category ?? ToolCategory.Generic,
+                tool?.EntityType,
+                toolName,
+                string.IsNullOrWhiteSpace(subtitle) ? reason : $"{subtitle} · {reason}",
+                paramDisplay,
+                isError: true,
+                reason,
+                _colors,
+                onNavigateToEntity: OnNavigateToEntity,
+                details: null,
+                argsJson: argsStr
+            );
+        }
+
+        _pendingToolKeys.Clear();
+    }
+
+    /// <summary>
     /// 应用主题颜色。
     /// </summary>
     /// <param name="colors">面板颜色配置。</param>
@@ -434,6 +541,8 @@ public sealed class ConversationPanel
         Flow.Items.Clear();
         _toolCallItemIndices.Clear();
         _toolCallNames.Clear();
+        _toolCallArgs.Clear();
+        _pendingToolKeys.Clear();
         _streamBubbleManager.Clear();
         AddHeader();
     }

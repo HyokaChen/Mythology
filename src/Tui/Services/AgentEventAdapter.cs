@@ -70,16 +70,25 @@ public sealed class AgentEventAdapter
                 }
                 break;
 
+            // 工具参数开始生成（ToolExecutionStart 之前的真实边界）
+            case ToolCallStreamStarted tcs:
+                Enqueue(() => OnToolPending?.Invoke(tcs.ToolCallKey, tcs.ToolName));
+                break;
+
             // 工具执行开始
             case ToolExecutionStart tes:
-                Enqueue(() => OnToolStart?.Invoke(tes.ToolCallId, tes.ToolName, tes.Arguments));
+                Enqueue(() => OnToolStart?.Invoke(
+                    tes.ToolCallKey ?? tes.ToolCallId,
+                    tes.ToolName,
+                    tes.Arguments
+                ));
                 break;
 
             // 工具执行结束
             case ToolExecutionEnd tee:
                 Enqueue(() =>
                     OnToolEnd?.Invoke(
-                        tee.ToolCallId,
+                        tee.ToolCallKey ?? tee.ToolCallId,
                         "",
                         tee.IsError,
                         tee.Result ?? "",
@@ -185,6 +194,9 @@ public sealed class AgentEventAdapter
 
     /// <summary>Assistant 结束事件。</summary>
     public event Action<string>? OnAssistantEnd;
+
+    /// <summary>工具参数开始生成事件。参数：稳定关联 key, 工具名。</summary>
+    public event Action<string, string>? OnToolPending;
 
     /// <summary>工具开始执行事件。</summary>
     public event Action<string, string, string>? OnToolStart;

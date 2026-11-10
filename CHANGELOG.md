@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Desktop 工具参数流式阶段的等待行空档**：模型开始流式生成工具调用参数、但
+  `ToolExecutionStart` 尚未到达时，对话内不再出现空白间隙。Core 新增
+  `ToolCallStreamStarted` / `LlmStreamFinished`，分别由
+  `FunctionCallDeltaHandler` 与 `OnFinished` 的真实回调产生；Desktop 在首个参数
+  delta 立即创建「正在生成参数…」pending 工具卡，`ToolExecutionStart` 按
+  `ToolCallKey` 原地复用，`ToolExecutionEnd` / `LlmStreamFinished` 后重新亮起
+  等待行；TUI 同步 pending 卡与未收口工具卡的失败态。回归：
+  `ToolCallStreamTrackerTests`、Desktop/TUI `ToolCallStreamingTests`、
+  `ConversationVmContractTests.WaitingRow_ShowsDuringToolArgumentStream_AndPendingCardIsReused`；
+  Core 1604/1604、Desktop 639/639、TUI 889 passed（2 skipped）。
+
 ### Changed
 - **Desktop 对话等待行覆盖阶段间隙**：等待行不再只在回合开头出现。思考结束
   （`ThinkingEnd`）、工具结束（`ToolExecutionEnd`）、下一轮（`TurnStart`）时，只要没有

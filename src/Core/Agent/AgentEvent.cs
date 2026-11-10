@@ -1,4 +1,5 @@
 using LlmTornado.Chat;
+using LlmTornado.Code;
 
 namespace Core.Agent;
 
@@ -59,12 +60,43 @@ public sealed record StreamChunk(
     StreamContentType ContentType
 ) : AgentEvent;
 
+/// <summary>
+/// 模型开始流式生成一次工具调用（参数尚未完整）。
+/// 由 LlmTornado 的 FunctionCallDeltaHandler 产生，早于 ToolExecutionStart；
+/// UI 用它立即建立 pending 工具卡，填满“思考结束 → 工具卡出现”的空白，
+/// 而不是靠 token 静默/计时器猜阶段边界。
+/// </summary>
+public sealed record ToolCallStreamStarted(
+    string ToolCallKey,
+    string ToolName,
+    int? Index
+) : AgentEvent;
+
+/// <summary>
+/// 本次 LLM 流结束事件（OnFinished）。
+/// 之后由 ReAct Loop 决定是否发起下一轮；UI 用它作为“本轮暂时没有更多流式输出”的边界，
+/// 在没有 processing 步骤时重新亮起等待行。
+/// </summary>
+public sealed record LlmStreamFinished(
+    ChatMessageFinishReasons FinishReason,
+    bool HadToolCalls,
+    bool HadText,
+    bool HadThinking
+) : AgentEvent;
+
 /// <summary>消息结束事件。</summary>
 public sealed record MessageEnd(ChatMessage Message) : AgentEvent;
 
 /// <summary>工具执行开始事件。</summary>
 public sealed record ToolExecutionStart(string ToolCallId, string ToolName, string Arguments)
-    : AgentEvent;
+    : AgentEvent
+{
+    /// <summary>
+    /// 与 <see cref="ToolCallStreamStarted.ToolCallKey"/> 一致的关联键；
+    /// 为空时 UI 回退到 <see cref="ToolCallId"/>。
+    /// </summary>
+    public string? ToolCallKey { get; init; }
+}
 
 /// <summary>工具执行进度更新事件。</summary>
 public sealed record ToolExecutionUpdate(string ToolCallId, string? PartialResult) : AgentEvent;
@@ -75,7 +107,14 @@ public sealed record ToolExecutionEnd(
     bool IsError,
     string? Result,
     object? Details = null
-) : AgentEvent;
+) : AgentEvent
+{
+    /// <summary>
+    /// 与 <see cref="ToolCallStreamStarted.ToolCallKey"/> 一致的关联键；
+    /// 为空时 UI 回退到 <see cref="ToolCallId"/>。
+    /// </summary>
+    public string? ToolCallKey { get; init; }
+}
 
 /// <summary>断路器触发事件，防止重复调用同一工具。</summary>
 public sealed record CircuitBreakerTriggered(

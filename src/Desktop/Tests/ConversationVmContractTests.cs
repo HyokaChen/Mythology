@@ -364,6 +364,64 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
+    /// 工具参数流式阶段：思考结束后空白正文不能收起等待行；首个
+    /// <see cref="ToolCallStreamStarted"/> 立即建 pending 卡并接管执行中状态，
+    /// <see cref="ToolExecutionStart"/> 必须复用同一张卡，工具结束/流结束后
+    /// 等待行重新亮起且不残留 processing 步骤。
+    /// </summary>
+    [Fact]
+    public async Task WaitingRow_ShowsDuringToolArgumentStream_AndPendingCardIsReused()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        vm.Engine.NewSession();
+
+        await vm.SendEnginePromptAsync("写一段雨中送别");
+        var agent = vm.Messages[^1];
+        vm.SetProcessing(true);
+
+        vm.HandleAgentEvent(new StreamChunk("先分析", "", StreamContentType.Thinking));
+        vm.HandleAgentEvent(new StreamChunk("", "", StreamContentType.ThinkingEnd));
+
+        // 模型在工具参数前可能流空白正文；等待行必须保持可见。
+        vm.HandleAgentEvent(new StreamChunk("\n\n", "", StreamContentType.Text));
+        Assert.True(agent.IsWaiting);
+
+        // 首个工具参数 delta：立即建 pending 卡，等待行收起。
+        vm.HandleAgentEvent(new ToolCallStreamStarted("call_1", "edit_entities", 0));
+        Assert.False(agent.IsWaiting);
+        var tool = Assert.Single(agent.AgentSteps.Where(s => s.Kind == StepKind.ToolCall));
+        Assert.True(tool.IsProcessing);
+        Assert.Equal("正在生成参数…", tool.ArgumentsSummary);
+
+        // 参数生成完，执行开始：原地复用，不新增第二张卡。
+        var stepCount = agent.AgentSteps.Count;
+        vm.HandleAgentEvent(
+            new ToolExecutionStart("call_1", "edit_entities", """{"id":"林月如"}""")
+            {
+                ToolCallKey = "call_1",
+            }
+        );
+        Assert.Equal(stepCount, agent.AgentSteps.Count);
+        Assert.Same(tool, agent.AgentSteps[^1]);
+        Assert.True(tool.IsProcessing);
+
+        // 工具结束：等待行重新亮起。
+        vm.HandleAgentEvent(
+            new ToolExecutionEnd("call_1", false, "ok") { ToolCallKey = "call_1" }
+        );
+        Assert.False(tool.IsProcessing);
+        Assert.True(agent.IsWaiting);
+
+        // LLM 流结束：等待下一轮 ReAct，不能留下 processing 步骤。
+        vm.HandleAgentEvent(
+            new LlmStreamFinished(ChatMessageFinishReasons.EndTurn, true, false, true)
+        );
+        Assert.True(agent.IsWaiting);
+        Assert.DoesNotContain(agent.AgentSteps, s => s.IsProcessing);
+    }
+
+    /// <summary>
     /// 模型切换生效契约：设置保存后 Agent 模型名必须更新且冻结的 ConversationLoop 失效
     /// （readonly _api/_modelName 不失效则新模型永不生效），_messages 保留（上下文无损）。
     /// 预热线：空 TornadoApi + 预取消 token，取消发生在任何 LLM 调用前，无网络。

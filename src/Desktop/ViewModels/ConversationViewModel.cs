@@ -1600,7 +1600,7 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>
     /// 维护回合内等待行（spinner +「执行中」）：
     /// - 可见活动到达 → 立即收起：正文/思考 token、可见工具步骤、错误/熔断；
-    /// - 阶段边界 → 立即亮起：思考结束、工具结束、下一轮 TurnStart。
+    /// - 阶段边界 → 立即亮起：思考结束、工具结束、LLM 流结束、下一轮 TurnStart。
     ///   否则「思考结束 → 工具/下一段正文」的间隙看起来像回合已经结束。
     /// 等待行的可见性仍以「没有正在处理的可见步骤」为准，并行工具/步骤不会被误判为空闲。
     /// 隐藏工具（上下文接续/历史检索）不产生步骤：开始时保持等待指示，结束后继续等待。
@@ -1612,8 +1612,12 @@ public sealed class ConversationViewModel : ViewModelBase
 
         var hasVisibleActivity = evt switch
         {
-            StreamChunk { ContentType: StreamContentType.Text or StreamContentType.Thinking } =>
-                true,
+            // 纯空白 token 不是可见活动：模型常在正文前发 "\n\n"，
+            // 若把它当成正文开始，思考结束后的等待行会提前消失，留下空白间隙。
+            StreamChunk { ContentType: StreamContentType.Text } chunk =>
+                !string.IsNullOrWhiteSpace(chunk.Delta),
+            StreamChunk { ContentType: StreamContentType.Thinking } => true,
+            ToolCallStreamStarted tcs => !Core.Tools.HiddenTools.IsHidden(tcs.ToolName),
             ToolExecutionStart tes => !Core.Tools.HiddenTools.IsHidden(tes.ToolName),
             AgentError or CircuitBreakerTriggered => true,
             _ => false,
@@ -1628,9 +1632,11 @@ public sealed class ConversationViewModel : ViewModelBase
             evt
             is AgentStart
                 or StreamChunk { ContentType: StreamContentType.ThinkingEnd }
+                or ToolCallStreamStarted
                 or ToolExecutionStart
                 or ToolExecutionEnd
                 or ToolExecutionUpdate
+                or LlmStreamFinished
                 or TurnStart
         )
         {
@@ -1651,7 +1657,7 @@ public sealed class ConversationViewModel : ViewModelBase
             _agentMessage.IsInterrupted = true;
         if (!string.IsNullOrEmpty(append))
             _agentMessage.AppendContent(append);
-        _handler?.CompleteThinking();
+        _handler?.FinalizeProcessingSteps(interrupted);
         _handler?.CommitSources();
 
         // 空占位（Agent 未产出任何内容）移除，避免留下空气泡

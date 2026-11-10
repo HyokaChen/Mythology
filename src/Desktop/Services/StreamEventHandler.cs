@@ -20,6 +20,7 @@ public sealed class StreamEventHandler(
     private readonly ToolDisplayFormatter _toolDisplay = toolDisplay ?? new ToolDisplayFormatter();
     private readonly List<SourceInfo> _pendingSources = [];
     private readonly Dictionary<string, AgentStep> _toolSteps = [];
+    private readonly HashSet<string> _pendingToolKeys = [];
     private AgentStep? _thinkingStep;
 
     /// <summary>事件处理的目标消息。</summary>
@@ -32,7 +33,10 @@ public sealed class StreamEventHandler(
         {
             // ── 流式文本 ──
             case StreamChunk { ContentType: StreamContentType.Text } chunk:
-                CloseThinking();
+                // 纯空白 token 不代表可见阶段开始；提前关闭思考卡会让
+                // 「思考结束 → 工具参数生成」之间失去 spinner。可见正文才收口。
+                if (!string.IsNullOrWhiteSpace(chunk.Delta))
+                    CloseThinking();
                 target.AppendContent(chunk.Delta);
                 break;
 
@@ -62,6 +66,34 @@ public sealed class StreamEventHandler(
                 CloseThinking();
                 break;
 
+            // ── 工具调用参数开始生成（ToolExecutionStart 之前的真实边界）──
+            case ToolCallStreamStarted tcs:
+            {
+                if (Core.Tools.HiddenTools.IsHidden(tcs.ToolName))
+                    break;
+
+                // 模型已从思考/正文切换到工具参数生成：收口旧阶段，
+                // 用 pending 卡填满参数生成期间的空档。
+                CloseThinking();
+                SealDraftContent();
+
+                if (_toolSteps.ContainsKey(tcs.ToolCallKey))
+                    break;
+
+                var pending = new AgentStep
+                {
+                    Kind = StepKind.ToolCall,
+                    ToolName = tcs.ToolName,
+                    Title = _toolDisplay.Label(tcs.ToolName),
+                    Status = AgentStepStatus.Processing,
+                    ArgumentsSummary = "正在生成参数…",
+                };
+                _toolSteps[tcs.ToolCallKey] = pending;
+                _pendingToolKeys.Add(tcs.ToolCallKey);
+                target.AgentSteps.Add(pending);
+                break;
+            }
+
             // ── 工具调用 ──
             case ToolExecutionStart tes:
             {
@@ -75,6 +107,18 @@ public sealed class StreamEventHandler(
                 CloseThinking();
                 SealDraftContent();
 
+                var key = tes.ToolCallKey ?? tes.ToolCallId;
+                if (_toolSteps.TryGetValue(key, out var pending))
+                {
+                    // 参数已生成完，原地把 pending 卡切换为执行中；绝不新建第二张卡。
+                    _pendingToolKeys.Remove(key);
+                    pending.Status = AgentStepStatus.Processing;
+                    pending.IsError = false;
+                    pending.ArgumentsSummary = ToolDisplayFormatter.Arguments(tes.Arguments);
+                    pending.FullArguments = ToolDisplayFormatter.Detail(tes.Arguments);
+                    break;
+                }
+
                 var step = new AgentStep
                 {
                     Kind = StepKind.ToolCall,
@@ -84,7 +128,7 @@ public sealed class StreamEventHandler(
                     ArgumentsSummary = ToolDisplayFormatter.Arguments(tes.Arguments),
                     FullArguments = ToolDisplayFormatter.Detail(tes.Arguments),
                 };
-                _toolSteps[tes.ToolCallId] = step;
+                _toolSteps[key] = step;
                 target.AgentSteps.Add(step);
                 break;
             }
@@ -95,8 +139,15 @@ public sealed class StreamEventHandler(
                 break;
 
             case ToolExecutionEnd tee:
-                if (_toolSteps.TryGetValue(tee.ToolCallId, out var done))
+                var endKey = tee.ToolCallKey ?? tee.ToolCallId;
+                if (!_toolSteps.TryGetValue(endKey, out var done) && endKey != tee.ToolCallId)
                 {
+                    endKey = tee.ToolCallId;
+                    _toolSteps.TryGetValue(endKey, out done);
+                }
+                if (done is not null)
+                {
+                    _pendingToolKeys.Remove(endKey);
                     done.Status = tee.IsError ? AgentStepStatus.Failed : AgentStepStatus.Completed;
                     done.IsError = tee.IsError;
                     var rawResult = tee.Result;
@@ -127,6 +178,13 @@ public sealed class StreamEventHandler(
                 // 变体审阅：详情为 ExploreDetails 时转发
                 if (tee.Details is ExploreDetails ed)
                     onExploreVariant?.Invoke(ed);
+                break;
+
+            // ── 本轮 LLM 流结束 ──
+            case LlmStreamFinished:
+                // thinking-only 回合不会再有 ThinkingEnd；在这里收口。
+                // 等待行由 ConversationViewModel 在此边界重新亮起。
+                CloseThinking();
                 break;
 
             // ── LLM 错误 ──
@@ -162,6 +220,32 @@ public sealed class StreamEventHandler(
     /// 不兜底会把「思考中…」和 spinner 永久留在已结束的回合里。
     /// </summary>
     public void CompleteThinking() => CloseThinking();
+
+    /// <summary>
+    /// 回合结束/中断时兜底：把仍在 processing 的工具卡置为失败，
+    /// 防止 pending 参数生成或执行中的工具在 UI 上永久转圈。
+    /// </summary>
+    public void FinalizeProcessingSteps(bool interrupted)
+    {
+        CloseThinking();
+        foreach (var (key, step) in _toolSteps)
+        {
+            if (!step.IsProcessing)
+                continue;
+
+            step.Status = AgentStepStatus.Failed;
+            step.IsError = true;
+            if (string.IsNullOrWhiteSpace(step.ResultSummary))
+            {
+                step.ResultSummary = interrupted
+                    ? "已中断"
+                    : _pendingToolKeys.Contains(key)
+                        ? "未执行"
+                        : "未完成";
+            }
+        }
+        _pendingToolKeys.Clear();
+    }
 
     /// <summary>
     /// 结束当前思考阶段并释放引用。下一次 Thinking 片段会新建独立步骤，
