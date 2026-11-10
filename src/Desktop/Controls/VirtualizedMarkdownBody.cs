@@ -48,7 +48,6 @@ public sealed class VirtualizedMarkdownBody : Panel
     private MarkdownRenderer? _singleRenderer;
     private ScrollViewer? _scrollViewer;
     private DispatcherTimer? _rebuildTimer;
-    private string? _selectionScope;
     private bool _singleMode = true;
     private bool _rebuilding;
     private bool _realizing;
@@ -69,6 +68,8 @@ public sealed class VirtualizedMarkdownBody : Panel
 
     public VirtualizedMarkdownBody()
     {
+        // All realized block renderers share this body as one selection scope.
+        MarkdownTextBlock.SetIsSelectionScope(this, true);
         AttachedToVisualTree += (_, _) =>
         {
             _scrollViewer = this.FindAncestorOfType<ScrollViewer>();
@@ -475,14 +476,12 @@ public sealed class VirtualizedMarkdownBody : Panel
 
     private MarkdownRenderer CreateRenderer(ObservableStringBuilder builder)
     {
-        _selectionScope ??= $"conversation-body-{Guid.NewGuid():N}";
         var renderer = new MarkdownRenderer
         {
             MarkdownBuilder = builder,
             CodeBlockColorTheme = CodeTheme,
         };
         renderer.Classes.Add("ConversationMarkdown");
-        MarkdownRenderer.SetSelectionScopeName(renderer, _selectionScope);
         return renderer;
     }
 

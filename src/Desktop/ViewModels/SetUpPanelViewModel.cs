@@ -1231,7 +1231,7 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         {
             Core.Novels.OutlineRows.UnassignedKey,
         };
-        foreach (var volume in _structure.Volumes)
+        foreach (var volume in structure.Volumes)
             allGroups.Add(volume.Id);
         var state = new OutlineViewState(
             allGroups,
