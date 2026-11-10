@@ -834,6 +834,88 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 用户在底部时切到别的窗口，期间继续追加消息；切回来后必须仍贴底，
+    /// 不能停在失焦前的中间 offset。
+    /// </summary>
+    [Fact]
+    public void WindowDeactivateReactivate_AtBottom_StaysAtBottom()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 120; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文内容", 12))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+                // 模拟“人在底部但跟随已暂停”（例如刚点过过程/详情）。
+                // 失焦期间新增消息后，激活时仍应回到用户离开时的底部。
+                list.PauseFollow();
+
+                // Headless Window 不会真的抢焦点；直接触发 WindowBase 事件，
+                // 验证生产接线与 offset 恢复逻辑。
+                var field = typeof(WindowBase).GetField(
+                    "Deactivated",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                );
+                var deactivated = field?.GetValue(window) as EventHandler;
+                Assert.NotNull(deactivated);
+                deactivated(window, EventArgs.Empty);
+                Dispatcher.UIThread.RunJobs();
+
+                // 失焦期间继续追加，旧 offset 不再对应底部
+                for (var i = 0; i < 30; i++)
+                {
+                    var message = new Desktop.Models.ChatMessage(
+                        Desktop.Models.MessageSender.Agent
+                    );
+                    message.AppendContent($"失焦期间新增 {i} " + new string('文', 40));
+                    _vm.Messages.Add(message);
+                }
+                Dispatcher.UIThread.RunJobs();
+
+                field = typeof(WindowBase).GetField(
+                    "Activated",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                );
+                var activated = field?.GetValue(window) as EventHandler;
+                Assert.NotNull(activated);
+                activated(window, EventArgs.Empty);
+                PumpUntil(() => AtBottom(sv), "切回窗口后仍贴底");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 过程展开后大量 Step 行的真实高度与固定估算差异很大；用户向下滚动时
     /// anchor 不能因为高度修正把视口反复拉回上方。
     /// </summary>

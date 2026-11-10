@@ -22,6 +22,8 @@ public partial class ConversationView : UserControl
         InitializeComponent();
         Loaded += (_, _) => MessageList.ResetFollow();
         Unloaded += (_, _) => StopBackgroundWork();
+        AttachedToVisualTree += (_, _) => AttachHostWindow();
+        DetachedFromVisualTree += (_, _) => DetachHostWindow();
         MessageList.ItemsSource = _windowRows;
         MessageList.FollowChanged += OnFollowChanged;
         MessageScroll.ScrollChanged += OnMessageScrollChanged;
@@ -66,6 +68,53 @@ public partial class ConversationView : UserControl
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
 
+    private void AttachHostWindow()
+    {
+        if (TopLevel.GetTopLevel(this) is not Window window)
+            return;
+        if (ReferenceEquals(_hostWindow, window))
+            return;
+        DetachHostWindow();
+        _hostWindow = window;
+        window.Activated += OnHostWindowActivated;
+        window.Deactivated += OnHostWindowDeactivated;
+    }
+
+    private void DetachHostWindow()
+    {
+        if (_hostWindow is null)
+            return;
+        _hostWindow.Activated -= OnHostWindowActivated;
+        _hostWindow.Deactivated -= OnHostWindowDeactivated;
+        _hostWindow = null;
+    }
+
+    /// <summary>
+    /// 窗口失焦/回来时恢复“用户原本就在底部”的语义。
+    /// 失焦期间布局、spacer 或窗口激活都可能产生 ScrollChanged；不能让它
+    /// 关闭跟随或把底部视口留在中段。
+    /// </summary>
+    private void OnHostWindowDeactivated(object? sender, EventArgs e)
+    {
+        _restoreBottomOnActivate = MessageList.IsFollowing || IsMessageAtBottom();
+        MessageList.SetWindowActive(false);
+    }
+
+    private void OnHostWindowActivated(object? sender, EventArgs e)
+    {
+        MessageList.SetWindowActive(true);
+        if (!_restoreBottomOnActivate)
+            return;
+        _restoreBottomOnActivate = false;
+        MessageList.ResetFollow();
+    }
+
+    private bool IsMessageAtBottom()
+    {
+        var max = Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height);
+        return MessageScroll.Offset.Y >= max - 1;
+    }
+
     private void OnFollowChanged(object? sender, EventArgs e)
     {
         if (_syncingWindow || !MessageList.IsFollowing)
@@ -92,6 +141,8 @@ public partial class ConversationView : UserControl
     private bool _windowSyncScheduled;
     private bool _forceWindowSync;
     private bool _syncingWindow;
+    private Window? _hostWindow;
+    private bool _restoreBottomOnActivate;
     private bool _captureScheduled;
     private bool _restoringOffset;
     private double _lastObservedOffset = double.NaN;

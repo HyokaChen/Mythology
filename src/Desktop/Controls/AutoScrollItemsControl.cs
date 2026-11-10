@@ -28,6 +28,7 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _followPostPending;
     private bool _wheelScrollPending;
     private int _layoutUpdateDepth;
+    private bool _windowActive = true;
 
     /// <summary>窗口之前所有未实例化行的总高度；由上层布局模型计算。</summary>
     public static readonly StyledProperty<double> TopSpacerHeightProperty =
@@ -54,6 +55,19 @@ public class AutoScrollItemsControl : ItemsControl
 
     /// <summary>跟随状态变化；上层据此切换尾部窗口/阅读窗口。</summary>
     public event EventHandler? FollowChanged;
+
+    /// <summary>
+    /// 宿主窗口激活状态。失焦期间忽略滚动状态变化，避免窗口切换产生的
+    /// ScrollChanged 被误判成用户上滚；重新激活后如果仍在跟随则立即贴底。
+    /// </summary>
+    public void SetWindowActive(bool active)
+    {
+        if (_windowActive == active)
+            return;
+        _windowActive = active;
+        if (active && _autoFollow)
+            Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
+    }
 
     /// <summary>
     /// 停止尾部跟随但保留当前视口。用于用户点击历史过程行/步骤详情展开：
@@ -203,7 +217,7 @@ public class AutoScrollItemsControl : ItemsControl
     /// </summary>
     private void OnScrollViewerPointerWheel(object? sender, PointerWheelEventArgs e)
     {
-        if (e.Delta.Y == 0)
+        if (!_windowActive || e.Delta.Y == 0)
             return;
         _resumeOnBottom = true;
         _wheelScrollPending = true;
@@ -217,6 +231,8 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>键盘上滚：停止跟随。</summary>
     private void OnScrollViewerKeyDown(object? sender, KeyEventArgs e)
     {
+        if (!_windowActive)
+            return;
         if (e.Key is Key.Up or Key.PageUp or Key.Home)
         {
             DisableFollow();
@@ -244,7 +260,7 @@ public class AutoScrollItemsControl : ItemsControl
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (_scrollViewer is null)
+        if (_scrollViewer is null || !_windowActive)
             return;
 
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
@@ -311,7 +327,7 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>
     private void FollowTailIfEnabled()
     {
-        if (!_autoFollow || _scrollViewer is null)
+        if (!_autoFollow || !_windowActive || _scrollViewer is null)
             return;
 
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
