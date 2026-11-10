@@ -756,9 +756,14 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 点击历史「过程」行时先 `PauseFollow`：展开步骤会改变行高，但不能把视口拉回最后一条；
   用户滚轮下滚/PageDown/End 回到底部后才恢复跟随。回归：
   `ProcessRows_ExpandClickedMessage_NotBottomMessage`
-- 跟随只认用户输入（滚轮上滚 / Up·PageUp·Home / 拖动滚动条）；每次布局/extent 增长后
-  都重新 `ScrollToEnd` 贴底，LiveMarkdown 异步长高不会停在半路；发送/恢复必须
-  `ResetFollow`（发送按钮也走 Click 重置），否则不会自动到底
+- 跟随只认用户输入：滚轮上滚 / Up·PageUp·Home / 滚动条上拖立即停跟随；回到跟随
+  必须是「正向 offset + extent 稳定 + 真正到底部」，窗口换页和高度校正不能误判。
+  `BeginLayoutUpdate` 在 spacer/锚点修正期间屏蔽该判定；每次布局/extent 增长后仍
+  `ScrollToEnd` 贴底；发送/恢复必须 `ResetFollow`（发送按钮也走 Click 重置）
+- block 虚拟化离开视口的 segment 保留已测高度，不退回粗估；否则 block 边界处总高度
+  突跳，外层 anchor 会把视口甩到另一段。回归：
+  `BlockVirtualizedLongMessage_ScrollDownAtBoundary_DoesNotJumpToTail`、
+  `VirtualizedScroll_WheelDownMidHistory_DoesNotJumpToTail`
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

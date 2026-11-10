@@ -23,6 +23,7 @@ public partial class ConversationView : UserControl
         Loaded += (_, _) => MessageList.ResetFollow();
         Unloaded += (_, _) => StopBackgroundWork();
         MessageList.ItemsSource = _windowRows;
+        MessageList.FollowChanged += OnFollowChanged;
         MessageScroll.ScrollChanged += OnMessageScrollChanged;
         MessageList.LayoutUpdated += OnMessageListLayoutUpdated;
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
@@ -64,6 +65,13 @@ public partial class ConversationView : UserControl
     }
 
     private ConversationViewModel? Vm => DataContext as ConversationViewModel;
+
+    private void OnFollowChanged(object? sender, EventArgs e)
+    {
+        if (_syncingWindow || !MessageList.IsFollowing)
+            return;
+        SyncWindowToTail();
+    }
 
     /// <summary>窗口关闭/切走时停掉后台折叠定时器。</summary>
     private void StopBackgroundWork() => CancelProcessFold();
@@ -332,6 +340,7 @@ public partial class ConversationView : UserControl
         var bottom = Math.Max(0, TotalHeight() - TopOf(end));
 
         _syncingWindow = true;
+        MessageList.BeginLayoutUpdate();
         try
         {
             ReconcileWindowRows(desired);
@@ -340,6 +349,7 @@ public partial class ConversationView : UserControl
         }
         finally
         {
+            MessageList.EndLayoutUpdate();
             _syncingWindow = false;
         }
     }
@@ -379,19 +389,27 @@ public partial class ConversationView : UserControl
     /// <summary>全量行模型变化但窗口对象不需要变化时，重算上下 spacer。</summary>
     private void UpdateWindowSpacers()
     {
-        if (_windowRows.Count == 0)
+        MessageList.BeginLayoutUpdate();
+        try
         {
-            MessageList.TopSpacerHeight = 0;
-            MessageList.BottomSpacerHeight = _rows.Count == 0 ? 0 : TotalHeight();
-            return;
-        }
+            if (_windowRows.Count == 0)
+            {
+                MessageList.TopSpacerHeight = 0;
+                MessageList.BottomSpacerHeight = _rows.Count == 0 ? 0 : TotalHeight();
+                return;
+            }
 
-        var start = _rows.IndexOf(_windowRows[0]);
-        if (start < 0)
-            return;
-        var end = Math.Min(_rows.Count, start + _windowRows.Count);
-        MessageList.TopSpacerHeight = TopOf(start);
-        MessageList.BottomSpacerHeight = Math.Max(0, TotalHeight() - TopOf(end));
+            var start = _rows.IndexOf(_windowRows[0]);
+            if (start < 0)
+                return;
+            var end = Math.Min(_rows.Count, start + _windowRows.Count);
+            MessageList.TopSpacerHeight = TopOf(start);
+            MessageList.BottomSpacerHeight = Math.Max(0, TotalHeight() - TopOf(end));
+        }
+        finally
+        {
+            MessageList.EndLayoutUpdate();
+        }
     }
 
     /// <summary>重建全量行模型；行对象不挂控件，控件只由可见窗口创建。</summary>
@@ -584,12 +602,14 @@ public partial class ConversationView : UserControl
             return;
 
         _restoringOffset = true;
+        MessageList.BeginLayoutUpdate();
         try
         {
             MessageScroll.Offset = MessageScroll.Offset.WithY(target);
         }
         finally
         {
+            MessageList.EndLayoutUpdate();
             _restoringOffset = false;
         }
     }

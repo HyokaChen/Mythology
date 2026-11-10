@@ -481,6 +481,14 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 );
 
                 sv.Offset = sv.Offset.WithY(Math.Max(0, sv.Extent.Height - sv.Viewport.Height));
+                // 到底部后再向下滚：这是用户明确回到底部的意图。
+                for (var i = 0; i < 20 && !list.IsFollowing; i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -5));
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
                 PumpUntil(
                     () => AtBottom(sv) && list.BottomSpacerHeight <= 0.5,
                     "滚回底部应换回尾部窗口"
@@ -564,6 +572,167 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.InRange(sv.Offset.Y, before - 3, before + 3);
                 Assert.True(list.TopSpacerHeight > 0);
                 Assert.True(list.BottomSpacerHeight > 0);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 历史中段小幅下滚只能移动视口，不能因为窗口换页/高度校正把“接近底部”
+    /// 误判成用户已回到底部，从而瞬间跳到最新消息。
+    /// </summary>
+    [Fact]
+    public void VirtualizedScroll_WheelDownMidHistory_DoesNotJumpToTail()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 300; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 8))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.5));
+                PumpUntil(
+                    () => list.TopSpacerHeight > 0.5 && list.BottomSpacerHeight > 0.5,
+                    "中段窗口"
+                );
+
+                for (var i = 0; i < 6; i++)
+                {
+                    var before = sv.Offset.Y;
+                    window.MouseWheel(pointer, new Vector(0, -2));
+                    for (var j = 0; j < 10; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+
+                    Assert.False(list.IsFollowing, $"第 {i} 次小幅下滚后不应恢复跟随");
+                    Assert.True(
+                        sv.Offset.Y < Math.Max(0, sv.Extent.Height - sv.Viewport.Height) - 1,
+                        $"第 {i} 次小幅下滚后不应跳到末尾：before={before}, offset={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 单条超长消息会进入 block 级虚拟化；滚动到 block 边界时不能把外层
+    /// 视口甩到尾部（block 高度在 realize 边界必须保持稳定）。
+    /// </summary>
+    [Fact]
+    public void BlockVirtualizedLongMessage_ScrollDownAtBoundary_DoesNotJumpToTail()
+    {
+        Ui.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            for (var i = 0; i < 180; i++)
+            {
+                message.AppendContent(
+                    $"## 段落 {i}\n\n"
+                        + string.Join(
+                            " ",
+                            Enumerable.Repeat("这是用于撑开 block 虚拟化边界的长正文内容。", 12)
+                        )
+                        + "\n\n"
+                );
+            }
+            _vm.Messages.Add(message);
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "长消息贴底");
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止长消息跟随");
+
+                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.5));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var settled = sv.Offset.Y;
+                for (var i = 0; i < 40; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+                Assert.InRange(sv.Offset.Y, settled - 2, settled + 2);
+
+                var before = sv.Offset.Y;
+                for (var i = 0; i < 4; i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -2));
+                    for (var j = 0; j < 10; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.False(list.IsFollowing, $"长消息第 {i} 次下滚不应恢复跟随");
+                    Assert.True(
+                        sv.Offset.Y < Math.Max(0, sv.Extent.Height - sv.Viewport.Height) - 1,
+                        $"长消息第 {i} 次下滚跳尾：before={before}, offset={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                }
             }
             finally
             {

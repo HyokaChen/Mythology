@@ -279,13 +279,13 @@ public sealed class VirtualizedMarkdownBody : Panel
                 }
                 else
                 {
-                    block.Height = EstimateHeight(block.Text);
+                    block.Height = EstimateBlockHeight(block.Text, width);
                     block.MeasurePasses = 0;
                 }
             }
             else if (block.Height <= 0.5)
             {
-                block.Height = EstimateHeight(block.Text);
+                block.Height = EstimateBlockHeight(block.Text, width);
             }
             total += block.Height;
         }
@@ -363,11 +363,11 @@ public sealed class VirtualizedMarkdownBody : Panel
 
     private static bool IsHeavySegment(string text) => text.Length >= HeavyDeferCharacters;
 
-    private static double BlockHeight(Block block)
+    private double BlockHeight(Block block)
     {
         if (block.Height > 0.5)
             return block.Height;
-        return EstimateHeight(block.Text);
+        return EstimateBlockHeight(block.Text, _estimatedWidth);
     }
 
     private void EnsureEstimatedWidth(double width)
@@ -454,9 +454,10 @@ public sealed class VirtualizedMarkdownBody : Panel
                 {
                     Children.Remove(block.Control);
                     block.Control = null;
-                    block.Height = EstimateHeight(block.Text);
+                    // 保留已测高度：这里只是离开可视窗口，不是文本变短。
+                    // 用粗估覆盖会让 block 边界处总高度突跳，外层 anchor 把视口
+                    // 拉去另一段，表现为滚动到边界时闪到页面尾部。
                     block.MeasurePasses = 0;
-                    _heightIndex.Update(block, block.Height);
                 }
             }
 
