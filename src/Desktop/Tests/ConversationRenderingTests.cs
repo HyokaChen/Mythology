@@ -149,6 +149,126 @@ public class ConversationRenderingTests
     }
 
     [Fact]
+    public void CodeBlock_UsesAdalinePaperSurfaceAndMonoMetrics()
+    {
+        Ui.Value.Run(() =>
+        {
+            var markdown = """
+                ```text
+                已写：第1章(4793字)
+                未写：第3章《银发转学生》
+                ```
+                """;
+
+            var (window, renderer) = Render(markdown);
+            try
+            {
+                var code = Assert.Single(renderer.GetVisualDescendants().OfType<CodeBlock>());
+                var panel = Assert.Single(
+                    code.GetVisualDescendants().OfType<Border>(),
+                    border => border.Name == "PART_CodePanel"
+                );
+                var header = Assert.Single(
+                    code.GetVisualDescendants().OfType<Border>(),
+                    border => border.Name == "PART_CodeHeader"
+                );
+                var body = Assert.IsType<MarkdownTextBlock>(code.CodeTextBlock);
+
+                _output.WriteLine(
+                    $"code={code.Bounds} panel={panel.Bounds} header={header.Bounds} body={body.Bounds}"
+                );
+                _output.WriteLine(
+                    $"font={body.FontFamily.Name} size={body.FontSize} line={body.LineHeight}"
+                );
+
+                Assert.Equal(Color.Parse("#fdfefb"), ((SolidColorBrush)panel.Background!).Color);
+                Assert.Equal(Color.Parse("#e1e6df"), ((SolidColorBrush)panel.BorderBrush!).Color);
+                Assert.Equal(new Thickness(1), panel.BorderThickness);
+                Assert.Equal(new CornerRadius(0), panel.CornerRadius);
+
+                Assert.Equal(Color.Parse("#e1e6df"), ((SolidColorBrush)header.BorderBrush!).Color);
+                Assert.Contains("Fragment Mono", body.FontFamily.Name, StringComparison.Ordinal);
+                Assert.Equal(11, body.FontSize);
+                Assert.Equal(18, body.LineHeight);
+                Assert.Equal(Color.Parse("#0a1d08"), ((SolidColorBrush)body.Foreground!).Color);
+
+                Assert.NotNull(
+                    code.GetVisualDescendants()
+                        .OfType<Button>()
+                        .SingleOrDefault(button => button.Name == "PART_CopyButton")
+                );
+                Assert.NotNull(
+                    code.GetVisualDescendants()
+                        .OfType<ToggleButton>()
+                        .SingleOrDefault(button => button.Name == "PART_ToggleTextWrapButton")
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void CodeBlockEstimator_MatchesRenderedFenceIncludingMargin()
+    {
+        Ui.Value.Run(() =>
+        {
+            var markdown = """
+                ```csharp
+                var x = 1;
+                var y = 2;
+                ```
+                """;
+
+            var (window, renderer) = Render(markdown);
+            try
+            {
+                var code = Assert.Single(renderer.GetVisualDescendants().OfType<CodeBlock>());
+                var rendered = code.Bounds.Height + code.Margin.Top + code.Margin.Bottom;
+                var estimated = Desktop.Controls.MarkdownHeightEstimator.EstimateBlock(
+                    markdown,
+                    code.Bounds.Width
+                );
+
+                Assert.InRange(estimated, rendered - 0.01, rendered + 0.01);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void InlineCode_UsesEucalyptusFieldNoteChip()
+    {
+        Ui.Value.Run(() =>
+        {
+            var (window, renderer) = Render("前文 `inline code` 后文");
+            try
+            {
+                var block = Assert.Single(
+                    renderer.GetVisualDescendants().OfType<MarkdownTextBlock>()
+                );
+                var inline = Assert.Single(block.Inlines.OfType<CodeInline>());
+
+                Assert.Equal(Color.Parse("#c9d5c5"), ((SolidColorBrush)inline.Background!).Color);
+                Assert.Equal(Color.Parse("#c5ccb6"), ((SolidColorBrush)inline.BorderBrush!).Color);
+                Assert.Equal(Color.Parse("#0a1d08"), ((SolidColorBrush)inline.Foreground!).Color);
+                Assert.Equal(1, inline.BorderThickness);
+                Assert.Equal(new CornerRadius(4), inline.CornerRadius);
+                Assert.Contains("Fragment Mono", inline.FontFamily.Name, StringComparison.Ordinal);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void AgentMessage_RendersMarkdownTableAndDiffInConversation()
     {
         Ui.Value.Run(() =>

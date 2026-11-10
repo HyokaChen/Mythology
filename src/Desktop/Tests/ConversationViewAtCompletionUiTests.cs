@@ -861,6 +861,20 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var renderer = view.GetVisualDescendants()
                     .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
                     .Last();
+                var code = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.CodeBlock>()
+                    .Single();
+                var codeBody = Assert.IsType<LiveMarkdown.Avalonia.MarkdownTextBlock>(
+                    code.CodeTextBlock
+                );
+                Assert.Equal(11, codeBody.FontSize);
+                Assert.Equal(18, codeBody.LineHeight);
+                Assert.Contains(
+                    "Fragment Mono",
+                    codeBody.FontFamily.Name,
+                    StringComparison.Ordinal
+                );
+
                 var actual = renderer.DesiredSize.Height;
                 var estimated = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
                     message.Content.ToString(),
