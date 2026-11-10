@@ -742,6 +742,11 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 行/block 高度用 Fenwick 前缀索引维护，scroll offset → focusIndex 走二分；
   live window 是 `focusIndex ± buffer` 的固定节点窗口，最大节点数按视口/平均高度动态计算
   （行 48–200，block 16–40），不再每次全表扫描
+- 高度估算边界已按真实 LiveMarkdown 测量校准：Heading margin 上下各一份；
+  CodeBlock 永不按正文宽度换行；宽表格超过视口时加 18px 横向滚动条；嵌套
+  ListItem Spacing=0；列表里的 inline code chip 不参与父级换行。回归：
+  `EstimatorCorpus_MatchesRenderedMarkdown`、
+  `EstimatorBoundary_HeadingsTableScrollbarAndCode`
 - 正文仅使用 LiveMarkdown 基础包（无 Math/Mermaid/Svg 扩展）；小说场景的纯文本、
   列表、表格、代码块都由源码级布局模型估算，避免不可测的异步图形高度
 - 离屏超大 block（>12k 字符的代码块/正文）延迟创建；只有接近可见范围才挂

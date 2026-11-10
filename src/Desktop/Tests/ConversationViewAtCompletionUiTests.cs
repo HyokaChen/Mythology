@@ -1516,6 +1516,256 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 高度估算的边界值：空文档、标题 margin、代码不换行、表格横向滚动条、
+    /// inline code 列表的换行语义。数值来自真实 LiveMarkdown 测量。
+    /// </summary>
+    [Fact]
+    public void EstimatorBoundary_HeadingsTableScrollbarAndCode()
+    {
+        Ui.Run(() =>
+        {
+            Assert.Equal(0, Desktop.Controls.MarkdownHeightEstimator.EstimateDocument("", 800));
+            Assert.Equal(
+                0,
+                Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(" \n\n ", 800)
+            );
+
+            var h1 = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument("# 一级标题", 800);
+            var h2 = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument("## 二级标题", 800);
+            var h3 = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument("### 三级标题", 800);
+            var h4 = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                "#### 四级标题",
+                800
+            );
+            var h5 = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                "##### 五级标题",
+                800
+            );
+            Assert.True(h1 > h2 && h2 > h3 && h3 >= h4 && h4 > h5);
+            Assert.True(h5 > 0);
+
+            var longCode =
+                "```text\n"
+                + string.Join("\n", Enumerable.Repeat(new string('x', 120), 3))
+                + "\n```";
+            var codeNarrow = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                longCode,
+                120
+            );
+            var codeWide = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                longCode,
+                2000
+            );
+            Assert.Equal(codeWide, codeNarrow, 1);
+
+            var longTable =
+                "| 项 | 状态 | 说明 |\n|----|------|------|\n"
+                + "| 写作风格 | ✅ 已填 | 按「轻松向轻小说+情感内核」定调：日常甜中带刀、皮皮龙吐槽流、五感、拟声词节奏 |\n"
+                + "| 目标读者 | ✅ 已填 | 治愈系/慢热情感向读者，不追装逼爽点，但要情感释放点黏性 |\n"
+                + "| 世界规则 | ✅ 7条软法则 | 献祭/皮皮龙边界/蓝光/坏道循环/善恶二我动机/穿梭代价/恶意循环/太极终局 |";
+            var tableNarrow = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                longTable,
+                400
+            );
+            var tableWide = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                longTable,
+                2000
+            );
+            Assert.True(tableNarrow > tableWide, "宽表格超过视口时应计入横向滚动条高度");
+            Assert.True(tableWide > 0);
+            Assert.True(
+                Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                    "- 第一项\n  - 子项一\n  - 子项二\n- 第二项",
+                    800
+                ) > 0
+            );
+
+            var plainBullet = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                "- 唯一小瑕疵：石原学园 出现两次（b3b022463939 和 4ffd24143e6f 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆",
+                818
+            );
+            var codeBullet = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                "- 唯一小瑕疵：`石原学园` 出现两次（`b3b022463939` 和 `4ffd24143e6f` 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆",
+                818
+            );
+            Assert.True(codeBullet > 0);
+            Assert.True(
+                codeBullet < plainBullet,
+                "列表中的 inline code chip 不参与父级换行，应少于普通文本高度"
+            );
+        });
+    }
+
+    /// <summary>
+    /// 用真实会话里的 Markdown 形状做高度回归：标题、代码、宽表格、
+    /// 嵌套列表、inline code、快速下滚会话正文。组件用例误差 ≤2px；
+    /// 整段会话（含滚动条导致的内容宽度变化）允许 24px。
+    /// </summary>
+    [Fact]
+    public void EstimatorCorpus_MatchesRenderedMarkdown()
+    {
+        Ui.Run(() =>
+        {
+            var docs = new (string Name, string Text)[]
+            {
+                ("plain", "第一段正文，包含中文和 English，用来验证换行。\n\n第二段正文。"),
+                ("h1", "# 一级标题"),
+                ("h2", "## 二级标题"),
+                ("h3", "### 三级标题"),
+                ("h4", "#### 四级标题"),
+                ("h5", "##### 五级标题"),
+                (
+                    "table1",
+                    "| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | 已填 | 按轻松向轻小说定调，日常甜中带刀 |"
+                ),
+                ("list-only", "- 第一项\n- 第二项\n- 第三项"),
+                ("nested-list-only", "- 第一项\n  - 子项一\n  - 子项二\n- 第二项"),
+                ("bullets-2", "- 第一项\n- 第二项"),
+                ("bullet-nested-1", "- 第一项\n  - 子项一"),
+                ("bullet-nested-2", "- 第一项\n  - 子项一\n  - 子项二"),
+                ("bullet-nested-2-outer", "- 第一项\n  - 子项一\n  - 子项二\n- 第二项"),
+                ("loose-list", "- 第一项\n\n- 第二项"),
+                ("ordered-list", "1. 有序一\n2. 有序二"),
+                (
+                    "headings",
+                    "# 一级标题\n\n## 二级标题\n\n### 三级标题\n\n#### 四级标题\n\n##### 五级标题"
+                ),
+                (
+                    "table",
+                    "| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | 已填 | 按轻松向轻小说定调，日常甜中带刀 |\n| 目标读者 | 已填 | 治愈系慢热读者 |"
+                ),
+                (
+                    "nested-list",
+                    "- 第一项\n  - 子项一\n  - 子项二\n- 第二项\n\n1. 有序一\n2. 有序二"
+                ),
+                ("quote", "> 引用第一行\n> 引用第二行\n>\n> 引用第三段"),
+                ("code", "```csharp\nvar a = 1;\nvar b = 2;\n```"),
+                (
+                    "longcode",
+                    "```text\n"
+                        + string.Join(
+                            "\n",
+                            Enumerable.Repeat("很长的代码行 " + new string('x', 100), 3)
+                        )
+                        + "\n```"
+                ),
+                ("thematic", "第一段\n\n---\n\n第二段"),
+                ("unclosed-code", "```csharp\nvar a = 1;\nvar b = 2;"),
+                ("unclosed-table", "| 角色 | 身份 |\n| 林照 | 主角 |"),
+                (
+                    "mixed",
+                    "## 本轮做了什么\n\n**粗体**、`inline`、[链接](https://example.com) 与普通文本。\n\n1. 第一项\n2. 第二项\n\n> 引用\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```csharp\nvar x = 1;\n```"
+                ),
+                ("sf-h2", "## 本轮做了什么"),
+                (
+                    "sf-para",
+                    "7 条规则都是 `setting + constraint` 级别，是全书一致性的锚点（角色行为、时间线、逻辑都要对得上）。"
+                ),
+                (
+                    "sf-table",
+                    "| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | ✅ 已填 | 按「轻松向轻小说+情感内核」定调：日常甜中带刀、皮皮龙吐槽流、五感、拟声词节奏 |\n| 目标读者 | ✅ 已填 | 治愈系/慢热情感向读者，不追装逼爽点，但要情感释放点黏性 |\n| 世界规则 | ✅ 7条软法则 | 献祭/皮皮龙边界/蓝光/坏道循环/善恶二我动机/穿梭代价/恶意循环/太极终局 |"
+                ),
+                ("sf-table-h", "| 项 | 状态 | 说明 |\n|----|------|------|"),
+                (
+                    "sf-table-1",
+                    "| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | ✅ 已填 | 按「轻松向轻小说+情感内核」定调：日常甜中带刀、皮皮龙吐槽流、五感、拟声词节奏 |"
+                ),
+                (
+                    "sf-table-2",
+                    "| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | ✅ 已填 | 按「轻松向轻小说+情感内核」定调：日常甜中带刀、皮皮龙吐槽流、五感、拟声词节奏 |\n| 目标读者 | ✅ 已填 | 治愈系/慢热情感向读者，不追装逼爽点，但要情感释放点黏性 |"
+                ),
+                (
+                    "sf-rest",
+                    "## 深度盘点结论\n\n**大纲 / 细纲：已经很完整，不用再大改。**\n- 总纲五卷齐全，每卷有目标、暗线、卷末钩子\n- 细纲 96 章全有梗概，每章含冲突/走向/钩子，甚至到「你'她'了」台词密度、蓝光明灭、拟声词频率这种颗粒度\n- 14 条情节线全有 tension/转折/目标章，5 条卷线+主线+暗线齐\n\n**地点 / 组织：够用，缺的很小。**\n- 15 个地点覆盖五卷主要场景（石原市、湿地、樱花道、老人院、海边……）\n- 3 个组织（石原学园/开发商/雇佣兵小队）\n- 唯一小瑕疵：`石原学园` 出现两次（`b3b022463939` 和 `4ffd24143e6f` 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆"
+                ),
+                (
+                    "sf-bullet-huge",
+                    "- "
+                        + string.Join(
+                            " ",
+                            Enumerable.Repeat("这是一个非常长的列表项内容，用来验证列表换行。", 12)
+                        )
+                ),
+                (
+                    "sf-bullets",
+                    "- 总纲五卷齐全，每卷有目标、暗线、卷末钩子\n- 细纲 96 章全有梗概，每章含冲突/走向/钩子，甚至到「你'她'了」台词密度、蓝光明灭、拟声词频率这种颗粒度\n- 14 条情节线全有 tension/转折/目标章，5 条卷线+主线+暗线齐"
+                ),
+                ("sf-bold-para", "**大纲 / 细纲：已经很完整，不用再大改。**"),
+                (
+                    "sf-bullet-code",
+                    "- 唯一小瑕疵：`石原学园` 出现两次（`b3b022463939` 和 `4ffd24143e6f` 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆"
+                ),
+                (
+                    "sf-bullet-plain",
+                    "- 唯一小瑕疵：石原学园 出现两次（b3b022463939 和 4ffd24143e6f 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆"
+                ),
+                (
+                    "sf-bullets-long",
+                    "- 15 个地点覆盖五卷主要场景（石原市、湿地、樱花道、老人院、海边……）\n- 3 个组织（石原学园/开发商/雇佣兵小队）\n- 唯一小瑕疵：`石原学园` 出现两次（`b3b022463939` 和 `4ffd24143e6f` 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆"
+                ),
+                (
+                    "session-final",
+                    "详情和世界规则都补齐了。给你一份深度盘点：\n\n## 本轮做了什么\n\n| 项 | 状态 | 说明 |\n|----|------|------|\n| 写作风格 | ✅ 已填 | 按「轻松向轻小说+情感内核」定调：日常甜中带刀、皮皮龙吐槽流、五感、拟声词节奏 |\n| 目标读者 | ✅ 已填 | 治愈系/慢热情感向读者，不追装逼爽点，但要情感释放点黏性 |\n| 世界规则 | ✅ 7条软法则 | 献祭/皮皮龙边界/蓝光/坏道循环/善恶二我动机/穿梭代价/恶意循环/太极终局 |\n\n7 条规则都是 `setting + constraint` 级别，是全书一致性的锚点（角色行为、时间线、逻辑都要对得上）。\n\n## 深度盘点结论\n\n**大纲 / 细纲：已经很完整，不用再大改。**\n- 总纲五卷齐全，每卷有目标、暗线、卷末钩子\n- 细纲 96 章全有梗概，每章含冲突/走向/钩子，甚至到「你'她'了」台词密度、蓝光明灭、拟声词频率这种颗粒度\n- 14 条情节线全有 tension/转折/目标章，5 条卷线+主线+暗线齐\n\n**地点 / 组织：够用，缺的很小。**\n- 15 个地点覆盖五卷主要场景（石原市、湿地、樱花道、老人院、海边……）\n- 3 个组织（石原学园/开发商/雇佣兵小队）\n- 唯一小瑕疵：`石原学园` 出现两次（`b3b022463939` 和 `4ffd24143e6f` 父子两个），学园图书馆/天台挂在后者下——这是层级设计没问题，但同名重复建议在正文里统一指代，避免读者混淆\n\n**场景层：按你的决定，不现在建。** 细纲梗概即场景，等写到具体章节再用 `build_scene` 补精细场景。\n\n## 一个真正的硬伤：genre 标签\n\n小说类型还挂在 **「都市异能（扮猪吃虎+装逼打脸）」**，但你定的是治愈情感向。这标签会导致：\n- 云端诊断按「商业爽文」权重跑，爽点检测会一直报警「缺少装逼打脸」\n- 但你明确不追求这个\n\n我建议把类型改准。两个选项：\n\n1. **直接改 genre** 为「都市·日常·治愈情感向」，让诊断权重对齐——**最干净**\n2. **保留都市异能，但靠已填的 writing-style/target-audience 拉回**，依赖诊断时手动忽略爽点维度\n\n你要我直接把类型字段改成对齐治愈向的标签吗？（推荐选 1）"
+                ),
+            };
+
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            message.AppendContent("probe");
+            _vm.Messages.Add(message);
+            _vm.HasMessages = true;
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "probe renderer"
+                );
+                var failures = new System.Text.StringBuilder();
+                foreach (var (name, text) in docs)
+                {
+                    message.ResetContent();
+                    message.AppendContent(text);
+                    for (var i = 0; i < 20; i++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    var renderer = view.GetVisualDescendants()
+                        .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                        .Last();
+                    var actual = renderer.DesiredSize.Height;
+                    var estimated = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                        text,
+                        renderer.Bounds.Width
+                    );
+                    var tolerance = name == "session-final" ? 24 : 2;
+                    if (actual <= 0 || Math.Abs(estimated - actual) > tolerance)
+                        failures.AppendLine(
+                            $"{name}: actual={actual:0.0} estimated={estimated:0.0} "
+                                + $"delta={estimated - actual:0.0} tolerance={tolerance} width={renderer.Bounds.Width:0.0}"
+                        );
+                }
+                Assert.True(failures.Length == 0, failures.ToString());
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 估算器必须和真实 LiveMarkdown 的正文/表格布局对齐，而不是字符数除法。
     /// </summary>
     [Fact]

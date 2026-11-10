@@ -59,8 +59,14 @@ public static class MarkdownHeightEstimator
         .Build();
 
     private const double TableCellVerticalPadding = 6; // 0,3,10,3
+    private const double TableCellHorizontalPadding = 10; // 0,3,10,3
     private const double TablePaddingVertical = 12; // 8,6
+    private const double TablePaddingHorizontal = 16; // 8,6
     private const double TableMarginVertical = 16; // 0,8
+
+    // ScrollViewer.Table HorizontalScrollBarVisibility=Auto. When the table is
+    // wider than the viewport this row (18px) is part of the measured height.
+    private const double TableHorizontalScrollbarHeight = 18;
 
     // ConversationView overrides Border.QuoteBlock: Padding=0, BorderThickness=0.
     private const double QuotePaddingVertical = 0;
@@ -71,7 +77,6 @@ public static class MarkdownHeightEstimator
     // 头部 = 22px 图标按钮 + 上下 5px padding + 1px 发丝分隔线；
     // 正文 = MarkdownTextBlock 的 12,10 外边距 + 代码块 1px 外框。
     private const double CodeHeaderHeight = 33;
-    private const double CodeHorizontalPadding = 26; // 12px × 2 + 1px × 2 外框
     private const double CodeVerticalPadding = 22; // 10px × 2 + 1px × 2 外框
     private const double CodeFontSize = 11;
     private const double CodeLineHeight = 18;
@@ -198,40 +203,44 @@ public static class MarkdownHeightEstimator
         };
 
         private readonly Style _style;
-        private readonly double _width;
 
         public Estimator(double width, Style style)
         {
-            _width = Math.Max(1, width);
             _style = style;
             _probe.FontFamily = style.FontFamily;
             _probe.FontSize = style.FontSize;
             _probe.LineHeight = style.LineHeight;
         }
 
-        public double EstimateContainer(ContainerBlock container, double width)
+        public double EstimateContainer(
+            ContainerBlock container,
+            double width,
+            double? spacing = null,
+            bool excludeInlineCode = false
+        )
         {
             var total = 0.0;
             var first = true;
+            var gap = spacing ?? _style.ContainerSpacing;
             foreach (var child in container)
             {
                 if (child is null)
                     continue;
                 if (!first)
-                    total += _style.ContainerSpacing;
-                total += EstimateBlock(child, width);
+                    total += gap;
+                total += EstimateBlock(child, width, excludeInlineCode);
                 first = false;
             }
             return total;
         }
 
-        internal double EstimateBlock(Block block, double width)
+        internal double EstimateBlock(Block block, double width, bool excludeInlineCode = false)
         {
             width = Math.Max(1, width);
             return block switch
             {
                 HeadingBlock heading => MeasureHeading(heading, width),
-                ParagraphBlock paragraph => MeasureParagraph(paragraph, width),
+                ParagraphBlock paragraph => MeasureParagraph(paragraph, width, excludeInlineCode),
                 Markdig.Syntax.CodeBlock code => MeasureCode(code, width),
                 ListBlock list => MeasureList(list, width),
                 Table table => MeasureTable(table, width),
@@ -252,31 +261,38 @@ public static class MarkdownHeightEstimator
                 4 => (16.0, 2.0),
                 _ => (16.0, 0.0),
             };
-            // The Heading Border + nested TextBlock measure 6px above the bare
-            // line box (font line box/border), in addition to the style margin.
-            return MeasureText(ExtractInlines(heading.Inline), fontSize, _style.LineHeight, width)
-                + margin
-                + 6;
+            // MarkdownStyles sets Heading TextBlock Margin=0,{6|4|2|0}; the
+            // margin applies to both top and bottom, and the measured heading
+            // line box is 28px for every heading level at this font.
+            return MeasureInlineText(heading.Inline, fontSize, _style.LineHeight, width)
+                + margin * 2;
         }
 
-        private double MeasureParagraph(ParagraphBlock paragraph, double width)
+        private double MeasureParagraph(
+            ParagraphBlock paragraph,
+            double width,
+            bool excludeInlineCode = false
+        )
         {
-            return MeasureText(
-                    ExtractInlines(paragraph.Inline),
+            return MeasureInlineText(
+                    paragraph.Inline,
                     _style.FontSize,
                     _style.LineHeight,
-                    width
+                    width,
+                    includeCode: !excludeInlineCode
                 ) + _style.ParagraphMargin;
         }
 
         private double MeasureCode(Markdig.Syntax.CodeBlock code, double width)
         {
             var text = ExtractCode(code);
+            // CodeBlock has its own horizontal scrolling and never wraps source
+            // lines. Using the body width here overestimates long code by 2-3×.
             var codeHeight = MeasureText(
                 text,
                 CodeFontSize,
                 CodeLineHeight,
-                Math.Max(1, width - CodeHorizontalPadding),
+                double.PositiveInfinity,
                 CodeFontFamily
             );
             return CodeHeaderHeight + CodeVerticalPadding + CodeMarginVertical + codeHeight;
@@ -297,7 +313,15 @@ public static class MarkdownHeightEstimator
                     bulletWidth,
                     MeasureText(bullet, 14, 20, double.PositiveInfinity)
                 );
-                var content = EstimateContainer(listItem, Math.Max(1, width - bulletWidth));
+                // MarkdownListGrid.ListBlock sets ListItemBlock Spacing=0; do not
+                // add the document ContainerSpacing between a paragraph and its
+                // nested list.
+                var content = EstimateContainer(
+                    listItem,
+                    Math.Max(1, width - bulletWidth),
+                    0,
+                    excludeInlineCode: true
+                );
                 rows.Add((bulletWidth, content));
             }
 
@@ -311,22 +335,53 @@ public static class MarkdownHeightEstimator
         private double MeasureTable(Table table, double width)
         {
             var rows = new List<double>();
-            var rowIndex = 0;
+            var columnWidths = new List<double>();
             foreach (var row in table.OfType<TableRow>())
             {
                 var rowHeight = 0.0;
+                var cellIndex = 0;
                 foreach (var cell in row.OfType<TableCell>())
                 {
                     var content = EstimateContainer(cell, double.PositiveInfinity);
                     var border = row.IsHeader ? 2.0 : 1.0;
                     rowHeight = Math.Max(rowHeight, content + TableCellVerticalPadding + border);
+
+                    var cellWidth = MeasureCellContentWidth(cell) + TableCellHorizontalPadding;
+                    if (cellIndex < columnWidths.Count)
+                        columnWidths[cellIndex] = Math.Max(columnWidths[cellIndex], cellWidth);
+                    else
+                        columnWidths.Add(cellWidth);
+                    cellIndex++;
                 }
                 rows.Add(rowHeight);
-                rowIndex++;
             }
 
-            _ = width;
-            return TableMarginVertical + TablePaddingVertical + rows.Sum();
+            var tableWidth = TablePaddingHorizontal + columnWidths.Sum();
+            var horizontalScrollbar = tableWidth > width ? TableHorizontalScrollbarHeight : 0;
+            return TableMarginVertical + TablePaddingVertical + horizontalScrollbar + rows.Sum();
+        }
+
+        private double MeasureCellContentWidth(TableCell cell)
+        {
+            var maxWidth = 0.0;
+            foreach (var block in cell)
+            {
+                if (block is LeafBlock leaf && leaf.Inline is { } inline)
+                    maxWidth = Math.Max(maxWidth, MeasureTextWidth(ExtractInlines(inline)));
+            }
+            return maxWidth;
+        }
+
+        private double MeasureTextWidth(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+            _probe.FontFamily = _style.FontFamily;
+            _probe.FontSize = _style.FontSize;
+            _probe.LineHeight = _style.LineHeight;
+            _probe.Text = text;
+            _probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            return _probe.DesiredSize.Width;
         }
 
         private double MeasureQuote(QuoteBlock quote, double width)
@@ -338,14 +393,25 @@ public static class MarkdownHeightEstimator
         private double MeasureFallback(Block block, double width)
         {
             if (block is LeafBlock leaf && leaf.Inline is { } inline)
-                return MeasureText(
-                    ExtractInlines(inline),
-                    _style.FontSize,
-                    _style.LineHeight,
-                    width
-                );
+                return MeasureInlineText(inline, _style.FontSize, _style.LineHeight, width);
             return Math.Max(1, width);
         }
+
+        /// <summary>
+        /// Inline code is a separately shaped chip in LiveMarkdown. List items
+        /// exclude the chip's text from the parent line wrapping; ordinary
+        /// paragraphs include it. The caller selects the observed behavior.
+        /// </summary>
+        private double MeasureInlineText(
+            ContainerInline? inline,
+            double fontSize,
+            double lineHeight,
+            double width,
+            bool includeCode = true
+        ) => MeasureText(ExtractInlines(inline, includeCode), fontSize, lineHeight, width);
+
+        private double MeasureInlineWidth(ContainerInline? inline) =>
+            MeasureTextWidth(ExtractInlines(inline, includeCode: true));
 
         private double MeasureText(
             string text,
@@ -367,16 +433,20 @@ public static class MarkdownHeightEstimator
         }
     }
 
-    private static string ExtractInlines(ContainerInline? inline)
+    private static string ExtractInlines(ContainerInline? inline, bool includeCode = true)
     {
         if (inline is null)
             return "";
         var builder = new StringBuilder();
-        AppendInline(inline, builder);
+        AppendInline(inline, builder, includeCode);
         return builder.ToString();
     }
 
-    private static void AppendInline(Inline inline, StringBuilder builder)
+    private static void AppendInline(
+        Markdig.Syntax.Inlines.Inline inline,
+        StringBuilder builder,
+        bool includeCode
+    )
     {
         switch (inline)
         {
@@ -384,18 +454,19 @@ public static class MarkdownHeightEstimator
                 builder.Append(literal.Content.AsSpan());
                 return;
             case Markdig.Syntax.Inlines.CodeInline code:
-                builder.Append(code.Content.AsSpan());
+                if (includeCode)
+                    builder.Append(code.Content.AsSpan());
                 return;
             case LineBreakInline:
                 builder.Append('\n');
                 return;
             case LinkInline link:
                 foreach (var child in link)
-                    AppendInline(child, builder);
+                    AppendInline(child, builder, includeCode);
                 return;
             case ContainerInline container:
                 foreach (var child in container)
-                    AppendInline(child, builder);
+                    AppendInline(child, builder, includeCode);
                 return;
             default:
                 if (inline is LeafInline)
