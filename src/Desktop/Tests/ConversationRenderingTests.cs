@@ -5,6 +5,7 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -13,8 +14,10 @@ using Avalonia.VisualTree;
 using Core.Interactions;
 using Core.Shared;
 using Core.Tools;
+using Desktop.Controls;
 using Desktop.Models;
 using Desktop.Services;
+using Desktop.Views;
 using LiveMarkdown.Avalonia;
 using Xunit;
 
@@ -382,6 +385,125 @@ public class ConversationRenderingTests
                 Assert.Contains("思考过程", completed);
                 Assert.Contains("这是思考内容，流式中也必须直接可见。", completed);
                 Assert.DoesNotContain("思考中…", completed);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 尾部跟随时展开步骤详情：内容长高会把视口追到新的底部，刚展开的正文反而
+    /// 跑到视口上方。展开必须暂停跟随，并把详情第一行留在视口内，不能等用户滚动。
+    /// </summary>
+    [Fact]
+    public void ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll()
+    {
+        Ui.Value.Run(() =>
+        {
+            var messages = new List<ChatMessage>();
+            for (var i = 0; i < 10; i++)
+            {
+                var message = new ChatMessage(MessageSender.Agent);
+                for (var j = 0; j < 3; j++)
+                {
+                    var step = new AgentStep
+                    {
+                        Kind = StepKind.Thinking,
+                        Status = AgentStepStatus.Completed,
+                        Title = $"思考过程 {i}-{j}",
+                    };
+                    step.ThinkingBuilder.Append(
+                        string.Join("\n", Enumerable.Repeat($"长思考 {i}-{j}。", 40))
+                    );
+                    step.NotifyThinkingChanged();
+                    message.AgentSteps.Add(step);
+                }
+                message.IsProcessExpanded = true;
+                messages.Add(message);
+            }
+
+            var view = new ConversationView();
+            var list = view.FindControl<AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new ConversationRowCollection(messages.ToArray());
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 420,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                var scroll = view.FindControl<ScrollViewer>("MessageScroll")!;
+                scroll.Offset = scroll.Offset.WithY(scroll.Extent.Height);
+                Pump();
+                Assert.True(list.IsFollowing, "初始应处于尾部跟随");
+
+                var button = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext
+                            is ConversationRow
+                            {
+                                Step: { Kind: StepKind.Thinking },
+                            }
+                        && Equals(b.Content, "展开")
+                    )
+                    .Select(b => new
+                    {
+                        Button = b,
+                        Point = b.TranslatePoint(new Point(0, 0), scroll),
+                    })
+                    .Where(x =>
+                        x.Point is { } point
+                        && point.Y >= 0
+                        && point.Y < scroll.Viewport.Height
+                    )
+                    .OrderByDescending(x => x.Point!.Value.Y)
+                    .FirstOrDefault();
+                Assert.NotNull(button);
+
+                var click = button!.Button.TranslatePoint(
+                    new Point(
+                        button.Button.Bounds.Width / 2,
+                        button.Button.Bounds.Height / 2
+                    ),
+                    window
+                );
+                Assert.NotNull(click);
+                window.MouseMove(click!.Value);
+                window.MouseDown(click.Value, MouseButton.Left);
+                window.MouseUp(click.Value, MouseButton.Left);
+                Pump();
+
+                var row = (ConversationRow)button.Button.DataContext!;
+                Assert.True(row.Step!.IsDetailsExpanded);
+                Assert.False(list.IsFollowing, "手动展开后必须暂停尾部跟随");
+                var details = view.GetVisualDescendants()
+                    .OfType<StackPanel>()
+                    .SingleOrDefault(panel =>
+                        panel.Classes.Contains("StepDetails")
+                        && ReferenceEquals(panel.DataContext, row)
+                    );
+                Assert.NotNull(details);
+                var detailText = details!
+                    .GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .FirstOrDefault(t => t.Text?.StartsWith("长思考", StringComparison.Ordinal) == true);
+                Assert.NotNull(detailText);
+                var detailPoint = detailText!.TranslatePoint(new Point(0, 0), scroll);
+                Assert.NotNull(detailPoint);
+                Assert.True(
+                    detailPoint.Value.Y >= 0
+                        && detailPoint.Value.Y < scroll.Viewport.Height,
+                    $"展开的详情第一行不在视口内：y={detailPoint.Value.Y:0.0}, "
+                        + $"viewport={scroll.Viewport.Height:0.0}, offset={scroll.Offset.Y:0.0}"
+                );
             }
             finally
             {

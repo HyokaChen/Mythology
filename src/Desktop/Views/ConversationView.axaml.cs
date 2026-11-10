@@ -381,9 +381,11 @@ public partial class ConversationView : UserControl
         for (var i = old.Count - suffix - 1; i >= prefix; i--)
             old.RemoveAt(i);
 
-        var oldCount = old.Count;
+        // 差异段必须插回 prefix 与 suffix 之间；用 oldCount 追加会把新增行
+        // 扔到窗口末尾，展开过程后步骤要等到下一次滚动换窗才出现。
+        var insertAt = prefix;
         for (var i = prefix; i < desired.Count - suffix; i++)
-            old.Insert(oldCount + (i - prefix), desired[i]);
+            old.Insert(insertAt++, desired[i]);
     }
 
     /// <summary>全量行模型变化但窗口对象不需要变化时，重算上下 spacer。</summary>
@@ -923,9 +925,63 @@ public partial class ConversationView : UserControl
 
     private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Control { DataContext: ConversationRow { Step: { } step } })
-            step.IsDetailsExpanded = !step.IsDetailsExpanded;
+        if (sender is Control { DataContext: ConversationRow { Step: { } step } row })
+        {
+            // 展开步骤详情会让当前行长高。若仍在尾部跟随，AutoScroll 会把视口
+            // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
+            // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
+            var expand = !step.IsDetailsExpanded;
+            if (expand)
+                MessageList.PauseFollow();
+            step.IsDetailsExpanded = expand;
+            if (expand)
+            {
+                Dispatcher.UIThread.Post(
+                    () => BringStepDetailsIntoView(row),
+                    DispatcherPriority.Loaded
+                );
+            }
+        }
         e.Handled = true;
+    }
+
+    private void BringStepDetailsIntoView(ConversationRow row)
+    {
+        if (row.Step is not { IsDetailsExpanded: true })
+            return;
+        var details = this.GetVisualDescendants()
+            .OfType<StackPanel>()
+            .FirstOrDefault(panel =>
+                panel.Classes.Contains("StepDetails") && ReferenceEquals(panel.DataContext, row)
+            );
+        if (details?.TranslatePoint(new Point(0, 0), MessageScroll) is not { } top)
+            return;
+
+        // 详情顶部已经在视口上部（或完整可见）时不打扰用户；只有贴近/越过底边
+        // 或已经跑到视口上方时，才把它拉回可读位置。
+        var viewport = MessageScroll.Viewport.Height;
+        if (top.Y >= 8 && top.Y < viewport - 24)
+            return;
+
+        // 把详情顶部放到视口上方留白处。BringIntoView 对“比视口还高”的控件只保证
+        // 部分可见，长思考正文仍可能第一行在视口外；这里显式对齐，保证点击后能读到内容。
+        var target = MessageScroll.Offset.Y + top.Y - 8;
+        var max = Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height);
+        target = Math.Clamp(target, 0, max);
+        if (Math.Abs(target - MessageScroll.Offset.Y) <= 0.5)
+            return;
+
+        _restoringOffset = true;
+        MessageList.BeginLayoutUpdate();
+        try
+        {
+            MessageScroll.Offset = MessageScroll.Offset.WithY(target);
+        }
+        finally
+        {
+            MessageList.EndLayoutUpdate();
+            _restoringOffset = false;
+        }
     }
 
     /// <summary>补全弹窗条目被点击：插入该项（仅当点击落在条目上,滚动条等不触发）。</summary>

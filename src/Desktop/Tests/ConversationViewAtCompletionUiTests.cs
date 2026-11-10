@@ -1110,19 +1110,34 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                             ),
                     "过程行挂载"
                 );
-                var processButtons = view.GetVisualDescendants()
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var scroll = FindMessageScroll(view);
+                // 回到顶部，保证点击的是当前视口里真实可见的过程行。
+                scroll.Offset = scroll.Offset.WithY(0);
+                PumpUntil(() => scroll.Offset.Y <= 0.5, "回到顶部");
+
+                var processButton = view.GetVisualDescendants()
                     .OfType<Button>()
                     .Where(b =>
                         b.DataContext
                             is Desktop.Models.ConversationRow
                             {
-                                Kind: Desktop.Models.ConversationRowKind.Process
+                                Kind: Desktop.Models.ConversationRowKind.Process,
+                                Message: var message,
                             }
+                        && ReferenceEquals(message, messages[0])
                     )
-                    .ToList();
-                Assert.True(processButtons.Count >= 2);
-                processButtons[0]
-                    .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    .FirstOrDefault(b =>
+                        b.TranslatePoint(new Point(0, 0), scroll) is { } point
+                        && point.Y >= 0
+                        && point.Y < scroll.Viewport.Height
+                    );
+                Assert.NotNull(processButton);
+                processButton!.RaiseEvent(
+                    new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)
+                );
                 for (var i = 0; i < 10; i++)
                 {
                     Dispatcher.UIThread.RunJobs();
@@ -1131,11 +1146,23 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 }
                 Assert.True(messages[0].IsProcessExpanded);
                 Assert.False(messages[1].IsProcessExpanded);
-                Assert.False(
-                    view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                        "MessageList"
-                    )!.IsFollowing
-                );
+                Assert.False(list.IsFollowing);
+                var stepRow = list.Items
+                    .OfType<Desktop.Models.ConversationRow>()
+                    .FirstOrDefault(row =>
+                        ReferenceEquals(row.Message, messages[0])
+                        && row.Kind == Desktop.Models.ConversationRowKind.Step
+                    );
+                Assert.NotNull(stepRow);
+                var title = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .FirstOrDefault(text =>
+                        ReferenceEquals(text.DataContext, stepRow) && text.Text == "工具 0"
+                    );
+                Assert.NotNull(title);
+                var titlePoint = title!.TranslatePoint(new Point(0, 0), scroll);
+                Assert.NotNull(titlePoint);
+                Assert.InRange(titlePoint.Value.Y, 0, scroll.Viewport.Height);
             }
             finally
             {

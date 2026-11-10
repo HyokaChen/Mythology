@@ -734,7 +734,8 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   表格按「单元格高度 + padding」逐行求和；可见行布局后回读真实高度覆盖估算，
   阅读历史时用 `anchorRow + anchorDelta` 抵消 spacer 高度修正
 - 窗口换页只增量 `RemoveAt/Insert`，保留相同行对象与 Content 行里的 `MarkdownRenderer`；
-  不调用 `Clear()`，避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
+  差异段必须插回 `prefix` 与 `suffix` 之间，不能追加到窗口末尾；不调用 `Clear()`，
+  避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
 - 单条超长正文（>16k 字符）由 `VirtualizedMarkdownBody` 按 Markdig 顶层 block 拆分，
   只实例化视口附近的 segment；普通消息仍走单个 `MarkdownRenderer`
   以保留流式增量、选择与链接行为；block 内不产生裸 Markdown 占位
@@ -750,14 +751,17 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
   展开后的完整推理放在 `MaxHeight=320` 的内部 ScrollViewer，token 增长不改变对话总高度
   （借鉴 TKCode.Arc ReasoningBlock）
+- 点击「展开 / 详情」时先 `PauseFollow`，布局后把详情顶部对齐到视口上方留白；
+  否则尾部跟随时内容长高会把视口追到新底部，刚展开的正文反而跑到视口外，
+  必须再滚动一下才出现。回归：`ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll`
 - **整个 Turn 完成**（`ConversationViewModel.IsProcessing == false`）后才等 450ms 自动折叠过程；
   回合进行中步骤结束不折叠，避免“先折起再展开”的抖动；失败自动展开；用户手动操作后不自动折；
   参数/结果/diff 各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
 - 流式步骤/来源变化用**增量行拓扑同步**，不重建 Content 行；LiveMarkdown 的
   DocumentNode/TextLayout 缓存因此能跨步骤保留。最终正文不做固定高度（未知长度只能隐藏或内滚）
 - 点击历史「过程」行时先 `PauseFollow`：展开步骤会改变行高，但不能把视口拉回最后一条；
-  用户滚轮下滚/PageDown/End 回到底部后才恢复跟随。回归：
-  `ProcessRows_ExpandClickedMessage_NotBottomMessage`
+  展开后的第一张步骤卡必须原地可见，不依赖滚动换窗。用户滚轮下滚/PageDown/End
+  回到底部后才恢复跟随。回归：`ProcessRows_ExpandClickedMessage_NotBottomMessage`
 - 跟随只认用户输入：滚轮上滚 / Up·PageUp·Home / 滚动条上拖立即停跟随；回到跟随
   必须是「正向 offset + extent 稳定 + 真正到底部」，窗口换页和高度校正不能误判。
   `BeginLayoutUpdate` 在 spacer/锚点修正期间屏蔽该判定；每次布局/extent 增长后仍

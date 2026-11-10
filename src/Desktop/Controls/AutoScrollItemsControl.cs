@@ -56,8 +56,8 @@ public class AutoScrollItemsControl : ItemsControl
     public event EventHandler? FollowChanged;
 
     /// <summary>
-    /// 停止尾部跟随但保留当前视口。用于用户点击历史过程行展开：
-    /// 内容高度变化不应把用户拉回底部。
+    /// 停止尾部跟随但保留当前视口。用于用户点击历史过程行/步骤详情展开：
+    /// 内容高度变化不应把用户拉回底部，更不能把刚展开的内容追到视口外。
     /// </summary>
     public void PauseFollow()
     {

@@ -17,6 +17,12 @@
   `ToolCallStreamTrackerTests`、Desktop/TUI `ToolCallStreamingTests`、
   `ConversationVmContractTests.WaitingRow_ShowsDuringToolArgumentStream_AndPendingCardIsReused`；
   Core 1604/1604、Desktop 639/639、TUI 889 passed（2 skipped）。
+- **Desktop 过程/步骤展开后必须再滚动才渲染**：窗口换页的差异段误用 `oldCount`
+  追加，展开过程行时新步骤被塞到已实例化窗口末尾；改为插回 `prefix` 与 `suffix`
+  之间，展开后第一张步骤卡原地可见。步骤「展开 / 详情」同时先 `PauseFollow`，
+  布局后把详情顶部对齐视口，避免尾部跟随把刚展开的正文追到视口外。
+  回归：`ProcessRows_ExpandClickedMessage_NotBottomMessage`、
+  `ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll`；Desktop 640/640。
 
 ### Changed
 - **Desktop 对话等待行覆盖阶段间隙**：等待行不再只在回合开头出现。思考结束
