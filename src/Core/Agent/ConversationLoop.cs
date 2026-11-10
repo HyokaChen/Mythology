@@ -2157,7 +2157,14 @@ public sealed class ConversationLoop(
                 "工具 {Tool} 的 arguments 为空，已拒绝执行并规范化为 {{}}",
                 toolName
             );
-            await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, toolCallKey, emit, ct);
+            await RejectInvalidToolArgumentsAsync(
+                call,
+                toolCallId,
+                toolName,
+                toolCallKey,
+                emit,
+                ct
+            );
             return;
         }
 
@@ -2188,7 +2195,14 @@ public sealed class ConversationLoop(
                     "工具 {Tool} 的 arguments 非法且无法修复，已拒绝执行并规范化为 {{}}",
                     toolName
                 );
-                await RejectInvalidToolArgumentsAsync(call, toolCallId, toolName, toolCallKey, emit, ct);
+                await RejectInvalidToolArgumentsAsync(
+                    call,
+                    toolCallId,
+                    toolName,
+                    toolCallKey,
+                    emit,
+                    ct
+                );
                 return;
             }
         }

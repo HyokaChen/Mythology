@@ -1614,8 +1614,9 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             // 纯空白 token 不是可见活动：模型常在正文前发 "\n\n"，
             // 若把它当成正文开始，思考结束后的等待行会提前消失，留下空白间隙。
-            StreamChunk { ContentType: StreamContentType.Text } chunk =>
-                !string.IsNullOrWhiteSpace(chunk.Delta),
+            StreamChunk { ContentType: StreamContentType.Text } chunk => !string.IsNullOrWhiteSpace(
+                chunk.Delta
+            ),
             StreamChunk { ContentType: StreamContentType.Thinking } => true,
             ToolCallStreamStarted tcs => !Core.Tools.HiddenTools.IsHidden(tcs.ToolName),
             ToolExecutionStart tes => !Core.Tools.HiddenTools.IsHidden(tes.ToolName),

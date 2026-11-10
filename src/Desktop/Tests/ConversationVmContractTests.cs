@@ -407,9 +407,7 @@ public sealed class ConversationVmContractTests
         Assert.True(tool.IsProcessing);
 
         // 工具结束：等待行重新亮起。
-        vm.HandleAgentEvent(
-            new ToolExecutionEnd("call_1", false, "ok") { ToolCallKey = "call_1" }
-        );
+        vm.HandleAgentEvent(new ToolExecutionEnd("call_1", false, "ok") { ToolCallKey = "call_1" });
         Assert.False(tool.IsProcessing);
         Assert.True(agent.IsWaiting);
 

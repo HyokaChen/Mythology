@@ -66,11 +66,8 @@ public sealed record StreamChunk(
 /// UI 用它立即建立 pending 工具卡，填满“思考结束 → 工具卡出现”的空白，
 /// 而不是靠 token 静默/计时器猜阶段边界。
 /// </summary>
-public sealed record ToolCallStreamStarted(
-    string ToolCallKey,
-    string ToolName,
-    int? Index
-) : AgentEvent;
+public sealed record ToolCallStreamStarted(string ToolCallKey, string ToolName, int? Index)
+    : AgentEvent;
 
 /// <summary>
 /// 本次 LLM 流结束事件（OnFinished）。

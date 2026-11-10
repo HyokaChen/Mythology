@@ -237,11 +237,10 @@ public sealed class StreamEventHandler(
             step.IsError = true;
             if (string.IsNullOrWhiteSpace(step.ResultSummary))
             {
-                step.ResultSummary = interrupted
-                    ? "已中断"
-                    : _pendingToolKeys.Contains(key)
-                        ? "未执行"
-                        : "未完成";
+                step.ResultSummary =
+                    interrupted ? "已中断"
+                    : _pendingToolKeys.Contains(key) ? "未执行"
+                    : "未完成";
             }
         }
         _pendingToolKeys.Clear();

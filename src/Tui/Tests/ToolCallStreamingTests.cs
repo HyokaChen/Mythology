@@ -3,8 +3,8 @@ using Core.Agent;
 using Core.Tools;
 using Tui.Controls;
 using Tui.Services;
-using Xunit;
 using XenoAtom.Terminal.UI.Controls;
+using Xunit;
 
 namespace Tui.Tests;
 

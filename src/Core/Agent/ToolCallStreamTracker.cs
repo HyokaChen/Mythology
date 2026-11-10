@@ -110,10 +110,7 @@ internal sealed class ToolCallStreamTracker
         )
             return byId;
 
-        if (
-            update.Index is int index
-            && _byIndex.TryGetValue(index, out var byIndex)
-        )
+        if (update.Index is int index && _byIndex.TryGetValue(index, out var byIndex))
             return byIndex;
 
         // Name 是弱别名：同名并行调用时不能直接命中第一张卡，
@@ -169,11 +166,7 @@ internal sealed class ToolCallStreamTracker
     /// </summary>
     private static bool CanMerge(Entry entry, FunctionCallStreamUpdate update)
     {
-        if (
-            update.Index is int index
-            && entry.Index is int existingIndex
-            && index != existingIndex
-        )
+        if (update.Index is int index && entry.Index is int existingIndex && index != existingIndex)
             return false;
 
         if (

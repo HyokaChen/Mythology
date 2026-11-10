@@ -15,8 +15,7 @@ public sealed class ToolCallStreamingTests
 {
     private static StreamChunk Text(string delta) => new(delta, "", StreamContentType.Text);
 
-    private static StreamChunk Thinking(string delta) =>
-        new(delta, "", StreamContentType.Thinking);
+    private static StreamChunk Thinking(string delta) => new(delta, "", StreamContentType.Thinking);
 
     [Fact]
     public void WhitespaceText_DoesNotCloseThinking()
@@ -60,11 +59,7 @@ public sealed class ToolCallStreamingTests
 
         handler.Handle(new ToolCallStreamStarted("call_1", "edit_entities", 0));
         handler.Handle(
-            new ToolExecutionStart(
-                "provider-id",
-                "edit_entities",
-                """{"name":"林月如"}"""
-            )
+            new ToolExecutionStart("provider-id", "edit_entities", """{"name":"林月如"}""")
             {
                 ToolCallKey = "call_1",
             }
@@ -83,17 +78,10 @@ public sealed class ToolCallStreamingTests
 
         handler.Handle(new ToolCallStreamStarted("call_1", "edit_entities", 0));
         handler.Handle(
-            new ToolExecutionStart("provider-id", "edit_entities", "{}")
-            {
-                ToolCallKey = "call_1",
-            }
+            new ToolExecutionStart("provider-id", "edit_entities", "{}") { ToolCallKey = "call_1" }
         );
-        handler.Handle(
-            new ToolExecutionEnd("provider-id", false, "ok") { ToolCallKey = "call_1" }
-        );
-        handler.Handle(
-            new LlmStreamFinished(ChatMessageFinishReasons.EndTurn, true, false, true)
-        );
+        handler.Handle(new ToolExecutionEnd("provider-id", false, "ok") { ToolCallKey = "call_1" });
+        handler.Handle(new LlmStreamFinished(ChatMessageFinishReasons.EndTurn, true, false, true));
 
         var tool = Assert.Single(target.AgentSteps);
         Assert.Equal(AgentStepStatus.Completed, tool.Status);
@@ -109,10 +97,7 @@ public sealed class ToolCallStreamingTests
         handler.Handle(new ToolCallStreamStarted("pending", "edit_entities", 0));
         handler.Handle(new ToolCallStreamStarted("running", "write_chapter", 1));
         handler.Handle(
-            new ToolExecutionStart("provider-id", "write_chapter", "{}")
-            {
-                ToolCallKey = "running",
-            }
+            new ToolExecutionStart("provider-id", "write_chapter", "{}") { ToolCallKey = "running" }
         );
 
         handler.FinalizeProcessingSteps(interrupted: true);

@@ -82,9 +82,7 @@ public sealed class ToolCallStreamTrackerTests
     public void ResolveExecutionKey_UsesCallIdWhenItWasThePrimaryKey()
     {
         var tracker = new ToolCallStreamTracker();
-        var started = tracker.Observe(
-            Delta(callId: "call_1", index: null, name: "edit_entities")
-        );
+        var started = tracker.Observe(Delta(callId: "call_1", index: null, name: "edit_entities"));
         Assert.NotNull(started);
         Assert.Equal("call_1", started.ToolCallKey);
 
@@ -117,9 +115,7 @@ public sealed class ToolCallStreamTrackerTests
     public void NameOnlyFallback_ResolvesToSameKey()
     {
         var tracker = new ToolCallStreamTracker();
-        var started = tracker.Observe(
-            Delta(callId: null, index: null, name: "edit_entities")
-        );
+        var started = tracker.Observe(Delta(callId: null, index: null, name: "edit_entities"));
         Assert.NotNull(started);
         Assert.Equal("name:edit_entities", started.ToolCallKey);
 
@@ -134,9 +130,7 @@ public sealed class ToolCallStreamTrackerTests
 
         // 首帧只带身份、参数增量为空：先登记 alias，但不急着建卡。
         Assert.Null(
-            tracker.Observe(
-                Delta(delta: "", callId: "call_1", index: 0, name: "edit_entities")
-            )
+            tracker.Observe(Delta(delta: "", callId: "call_1", index: 0, name: "edit_entities"))
         );
 
         // 后续帧只带 Index 和参数：仍应解析回同一调用并发 Started。
@@ -151,12 +145,8 @@ public sealed class ToolCallStreamTrackerTests
     {
         var tracker = new ToolCallStreamTracker();
 
-        var first = tracker.Observe(
-            Delta(callId: null, index: 0, name: "edit_entities")
-        );
-        var second = tracker.Observe(
-            Delta(callId: null, index: 1, name: "edit_entities")
-        );
+        var first = tracker.Observe(Delta(callId: null, index: 0, name: "edit_entities"));
+        var second = tracker.Observe(Delta(callId: null, index: 1, name: "edit_entities"));
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -170,12 +160,8 @@ public sealed class ToolCallStreamTrackerTests
     {
         var tracker = new ToolCallStreamTracker();
 
-        var first = tracker.Observe(
-            Delta(callId: "call_a", index: null, name: "edit_entities")
-        );
-        var second = tracker.Observe(
-            Delta(callId: "call_b", index: null, name: "edit_entities")
-        );
+        var first = tracker.Observe(Delta(callId: "call_a", index: null, name: "edit_entities"));
+        var second = tracker.Observe(Delta(callId: "call_b", index: null, name: "edit_entities"));
 
         Assert.NotNull(first);
         Assert.NotNull(second);

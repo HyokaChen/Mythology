@@ -484,7 +484,10 @@ public sealed class ConversationPanel
                 continue;
 
             var tool = _registry.TryGet(toolName);
-            var reason = interrupted ? "已中断" : wasPending ? "未执行" : "未完成";
+            var reason =
+                interrupted ? "已中断"
+                : wasPending ? "未执行"
+                : "未完成";
             var (subtitle, paramDisplay) = ToolCallRenderer.ParseToolArgs(argsStr);
 
             Flow.Items[idx] = ToolCallRenderer.BuildToolCallResultItem(

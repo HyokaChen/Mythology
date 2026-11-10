@@ -77,11 +77,13 @@ public sealed class AgentEventAdapter
 
             // 工具执行开始
             case ToolExecutionStart tes:
-                Enqueue(() => OnToolStart?.Invoke(
-                    tes.ToolCallKey ?? tes.ToolCallId,
-                    tes.ToolName,
-                    tes.Arguments
-                ));
+                Enqueue(() =>
+                    OnToolStart?.Invoke(
+                        tes.ToolCallKey ?? tes.ToolCallId,
+                        tes.ToolName,
+                        tes.Arguments
+                    )
+                );
                 break;
 
             // 工具执行结束

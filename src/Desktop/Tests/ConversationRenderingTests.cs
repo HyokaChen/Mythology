@@ -447,11 +447,7 @@ public class ConversationRenderingTests
                 var button = view.GetVisualDescendants()
                     .OfType<Button>()
                     .Where(b =>
-                        b.DataContext
-                            is ConversationRow
-                            {
-                                Step: { Kind: StepKind.Thinking },
-                            }
+                        b.DataContext is ConversationRow { Step: { Kind: StepKind.Thinking } }
                         && Equals(b.Content, "展开")
                     )
                     .Select(b => new
@@ -460,19 +456,14 @@ public class ConversationRenderingTests
                         Point = b.TranslatePoint(new Point(0, 0), scroll),
                     })
                     .Where(x =>
-                        x.Point is { } point
-                        && point.Y >= 0
-                        && point.Y < scroll.Viewport.Height
+                        x.Point is { } point && point.Y >= 0 && point.Y < scroll.Viewport.Height
                     )
                     .OrderByDescending(x => x.Point!.Value.Y)
                     .FirstOrDefault();
                 Assert.NotNull(button);
 
                 var click = button!.Button.TranslatePoint(
-                    new Point(
-                        button.Button.Bounds.Width / 2,
-                        button.Button.Bounds.Height / 2
-                    ),
+                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
                     window
                 );
                 Assert.NotNull(click);
@@ -494,13 +485,14 @@ public class ConversationRenderingTests
                 var detailText = details!
                     .GetVisualDescendants()
                     .OfType<TextBlock>()
-                    .FirstOrDefault(t => t.Text?.StartsWith("长思考", StringComparison.Ordinal) == true);
+                    .FirstOrDefault(t =>
+                        t.Text?.StartsWith("长思考", StringComparison.Ordinal) == true
+                    );
                 Assert.NotNull(detailText);
                 var detailPoint = detailText!.TranslatePoint(new Point(0, 0), scroll);
                 Assert.NotNull(detailPoint);
                 Assert.True(
-                    detailPoint.Value.Y >= 0
-                        && detailPoint.Value.Y < scroll.Viewport.Height,
+                    detailPoint.Value.Y >= 0 && detailPoint.Value.Y < scroll.Viewport.Height,
                     $"展开的详情第一行不在视口内：y={detailPoint.Value.Y:0.0}, "
                         + $"viewport={scroll.Viewport.Height:0.0}, offset={scroll.Offset.Y:0.0}"
                 );
