@@ -27,8 +27,15 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _resumeOnBottom = true;
     private bool _followPostPending;
     private bool _wheelScrollPending;
+    private int _wheelDirection;
+    private double _lastMaxOffset = double.NaN;
     private int _layoutUpdateDepth;
     private bool _windowActive = true;
+
+    // 用户在底部附近下滚时，ScrollViewer 的 overscroll/最后一步，以及
+    // 一帧内实测高度增长，可能造成 max-128 以内的 gap；这个窗口内直接
+    // 吸附到底，避免“差一点到底、还要再滚一次”。
+    private const double BottomSnapDistance = 128;
 
     /// <summary>窗口之前所有未实例化行的总高度；由上层布局模型计算。</summary>
     public static readonly StyledProperty<double> TopSpacerHeightProperty =
@@ -221,9 +228,27 @@ public class AutoScrollItemsControl : ItemsControl
             return;
         _resumeOnBottom = true;
         _wheelScrollPending = true;
+        _wheelDirection = Math.Sign(e.Delta.Y);
+        // 明确上滚立即停跟随；下滚只唤醒底部意图，避免把底部
+        // overscroll 的负 offset 当成上滚。自然滚动反转时仍由
+        // ScrollChanged 的 offset 判定兜底。
+        if (e.Delta.Y > 0)
+            DisableFollow();
+        else if (IsNearBottom())
+        {
+            SetFollow(true);
+            ScheduleFollowTail();
+        }
         // 该标志只用于下一次 offset 变化；若滚轮没有产生滚动（边界），
         // 不要让后续布局变化误消费它。
-        Dispatcher.UIThread.Post(() => _wheelScrollPending = false, DispatcherPriority.Input);
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _wheelScrollPending = false;
+                _wheelDirection = 0;
+            },
+            DispatcherPriority.Input
+        );
         if (IsAtBottom())
             SetFollow(true);
     }
@@ -240,8 +265,11 @@ public class AutoScrollItemsControl : ItemsControl
         else if (e.Key is Key.Down or Key.PageDown or Key.End)
         {
             _resumeOnBottom = true;
-            if (IsAtBottom())
+            if (IsAtBottom() || IsNearBottom())
+            {
                 SetFollow(true);
+                ScheduleFollowTail();
+            }
         }
     }
 
@@ -264,17 +292,41 @@ public class AutoScrollItemsControl : ItemsControl
             return;
 
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        var previousMaxOffset = _lastMaxOffset;
+        _lastMaxOffset = maxOffset;
+
+        // 用户已经贴住旧的 max，随后虚拟化实测让 extent 变高：这时 offset
+        // 仍停在旧 max，属于“还在底部”而不是新内容的中间位置。先记下
+        // bottom seek，即使当前 gap 暂时大于吸附阈值也要继续跟。
+        if (
+            !_autoFollow
+            && _resumeOnBottom
+            && e.ExtentDelta.Y > 0
+            && double.IsFinite(previousMaxOffset)
+            && _scrollViewer.Offset.Y >= previousMaxOffset - 2
+        )
+        {
+            SetFollow(true);
+            ScheduleFollowTail();
+        }
 
         // 滚轮产生的第一次 offset 变化优先按方向判定；即使同一帧里
         // 虚拟化高度修正也改变了 extent，上滚仍必须立即停跟随。
         if (_wheelScrollPending)
         {
             _wheelScrollPending = false;
-            if (e.OffsetDelta.Y < -0.5)
+            // 下滚手势在底部可能产生 macOS overscroll 的负 offset；
+            // 只有明确的上滚符号才在这里停跟随，不能把回弹当上滚。
+            if (
+                e.OffsetDelta.Y < -0.5
+                && _wheelDirection >= 0
+                && _scrollViewer.Offset.Y < maxOffset - 64
+            )
             {
                 DisableFollow();
                 return;
             }
+            _wheelDirection = 0;
         }
 
         // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量）都重新贴底。
@@ -289,7 +341,10 @@ public class AutoScrollItemsControl : ItemsControl
             _layoutUpdateDepth == 0
             && e.OffsetDelta.Y < -0.5
             && Math.Abs(e.ExtentDelta.Y) < 0.5
-            && _scrollViewer.Offset.Y < maxOffset - 0.5
+            // 底部 64px 是 overscroll/rubber-band 回弹区；滚轮上滚和
+            // 键盘上滚已经显式停跟随，不能让回弹把刚到底的跟随关掉。
+            && _scrollViewer.Offset.Y < maxOffset - 64
+            && _wheelDirection >= 0
         )
             DisableFollow();
 
@@ -303,9 +358,12 @@ public class AutoScrollItemsControl : ItemsControl
             && _resumeOnBottom
             && _layoutUpdateDepth == 0
             && (e.OffsetDelta.Y >= 0 || e.ExtentDelta.Y > 0)
-            && _scrollViewer.Offset.Y >= maxOffset - 2
+            && _scrollViewer.Offset.Y >= maxOffset - BottomSnapDistance
         )
+        {
             SetFollow(true);
+            ScheduleFollowTail();
+        }
     }
 
     /// <summary>把多次追底请求合并成一帧一次；执行时再确认用户仍在跟随。</summary>
@@ -351,6 +409,14 @@ public class AutoScrollItemsControl : ItemsControl
             return false;
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
         return _scrollViewer.Offset.Y >= maxOffset - 0.5;
+    }
+
+    private bool IsNearBottom()
+    {
+        if (_scrollViewer is null)
+            return false;
+        var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        return _scrollViewer.Offset.Y >= maxOffset - BottomSnapDistance;
     }
 
     private void OnItemsSourceChanged(AvaloniaPropertyChangedEventArgs e)

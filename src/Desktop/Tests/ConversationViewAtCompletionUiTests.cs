@@ -1011,6 +1011,130 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 快速滚到底后可能停在 maxOffset-20；用户再向下滚时应吸附到底，
+    /// 不能要求再滚一次。
+    /// </summary>
+    [Fact]
+    public void BottomNearGap_WheelDown_SnapsToBottom()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 120; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 10))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+                list.PauseFollow();
+                var max = sv.Extent.Height - sv.Viewport.Height;
+                sv.Offset = sv.Offset.WithY(Math.Max(0, max - 20));
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, -1));
+                for (var i = 0; i < 30; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+                var maxAfter = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                Assert.True(
+                    AtBottom(sv),
+                    $"offset={sv.Offset.Y:0.0} max={maxAfter:0.0} following={list.IsFollowing} extent={sv.Extent.Height:0.0} viewport={sv.Viewport.Height:0.0}"
+                );
+                Assert.True(list.IsFollowing);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// macOS overscroll 在底部会产生负 offset；这不能被当成“用户上滚”
+    /// 而关闭跟随，否则快速滚到底会回弹并停在离底部一小段。
+    /// </summary>
+    [Fact]
+    public void BottomOverscroll_DoesNotStopFollowing()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 10))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始底部跟随");
+
+                // 模拟底部回弹 10px；extent/offset 都是真实的 ScrollViewer 变化。
+                var max = sv.Extent.Height - sv.Viewport.Height;
+                sv.Offset = sv.Offset.WithY(Math.Max(0, max - 10));
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                Assert.True(list.IsFollowing, "底部 overscroll 不应关闭跟随");
+                Assert.True(AtBottom(sv), "回弹后应重新贴底");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 用户在底部时切到别的窗口，期间继续追加消息；切回来后必须仍贴底，
     /// 不能停在失焦前的中间 offset。
     /// </summary>
