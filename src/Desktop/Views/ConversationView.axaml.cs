@@ -211,6 +211,11 @@ public partial class ConversationView : UserControl
     private const int MaxLiveRows = 200;
     private const int LiveBufferRows = 20;
     private readonly HeightIndex<ConversationRow> _heightIndex = new();
+    private readonly Dictionary<
+        ChatMessage,
+        (long Version, double Width, double Height)
+    > _rowHeightCache = [];
+    private double _estimateWidth = 800;
 
     private void OnMessageScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
@@ -235,6 +240,7 @@ public partial class ConversationView : UserControl
             () =>
             {
                 _captureScheduled = false;
+                UpdateEstimateWidth();
                 CaptureMeasuredRows();
                 if (
                     MessageList.IsFollowing
@@ -422,13 +428,31 @@ public partial class ConversationView : UserControl
         return EstimateRowHeight(row);
     }
 
-    private static double EstimateRowHeight(ConversationRow row)
+    private double EstimateRowHeight(ConversationRow row)
     {
-        var contentLength = row.Message.Content?.Length ?? 0;
+        if (
+            row.Kind is ConversationRowKind.Content or ConversationRowKind.User
+            && row.Message.Content is { } content
+        )
+        {
+            var version = content.Version;
+            if (
+                _rowHeightCache.TryGetValue(row.Message, out var cached)
+                && cached.Version == version
+                && Math.Abs(cached.Width - _estimateWidth) <= 1
+            )
+                return cached.Height;
+
+            var height =
+                row.Kind == ConversationRowKind.Content
+                    ? EstimateAgentContentHeight(content.ToString(), row)
+                    : EstimateUserContentHeight(content.ToString(), row);
+            _rowHeightCache[row.Message] = (version, _estimateWidth, height);
+            return height;
+        }
+
         return row.Kind switch
         {
-            ConversationRowKind.Content => 32 + Math.Min(6000, contentLength * 0.52),
-            ConversationRowKind.User => 42 + Math.Min(2400, contentLength * 0.5),
             ConversationRowKind.Step => 54,
             ConversationRowKind.Process => 30,
             ConversationRowKind.Waiting => 30,
@@ -437,6 +461,37 @@ public partial class ConversationView : UserControl
             ConversationRowKind.System => 28,
             _ => 32,
         };
+    }
+
+    private double EstimateAgentContentHeight(string content, ConversationRow row)
+    {
+        var bodyWidth = Math.Max(160, _estimateWidth - 34); // 16*2 padding + 1*2 border
+        var body = MarkdownHeightEstimator.EstimateDocument(
+            content,
+            bodyWidth,
+            MarkdownHeightEstimator.Conversation
+        );
+        return body + 26 + row.Margin.Bottom; // Bubble padding 12*2 + border 2
+    }
+
+    private double EstimateUserContentHeight(string content, ConversationRow row)
+    {
+        var textWidth = Math.Max(160, _estimateWidth - 32); // Bubble padding 16*2
+        return MarkdownHeightEstimator.EstimatePlainText(content, textWidth, 15, 24)
+            + 20 // Bubble padding 10*2
+            + row.Margin.Bottom;
+    }
+
+    private void UpdateEstimateWidth()
+    {
+        var width = Math.Max(320, MessageScroll.Viewport.Width - 48);
+        if (Math.Abs(width - _estimateWidth) <= 1)
+            return;
+
+        _estimateWidth = width;
+        _rowHeightCache.Clear();
+        _measuredHeights.Clear();
+        RebuildHeightIndex();
     }
 
     private double TopOf(int index) => _heightIndex.OffsetOf(index);

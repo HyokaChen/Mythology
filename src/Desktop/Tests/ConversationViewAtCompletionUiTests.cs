@@ -803,6 +803,83 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// 估算器必须和真实 LiveMarkdown 的正文/表格布局对齐，而不是字符数除法。
+    /// </summary>
+    [Fact]
+    public void MarkdownEstimator_MatchesRenderedNovelTextAndTable()
+    {
+        Ui.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            message.AppendContent(
+                """
+                # 第一章 风起
+
+                这是第一段正文，包含中文、English 和 **粗体**，用于验证换行与行高。
+
+                这是第二段正文，长度足够触发多行换行。
+
+                | 角色 | 身份 | 备注 |
+                | --- | --- | --- |
+                | 林照 | 主角 | 少年剑客 |
+                | 苏晚 | 医者 | 山中来客 |
+
+                - 第一项
+                - 第二项
+                - 第三项
+
+                > 引用块第一行
+                > 引用块第二行
+
+                ```csharp
+                var x = 1;
+                var y = 2;
+                ```
+                """
+            );
+            _vm.Messages.Add(message);
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                            .Any(),
+                    "Markdown 正文挂载"
+                );
+                var renderer = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownRenderer>()
+                    .Last();
+                var actual = renderer.DesiredSize.Height;
+                var estimated = Desktop.Controls.MarkdownHeightEstimator.EstimateDocument(
+                    message.Content.ToString(),
+                    renderer.Bounds.Width
+                );
+
+                Assert.True(actual > 0);
+                Assert.True(
+                    Math.Abs(estimated - actual) <= 2,
+                    $"actual={actual:0.0} estimated={estimated:0.0} width={renderer.Bounds.Width:0.0}"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static ScrollViewer FindMessageScroll(Desktop.Views.ConversationView view) =>
         view.FindControl<ScrollViewer>("MessageScroll")
         ?? throw new InvalidOperationException("MessageScroll 未找到");

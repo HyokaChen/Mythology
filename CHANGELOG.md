@@ -67,6 +67,12 @@
   段落/标题/列表/表格/代码块/图片。删除三个 PackageReference、App 的节点注册/Mermaid
   style 与 SVG decoder 注册；Math/Mermaid/SVG 内容不再渲染为富控件，避免不可估算的
   异步图形高度，也减少启动与依赖体积。回归：Desktop 612/612。
+- **Desktop 基础 Markdown 源码级高度估算**：新增 `MarkdownHeightEstimator`，按
+  LiveMarkdown 源码常量（TextLayout/行高、段落 margin、标题字号与 margin、列表网格、
+  表格 cell padding/行高、引用/代码块模板）估算正文高度；表格按每行最大 cell 高度求和。
+  估算值进入 Fenwick 高度索引，可见行实测后覆盖；回归：
+  `MarkdownEstimator_MatchesRenderedNovelTextAndTable`（正文+标题+列表+表格+引用+代码块，
+  与真实 `MarkdownRenderer.DesiredSize` 误差 ≤2px）；Desktop 613/613。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

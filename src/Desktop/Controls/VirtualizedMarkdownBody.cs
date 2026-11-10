@@ -60,6 +60,7 @@ public sealed class VirtualizedMarkdownBody : Panel
     private double _lastScrollOffset = double.NaN;
     private double _visibleTop;
     private double _visibleBottom;
+    private double _estimatedWidth = 640;
 
     static VirtualizedMarkdownBody()
     {
@@ -192,6 +193,9 @@ public sealed class VirtualizedMarkdownBody : Panel
             }
             if (_blocks.Count == 0)
                 _blocks.Add(new Block(text, IsHeavySegment(text)));
+            _estimatedWidth = Bounds.Width > 0 ? Bounds.Width : 640;
+            foreach (var block in _blocks)
+                block.Height = EstimateBlockHeight(block.Text, _estimatedWidth);
             _heightIndex.Rebuild(_blocks, BlockHeight);
             InvalidateMeasure();
         }
@@ -255,6 +259,7 @@ public sealed class VirtualizedMarkdownBody : Panel
         if (_blocks.Count == 0)
             return default;
 
+        EnsureEstimatedWidth(width);
         var range = GetVisibleRange();
         ScheduleRealize(range);
 
@@ -362,6 +367,36 @@ public sealed class VirtualizedMarkdownBody : Panel
         if (block.Height > 0.5)
             return block.Height;
         return EstimateHeight(block.Text);
+    }
+
+    private void EnsureEstimatedWidth(double width)
+    {
+        if (Math.Abs(width - _estimatedWidth) <= 1)
+            return;
+
+        _estimatedWidth = width;
+        foreach (var block in _blocks)
+        {
+            block.Height = EstimateBlockHeight(block.Text, width);
+            block.MeasurePasses = 0;
+        }
+        _heightIndex.Rebuild(_blocks, BlockHeight);
+    }
+
+    private static double EstimateBlockHeight(string text, double width)
+    {
+        try
+        {
+            return MarkdownHeightEstimator.EstimateBlock(
+                text,
+                width,
+                MarkdownHeightEstimator.Conversation
+            );
+        }
+        catch
+        {
+            return EstimateHeight(text);
+        }
     }
 
     private void ScheduleRealize((int Start, int End) range)

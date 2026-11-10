@@ -723,12 +723,14 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 （Avalonia issue #11989；上游修复 PR #20993 未合入 12.1.5/master）。
 
 - 布局：外层 `ScrollViewer` + `AutoScrollItemsControl` + 普通 `StackPanel` + 上下 spacer；
-  Extent = 已实例化窗口高度 + 未实例化行估算高度，滚动条覆盖完整历史
+  Extent = 已实例化窗口高度 + 未实例化行的源码级估算高度，滚动条覆盖完整历史
 - **全量行模型 + 可见窗口**：所有消息先扁平化成行（User/System/Waiting/Step/Content/
-  Interrupted/Sources），但只有视口前后各一屏（尾部约 3 屏）的行会创建控件；窗口外只是
+  Interrupted/Sources），只有固定 `focusIndex ± buffer` 的窗口行会创建控件；窗口外只是
   `TopSpacerHeight` / `BottomSpacerHeight`，不创建任何控件，更不做纯文本降级
-- 行高度用「估算 + 实测缓存」：可见行布局后从行容器回读真实高度；阅读历史时用
-  `anchorRow + anchorDelta` 抵消 spacer 高度修正，避免越补历史越跳
+- 基础 Markdown 高度由 `MarkdownHeightEstimator` 从 LiveMarkdown 源码常量估算：
+  TextLayout 行高、段落 margin 8、标题字号/margin、列表/表格/引用/代码块模板；
+  表格按「单元格高度 + padding」逐行求和；可见行布局后回读真实高度覆盖估算，
+  阅读历史时用 `anchorRow + anchorDelta` 抵消 spacer 高度修正
 - 窗口换页只增量 `RemoveAt/Insert`，保留相同行对象与 Content 行里的 `MarkdownRenderer`；
   不调用 `Clear()`，避免 `Reset` 被 AutoScroll 误判成新会话而强制贴底
 - 单条超长正文（>16k 字符）由 `VirtualizedMarkdownBody` 按 Markdig 顶层 block 拆分，
@@ -737,6 +739,8 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 行/block 高度用 Fenwick 前缀索引维护，scroll offset → focusIndex 走二分；
   live window 是 `focusIndex ± buffer` 的固定节点窗口，最大节点数按视口/平均高度动态计算
   （行 48–200，block 16–40），不再每次全表扫描
+- 正文仅使用 LiveMarkdown 基础包（无 Math/Mermaid/Svg 扩展）；小说场景的纯文本、
+  列表、表格、代码块都由源码级布局模型估算，避免不可测的异步图形高度
 - 离屏超大 block（>12k 字符的代码块/正文）延迟创建；只有接近可见范围才挂
   `MarkdownRenderer`，其余仅保留 spacer 高度
 - 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
