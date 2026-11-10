@@ -205,8 +205,8 @@ public sealed class TuiInteractionParityTests
             s => Attr(s, "Name") == "StatusSpinner"
         );
 
-        Assert.Equal("{Binding IsProcessing}", Attr(statusSpinner, "IsActive"));
-        Assert.Equal("{Binding IsProcessing}", Attr(statusSpinner, "IsVisible"));
+        Assert.Equal("{Binding IsBusy}", Attr(statusSpinner, "IsActive"));
+        Assert.Equal("{Binding IsBusy}", Attr(statusSpinner, "IsVisible"));
         Assert.Contains(
             Descendants(root, "TextBlock"),
             t => Attr(t, "Text") == "{Binding StatusText}"

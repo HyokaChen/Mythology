@@ -12,7 +12,9 @@
     BorderBrush="{DynamicResource BrushMist}"
     BorderThickness="1,1,0,0"
   >
-    <Grid RowDefinitions="Auto,*" MinHeight="250">
+    <!-- 固定约 3 行的可视高度：右侧栏是 *,Auto，面板不封顶会按 todo 数量无限长高，
+         把上方设定面板挤没。超出部分交给 ScrollViewer，标题栏保持可见。 -->
+    <Grid RowDefinitions="Auto,*">
       <!-- 标题栏（DESIGN.md §Category Tag：Fragment Mono 标签） -->
       <Border Grid.Row="0" Padding="14,10,14,6" Background="Transparent">
         <Grid ColumnDefinitions="*,Auto">
@@ -44,7 +46,12 @@
 
       <!-- 任务列表 -->
       <Border Grid.Row="1" IsVisible="{Binding HasItems}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- 118 ≈ 3 张任务卡（含间距）；第 4 项只露一条边，提示可滚动。 -->
+        <ScrollViewer
+          MaxHeight="118"
+          VerticalScrollBarVisibility="Auto"
+          HorizontalScrollBarVisibility="Disabled"
+        >
           <ItemsControl ItemsSource="{Binding Items}" Margin="10,0,10,10">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:TodoItemRow">

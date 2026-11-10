@@ -748,6 +748,22 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 _isCompacting = active;
                 this.RaisePropertyChanged(nameof(IsBusy));
+                if (active)
+                {
+                    // 压缩预检可能发生在 Agent 回合开始之前：此时 OnProcessingChanged
+                    // 还没到，左下角必须自己进入 loading + 诗词，否则整段压缩静默。
+                    if (!IsProcessing)
+                    {
+                        var poem = PickPoem();
+                        StatusText = poem;
+                        StatusTooltip = poem;
+                    }
+                }
+                else if (!IsProcessing)
+                {
+                    StatusText = IdleStatusText;
+                    StatusTooltip = null;
+                }
             });
 
         // 斜杠命令请求 → 主窗口动作

@@ -92,6 +92,50 @@ public sealed class ConversationVmContractTests
         Assert.Empty(vm.Messages);
     }
 
+    /// <summary>
+    /// 压缩事件必须驱动同一行系统状态：开始 → spinner + 「压缩中…」，结束 → spinner 停、
+    /// 文本改为结果。否则用户只能看到两条静态系统消息，不知道压缩还在跑。
+    /// </summary>
+    [Fact]
+    public void CompactEvents_DriveLiveSystemRowAndSpinner()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var states = new List<bool>();
+        vm.CompactStateChanged += states.Add;
+
+        var start = (Action)
+            typeof(SessionEngine)
+                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine)!;
+        var end =
+            (Action<string>)
+                typeof(SessionEngine)
+                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(h.Engine)!;
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.True(vm.IsCompacting);
+            var message = Assert.Single(vm.Messages);
+            Assert.Equal(MessageSender.System, message.Sender);
+            Assert.Equal("上下文压缩中…", message.Content.ToString());
+            Assert.True(message.IsSpinnerVisible);
+
+            end("上下文压缩完成：202 → 20 条");
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.False(vm.IsCompacting);
+            Assert.Equal("上下文压缩完成：202 → 20 条", message.Content.ToString());
+            Assert.False(message.IsSpinnerVisible);
+        });
+
+        Assert.Equal([true, false], states);
+    }
+
     [Fact]
     public void EntityChangeNotice_WhileIdle_IsSystemRow()
     {
@@ -269,6 +313,54 @@ public sealed class ConversationVmContractTests
         Assert.True(agent.IsInterrupted);
         Assert.DoesNotContain("已中断", agent.Content.ToString());
         Assert.Equal(2, vm.Messages.Count);
+    }
+
+    /// <summary>
+    /// 阶段边界必须重新亮起等待行：思考结束 / 工具结束 / 下一轮开始，
+    /// 下一个可见活动（思考或正文 token、下一张工具卡）到达时立即收起。
+    /// 修复前只有「回合首个活动」会收起等待行，思考结束后界面看起来像已经结束。
+    /// </summary>
+    [Fact]
+    public async Task WaitingRow_ReappearsBetweenPhases_AndClosesOnNextActivity()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        vm.Engine.NewSession();
+
+        await vm.SendEnginePromptAsync("写一段雨中送别");
+        var agent = vm.Messages[^1];
+        Assert.True(agent.IsWaiting);
+
+        vm.SetProcessing(true);
+
+        // 思考流：步骤自己有 spinner，等待行收起
+        vm.HandleAgentEvent(new StreamChunk("先分析", "", StreamContentType.Thinking));
+        Assert.False(agent.IsWaiting);
+        var thinking = Assert.Single(agent.AgentSteps);
+        Assert.True(thinking.IsProcessing);
+
+        // 思考结束：等待行立即出现在已完成步骤的下方
+        vm.HandleAgentEvent(new StreamChunk("", "", StreamContentType.ThinkingEnd));
+        Assert.False(thinking.IsProcessing);
+        Assert.True(agent.IsWaiting);
+        var rows = ConversationRow.FromMessage(agent);
+        Assert.Equal(ConversationRowKind.Step, rows[^2].Kind);
+        Assert.Equal(ConversationRowKind.Waiting, rows[^1].Kind);
+
+        // 工具开始：工具卡接管执行中状态
+        vm.HandleAgentEvent(new ToolExecutionStart("t1", "search", "{}"));
+        Assert.False(agent.IsWaiting);
+        var tool = agent.AgentSteps[^1];
+        Assert.True(tool.IsProcessing);
+
+        // 工具结束：下一轮 LLM 还没出 token，重新亮起等待行
+        vm.HandleAgentEvent(new ToolExecutionEnd("t1", false, "ok"));
+        Assert.False(tool.IsProcessing);
+        Assert.True(agent.IsWaiting);
+
+        // 下一段正文出现：等待行收起
+        vm.HandleAgentEvent(new StreamChunk("正文", "", StreamContentType.Text));
+        Assert.False(agent.IsWaiting);
     }
 
     /// <summary>

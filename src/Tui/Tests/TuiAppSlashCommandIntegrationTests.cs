@@ -1,5 +1,6 @@
 ﻿using Core.Agent;
 using Core.Data;
+using Core.Stability;
 using LlmTornado.Code;
 using Tui.Services;
 using Xunit;
@@ -174,6 +175,30 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Compact_ZeroKeepRecent_ClampsAndCompacts()
+    {
+        // /compact 0 旧实现候选索引 = messages.Count（越界）；clamp 后仍按完整轮次切。
+        await H.SeedSessionStoreAsync();
+
+        InvokeSlash("/compact 0");
+
+        await AssertCompactedAsync();
+    }
+
+    [Fact]
+    public async Task Compact_SmartWithEarlyHighScoreTurn_StillCompacts()
+    {
+        // 回归：topN 最早索引 = 0 时旧实现会保留全部 6 条（摘要+原消息），
+        // 假压缩导致上下文不降反升；硬上限必须强制至少压掉前 4 条。
+        await H.SeedSessionStoreAsync();
+        H.Agent.MessageScorer = new EarlyTurnScorer();
+
+        InvokeSlash("/compact smart 2");
+
+        await AssertCompactedAsync();
+    }
+
+    [Fact]
     public void Compact_WithoutNovel_DoesNotThrow()
     {
         // 无小说/无消息 → 仅 Toast「没有可压缩的会话」
@@ -267,6 +292,15 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     /// <summary>磁盘上的模式（config.yaml）：重启后仍生效的判据。</summary>
     private ContextMode PersistedMode() =>
         new ConfigStore(H.ConfigStoreDirectory).Load().ContextManagement.ToOptions().Mode;
+
+    /// <summary>把第一轮打最高分，复现“最早 top 轮落在历史开头”的智能压缩场景。</summary>
+    private sealed class EarlyTurnScorer : IMessageScorer
+    {
+        public double Score(ReadOnlySpan<char> message, ReadOnlySpan<char> context) =>
+            message.IndexOf("第一章开始", StringComparison.Ordinal) >= 0 ? 2.0 : 0.1;
+
+        public void ApplyProfile(ModelContextProfile profile) { }
+    }
 
     [Fact]
     public async Task ContextUnknownMode_KeepsCurrentMode()

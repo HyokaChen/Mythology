@@ -84,7 +84,42 @@ public sealed class ConversationViewModel : ViewModelBase
     public bool IsProcessing
     {
         get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref field, value);
+            this.RaisePropertyChanged(nameof(IsBusy));
+        }
+    }
+
+    private bool _isSubmitting;
+
+    /// <summary>
+    /// 提交已受理、引擎调用尚未返回（含上下文准备、压缩预检、回合落盘）。
+    /// 与 <see cref="IsProcessing"/> 取并集驱动发送↔停止按钮：只要任一段在途，发送按钮就不得露脸，
+    /// 否则 ReactiveCommand 执行期的 :disabled 灰态会在准备阶段闪一帧。
+    /// </summary>
+    public bool IsSubmitting
+    {
+        get => _isSubmitting;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isSubmitting, value);
+            this.RaisePropertyChanged(nameof(IsBusy));
+        }
+    }
+
+    /// <summary>发送按钮应让位的总状态：Agent 循环运行中，或提交尚未走完。</summary>
+    public bool IsBusy => IsProcessing || _isSubmitting;
+
+    private bool _isCompacting;
+    private ChatMessageModel? _compactStatusMessage;
+    private bool _compactStartObserved;
+
+    /// <summary>上下文压缩是否进行中（系统状态行 + 状态栏 spinner 的单一事实源）。</summary>
+    public bool IsCompacting
+    {
+        get => _isCompacting;
+        private set => this.RaiseAndSetIfChanged(ref _isCompacting, value);
     }
 
     /// <summary>历史导航状态（JSONL 持久化由引擎负责）。</summary>
@@ -554,20 +589,22 @@ public sealed class ConversationViewModel : ViewModelBase
     private async Task ExecuteCompactAsync(string[] parts)
     {
         var (smart, keepRecent) = ParseCompactArgs(parts);
+        // 压缩开始/结束的系统状态行由引擎事件驱动；这里只为「连开始事件都没有」的
+        // 前置拒绝补一条提示，避免和进行中状态行重复。
+        _compactStartObserved = false;
         var outcome = await _engine.CompactAsync(smart, keepRecent);
         ContextStatsChanged?.Invoke();
-        switch (outcome.Kind)
-        {
-            case CompactOutcomeKind.Done:
-                AddSystemNotice($"已压缩上下文：{outcome.Before} → {outcome.After} 条 (LLM 可见)");
-                break;
-            case CompactOutcomeKind.Rejected:
-                AddSystemNotice(outcome.Error ?? "压缩未执行");
-                break;
-            default:
-                AddSystemNotice(outcome.Error is { Length: > 0 } e ? $"压缩失败：{e}" : "压缩失败");
-                break;
-        }
+        if (!_compactStartObserved)
+            AddSystemNotice(
+                outcome.Kind switch
+                {
+                    CompactOutcomeKind.Rejected => outcome.Error ?? "压缩未执行",
+                    CompactOutcomeKind.Failed => outcome.Error is { Length: > 0 } e
+                        ? $"压缩失败：{e}"
+                        : "压缩失败",
+                    _ => "压缩未执行",
+                }
+            );
     }
 
     /// <summary>解析 /compact 参数（移植 SlashCommandParser.ParseCompact）：
@@ -1262,15 +1299,49 @@ public sealed class ConversationViewModel : ViewModelBase
         // 引擎通知 → 系统气泡 + 仪表重算（压缩进度、溢出重试、持久化故障）
         _engine.OnSystemNotice += text => Dispatcher.UIThread.Post(() => AddSystemNotice(text));
         _engine.OnCompactStart += () =>
+        {
+            // 先记在调用线程上：CompactAsync 可能在 UI Post 执行前就返回，
+            // 只靠排版后的状态会误判成「没有开始事件」并补出重复提示。
+            _compactStartObserved = true;
             Dispatcher.UIThread.Post(() =>
             {
+                IsCompacting = true;
                 CompactStateChanged?.Invoke(true);
-                AddSystemNotice("🗜 上下文压缩中…");
+
+                // 原地更新「压缩中…」行：spinner 只在压缩期间转，结束后同一行变结果，
+                // 不再留下两条静态系统消息。
+                _compactStatusMessage ??= new ChatMessageModel(MessageSender.System)
+                {
+                    IsSpinnerVisible = true,
+                };
+                if (_compactStatusMessage.Content.Length == 0)
+                    _compactStatusMessage.AppendContent("上下文压缩中…");
+                if (!Messages.Contains(_compactStatusMessage))
+                {
+                    Messages.Add(_compactStatusMessage);
+                    HasMessages = true;
+                }
             });
-        _engine.OnCompactEnd += _ =>
+        };
+        _engine.OnCompactEnd += message =>
             Dispatcher.UIThread.Post(() =>
             {
+                IsCompacting = false;
                 CompactStateChanged?.Invoke(false);
+
+                var status = _compactStatusMessage;
+                _compactStatusMessage = null;
+                if (status is not null)
+                {
+                    status.IsSpinnerVisible = false;
+                    status.ResetContent();
+                    status.AppendContent(message);
+                }
+                else
+                {
+                    AddSystemNotice(message);
+                }
+
                 ContextStatsChanged?.Invoke();
             });
     }
@@ -1338,36 +1409,53 @@ public sealed class ConversationViewModel : ViewModelBase
             _pendingRefinement = null;
             InputText = "";
             PushHistory(text);
-            // # 实体引用先内联成 类型[ID:xxx]:名称 再拼五段式 prompt
-            var outbound = await InlineEntityReferencesAsync(text);
-            var refinementPrompt = BuildRefinementPrompt(p, outbound);
 
-            if (IsProcessing)
+            IsSubmitting = true;
+            try
             {
-                // Agent 运行中：投递 Core SteeringQueue（turn 边界消费 →
-                // SteerPromoted + MessageStart 由 HandleAgentEvent 渲染为 user 气泡），
-                // 与 TUI 的引导排队语义一致（TuiApp.Input.cs SubmitInput）。
-                var steerId = Guid.NewGuid().ToString("N")[..12];
-                _bridge.Agent.Steer(
-                    new LlmChatMessage(ChatMessageRoles.User, refinementPrompt),
-                    steerId
-                );
-                AddSystemNotice("📝 修改要求已排入当前回合，将在本回合工具步结束后生效");
-                return;
-            }
+                // # 实体引用先内联成 类型[ID:xxx]:名称 再拼五段式 prompt
+                var outbound = await InlineEntityReferencesAsync(text);
+                var refinementPrompt = BuildRefinementPrompt(p, outbound);
 
-            await SendEnginePromptAsync(refinementPrompt);
+                if (IsProcessing)
+                {
+                    // Agent 运行中：投递 Core SteeringQueue（turn 边界消费 →
+                    // SteerPromoted + MessageStart 由 HandleAgentEvent 渲染为 user 气泡），
+                    // 与 TUI 的引导排队语义一致（TuiApp.Input.cs SubmitInput）。
+                    var steerId = Guid.NewGuid().ToString("N")[..12];
+                    _bridge.Agent.Steer(
+                        new LlmChatMessage(ChatMessageRoles.User, refinementPrompt),
+                        steerId
+                    );
+                    AddSystemNotice("📝 修改要求已排入当前回合，将在本回合工具步结束后生效");
+                    return;
+                }
+
+                await SendEnginePromptAsync(refinementPrompt);
+            }
+            finally
+            {
+                IsSubmitting = false;
+            }
             return;
         }
 
         // 普通消息：Agent 处理中不排队（发送按钮此时隐藏，Enter 路径由此守卫兜底）
-        if (IsProcessing)
+        if (IsBusy)
             return;
 
-        var sent = await InlineEntityReferencesAsync(text);
-        PushHistory(text);
-        InputText = "";
-        await SendEnginePromptAsync(sent, displayText: text);
+        IsSubmitting = true;
+        try
+        {
+            var sent = await InlineEntityReferencesAsync(text);
+            PushHistory(text);
+            InputText = "";
+            await SendEnginePromptAsync(sent, displayText: text);
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
     }
 
     /// <summary>
@@ -1390,33 +1478,41 @@ public sealed class ConversationViewModel : ViewModelBase
             return;
         }
 
-        _cts?.Dispose();
-        _cts = new CancellationTokenSource();
+        IsSubmitting = true;
+        try
+        {
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
 
-        // ★ 用户气泡先行：同步插入，不等 Loop 回显（此前占位先上屏、用户气泡迟到）。
-        // _pendingEchoText 供 HandleAgentEvent 吞掉 Loop 对同一消息的回显。
-        var userMsg = new ChatMessageModel(MessageSender.User);
-        userMsg.Content.Append(displayText ?? text);
-        Messages.Add(userMsg);
-        HasMessages = true;
-        _pendingEchoText = text;
+            // ★ 用户气泡先行：同步插入，不等 Loop 回显（此前占位先上屏、用户气泡迟到）。
+            // _pendingEchoText 供 HandleAgentEvent 吞掉 Loop 对同一消息的回显。
+            var userMsg = new ChatMessageModel(MessageSender.User);
+            userMsg.Content.Append(displayText ?? text);
+            Messages.Add(userMsg);
+            HasMessages = true;
+            _pendingEchoText = text;
 
-        // 创建空白 Agent 消息占位（流式内容落点）；首个正文/步骤到达前显示等待行。
-        _agentMessage = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
-        var localAgentMessage = _agentMessage;
-        _handler = new StreamEventHandler(
-            localAgentMessage,
-            onError: null,
-            onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
-            toolDisplay: _toolDisplay
-        );
-        Messages.Add(localAgentMessage);
-        HasMessages = true;
-        ContextStatsChanged?.Invoke();
+            // 创建空白 Agent 消息占位（流式内容落点）；首个正文/步骤到达前显示等待行。
+            _agentMessage = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
+            var localAgentMessage = _agentMessage;
+            _handler = new StreamEventHandler(
+                localAgentMessage,
+                onError: null,
+                onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
+                toolDisplay: _toolDisplay
+            );
+            Messages.Add(localAgentMessage);
+            HasMessages = true;
+            ContextStatsChanged?.Invoke();
 
-        // 引擎编排：小说上下文注入 → 压缩预检 → 发送 → 持久化（溢出自动 compact+retry）
-        await _engine.RunPromptAsync(text, _cts.Token);
-        ContextStatsChanged?.Invoke();
+            // 引擎编排：小说上下文注入 → 压缩预检 → 发送 → 持久化（溢出自动 compact+retry）
+            await _engine.RunPromptAsync(text, _cts.Token);
+            ContextStatsChanged?.Invoke();
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
     }
 
     /// <summary>中断当前处理。</summary>
@@ -1459,8 +1555,6 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>处理 Agent 事件（UI 线程，由主窗口转发）。</summary>
     public void HandleAgentEvent(AgentEvent evt)
     {
-        MarkAgentActivity(evt);
-
         switch (evt)
         {
             case AgentStart:
@@ -1499,13 +1593,19 @@ public sealed class ConversationViewModel : ViewModelBase
                 _handler?.Handle(evt);
                 break;
         }
+
+        UpdateWaitingIndicator(evt);
     }
 
     /// <summary>
-    /// 首个可见活动到达后收起等待行：正文/思考 token、可见工具步骤、错误/熔断。
-    /// 隐藏工具（上下文接续/历史检索）不产生步骤，继续保持等待指示。
+    /// 维护回合内等待行（spinner +「执行中」）：
+    /// - 可见活动到达 → 立即收起：正文/思考 token、可见工具步骤、错误/熔断；
+    /// - 阶段边界 → 立即亮起：思考结束、工具结束、下一轮 TurnStart。
+    ///   否则「思考结束 → 工具/下一段正文」的间隙看起来像回合已经结束。
+    /// 等待行的可见性仍以「没有正在处理的可见步骤」为准，并行工具/步骤不会被误判为空闲。
+    /// 隐藏工具（上下文接续/历史检索）不产生步骤：开始时保持等待指示，结束后继续等待。
     /// </summary>
-    private void MarkAgentActivity(AgentEvent evt)
+    private void UpdateWaitingIndicator(AgentEvent evt)
     {
         if (_agentMessage is null)
             return;
@@ -1519,7 +1619,26 @@ public sealed class ConversationViewModel : ViewModelBase
             _ => false,
         };
         if (hasVisibleActivity)
+        {
             _agentMessage.IsWaiting = false;
+            return;
+        }
+
+        if (
+            evt
+            is AgentStart
+                or StreamChunk { ContentType: StreamContentType.ThinkingEnd }
+                or ToolExecutionStart
+                or ToolExecutionEnd
+                or ToolExecutionUpdate
+                or TurnStart
+        )
+        {
+            // 只亮不灭：阶段边界永远不该把初始等待行/已有等待行关掉。
+            // 关掉只由可见活动负责；这里只在没有处理中步骤时重新亮起。
+            if (!_agentMessage.AgentSteps.Any(step => step.IsProcessing))
+                _agentMessage.IsWaiting = true;
+        }
     }
 
     /// <summary>结束当前 Agent 消息（可选追加文本/标记中断）。</summary>

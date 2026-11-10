@@ -7,6 +7,15 @@
 ## [Unreleased]
 
 ### Changed
+- **Desktop 对话等待行覆盖阶段间隙**：等待行不再只在回合开头出现。思考结束
+  （`ThinkingEnd`）、工具结束（`ToolExecutionEnd`）、下一轮（`TurnStart`）时，只要没有
+  正在处理的可见步骤，就立即在时间线尾部重新显示 spinner +「执行中」；下一段思考/正文
+  token 或下一张工具卡到达时立即收起。等待行位置固定在消息尾部，不再跑到步骤上方。
+  回归：`ConversationVmContractTests.WaitingRow_ReappearsBetweenPhases_AndClosesOnNextActivity`、
+  `ConversationRowTests.WaitingRow_StaysAfterCompletedSteps`；Desktop 610/610。
+- **Desktop Todo 面板限高滚动**：右下 Todo 面板可视区限制为约 3 张任务卡（`MaxHeight=118`），
+  第 4 项起进入 `ScrollViewer`；移除原来的 `MinHeight=250`，不再按 todo 数量无限长高，
+  上方设定面板重新获得空间。回归：`TodoPanelLayoutTests.ManyTodos_CapViewportAndLeaveRoomForSetupPanel`。
 - **Desktop 对话区改为全量历史 spacer 虚拟化（Rich-only）**：全量消息只保留扁平行模型，
   `ItemsControl` 只实例化视口前后各一屏的行；未实例化历史用 `TopSpacerHeight` /
   `BottomSpacerHeight` 撑起完整滚动条，窗口外不创建控件，也不再用纯文本降级历史正文。
@@ -15,14 +24,39 @@
   每次布局/extent 增长后重新 `ScrollToEnd`，LiveMarkdown 异步长高不再停在半路。
   回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
   `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
-  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 607/607。
-- **单条超长 AI 回复 block 级虚拟化**：`VirtualizedMarkdownBody` 对超过 16k 字符的正文
-  用 Markdig 顶层 block 拆分，只实例化视口附近的 segment（最多 32 个），每个 segment 独立
-  `MarkdownRenderer`；普通消息仍是一个 renderer，保留流式增量/选择/链接。block 之间共享
-  选择 scope，超大消息不再生成整篇 Markdown 视觉树。回归：
-  `LongMessage_BlockVirtualization_BoundsLiveRenderers`。
-- **@ 补全测试消除时序竞态**：View 同时监听 `CaretIndex` 变化；测试在 `@`/`#` 输入上
-  等待真实建议出现后再断言，不再依赖异步文件枚举恰好先完成。
+  `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 605/605。
+- **Desktop 设置窗口保存后自动关闭**：`保存并生效` 成功落盘后触发
+  `SettingsViewModel.Saved`，`SettingsView` 收到即关闭窗口（与 TUI SettingsDialog 保存后关闭一致）；
+  `SettingsWindow` 支持 Esc 关闭；窗口退场动画加 400ms 看门狗：
+  渲染时钟被挂起/失焦时也不再把 `Closing` 卡在动画等待里。回归：
+  `SettingsProviderRoundTripTests.Save_ClosesSettingsWindowAfterSuccessfulPersist`。
+- **`/compact smart` 不再空压缩**：智能切割点只允许保留连续后缀，但旧实现直接取
+  “最早入选轮次”的索引；一旦 RGDecimator 把第 0 轮评为高分，`cutIndex=0`，
+  压缩变成“生成摘要 + 原消息全留”（真实会话 `messages-before=202`、
+  `compressed-message-ids=[]`，上下文反而升到 85%）。现在给保留后缀设硬上限
+  `max(keepRecent, 消息数/2)`，并按 user 轮次边界对齐——每次智能压缩至少压掉一半消息，
+  早期高价值轮次仍由摘要承载。Desktop / TUI 双入口同步修复；回归：
+  `ContextContinuationEngineTests.CompactSmart_WithEarlyHighScoreTurn_ActuallyReducesMessages`、
+  `TuiAppSlashCommandIntegrationTests.Compact_SmartWithEarlyHighScoreTurn_StillCompacts`。
+- **普通 `/compact` 的边界与计数修正**：`keepRecent <= 0` 时切割候选索引不再越过
+  `messages.Count`（旧实现会抛越界异常）；找不到 `>0` 的完整 user 轮次起点时返回失败且
+  不写空 compact 条目（单轮超长对话不再出现“摘要 + 原消息全留”）；完成文案 / outcome
+  的 `After` 改用实际保留消息数，而不是请求的 keepRecent（尾部单轮过长时两者可能差很多）。
+  Desktop / TUI 同步；回归：`Compact_NonPositiveKeepRecent_ClampsAndReportsActualKept`、
+  `Compact_NoSafeUserBoundary_FailsWithoutWritingCompactBlock`、`Compact_ZeroKeepRecent_ClampsAndCompacts`。
+- **Desktop 压缩过程可见**：`/compact` 或发送前的自动压缩开始时，对话流插入一条带 `BusySpinner`
+  的「上下文压缩中…」系统状态行，结束后同一行原地改为压缩结果；左下角状态栏的 spinner 改由
+  `IsBusy`（含 `_isCompacting`）驱动，压缩阶段仍展示古诗词，不再停在 `idle`。
+  回归：`ConversationVmContractTests.CompactEvents_DriveLiveSystemRowAndSpinner`、
+  `ConversationRenderingTests.SystemProgressRow_ShowsSpinnerUntilCompletion`。
+- **Desktop 提供商下拉不再出现裸「自定义」**：具名自定义卡片存在时，下拉只保留
+  「自定义: 名称」；旧配置的裸 `custom` 默认值会落到首张具名卡片，保存写回 `custom:名称`，
+  避免选中项显示成无名提供商。回归：`SettingsProviderRoundTripTests`（含裸默认值回退用例）。
+- **Desktop 发送↔停止切换不再闪灰色禁用态**：提交受理时 VM 立即进入 `IsSubmitting`（与 `IsProcessing`
+  取并集为 `IsBusy`），引擎的上下文注入 / 压缩预检 / 回合落盘期间发送按钮不再露出 ReactiveCommand
+  执行期的 `:disabled` 灰态，右侧同帧切换为「停止」；Enter 与 Esc 守卫同步改用 `IsBusy`
+  （提交准备阶段 Enter 不重发、Esc 可中断；引擎在进入 Agent 循环前兑现已受理的取消）。回归：`ComposerBusyStateUiTests`（门控
+  `INovelStore.GetNovel` 卡住引擎准备，断言 StopButton 已可见、SendButton 已隐藏；停止后 bridge 不得开始处理）；Desktop 598/598。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

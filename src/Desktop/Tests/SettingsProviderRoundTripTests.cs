@@ -1,4 +1,7 @@
-﻿using Core.Data;
+﻿using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Threading;
+using Core.Data;
 using Core.Mcp;
 using Desktop.ViewModels;
 using ReactiveUI.Primitives;
@@ -75,6 +78,7 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         Assert.Equal("自定义: krb", vm.ProviderDisplay);
         Assert.Contains("自定义: 商汤", vm.ProviderOptions);
         Assert.Contains("自定义: krb", vm.ProviderOptions);
+        Assert.DoesNotContain(vm.ProviderOptions, option => option == "自定义");
         Assert.Equal("DeepSeek-V4-Flash", vm.Model);
         Assert.Equal("200K", vm.ContextWindow);
         Assert.Equal("自定义: krb", vm.EmbeddingProviderDisplay);
@@ -98,6 +102,50 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         // 协议随密钥一起往返（下拉改过就要写回，不能被重置回默认）
         Assert.Equal("anthropic-message", saved.Providers.ApiKeys[1].Protocol);
         Assert.Equal("openai-completion", saved.Providers.ApiKeys[0].Protocol);
+    }
+
+    [Fact]
+    public async Task BareCustomDefault_SelectsNamedProviderAndNeverOffersBareOption()
+    {
+        var store = new ConfigStore(_dir);
+        await store.SaveAsync(
+            new ConfigData
+            {
+                Providers = new ProviderConfig
+                {
+                    // 旧配置可能只存裸 "custom"；具名卡片存在时必须落到具名显示，
+                    // 否则选中项只显示「自定义」，保存还会写回拿不到密钥的裸键。
+                    Default = "custom",
+                    DefaultModel = "m",
+                    ApiKeys =
+                    [
+                        new ApiKeyEntry
+                        {
+                            Provider = "custom",
+                            Name = "商汤",
+                            ApiKey = "k1",
+                            BaseUrl = "https://a/v1",
+                        },
+                        new ApiKeyEntry
+                        {
+                            Provider = "custom",
+                            Name = "krb",
+                            ApiKey = "k2",
+                            BaseUrl = "https://b/v1",
+                        },
+                    ],
+                },
+            }
+        );
+
+        var vm = new SettingsViewModel(store, null, null).Refresh();
+
+        Assert.Equal("自定义: 商汤", vm.ProviderDisplay);
+        Assert.DoesNotContain(vm.ProviderOptions, option => option == "自定义");
+
+        vm.SaveCommand.Execute().Subscribe();
+        var saved = await WaitForAsync(store, c => c.Providers.Default == "custom:商汤");
+        Assert.Equal("custom:商汤", saved.Providers.Default);
     }
 
     [Fact]
@@ -254,6 +302,53 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         );
         Assert.Equal("X-Token", saved.Mcp.Servers[0].AuthHeader);
         Assert.Equal("v2", saved.Mcp.Servers[0].AuthValue);
+    }
+
+    [Fact]
+    public async Task Save_ClosesSettingsWindowAfterSuccessfulPersist()
+    {
+        var store = new ConfigStore(_dir);
+        await store.SaveAsync(
+            new ConfigData
+            {
+                Providers = new ProviderConfig { Default = "openai", DefaultModel = "m" },
+            }
+        );
+        var vm = new SettingsViewModel(store, null, null).Refresh();
+        var saved = false;
+        vm.Saved += () => saved = true;
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var window = new Desktop.Views.SettingsWindow { DataContext = vm };
+            window.Show();
+            try
+            {
+                vm.SaveCommand.Execute().Subscribe();
+
+                var deadline = DateTime.UtcNow.AddSeconds(4);
+                while (!saved && DateTime.UtcNow < deadline)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(10);
+                }
+                Assert.True(saved, "SaveCommand 成功后未触发 Saved");
+
+                while (window.IsVisible && DateTime.UtcNow < deadline)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(10);
+                }
+                Assert.False(window.IsVisible, "保存成功后设置窗口未自动关闭");
+            }
+            finally
+            {
+                if (window.IsVisible)
+                    window.Close();
+            }
+        });
     }
 
     public void Dispose()

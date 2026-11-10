@@ -18,12 +18,25 @@ public partial class SettingsView : UserControl
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
+            if (_vm is not null)
+                _vm.Saved -= OnSaved;
+            _vm = DataContext as SettingsViewModel;
+            if (_vm is not null)
+                _vm.Saved += OnSaved;
+
             if (InitialTab > 0)
                 SettingsTabControl.SelectedIndex = InitialTab;
         };
     }
 
-    private SettingsViewModel? Vm => DataContext as SettingsViewModel;
+    private SettingsViewModel? _vm;
+
+    private SettingsViewModel? Vm => _vm;
+
+    /// <summary>保存成功 → 关闭设置窗口（与 TUI SettingsDialog 保存后关闭一致）。</summary>
+    private void OnSaved() => Avalonia.Threading.Dispatcher.UIThread.Post(() => CloseWindow());
+
+    private void CloseWindow() => (TopLevel.GetTopLevel(this) as Window)?.Close();
 
     private void AddApiKey_OnClick(object? sender, RoutedEventArgs e)
     {

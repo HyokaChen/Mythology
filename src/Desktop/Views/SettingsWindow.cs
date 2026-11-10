@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Desktop.Controls;
 
 namespace Desktop.Views;
@@ -12,5 +13,12 @@ public sealed class SettingsWindow : Window
         MinWidth = 480;
         MinHeight = 560;
         Content = new SettingsView { InitialTab = initialTab };
+        KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape)
+                return;
+            Close();
+            e.Handled = true;
+        };
     }
 }

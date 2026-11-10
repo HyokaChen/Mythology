@@ -127,7 +127,7 @@ src/Desktop/
 │   ├── MainWindow.axaml + .cs            # Header + 对话流 + 设定面板 + 状态栏
 │   ├── ConversationView.axaml + .cs       # 对话流 + 输入区 + 快捷键
 │   ├── SetUpPanelView.axaml + .cs         # 8-Tab 实体面板 (大纲/角色/组织/地点/情节/场景/道具/关系)
-│   ├── TodoPanelView.axaml + .cs          # Todo 任务面板
+│   ├── TodoPanelView.axaml + .cs          # Todo 任务面板（约 3 行可视高度，超出滚动）
 │   ├── SettingsView.axaml + .cs           # 设置表单 (TabControl)
 │   └── SettingsWindow.cs                 # 设置模态窗口
 │
@@ -596,6 +596,8 @@ public abstract class ViewModelBase : ReactiveObject;
 | `Messages` | `ObservableCollection<ChatMessage>` | 消息列表 |
 | `InputText` | `string` | 输入框内容 |
 | `IsProcessing` | `bool` | Agent 正在处理 |
+| `IsSubmitting` | `bool` | 提交已受理、引擎调用尚未返回（含准备 / 压缩预检 / 落盘） |
+| `IsBusy` | `bool` | `IsProcessing` 或 `IsSubmitting`，驱动发送↔停止按钮 |
 | `PathSuggestions` | `ObservableCollection<FileSystemItem>` | @ 补全列表 |
 | `IsPathPopupVisible` | `bool` | 补全弹窗可见 |
 | `SelectedPathIndex` | `int` | 补全选中索引 |
@@ -787,6 +789,10 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
     ↓
 ConversationViewModel.SendMessageCommand.Execute()
     ↓
+0. IsSubmitting=true → IsBusy=true：发送按钮立即退场，停止按钮同帧就位
+   （引擎准备期间不再露出命令执行期的 :disabled 灰态；此时按停止，
+   引擎在进入 Agent 循环前检查取消并放弃本次发送）
+    ↓
 1. 创建对话 (CreateConversationAsync)
 2. 创建 User ChatMessage + Agent 占位 ChatMessage（IsWaiting=true，显示等待行）
 3. DesktopAgentBridge.SendAsync(text, cts.Token)
@@ -795,10 +801,13 @@ ConversationViewModel.SendMessageCommand.Execute()
 HandleAgentEvent (UI 线程)
     → StreamEventHandler 映射事件到消息
     → Content 追加 / 步骤更新 / 来源暂存
+    → UpdateWaitingIndicator：可见活动（正文/思考 token、可见工具卡）收起等待行；
+      阶段边界（ThinkingEnd / ToolExecutionEnd / TurnStart）重新亮起等待行
     ↓
 AgentEnd → FinalizeAgentMessage()
     → IsWaiting=false / 空占位移除（首个可见活动到达时也会收起）
     → 异步持久化 (SaveMessageAsync)
+    → 引擎返回后 IsSubmitting=false（回合落盘也在这之前完成）
     → ConversationCompleted 事件 → 刷新侧边栏
 ```
 
@@ -823,15 +832,15 @@ Header 对话下拉选择
 |---|---|---|
 | `StreamChunk { Text }` | `ChatMessage.AppendContent(delta)` | 关闭当前思考阶段；非空白正文增量渲染，遇到工具/思考边界冻结为 Content 步骤 |
 | `StreamChunk { Thinking }` | 每轮创建独立 AgentStep(Kind=Thinking) | 步骤按事件顺序插入；思考正文默认展开（流式与完成后均可见，可收起） |
-| `StreamChunk { ThinkingEnd }` | 当前 AgentStep.Status = Completed | 步骤点完成态，下轮思考另起一卡 |
-| `ToolExecutionStart` | 创建 AgentStep(Kind=ToolCall) | 中文工具名 + 语义参数摘要 |
+| `StreamChunk { ThinkingEnd }` | 当前 AgentStep.Status = Completed | 步骤点完成态，下轮思考另起一卡；无处理中步骤时重新显示「执行中」等待行 |
+| `ToolExecutionStart` | 创建 AgentStep(Kind=ToolCall) | 中文工具名 + 语义参数摘要；可见工具卡接管执行中状态 |
 | `ToolExecutionUpdate` | 只保留 spinner | 原始 partial 不刷进对话 |
-| `ToolExecutionEnd` | 语义摘要 + 结构化 diff + 完整结果 | 步骤状态刷新；红删绿增详情；原始 JSON 仅在无结构化 diff 时回退 |
+| `ToolExecutionEnd` | 语义摘要 + 结构化 diff + 完整结果 | 步骤状态刷新；红删绿增详情；原始 JSON 仅在无结构化 diff 时回退；无处理中步骤时重新显示等待行 |
 | `AgentError` | 清洗错误 JSON | 单行可读错误（HTTP 状态 + message） |
 | `CircuitBreakerTriggered` | 添加断路器步骤 | 断路器提示 |
 | `AgentEnd` | FinalizeAgentMessage + 持久化 | 消息完成，侧边栏刷新 |
 
-步骤详情（工具参数/结果、结构化 diff）不使用 Bone 卡片底色与 Mist 边框，直接落在页面背景上，且不设 MaxWidth；步骤头参数摘要改为铺满剩余列并换行。思考正文位于同一可折叠详情区顶部，创建时默认展开，流式与完成态都可见，点「收起」只折叠正文并保留步骤标题；每一轮思考独立成卡，中间正文冻结为与最终气泡同底色（Bone、Mist 1px）的无步骤头小卡，按事件顺序与工具步骤交错（`思考 → 正文 → 工具 → 思考 → 最终正文`），冻结前后不跳背景。工具原始参数/结果仍默认折叠。正文气泡只在 `HasVisibleContent` 为真（出现非空白字符）后渲染，避免空白 Bone 卡。首个正文/步骤到达前，助手消息内显示等待行（spinner +「执行中」）；回合结束或首个可见活动到达后收起。左下角状态栏在忙碌期显示 spinner + 随机古诗词（完整诗词放在 tooltip），空闲恢复 `idle`。消息列表左右留白与输入卡片一致（24px），助手正文气泡铺满消息区宽度；用户消息保持右对齐但去掉 720 宽度上限与 96px 左缩进，长回复同样可用满整行；系统提示改为铺满消息区、左对齐。Agent 正文仅在 `HasVisibleContent`（至少一个非空白字符）为真时渲染 `Border.AgentBubble`，首批换行/空格不会显示占位方块。
+步骤详情（工具参数/结果、结构化 diff）不使用 Bone 卡片底色与 Mist 边框，直接落在页面背景上，且不设 MaxWidth；步骤头参数摘要改为铺满剩余列并换行。思考正文位于同一可折叠详情区顶部，创建时默认展开，流式与完成态都可见，点「收起」只折叠正文并保留步骤标题；每一轮思考独立成卡，中间正文冻结为与最终气泡同底色（Bone、Mist 1px）的无步骤头小卡，按事件顺序与工具步骤交错（`思考 → 正文 → 工具 → 思考 → 最终正文`），冻结前后不跳背景。工具原始参数/结果仍默认折叠。正文气泡只在 `HasVisibleContent` 为真（出现非空白字符）后渲染，避免空白 Bone 卡。首个正文/步骤到达前，助手消息内显示等待行（spinner +「执行中」）；可见活动到达即收起；思考结束、工具结束或下一轮 TurnStart 时若没有正在处理的步骤，等待行立即重新出现在时间线尾部（不是消息顶部），直到下一段思考/正文/工具卡出现。回合结束时清除。左下角状态栏在忙碌期显示 spinner + 随机古诗词（完整诗词放在 tooltip），空闲恢复 `idle`。消息列表左右留白与输入卡片一致（24px），助手正文气泡铺满消息区宽度；用户消息保持右对齐但去掉 720 宽度上限与 96px 左缩进，长回复同样可用满整行；系统提示改为铺满消息区、左对齐。Agent 正文仅在 `HasVisibleContent`（至少一个非空白字符）为真时渲染 `Border.AgentBubble`，首批换行/空格不会显示占位方块。
 
 `ask_user` / 变体审阅弹窗按主窗口尺寸放大（`DialogTheme.FitToOwner`，可调整大小）：ask_user 选项文本换行，避免长选项被截断；选项 Card 按内容高度自适应（上限 360px，超出滚动），选项少时窗口随内容收紧，不再把 Card 撑满整窗；ask_user 的 `User answers:` 结果块进入步骤结果摘要，按满宽换行展示每组问题与答案。变体审阅使用宽度优先的 WrapPanel Tab 条与满宽 Markdown 预览；Tab 激活态使用 `BrushEucalyptusWash`（不再用透明度弱化），预览卡片按 Card 规范 20px 内边距，标题/正文通过 `MarkdownTextBlock` 类型选择器落到 Adaline 的 26/18px、Olive Press/Forest Ink。
 

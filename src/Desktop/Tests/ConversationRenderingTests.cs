@@ -170,8 +170,8 @@ public class ConversationRenderingTests
             );
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -219,8 +219,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(step);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -287,8 +287,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(step);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
             var window = new Window
             {
@@ -352,8 +352,8 @@ public class ConversationRenderingTests
             );
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -446,8 +446,8 @@ public class ConversationRenderingTests
             );
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -515,8 +515,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(AgentStep.CreateContent("正文左缘"));
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var input = view.FindControl<TextBox>("InputBox")!;
@@ -534,10 +534,9 @@ public class ConversationRenderingTests
                 Pump();
                 Pump();
 
-                var body = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Classes.Contains("StepContentText")
-                );
+                var body = view.GetVisualDescendants()
+                    .OfType<LiveMarkdown.Avalonia.MarkdownTextBlock>()
+                    .First();
                 var presenter = Assert.Single(input.GetVisualDescendants().OfType<TextPresenter>());
                 var bodyX = body.TranslatePoint(new Point(0, 0), view)!.Value.X;
                 var inputX = presenter.TranslatePoint(new Point(0, 0), view)!.Value.X;
@@ -559,8 +558,8 @@ public class ConversationRenderingTests
             message.AppendContent("正常答复。\n\n> 这是一段引用设定");
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -616,8 +615,8 @@ public class ConversationRenderingTests
             message.IsInterrupted = true;
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -664,8 +663,8 @@ public class ConversationRenderingTests
             message.AppendContent("📝 新建角色「测试」");
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -736,6 +735,65 @@ public class ConversationRenderingTests
     }
 
     [Fact]
+    public void SystemProgressRow_ShowsSpinnerUntilCompletion()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.System)
+            {
+                IsSpinnerVisible = true,
+            };
+            message.AppendContent("上下文压缩中…");
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                Assert.Contains("上下文压缩中…", RenderedText(view));
+
+                var spinner = Assert.Single(
+                    view.GetVisualDescendants().OfType<Desktop.Controls.BusySpinner>(),
+                    s =>
+                        s.DataContext is Desktop.Models.ConversationRow { Message: var m }
+                        && ReferenceEquals(m, message)
+                );
+                Assert.True(spinner.IsEffectivelyVisible);
+                Assert.True(spinner.IsActive);
+
+                message.IsSpinnerVisible = false;
+                message.ResetContent();
+                message.AppendContent("上下文压缩完成：202 → 20 条");
+                Pump();
+
+                var completedSpinner = Assert.Single(
+                    view.GetVisualDescendants().OfType<Desktop.Controls.BusySpinner>(),
+                    s =>
+                        s.DataContext is Desktop.Models.ConversationRow { Message: var m }
+                        && ReferenceEquals(m, message)
+                );
+                Assert.False(completedSpinner.IsVisible);
+                Assert.False(completedSpinner.IsActive);
+                Assert.Contains("上下文压缩完成：202 → 20 条", RenderedText(view));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void WaitingRow_ShowsSpinnerAndRunningText_AndHidesAfterFirstActivity()
     {
         Ui.Value.Run(() =>
@@ -746,8 +804,8 @@ public class ConversationRenderingTests
             };
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -797,8 +855,8 @@ public class ConversationRenderingTests
             var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1078,8 +1136,8 @@ public class ConversationRenderingTests
             );
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1141,8 +1199,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(step);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1206,8 +1264,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(step);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window
@@ -1308,8 +1366,8 @@ public class ConversationRenderingTests
             message.AgentSteps.Add(step);
 
             var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<ItemsControl>("MessageList")!;
-            list.ItemsSource = new Desktop.Models.ConversationRowCollection(message);
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
             list.IsVisible = true;
 
             var window = new Window

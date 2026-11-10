@@ -13,13 +13,16 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isWaiting;
     private bool _hasVisibleContent;
     private bool _isInterrupted;
-    private bool _isRichMarkdown = true;
     private bool _isProcessExpanded = true;
+    private bool _isSpinnerVisible;
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
 
-    /// <summary>是否等待 Agent 产出首个正文/步骤（对话内等待行）。</summary>
+    /// <summary>
+    /// 回合仍在执行、但当前没有可见活动（等首个正文/步骤，或阶段之间等下一段思考/工具）。
+    /// 阶段结束必须立即置回 true，否则对话看起来像已经结束。
+    /// </summary>
     public bool IsWaiting
     {
         get => _isWaiting;
@@ -29,6 +32,22 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
                 return;
             _isWaiting = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsWaiting)));
+        }
+    }
+
+    /// <summary>
+    /// 系统状态行是否带旋转加载指示（如上下文压缩中）。
+    /// 与 <see cref="IsWaiting"/> 分离：等待行属于 Agent 回合，系统状态行只借用同一个 BusySpinner。
+    /// </summary>
+    public bool IsSpinnerVisible
+    {
+        get => _isSpinnerVisible;
+        set
+        {
+            if (_isSpinnerVisible == value)
+                return;
+            _isSpinnerVisible = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSpinnerVisible)));
         }
     }
 
@@ -43,22 +62,6 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
             _isInterrupted = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInterrupted)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEmpty)));
-        }
-    }
-
-    /// <summary>
-    /// 是否用 LiveMarkdown 渲染正文。历史预取页先置 false（轻量纯文本），
-    /// 滚动停止后只对当前可见消息升级，避免把 Markdown 布局压进滚轮帧。
-    /// </summary>
-    public bool IsRichMarkdown
-    {
-        get => _isRichMarkdown;
-        set
-        {
-            if (_isRichMarkdown == value)
-                return;
-            _isRichMarkdown = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRichMarkdown)));
         }
     }
 

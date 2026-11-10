@@ -87,8 +87,16 @@ public sealed partial class TuiApp
                 return;
             }
 
-            ToastService.Success($"已压缩上下文：{messages.Count} → {keep} 条 (LLM 可见)");
-            _adapter.FireCompactEnd($"上下文压缩完成：{messages.Count} → {keep} 条");
+            if (result == CompactResult.Failed)
+            {
+                ToastService.Warning("压缩失败：没有可安全压缩的完整轮次");
+                _adapter.FireCompactEnd("上下文压缩失败");
+                return;
+            }
+
+            var kept = Math.Max(0, _agent.State.Messages.Count - 1);
+            ToastService.Success($"已压缩上下文：{messages.Count} → {kept} 条 (LLM 可见)");
+            _adapter.FireCompactEnd($"上下文压缩完成：{messages.Count} → {kept} 条");
         }
         catch (Exception ex)
         {
@@ -143,10 +151,19 @@ public sealed partial class TuiApp
                 return;
             }
 
+            if (result == CompactResult.Failed)
+            {
+                ToastService.Warning("智能压缩失败，退回普通模式");
+                _adapter.FireCompactEnd("智能压缩失败，退回普通模式");
+                await CompactSessionAsync(keepRecent);
+                return;
+            }
+
+            var kept = Math.Max(0, _agent.State.Messages.Count - 1);
             ToastService.Success(
-                $"已智能压缩：{messages.Count} → {keep} 条（RGDecimator 评分，保留信息密度最高的轮次）"
+                $"已智能压缩：{messages.Count} → {kept} 条（RGDecimator 评分，保留信息密度最高的轮次）"
             );
-            _adapter.FireCompactEnd($"智能压缩完成：{messages.Count} → {keep} 条");
+            _adapter.FireCompactEnd($"智能压缩完成：{messages.Count} → {kept} 条");
         }
         catch (Exception ex)
         {
@@ -389,6 +406,23 @@ public sealed partial class TuiApp
             );
         }
 
+        // 不变量：切割点必须是 >0 的完整 user 轮次起点。cutIndex=0 表示一条也不压，
+        // 旧实现仍会写“保存全部 + 摘要”的 compact 条目（202→202 的假压缩）。
+        // 单轮超长对话找不到安全切点时明确失败，而不是留下一个空压缩块。
+        if (
+            messages.Count == 0
+            || cutIndex <= 0
+            || messages[cutIndex].Role != ChatMessageRoles.User
+        )
+        {
+            Services.TuiLogger.Diagnostic(
+                _logger,
+                "prepare compaction",
+                $"no complete user turn can be compressed (keepRecent={keepRecent}, cutIndex={cutIndex})"
+            );
+            return CompactResult.Failed;
+        }
+
         // 获取 previousSummary（增量摘要）—— 使用轻量方法避免全消息构建
         var previousSummary = await _sessionStore.GetLatestCompactSummaryAsync(_sessionId);
 
@@ -493,7 +527,10 @@ public sealed partial class TuiApp
     /// </summary>
     private static int FindCutPoint(IReadOnlyList<LlmChatMessage> messages, int keepRecent)
     {
-        var candidate = Math.Max(0, messages.Count - keepRecent);
+        if (messages.Count == 0)
+            return 0;
+        // keepRecent<=0（/compact 0、负数）不能让候选索引越过末尾——越界会直接抛异常。
+        var candidate = Math.Clamp(messages.Count - keepRecent, 0, messages.Count - 1);
 
         // 向前扫描，找到最近的一个完整轮次起点（user 消息）
         for (var i = candidate; i >= 0; i--)
@@ -562,7 +599,8 @@ public sealed partial class TuiApp
     /// <summary>
     /// 基于 RGDecimator 评分的智能切割点计算。
     /// 按得分降序排列所有轮次，取 top N 个，再加上最近一轮（保证连续性），
-    /// 返回最早的保留轮次的起始索引。
+    /// 返回最早的保留轮次的起始索引。连续后缀必须设硬上限，否则最早 top 轮落在
+    /// 历史开头时会把整段对话原样留下（真实事故 202→202，压缩不降反升）。
     /// </summary>
     private static int FindSmartCutPoint(
         IReadOnlyList<LlmChatMessage> messages,
@@ -591,7 +629,23 @@ public sealed partial class TuiApp
         for (var i = cutIndex; i >= 0; i--)
         {
             if (messages[i].Role == ChatMessageRoles.User)
-                return i;
+            {
+                cutIndex = i;
+                break;
+            }
+        }
+
+        // 连续后缀的硬上限：最多保留 max(keepRecent, 消息数/2) 条。
+        // 从上限位置往后找完整轮次起点；找不到则宁可多留最后一轮，不拆轮次。
+        var maxKeep = Math.Max(keepRecent, messages.Count / 2);
+        var capIndex = messages.Count - maxKeep;
+        for (var i = capIndex; i < messages.Count; i++)
+        {
+            if (messages[i].Role == ChatMessageRoles.User)
+            {
+                cutIndex = Math.Max(cutIndex, i);
+                break;
+            }
         }
 
         return cutIndex;

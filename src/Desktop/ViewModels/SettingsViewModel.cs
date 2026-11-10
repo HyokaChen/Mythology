@@ -319,6 +319,9 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>保存命令。</summary>
     public ReactiveCommand<RxVoid, RxVoid> SaveCommand { get; }
 
+    /// <summary>保存成功（已落盘且已热应用）；设置窗口据此关闭。</summary>
+    public event Action? Saved;
+
     /// <summary>设计时构造。</summary>
     public SettingsViewModel()
         : this(null, null, null, null) { }
@@ -936,6 +939,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
             // 模型/窗口/thinking 变更 → 校准参数作废，下次发消息重新学习
             Program.Services?.GetRequiredService<ContextTokenCalibrator>()?.Reset();
+            Saved?.Invoke();
         }
         catch (Exception ex)
         {
@@ -944,8 +948,10 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 重建提供商下拉选项：预设显示名 + 每张具名自定义卡片的「自定义: 名称」+ 兜底「自定义」。
-    /// 与 TUI BuildProviderDisplayItems 一致；复用同一集合实例以保证 ComboBox 选中项稳定。
+    /// 重建提供商下拉选项：预设显示名 + 每张具名自定义卡片的「自定义: 名称」。
+    /// 泛化「自定义」只在存在未命名自定义卡片（旧配置）时保留——具名卡片已存在时
+    /// 再提供裸「自定义」会让选中项显示成无名提供商，LlmApiFactory 也拿不到密钥。
+    /// 与 TUI BuildProviderDisplayItems 语义一致；复用同一集合实例以保证 ComboBox 选中项稳定。
     /// </summary>
     private static void RebuildProviderOptions(
         ObservableCollection<string> options,
@@ -965,16 +971,23 @@ public sealed class SettingsViewModel : ViewModelBase
         )
             options.Add($"自定义: {name}");
 
-        options.Add("自定义");
+        if (
+            rows.Any(r =>
+                ProviderDefinition.IsCustom(r.Provider) && string.IsNullOrWhiteSpace(r.Name)
+            )
+        )
+            options.Add("自定义");
     }
 
-    /// <summary>配置键 → 下拉显示名（自定义带名 → 「自定义: 名称」）。</summary>
+    /// <summary>配置键 → 下拉显示名（自定义带名 → 「自定义: 名称」；裸 custom 优先落到具名卡片）。</summary>
     private static string ToProviderDisplay(ObservableCollection<string> options, string configKey)
     {
         var display = ProviderDefinition.IsCustom(configKey)
             ? ProviderDefinition.GetCustomName(configKey) is { Length: > 0 } name
                 ? $"自定义: {name.Trim()}"
-                : "自定义"
+                : options.Contains("自定义") // 确有未命名卡片 → 保留裸 custom 语义
+                    ? "自定义"
+                    : FallbackCustomDisplay(options)
             : ProviderDefinition.FindByConfigKey(configKey).DisplayName;
 
         // 兜底：配置里的自定义名称已无对应卡片时仍要能显示

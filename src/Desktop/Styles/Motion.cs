@@ -184,11 +184,15 @@ public class Motion
             try
             {
                 if (window.Content is Visual c)
-                    await PlayExit(c);
+                {
+                    // 退场动画（Fast=150ms）不应成为关闭的硬依赖：渲染时钟被挂起/窗口
+                    // 失焦时 RunAsync 可能永不完成。400ms 看门狗后强行进入 finally 关闭。
+                    await Task.WhenAny(PlayExit(c), Task.Delay(400));
+                }
             }
             finally
             {
-                // 动画失败也必须关得掉（PlayExit 内部已吞异常，finally 兜底）
+                // 动画失败或超时也必须关得掉（PlayExit 内部已吞异常，finally 兜底）
                 window.Close();
             }
         };

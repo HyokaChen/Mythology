@@ -49,14 +49,6 @@ public sealed class ConversationRow
                 );
                 break;
             case MessageSender.Agent:
-                if (message.IsWaiting)
-                    rows.Add(
-                        new ConversationRow
-                        {
-                            Kind = ConversationRowKind.Waiting,
-                            Message = message,
-                        }
-                    );
                 if (message.IsProcessExpanded)
                 {
                     foreach (var step in message.AgentSteps)
@@ -100,6 +92,17 @@ public sealed class ConversationRow
                         new ConversationRow
                         {
                             Kind = ConversationRowKind.Sources,
+                            Message = message,
+                        }
+                    );
+                // 等待行始终在消息尾部：首轮还没有任何步骤时它就是唯一行；
+                // 阶段之间（思考结束、工具结束、下一轮 LLM 尚未出 token）它跟在最后一张卡片下面，
+                // 而不是跑到时间线顶部。
+                if (message.IsWaiting)
+                    rows.Add(
+                        new ConversationRow
+                        {
+                            Kind = ConversationRowKind.Waiting,
                             Message = message,
                         }
                     );

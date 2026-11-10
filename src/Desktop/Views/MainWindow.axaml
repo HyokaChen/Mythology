@@ -289,8 +289,8 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <controls:BusySpinner
             Name="StatusSpinner"
-            IsActive="{Binding IsProcessing}"
-            IsVisible="{Binding IsProcessing}"
+            IsActive="{Binding IsBusy}"
+            IsVisible="{Binding IsBusy}"
             FontSize="12"
             Foreground="{DynamicResource BrushSageLeaf}"
             VerticalAlignment="Center"

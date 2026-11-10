@@ -38,12 +38,24 @@
     <DataTemplate x:Key="RowSystem" x:DataType="models:ConversationRow">
       <StackPanel Margin="{Binding Margin}" Spacing="3">
         <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-        <TextBlock
-          Classes="SystemNoticeText"
-          Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
-          TextAlignment="Left"
-          HorizontalAlignment="Stretch"
-        />
+        <!-- 压缩等长任务：BusySpinner 与文本同排，任务完成后只关 spinner，不换行不跳动。 -->
+        <DockPanel>
+          <controls:BusySpinner
+            DockPanel.Dock="Left"
+            IsActive="{Binding Message.IsSpinnerVisible}"
+            IsVisible="{Binding Message.IsSpinnerVisible}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            Margin="0,0,8,0"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Classes="SystemNoticeText"
+            Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
+            TextAlignment="Left"
+            HorizontalAlignment="Stretch"
+          />
+        </DockPanel>
       </StackPanel>
     </DataTemplate>
 
@@ -645,7 +657,7 @@
                 x:Name="StopButton"
                 Classes="Ghost"
                 Command="{Binding StopProcessingCommand}"
-                IsVisible="{Binding IsProcessing}"
+                IsVisible="{Binding IsBusy}"
                 motion:Motion.Fade="True"
               >
                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -663,7 +675,7 @@
                 Classes="Primary"
                 Command="{Binding SendMessageCommand}"
                 Click="SendButton_OnClick"
-                IsVisible="{Binding IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+                IsVisible="{Binding IsBusy, Converter={StaticResource InvertedBoolToVisibility}}"
                 motion:Motion.Fade="True"
               >
                 <StackPanel Orientation="Horizontal" Spacing="6">

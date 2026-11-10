@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using Desktop.Services;
 using LlmTornado;
@@ -75,19 +76,25 @@ public sealed class ContextContinuationEngineTests : IDisposable
     /// <summary>预置会话分片并切回该会话（恢复模型侧上下文 + 元数据 + 页状态）。</summary>
     private async Task<string> SeedSessionAsync(int count = 6, int charsPerMessage = 12)
     {
-        var sessionId = $"s{Guid.NewGuid():N}"[..12];
-        _agent.CurrentNovelId = NovelId;
-        var body = new string('述', charsPerMessage);
+        var messageBody = new string('述', charsPerMessage);
         var messages = new List<LlmChatMessage>(count);
         for (var i = 0; i < count; i++)
         {
             messages.Add(
                 new LlmChatMessage(
                     i % 2 == 0 ? ChatMessageRoles.User : ChatMessageRoles.Assistant,
-                    $"第 {i} 条：{body}"
+                    $"第 {i} 条：{messageBody}"
                 )
             );
         }
+        return await SeedSessionMessagesAsync(messages);
+    }
+
+    /// <summary>用给定消息预置会话并切换到它。</summary>
+    private async Task<string> SeedSessionMessagesAsync(IReadOnlyList<LlmChatMessage> messages)
+    {
+        var sessionId = $"s{Guid.NewGuid():N}"[..12];
+        _agent.CurrentNovelId = NovelId;
         await _store.SaveSessionMessages(sessionId, NovelId, messages);
         await _engine.SwitchToAsync(sessionId, NovelId);
         return sessionId;
@@ -321,6 +328,64 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.True(_agent.State.Messages.Count < outcome.Before);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public async Task Compact_NonPositiveKeepRecent_ClampsAndReportsActualKept(int keepRecent)
+    {
+        // /compact 0 与负数曾把候选索引推到 messages.Count（越界）；clamp 后必须
+        // 仍按最后一个完整 user 轮次切，并且 outcome.After 用实际保留数，不是请求值。
+        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+
+        var outcome = await _engine.CompactAsync(smart: false, keepRecent);
+
+        Assert.Equal(CompactOutcomeKind.Done, outcome.Kind);
+        Assert.True(outcome.After < outcome.Before);
+        Assert.Equal(Math.Max(0, _agent.State.Messages.Count - 1), outcome.After);
+        var compact = Assert.Single(ReadSessionEntries("compact"));
+        var compressed = compact.GetProperty("compressed-message-ids").EnumerateArray().ToList();
+        Assert.NotEmpty(compressed);
+    }
+
+    [Fact]
+    public async Task Compact_NoSafeUserBoundary_FailsWithoutWritingCompactBlock()
+    {
+        // 单轮超长对话（1 个 user + 9 个 assistant/tool）没有完整轮次可切；
+        // 旧实现会生成「摘要 + 原消息全留」的空压缩块。现在必须失败且不落盘。
+        var messages = new List<LlmChatMessage> { new(ChatMessageRoles.User, "一整轮超长任务") };
+        for (var i = 0; i < 9; i++)
+            messages.Add(new LlmChatMessage(ChatMessageRoles.Assistant, $"第 {i} 段输出"));
+
+        await SeedSessionMessagesAsync(messages);
+
+        var outcome = await _engine.CompactAsync(smart: false, keepRecent: 2);
+
+        Assert.Equal(CompactOutcomeKind.Failed, outcome.Kind);
+        Assert.Empty(ReadSessionEntries("compact"));
+        Assert.Equal(messages.Count, _agent.State.Messages.Count);
+    }
+
+    [Fact]
+    public async Task CompactSmart_WithEarlyHighScoreTurn_ActuallyReducesMessages()
+    {
+        // 回归：RGDecimator 把第 0 轮评为最高分时，旧实现取 topN 最早索引 = 0，
+        // 于是 messages.Count → keep = 全部，生成摘要 + 原消息全留（202→202），
+        // 压缩不降反升，后续立刻再触发 85% 压缩提醒。
+        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+        _agent.MessageScorer = new EarlyTurnScorer();
+        var before = _agent.State.Messages.Count;
+
+        var outcome = await _engine.CompactAsync(smart: true, keepRecent: 2);
+
+        Assert.Equal(CompactOutcomeKind.Done, outcome.Kind);
+        Assert.True(outcome.After < outcome.Before, "智能压缩必须真正减少保留消息数");
+        Assert.True(_agent.State.Messages.Count < before, "Agent 内存上下文必须变小");
+        var compact = Assert.Single(ReadSessionEntries("compact"));
+        Assert.Equal("smart", compact.GetProperty("reason").GetString());
+        var compressed = compact.GetProperty("compressed-message-ids").EnumerateArray().ToList();
+        Assert.NotEmpty(compressed);
+    }
+
     [Fact]
     public async Task RelieveOverflow_CompactMode_CompactsWithoutRolling()
     {
@@ -333,5 +398,14 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.Equal("overflow", compact.GetProperty("reason").GetString());
         Assert.Empty(ReadSessionEntries("window"));
         Assert.Equal(0, _agent.ContextWindowState.StartOrder); // 页状态未推进
+    }
+
+    /// <summary>把第一轮打最高分，复现“最早 top 轮落在历史开头”的智能压缩场景。</summary>
+    private sealed class EarlyTurnScorer : IMessageScorer
+    {
+        public double Score(ReadOnlySpan<char> message, ReadOnlySpan<char> context) =>
+            message.IndexOf("第 0 条", StringComparison.Ordinal) >= 0 ? 2.0 : 0.1;
+
+        public void ApplyProfile(ModelContextProfile profile) { }
     }
 }

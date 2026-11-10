@@ -519,6 +519,9 @@ public sealed class SessionEngine(
             // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
             _autoContinueCount = 0;
             _lastRollReason = null;
+            // 提交准备期间（上下文注入 / 压缩预检）用户可能已按停止：进入 Agent 循环前兑现取消，
+            // 避免已取消的请求仍然开跑、停止按钮看起来无效。
+            ct.ThrowIfCancellationRequested();
             SetInteractionContext();
 
             await bridge.SendAsync(text, ct);
@@ -754,8 +757,15 @@ public sealed class SessionEngine(
                     "压缩失败"
                 );
             }
-            OnCompactEnd?.Invoke($"上下文压缩完成：{messages.Count} → {keep} 条");
-            return new CompactOutcome(CompactOutcomeKind.Done, messages.Count, keep, null);
+            OnCompactEnd?.Invoke(
+                $"上下文压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
+            );
+            return new CompactOutcome(
+                CompactOutcomeKind.Done,
+                messages.Count,
+                KeptMessageCountAfterCompact(),
+                null
+            );
         }
         catch (Exception ex)
         {
@@ -792,8 +802,15 @@ public sealed class SessionEngine(
                 OnCompactEnd?.Invoke($"智能压缩失败，退回普通模式");
                 return await CompactAsync(smart: false, keepRecent);
             }
-            OnCompactEnd?.Invoke($"智能压缩完成：{messages.Count} → {keep} 条");
-            return new CompactOutcome(CompactOutcomeKind.Done, messages.Count, keep, null);
+            OnCompactEnd?.Invoke(
+                $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
+            );
+            return new CompactOutcome(
+                CompactOutcomeKind.Done,
+                messages.Count,
+                KeptMessageCountAfterCompact(),
+                null
+            );
         }
         catch (Exception ex)
         {
@@ -821,9 +838,14 @@ public sealed class SessionEngine(
                 var keep = messages.Count - cutIndex;
                 var r = await PrepareAndCompactAsync(messages, keep, "smart", willRetry: false);
                 OnCompactEnd?.Invoke(
-                    r is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode
-                        ? DescribeRejection(r)
-                        : $"自动压缩完成：{messages.Count} → {keep} 条"
+                    r switch
+                    {
+                        CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
+                            DescribeRejection(r),
+                        CompactResult.Failed => "自动压缩失败",
+                        _ =>
+                            $"自动压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
+                    }
                 );
             }
             else
@@ -836,9 +858,14 @@ public sealed class SessionEngine(
                     willRetry: false
                 );
                 OnCompactEnd?.Invoke(
-                    r is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode
-                        ? DescribeRejection(r)
-                        : "自动压缩完成"
+                    r switch
+                    {
+                        CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
+                            DescribeRejection(r),
+                        CompactResult.Failed => "自动压缩失败",
+                        _ =>
+                            $"自动压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
+                    }
                 );
             }
         }
@@ -986,6 +1013,23 @@ public sealed class SessionEngine(
             );
         }
 
+        // 不变量：切割点必须是 >0 的完整 user 轮次起点。cutIndex=0 表示一条也不压，
+        // 旧实现仍会写“保存全部 + 摘要”的 compact 条目（202→202 的假压缩）。
+        // 单轮超长对话找不到安全切点时明确失败，而不是留下一个空压缩块。
+        if (
+            messages.Count == 0
+            || cutIndex <= 0
+            || messages[cutIndex].Role != ChatMessageRoles.User
+        )
+        {
+            log.LogWarning(
+                "prepare compaction: no complete user turn can be compressed (keepRecent={Keep}, cutIndex={Cut})",
+                keepRecent,
+                cutIndex
+            );
+            return CompactResult.Failed;
+        }
+
         var previousSummary = await store.GetLatestCompactSummaryAsync(_sessionId);
 
         var summary = await GenerateCompactSummaryAsync(messages, cutIndex, previousSummary);
@@ -1069,7 +1113,10 @@ public sealed class SessionEngine(
     /// <summary>计算压缩切割点——保证轮次完整性（对齐到 user 消息边界）。</summary>
     private static int FindCutPoint(IReadOnlyList<LlmChatMessage> messages, int keepRecent)
     {
-        var candidate = Math.Max(0, messages.Count - keepRecent);
+        if (messages.Count == 0)
+            return 0;
+        // keepRecent<=0（/compact 0、负数）不能让候选索引越过末尾——越界会直接抛异常。
+        var candidate = Math.Clamp(messages.Count - keepRecent, 0, messages.Count - 1);
         for (var i = candidate; i >= 0; i--)
         {
             if (messages[i].Role == ChatMessageRoles.User)
@@ -1127,7 +1174,13 @@ public sealed class SessionEngine(
         return scored;
     }
 
-    /// <summary>基于 RGDecimator 评分的智能切割点：保留 top-N 轮 + 最近一轮。</summary>
+    /// <summary>
+    /// 基于 RGDecimator 评分的智能切割点：保留 top-N 轮 + 最近一轮。
+    /// 智能压缩只能保留一个连续后缀，因此必须给“保留更多历史”设硬上限：
+    /// 最早的 top 轮若落在历史开头，不设限会把整段对话原样留下（真实事故 202→202，
+    /// 摘要反而让上下文更高）。上限 = max(keepRecent, 消息数/2)：智能模式最多保留一半消息，
+    /// 保证每次智能压缩都真正降低上下文；被压掉的早期轮次仍由摘要承载。
+    /// </summary>
     private static int FindSmartCutPoint(
         IReadOnlyList<LlmChatMessage> messages,
         List<TurnScore> scoredTurns,
@@ -1150,10 +1203,30 @@ public sealed class SessionEngine(
         for (var i = cutIndex; i >= 0; i--)
         {
             if (messages[i].Role == ChatMessageRoles.User)
-                return i;
+            {
+                cutIndex = i;
+                break;
+            }
         }
+
+        // 连续后缀的硬上限：从 messages.Count - maxKeep 往后找完整轮次起点。
+        // 找不到（上限落在最后一轮内部）时保持原 cut，宁可多留一轮也不拆轮次。
+        var maxKeep = Math.Max(keepRecent, messages.Count / 2);
+        var capIndex = messages.Count - maxKeep;
+        for (var i = capIndex; i < messages.Count; i++)
+        {
+            if (messages[i].Role == ChatMessageRoles.User)
+            {
+                cutIndex = Math.Max(cutIndex, i);
+                break;
+            }
+        }
+
         return cutIndex;
     }
+
+    /// <summary>压缩后 LLM 可见的保留消息数（不含摘要消息；outcome/toast 用实际值而非请求值）。</summary>
+    private int KeptMessageCountAfterCompact() => Math.Max(0, agent.State.Messages.Count - 1);
 
     /// <summary>估算上下文 token（锚点优先 + CJK 感知，委托 ConversationLoop）。</summary>
     private static long EstimateContextTokens(IReadOnlyList<LlmChatMessage> messages) =>
