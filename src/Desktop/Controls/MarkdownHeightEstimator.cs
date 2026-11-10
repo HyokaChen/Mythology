@@ -50,7 +50,7 @@ public static class MarkdownHeightEstimator
     // Vectorized (SearchValues) fast path for plain novel prose; Markdown syntax
     // falls through to Markdig.
     private static readonly SearchValues<char> MarkdownMarkers = SearchValues.Create(
-        "#*_`[]()!>|~\\"
+        "#*_`[]()!>|~\\-+<"
     );
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
@@ -89,7 +89,7 @@ public static class MarkdownHeightEstimator
     {
         var resolved = style ?? Conversation;
         var source = markdown ?? "";
-        if (source.AsSpan().IndexOfAny(MarkdownMarkers) < 0)
+        if (!HasMarkdownSyntax(source.AsSpan()))
             return EstimatePlainDocument(source, width, resolved);
 
         var document = Markdown.Parse(source, Pipeline);
@@ -114,6 +114,34 @@ public static class MarkdownHeightEstimator
         };
         probe.Measure(new Size(Math.Max(1, width), double.PositiveInfinity));
         return Math.Max(lineHeight, probe.DesiredSize.Height);
+    }
+
+    private static bool HasMarkdownSyntax(ReadOnlySpan<char> source)
+    {
+        if (source.IndexOfAny(MarkdownMarkers) >= 0)
+            return true;
+
+        // Ordered list "1. text" / "1) text" has no marker from the set above.
+        var lineStart = true;
+        for (var i = 0; i < source.Length; i++)
+        {
+            var ch = source[i];
+            if (lineStart && char.IsAsciiDigit(ch))
+            {
+                var j = i;
+                while (j < source.Length && char.IsAsciiDigit(source[j]))
+                    j++;
+                if (
+                    j > i
+                    && j + 1 < source.Length
+                    && (source[j] == '.' || source[j] == ')')
+                    && char.IsWhiteSpace(source[j + 1])
+                )
+                    return true;
+            }
+            lineStart = ch == '\n';
+        }
+        return false;
     }
 
     private static double EstimatePlainDocument(string source, double width, Style style)
