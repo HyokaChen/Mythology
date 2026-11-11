@@ -18,6 +18,7 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isCompleted = sender != MessageSender.Agent;
     private bool _isEditing;
     private string _editDraft = "";
+    private bool _isPointerOverMessage;
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
@@ -58,6 +59,25 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
                 return;
             _editDraft = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EditDraft)));
+        }
+    }
+
+    /// <summary>
+    /// 指针是否落在该消息的任意一行上。动作条用消息级 hover 而不是单行 hover：
+    /// 这样没有正文的中断/步骤回合也能从任意可视行唤出复制/重试。
+    /// </summary>
+    public bool IsPointerOverMessage
+    {
+        get => _isPointerOverMessage;
+        set
+        {
+            if (_isPointerOverMessage == value)
+                return;
+            _isPointerOverMessage = value;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsPointerOverMessage))
+            );
         }
     }
 

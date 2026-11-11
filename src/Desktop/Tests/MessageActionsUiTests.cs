@@ -114,9 +114,18 @@ public sealed class MessageActionsUiTests
                 Assert.True(userBar.IsHitTestVisible);
                 Assert.False(agentBar.IsHitTestVisible);
 
-                window.MouseMove(new Point(8, 8));
+                var agentBubble = view.GetVisualDescendants()
+                    .OfType<Border>()
+                    .Single(border => border.Classes.Contains("AgentBubble"));
+                var agentPoint = agentBubble.TranslatePoint(
+                    new Point(agentBubble.Bounds.Width / 2, agentBubble.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(agentPoint);
+                window.MouseMove(agentPoint.Value);
                 Pump();
                 Assert.False(userBar.IsHitTestVisible);
+                Assert.True(agentBar.IsHitTestVisible);
             }
             finally
             {
@@ -203,23 +212,102 @@ public sealed class MessageActionsUiTests
                 IsCompleted = true,
                 IsInterrupted = true,
             };
+            var user = new ChatMessage(MessageSender.User);
+            user.Content.Append("问题");
+            var view = CreateView(new ConversationRowCollection(user, agent));
+            var window = Show(view);
+            try
+            {
+                Pump();
+
+                var bar = Assert.Single(
+                    view.GetVisualDescendants().OfType<MessageActionBar>(),
+                    candidate => candidate.ShowRetry
+                );
+                var userBar = Assert.Single(
+                    view.GetVisualDescendants().OfType<MessageActionBar>(),
+                    candidate =>
+                        candidate.DataContext is ConversationRow { Kind: ConversationRowKind.User }
+                );
+                Assert.True(bar.ShowCopy);
+                Assert.True(bar.ShowRetry);
+                Assert.False(bar.IsHitTestVisible);
+
+                var interrupted = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(text => text.Text == "⏹ 中断生成");
+                Assert.True(interrupted.IsEffectivelyVisible);
+                var point = interrupted.TranslatePoint(
+                    new Point(interrupted.Bounds.Width / 2, interrupted.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(point);
+
+                window.MouseMove(point.Value);
+                Pump();
+                Assert.True(agent.IsPointerOverMessage);
+                Assert.True(bar.IsHitTestVisible);
+
+                var userBubble = view.GetVisualDescendants()
+                    .OfType<Border>()
+                    .Single(border => border.Classes.Contains("UserBubble"));
+                var userPoint = userBubble.TranslatePoint(
+                    new Point(userBubble.Bounds.Width / 2, userBubble.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(userPoint);
+                window.MouseMove(userPoint.Value);
+                Pump();
+                Assert.False(bar.IsHitTestVisible);
+                Assert.True(userBar.IsHitTestVisible);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void HoveringThinkingStep_RevealsMessageRetryCopy()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var agent = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
+            var step = new AgentStep
+            {
+                Kind = StepKind.Thinking,
+                Status = AgentStepStatus.Completed,
+            };
+            step.ThinkingBuilder.Append("思考一下");
+            step.NotifyThinkingChanged();
+            agent.AgentSteps.Add(step);
+
             var view = CreateView(new ConversationRowCollection(agent));
             var window = Show(view);
             try
             {
                 Pump();
 
-                var bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
-                Assert.True(bar.ShowCopy);
-                Assert.True(bar.ShowRetry);
-                Assert.True(bar.IsEffectivelyVisible);
-                Assert.True(bar.IsHitTestVisible);
-                Assert.Equal(1, bar.Opacity);
+                var bar = Assert.Single(
+                    view.GetVisualDescendants().OfType<MessageActionBar>(),
+                    candidate => candidate.ShowRetry
+                );
+                Assert.False(bar.IsHitTestVisible);
 
-                var interrupted = view.GetVisualDescendants()
+                var title = view.GetVisualDescendants()
                     .OfType<TextBlock>()
-                    .Single(text => text.Text == "⏹ 中断生成");
-                Assert.True(interrupted.IsEffectivelyVisible);
+                    .Single(text => text.Text == "思考过程");
+                var point = title.TranslatePoint(
+                    new Point(title.Bounds.Width / 2, title.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(point);
+
+                window.MouseMove(point.Value);
+                Pump();
+                Assert.True(agent.IsPointerOverMessage);
+                Assert.True(bar.IsHitTestVisible);
             }
             finally
             {

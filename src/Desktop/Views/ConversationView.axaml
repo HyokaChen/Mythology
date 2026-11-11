@@ -44,6 +44,7 @@
           </Border>
           <controls:MessageActionBar
             Classes="MessageActions"
+            Classes.Hovered="{Binding Message.IsPointerOverMessage}"
             HorizontalAlignment="Right"
             ShowEdit="True"
             EditRequested="UserMessageEdit_OnRequested"
@@ -135,6 +136,7 @@
         Margin="{Binding Margin}"
         Orientation="Horizontal"
         Spacing="8"
+        Background="Transparent"
         IsVisible="{Binding Message.IsWaiting}"
       >
         <controls:BusySpinner
@@ -159,6 +161,7 @@
 
           <controls:MessageActionBar
             Classes="MessageActions"
+            Classes.Hovered="{Binding Message.IsPointerOverMessage}"
             HorizontalAlignment="Left"
             ShowRetry="False"
             IsVisible="{Binding Step.IsContentStep}"
@@ -379,6 +382,7 @@
           </Border>
           <controls:MessageActionBar
             Classes="MessageActions"
+            Classes.Hovered="{Binding Message.IsPointerOverMessage}"
             HorizontalAlignment="Left"
             ShowRetry="{Binding Message.IsCompleted}"
             RetryRequested="MessageRetry_On_Requested"
@@ -387,11 +391,13 @@
       </Grid>
     </DataTemplate>
 
-    <!-- 没有最终正文的助手回合：动作条独立成行并常显——
-         纯中断回合没有可 hover 的正文，若仍隐藏就永远找不到重试/复制。 -->
+    <!-- 没有最终正文的助手回合：动作条独立成行，由消息级 hover 唤出；
+         即使没有正文，悬停中断行/步骤行也能看到复制/重试。 -->
     <DataTemplate x:Key="RowActions" x:DataType="models:ConversationRow">
-      <Grid Margin="{Binding Margin}">
+      <Grid Margin="{Binding Margin}" Background="Transparent">
         <controls:MessageActionBar
+          Classes="MessageActions"
+          Classes.Hovered="{Binding Message.IsPointerOverMessage}"
           HorizontalAlignment="Left"
           ShowRetry="True"
           RetryRequested="MessageRetry_On_Requested"
@@ -400,7 +406,12 @@
     </DataTemplate>
 
     <DataTemplate x:Key="RowInterrupted" x:DataType="models:ConversationRow">
-      <StackPanel Margin="{Binding Margin}" Spacing="3" IsVisible="{Binding Message.IsInterrupted}">
+      <StackPanel
+        Margin="{Binding Margin}"
+        Spacing="3"
+        Background="Transparent"
+        IsVisible="{Binding Message.IsInterrupted}"
+      >
         <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
         <TextBlock Classes="SystemNoticeText" Text="⏹ 中断生成" />
       </StackPanel>
@@ -470,9 +481,9 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- 消息块动作条：正常透明隐藏，鼠标进入块区域（气泡/步骤/输入框）才淡入。
-         仍保留 24px 占位，避免 hover 时行高变化造成滚动抖动。 -->
-    <Style Selector="Grid.MessageHoverHost controls|MessageActionBar.MessageActions">
+    <!-- 消息块动作条：由 ChatMessage.IsPointerOverMessage（消息级 hover）控制。
+         指针落在该消息任意一行（正文/步骤/中断行/动作行）都显示，避免无正文回合找不到按钮。 -->
+    <Style Selector="controls|MessageActionBar.MessageActions">
       <Setter Property="Opacity" Value="0" />
       <Setter Property="IsHitTestVisible" Value="False" />
       <Setter Property="Transitions">
@@ -485,7 +496,7 @@
         </Transitions>
       </Setter>
     </Style>
-    <Style Selector="Grid.MessageHoverHost:pointerover controls|MessageActionBar.MessageActions">
+    <Style Selector="controls|MessageActionBar.MessageActions.Hovered">
       <Setter Property="Opacity" Value="1" />
       <Setter Property="IsHitTestVisible" Value="True" />
     </Style>

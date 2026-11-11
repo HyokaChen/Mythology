@@ -28,6 +28,8 @@ public partial class ConversationView : UserControl
         MessageList.ItemsSource = _windowRows;
         MessageList.FollowChanged += OnFollowChanged;
         MessageScroll.ScrollChanged += OnMessageScrollChanged;
+        MessageScroll.PointerMoved += OnMessageScrollPointerMoved;
+        MessageScroll.PointerExited += OnMessageScrollPointerExited;
         MessageList.LayoutUpdated += OnMessageListLayoutUpdated;
         // 详情展开后的延迟 reveal 需要知道“点击之后用户是否自己滚动过”；
         // 布局/高度校正不算用户手势。
@@ -119,6 +121,7 @@ public partial class ConversationView : UserControl
     /// </summary>
     private void OnHostWindowDeactivated(object? sender, EventArgs e)
     {
+        SetHoveredMessage(null);
         _restoreAnchor = MessageList.IsFollowing ? null : CaptureAnchor(MessageScroll.Offset.Y);
         InvalidatePendingReveal();
         MessageList.SetWindowActive(false);
@@ -147,6 +150,43 @@ public partial class ConversationView : UserControl
     private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e) =>
         InvalidatePendingReveal();
 
+    /// <summary>
+    /// 消息级 hover：指针在同一消息的不同行之间移动时不闪断，只有真正换消息才切换。
+    /// 动作条通过 ChatMessage.IsPointerOverMessage 显示，避免无正文回合没有可 hover 的块。
+    /// </summary>
+    private void OnMessageScrollPointerMoved(object? sender, PointerEventArgs e)
+    {
+        // 只在新进入某条消息时切换；行间 4px 空隙/滚动条不主动清空，
+        // 否则从「中断行」移向动作行时按钮会在中途消失。
+        if (FindConversationRow(e.Source as Visual) is { } row)
+            SetHoveredMessage(row.Message);
+    }
+
+    private void OnMessageScrollPointerExited(object? sender, PointerEventArgs e) =>
+        SetHoveredMessage(null);
+
+    private void SetHoveredMessage(ChatMessage? message)
+    {
+        if (ReferenceEquals(_hoveredMessage, message))
+            return;
+        if (_hoveredMessage is not null)
+            _hoveredMessage.IsPointerOverMessage = false;
+        _hoveredMessage = message;
+        if (message is not null)
+            message.IsPointerOverMessage = true;
+    }
+
+    private static ConversationRow? FindConversationRow(Visual? visual)
+    {
+        while (visual is not null)
+        {
+            if (visual is Control { DataContext: ConversationRow row })
+                return row;
+            visual = visual.GetVisualParent();
+        }
+        return null;
+    }
+
     /// <summary>让所有已投递但尚未执行的详情 reveal 失效。</summary>
     private void InvalidatePendingReveal() => _revealVersion++;
 
@@ -162,6 +202,7 @@ public partial class ConversationView : UserControl
     {
         CancelProcessFold();
         InvalidatePendingReveal();
+        SetHoveredMessage(null);
     }
 
     // ── 全量行模型 + 可见窗口 ────────────────────────────────────────────
@@ -194,6 +235,7 @@ public partial class ConversationView : UserControl
     private bool _rowRefreshScheduled;
     private System.Threading.Timer? _processFoldTimer;
     private ChatMessage? _processFoldCandidate;
+    private ChatMessage? _hoveredMessage;
     private bool _editWasFollowing;
 
     /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged 并重建全部行。</summary>
@@ -860,6 +902,7 @@ public partial class ConversationView : UserControl
 
     private void ClearRows()
     {
+        SetHoveredMessage(null);
         foreach (var message in _subscribedMessages.ToArray())
             UnsubscribeMessage(message);
         _rows.Clear();

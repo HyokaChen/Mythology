@@ -13,14 +13,15 @@
   均可复制。中断回合同样保留内容卡与动作条：有正文时复制/重试随正文行出现，无正文时
   动作行置底，纯中断回合的复制回退为「⏹ 中断生成」。正文、思考、参数、结果与系统通知
   改用 `SelectableTextBlock`，支持拖选后 Cmd/Ctrl+C；Markdown 选区统一到
-  Eucalyptus/Forest Ink 色板。动作条默认透明且不参与命中，鼠标进入消息块才淡入，保留
-  24px 占位避免 hover 行高抖动。内联编辑的取消/发送按钮也带 Lucide 图标（X /
+  Eucalyptus/Forest Ink 色板。动作条默认透明且不参与命中，由消息级 hover 控制：悬停
+  助手消息任意一行（正文/步骤/中断行/动作行）都会淡入复制/重试，保留 24px 占位避免
+  hover 行高抖动。内联编辑的取消/发送按钮也带 Lucide 图标（X /
   CornerDownLeft）。重试按目标用户消息截断模型上下文，新消息以目标 parent 续写，
   旧助手分支保留在会话树。
   回归：`MessageActionsTests`、`MessageActionsStructureTests`、`MessageActionsUiTests`、
   `ConversationVmContractTests.RetryFromUserMessage_*` / `RetryMessage_*` /
   `SubmitUserEdit_*` / `StopProcessing_KeepsPartialAssistantMessage_*`；
-  Desktop 679/679、Core 1616/1616。
+  Desktop 680/680、Core 1616/1616。
 
 ### Fixed
 - **章节正文读取不再误用通用 `read`**：`OutputZonesPrompt` 的“改正文前先 read”改为

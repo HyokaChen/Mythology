@@ -18,6 +18,7 @@ public sealed class MessageActionsStructureTests
         var bar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
         Assert.Equal("True", Attr(bar, "ShowEdit"));
         Assert.Equal("", Attr(bar, "RetryRequested"));
+        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(bar, "Classes.Hovered"));
         Assert.Contains(
             "UserMessageEdit_OnRequested",
             Attr(bar, "EditRequested"),
@@ -48,6 +49,7 @@ public sealed class MessageActionsStructureTests
 
         Assert.Contains("Message.IsCompleted", Attr(bar, "ShowRetry"), StringComparison.Ordinal);
         Assert.Equal("", Attr(bar, "EditRequested"));
+        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(bar, "Classes.Hovered"));
         Assert.Contains(
             "MessageRetry_On_Requested",
             Attr(bar, "RetryRequested"),
@@ -67,9 +69,13 @@ public sealed class MessageActionsStructureTests
         );
 
         Assert.Contains("StepCopy_OnClick", Attr(copy, "Click"), StringComparison.Ordinal);
+        var stepBar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
+        Assert.Equal("False", Attr(stepBar, "ShowRetry"));
+        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(stepBar, "Classes.Hovered"));
         Assert.DoesNotContain(
-            row.Descendants().Where(e => e.Name.LocalName == "MessageActionBar"),
-            bar => Attr(bar, "RetryRequested").Length > 0
+            row.Descendants(),
+            bar =>
+                bar.Name.LocalName == "MessageActionBar" && Attr(bar, "RetryRequested").Length > 0
         );
     }
 
@@ -80,6 +86,7 @@ public sealed class MessageActionsStructureTests
         var bar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
 
         Assert.Equal("True", Attr(bar, "ShowRetry"));
+        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(bar, "Classes.Hovered"));
         Assert.Contains(
             "MessageRetry_On_Requested",
             Attr(bar, "RetryRequested"),
@@ -95,9 +102,7 @@ public sealed class MessageActionsStructureTests
 
         var hidden = Assert.Single(
             styles,
-            s =>
-                Attr(s, "Selector").Contains("MessageActions", StringComparison.Ordinal)
-                && !Attr(s, "Selector").Contains(":pointerover", StringComparison.Ordinal)
+            s => Attr(s, "Selector") == "controls|MessageActionBar.MessageActions"
         );
         Assert.Contains(
             hidden.Descendants(),
@@ -111,13 +116,16 @@ public sealed class MessageActionsStructureTests
 
         var shown = Assert.Single(
             styles,
-            s =>
-                Attr(s, "Selector").Contains("MessageActions", StringComparison.Ordinal)
-                && Attr(s, "Selector").Contains(":pointerover", StringComparison.Ordinal)
+            s => Attr(s, "Selector") == "controls|MessageActionBar.MessageActions.Hovered"
         );
         Assert.Contains(
             shown.Descendants(),
             setter => Attr(setter, "Property") == "Opacity" && Attr(setter, "Value") == "1"
+        );
+        Assert.Contains(
+            shown.Descendants(),
+            setter =>
+                Attr(setter, "Property") == "IsHitTestVisible" && Attr(setter, "Value") == "True"
         );
     }
 
