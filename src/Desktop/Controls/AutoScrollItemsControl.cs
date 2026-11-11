@@ -22,9 +22,19 @@ namespace Desktop.Controls;
 /// </summary>
 public class AutoScrollItemsControl : ItemsControl
 {
+    /// <summary>
+    /// 跟随意图只有三态：跟尾、阅读、允许回底后恢复。窗口焦点和滚动几何
+    /// 都不能直接改写它；几何最多把 SeekingTail 推进到 Following。
+    /// </summary>
+    private enum FollowMode
+    {
+        Following,
+        Reading,
+        SeekingTail,
+    }
+
     private ScrollViewer? _scrollViewer;
-    private bool _autoFollow = true;
-    private bool _resumeOnBottom = true;
+    private FollowMode _followMode = FollowMode.Following;
     private bool _followPostPending;
     private double _lastMaxOffset = double.NaN;
     private int _layoutUpdateDepth;
@@ -56,21 +66,22 @@ public class AutoScrollItemsControl : ItemsControl
     }
 
     /// <summary>当前是否处于「跟随尾部」状态。</summary>
-    public bool IsFollowing => _autoFollow;
+    public bool IsFollowing => _followMode == FollowMode.Following;
 
     /// <summary>跟随状态变化；上层据此切换尾部窗口/阅读窗口。</summary>
     public event EventHandler? FollowChanged;
 
     /// <summary>
-    /// 宿主窗口激活状态。失焦期间忽略滚动状态变化，避免窗口切换产生的
-    /// ScrollChanged 被误判成用户上滚；重新激活后如果仍在跟随则立即贴底。
+    /// 宿主窗口激活状态。失焦期间只忽略“用户上滚/回底”的意图判定，避免窗口
+    /// 切换产生的 ScrollChanged 被误判；跟随尾部的自动滚动不因失焦暂停。
+    /// 重新激活后如果仍在跟随则立即贴底。
     /// </summary>
     public void SetWindowActive(bool active)
     {
         if (_windowActive == active)
             return;
         _windowActive = active;
-        if (active && _autoFollow)
+        if (active && IsFollowing)
             Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
@@ -80,10 +91,9 @@ public class AutoScrollItemsControl : ItemsControl
     /// </summary>
     public void PauseFollow()
     {
-        SetFollow(false);
         // 这次暂停来自内容操作（展开历史过程），不能让布局校正自动恢复跟随；
         // 用户主动向下滚/拖回底部后才恢复。
-        _resumeOnBottom = false;
+        SetFollow(false);
     }
 
     /// <summary>
@@ -141,7 +151,7 @@ public class AutoScrollItemsControl : ItemsControl
                 return;
             }
 
-            if (_autoFollow)
+            if (IsFollowing)
                 ScheduleFollowTail();
         };
     }
@@ -150,7 +160,6 @@ public class AutoScrollItemsControl : ItemsControl
     public void ResetFollow()
     {
         SetFollow(true);
-        _resumeOnBottom = true;
         Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
@@ -159,7 +168,7 @@ public class AutoScrollItemsControl : ItemsControl
         base.OnAttachedToVisualTree(e);
         // ScrollViewer 是 ItemsControl 的祖先（不是模板子级）。
         AttachScrollViewer(this.FindAncestorOfType<ScrollViewer>());
-        if (_autoFollow)
+        if (IsFollowing)
             Dispatcher.UIThread.Post(ScrollToEndImmediate, DispatcherPriority.Loaded);
     }
 
@@ -225,7 +234,9 @@ public class AutoScrollItemsControl : ItemsControl
         if (!_windowActive || e.Delta.Y == 0)
             return;
 
-        _resumeOnBottom = true;
+        // 非跟随时，这次输入先给“回底恢复”一个机会；上滚会立即退回阅读态。
+        if (!IsFollowing)
+            _followMode = FollowMode.SeekingTail;
         // 上滚符号可信时立即停；但 macOS 自然滚动可能反转符号，所以不能
         // 依赖它做“下滚就吸附”。下滚是否真的靠近底部，在这一次输入
         // 造成 offset 变化之后再判断。
@@ -300,7 +311,8 @@ public class AutoScrollItemsControl : ItemsControl
         }
         else if (e.Key is Key.Down or Key.PageDown or Key.End)
         {
-            _resumeOnBottom = true;
+            if (!IsFollowing)
+                _followMode = FollowMode.SeekingTail;
             if (IsAtBottom() || IsNearBottom())
             {
                 SetFollow(true);
@@ -312,8 +324,12 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>滚动条按下后允许拖回底部时恢复跟随；方向上移仍由 ScrollChanged 判定。</summary>
     private void OnScrollViewerPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.Source is Visual source && source.GetVisualAncestors().OfType<ScrollBar>().Any())
-            _resumeOnBottom = true;
+        if (
+            !IsFollowing
+            && e.Source is Visual source
+            && source.GetVisualAncestors().OfType<ScrollBar>().Any()
+        )
+            _followMode = FollowMode.SeekingTail;
     }
 
     /// <summary>立即滚到底部（无动画，初始加载无闪烁）。</summary>
@@ -324,57 +340,82 @@ public class AutoScrollItemsControl : ItemsControl
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (_scrollViewer is null || !_windowActive)
+        var scrollViewer = _scrollViewer;
+        if (scrollViewer is null)
             return;
 
-        var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
+        var maxOffset = Math.Max(0, scrollViewer.Extent.Height - scrollViewer.Viewport.Height);
         var previousMaxOffset = _lastMaxOffset;
         _lastMaxOffset = maxOffset;
 
-        // 用户已经贴住旧的 max，随后虚拟化实测让 extent 变高：这时 offset
-        // 仍停在旧 max，属于“还在底部”而不是新内容的中间位置。先记下
-        // bottom seek，即使当前 gap 暂时大于吸附阈值也要继续跟。
+        FollowExtentGrowth(scrollViewer, e, previousMaxOffset);
+        if (_windowActive)
+            ApplyUserScrollIntent(scrollViewer, e, maxOffset);
+    }
+
+    /// <summary>
+    /// 跟随只由 Follow 状态驱动，与窗口焦点无关。流式正文长高、虚拟化实测
+    /// 或新行挂载都会让 extent 增长；只要仍在跟随就必须继续贴底。
+    /// </summary>
+    private void FollowExtentGrowth(
+        ScrollViewer scrollViewer,
+        ScrollChangedEventArgs e,
+        double previousMaxOffset
+    )
+    {
+        if (IsFollowing)
+        {
+            if (e.ExtentDelta.Y > 0)
+                ScheduleFollowTail();
+            return;
+        }
+
+        // 用户已经贴住旧的 max，随后 extent 变高：offset 仍在旧底部，
+        // 属于“还在底部”而不是新内容的中间位置。保留这个 bottom seek，
+        // 即使当前 gap 暂时大于吸附阈值也继续跟。
         if (
-            !_autoFollow
-            && _resumeOnBottom
+            _windowActive
+            && _followMode == FollowMode.SeekingTail
             && e.ExtentDelta.Y > 0
             && double.IsFinite(previousMaxOffset)
-            && _scrollViewer.Offset.Y >= previousMaxOffset - 2
+            && scrollViewer.Offset.Y >= previousMaxOffset - 2
         )
         {
             SetFollow(true);
             ScheduleFollowTail();
         }
+    }
 
-        // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量）都重新贴底。
-        if (_autoFollow && e.ExtentDelta.Y > 0)
-            ScheduleFollowTail();
+    /// <summary>
+    /// 只解释真实用户手势。窗口切换、布局校正、锚点恢复也会改 offset/extent，
+    /// 必须排除，否则会被误判成上滚/回底。
+    /// </summary>
+    private void ApplyUserScrollIntent(
+        ScrollViewer scrollViewer,
+        ScrollChangedEventArgs e,
+        double maxOffset
+    )
+    {
+        var layoutStable = _layoutUpdateDepth == 0;
 
-        // 用户上滚 → 停止跟随。
-        // 只认“offset 负增量 + extent 稳定”；布局校正/窗口换页会同时改变 extent，
-        // 不能当成用户上滚，否则恢复会话后可能永远停在中间。
-        // 不依赖 PointerPressed 的 ScrollBar 命中，滚动条、键盘、触控板都统一。
+        // 用户上滚：只认“offset 负增量 + extent 稳定”。底部 64px 是
+        // overscroll/rubber-band 回弹区，滚轮/键盘上滚已显式停跟随，
+        // 不能让回弹把刚到底的跟随关掉。
         if (
-            _layoutUpdateDepth == 0
+            layoutStable
             && e.OffsetDelta.Y < -0.5
             && Math.Abs(e.ExtentDelta.Y) < 0.5
-            // 底部 64px 是 overscroll/rubber-band 回弹区；滚轮上滚和
-            // 键盘上滚已经显式停跟随，不能让回弹把刚到底的跟随关掉。
-            && _scrollViewer.Offset.Y < maxOffset - 64
+            && scrollViewer.Offset.Y < maxOffset - 64
         )
             DisableFollow();
 
-        // 用户滚到底部 → 恢复跟随。
-        // 快速滚动时先到的是“当前估算 extent 的底部”；随后 block/行实测
-        // 会让 extent 继续增长。不能在接近底部时因为 extent 同时变化就拒绝
-        // 恢复跟随，否则会出现“回弹一下、差一点到底，要再滚一次”。
-        // 仍然排除程序的窗口/锚点更新（_layoutUpdateDepth）和向上回弹。
+        // 用户下滚到底：快速滚动先到当前估算底部，随后实测高度还会增长；
+        // 只要本次是正向 offset 增量，就在吸附区内恢复跟随。
         if (
-            !_autoFollow
-            && _resumeOnBottom
-            && _layoutUpdateDepth == 0
+            layoutStable
+            && _followMode == FollowMode.SeekingTail
             && e.OffsetDelta.Y > 0.5
-            && _scrollViewer.Offset.Y >= maxOffset - BottomSnapDistance
+            && scrollViewer.Offset.Y >= maxOffset - BottomSnapDistance
         )
         {
             SetFollow(true);
@@ -401,7 +442,7 @@ public class AutoScrollItemsControl : ItemsControl
     /// <summary>投递执行时再次确认仍在跟随（用户可能在 Post 与执行之间上滚）。</summary>
     private void FollowTailIfEnabled()
     {
-        if (!_autoFollow || !_windowActive || _scrollViewer is null)
+        if (!IsFollowing || _scrollViewer is null)
             return;
 
         var maxOffset = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
@@ -414,9 +455,8 @@ public class AutoScrollItemsControl : ItemsControl
 
     private void DisableFollow()
     {
-        SetFollow(false);
         // 上滚后必须重新由用户下滚/拖到底部才恢复，不能让布局校正自动恢复。
-        _resumeOnBottom = false;
+        SetFollow(false);
     }
 
     private bool IsAtBottom()
@@ -443,9 +483,10 @@ public class AutoScrollItemsControl : ItemsControl
 
     private void SetFollow(bool value)
     {
-        if (_autoFollow == value)
+        var next = value ? FollowMode.Following : FollowMode.Reading;
+        if (_followMode == next)
             return;
-        _autoFollow = value;
+        _followMode = next;
         FollowChanged?.Invoke(this, EventArgs.Empty);
     }
 }

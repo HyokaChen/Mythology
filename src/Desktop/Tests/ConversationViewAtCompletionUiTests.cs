@@ -1196,60 +1196,23 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
-    /// 用户在底部时切到别的窗口，期间继续追加消息；切回来后必须仍贴底，
-    /// 不能停在失焦前的中间 offset。
+    /// 失焦前已暂停跟随（例如刚展开详情），失焦期间继续追加消息；
+    /// 切回来必须保持阅读位置，不能因为“离开时在底部”就 ResetFollow。
     /// </summary>
     [Fact]
-    public void WindowDeactivateReactivate_AtBottom_StaysAtBottom()
+    public void WindowDeactivateReactivate_Paused_DoesNotResetFollow()
     {
         Ui.Run(() =>
         {
-            for (var i = 0; i < 120; i++)
-            {
-                var message = new Desktop.Models.ChatMessage(
-                    i % 2 == 0
-                        ? Desktop.Models.MessageSender.User
-                        : Desktop.Models.MessageSender.Agent
-                );
-                message.AppendContent(
-                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文内容", 12))
-                );
-                _vm.Messages.Add(message);
-            }
-            _vm.HasMessages = true;
-
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 900,
-                Height = 700,
-                Content = view,
-            };
-            window.Show();
+            SeedHistory(120);
+            var (window, _, list, sv) = ShowConversation();
             try
             {
-                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                    "MessageList"
-                )!;
-                var sv = FindMessageScroll(view);
                 PumpUntil(() => AtBottom(sv), "初始贴底");
-                // 模拟“人在底部但跟随已暂停”（例如刚点过过程/详情）。
-                // 失焦期间新增消息后，激活时仍应回到用户离开时的底部。
                 list.PauseFollow();
+                var pausedOffset = sv.Offset.Y;
 
-                // Headless Window 不会真的抢焦点；直接触发 WindowBase 事件，
-                // 验证生产接线与 offset 恢复逻辑。
-                var field = typeof(WindowBase).GetField(
-                    "Deactivated",
-                    System.Reflection.BindingFlags.Instance
-                        | System.Reflection.BindingFlags.NonPublic
-                );
-                var deactivated = field?.GetValue(window) as EventHandler;
-                Assert.NotNull(deactivated);
-                deactivated(window, EventArgs.Empty);
-                Dispatcher.UIThread.RunJobs();
-
-                // 失焦期间继续追加，旧 offset 不再对应底部
+                RaiseWindowEvent(window, "Deactivated");
                 for (var i = 0; i < 30; i++)
                 {
                     var message = new Desktop.Models.ChatMessage(
@@ -1260,15 +1223,148 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 }
                 Dispatcher.UIThread.RunJobs();
 
-                field = typeof(WindowBase).GetField(
-                    "Activated",
-                    System.Reflection.BindingFlags.Instance
-                        | System.Reflection.BindingFlags.NonPublic
+                Assert.False(list.IsFollowing, "暂停状态在失焦期间必须保持");
+                Assert.False(AtBottom(sv), "暂停状态不得因后台追加自动贴底");
+
+                RaiseWindowEvent(window, "Activated");
+                PumpUntil(
+                    () => !list.IsFollowing && Math.Abs(sv.Offset.Y - pausedOffset) <= 1,
+                    "切回窗口后保持暂停位置"
                 );
-                var activated = field?.GetValue(window) as EventHandler;
-                Assert.NotNull(activated);
-                activated(window, EventArgs.Empty);
-                PumpUntil(() => AtBottom(sv), "切回窗口后仍贴底");
+                Assert.False(AtBottom(sv), "暂停状态切回后不得回到底部");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 跟随状态与窗口焦点无关：失焦期间 agent 继续输出时仍要贴底，
+    /// 不能等切回来再补一次跳转（那会和展开/布局竞争产生闪烁）。
+    /// </summary>
+    [Fact]
+    public void WindowDeactivated_WhileFollowing_KeepsFollowingNewContent()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(120);
+            var (window, _, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+                Assert.True(list.IsFollowing);
+
+                RaiseWindowEvent(window, "Deactivated");
+                for (var i = 0; i < 30; i++)
+                {
+                    var message = new Desktop.Models.ChatMessage(
+                        Desktop.Models.MessageSender.Agent
+                    );
+                    message.AppendContent($"失焦期间新增 {i} " + new string('文', 40));
+                    _vm.Messages.Add(message);
+                }
+
+                // 不触发 Activated：失焦期间也必须已经贴底。
+                PumpUntil(() => AtBottom(sv), "失焦期间自动跟随");
+                Assert.True(list.IsFollowing, "失焦不得关闭跟随");
+
+                RaiseWindowEvent(window, "Activated");
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "切回窗口后仍贴底");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// Agent 运行中用户展开详情：立即中断跟随；失焦/新增内容/切回来都不能
+    /// 把展开位置重置到底部，也不能让延迟 reveal 再次拽动视口。
+    /// </summary>
+    [Fact]
+    public void ExpandedDetails_WhileRunning_SurviveWindowDeactivate()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(40, "历史回答");
+
+            var target = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            var step = new Desktop.Models.AgentStep
+            {
+                Kind = Desktop.Models.StepKind.Thinking,
+                Status = Desktop.Models.AgentStepStatus.Completed,
+                Title = "展开中的思考",
+                IsDetailsExpanded = false,
+            };
+            step.ThinkingBuilder.Append(
+                string.Join(" ", Enumerable.Repeat("展开后需要保持阅读的思考正文。", 30))
+            );
+            step.NotifyThinkingChanged();
+            target.AgentSteps.Add(step);
+            target.IsProcessExpanded = true;
+            target.AppendContent("正在生成中的回答");
+            _vm.Messages.Add(target);
+            _vm.HasMessages = true;
+
+            var (window, view, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+
+                var button = view.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(b =>
+                        b.DataContext is Desktop.Models.ConversationRow { Step: { } rowStep }
+                        && ReferenceEquals(rowStep, step)
+                        && Equals(b.Content, "展开")
+                    )
+                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
+                    .FirstOrDefault(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height);
+                Assert.NotNull(button);
+                var click = button!.Button.TranslatePoint(
+                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
+                    window
+                );
+                Assert.NotNull(click);
+                window.MouseMove(click!.Value);
+                window.MouseDown(click.Value, MouseButton.Left);
+                window.MouseUp(click.Value, MouseButton.Left);
+                PumpUntil(() => step.IsDetailsExpanded, "详情展开");
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                Assert.False(list.IsFollowing, "展开详情必须中断自动跟随");
+                Assert.False(AtBottom(sv));
+                var expandedOffset = sv.Offset.Y;
+
+                RaiseWindowEvent(window, "Deactivated");
+                for (var i = 0; i < 30; i++)
+                {
+                    var message = new Desktop.Models.ChatMessage(
+                        Desktop.Models.MessageSender.Agent
+                    );
+                    message.AppendContent($"失焦期间新增 {i} " + new string('文', 40));
+                    _vm.Messages.Add(message);
+                }
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.False(list.IsFollowing);
+                Assert.False(AtBottom(sv));
+
+                RaiseWindowEvent(window, "Activated");
+                PumpUntil(
+                    () => !list.IsFollowing && Math.Abs(sv.Offset.Y - expandedOffset) <= 2,
+                    "切回后保持展开位置"
+                );
+                Assert.True(step.IsDetailsExpanded);
+                Assert.False(AtBottom(sv));
             }
             finally
             {
@@ -2147,6 +2243,60 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 window.Close();
             }
         });
+    }
+
+    private void SeedHistory(int count, string prefix = "历史")
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var message = new Desktop.Models.ChatMessage(
+                i % 2 == 0 ? Desktop.Models.MessageSender.User : Desktop.Models.MessageSender.Agent
+            );
+            message.AppendContent(
+                $"{prefix} {i} " + string.Join(" ", Enumerable.Repeat("正文内容", 12))
+            );
+            _vm.Messages.Add(message);
+        }
+        _vm.HasMessages = true;
+    }
+
+    private (
+        Window Window,
+        Desktop.Views.ConversationView View,
+        Desktop.Controls.AutoScrollItemsControl List,
+        ScrollViewer Scroll
+    ) ShowConversation()
+    {
+        var view = new Desktop.Views.ConversationView { DataContext = _vm };
+        var window = new Window
+        {
+            Width = 900,
+            Height = 700,
+            Content = view,
+        };
+        window.Show();
+        return (
+            window,
+            view,
+            view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!,
+            FindMessageScroll(view)
+        );
+    }
+
+    /// <summary>
+    /// Headless Window 不会真的抢焦点；直接触发 WindowBase 的私有事件，
+    /// 验证生产接线与 offset 恢复逻辑。
+    /// </summary>
+    private static void RaiseWindowEvent(Window window, string eventName)
+    {
+        var field = typeof(WindowBase).GetField(
+            eventName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+        );
+        var handler = field?.GetValue(window) as EventHandler;
+        Assert.NotNull(handler);
+        handler(window, EventArgs.Empty);
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static ScrollViewer FindMessageScroll(Desktop.Views.ConversationView view) =>

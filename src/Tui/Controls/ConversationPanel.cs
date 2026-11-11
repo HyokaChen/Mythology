@@ -86,6 +86,7 @@ public sealed class ConversationPanel
             FillStyle = Style.None.WithBackground(colors.ConversationBg),
             Content = Flow,
         };
+        _panel.DescendantExpanded += (_, _) => Flow.FollowTail = false;
 
         _streamBubbleManager = new StreamBubbleManager(Flow, colors);
         _messageRestorer = new MessageRestorer(Flow, registry, colors, OnNavigateToEntity);

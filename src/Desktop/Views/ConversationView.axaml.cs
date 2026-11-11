@@ -110,32 +110,43 @@ public partial class ConversationView : UserControl
     }
 
     /// <summary>
-    /// 窗口失焦/回来时恢复“用户原本就在底部”的语义。
-    /// 失焦期间布局、spacer 或窗口激活都可能产生 ScrollChanged；不能让它
-    /// 关闭跟随或把底部视口留在中段。
+    /// 窗口失焦/回来时保持跟随意图，不用几何位置反推。
+    /// 失焦期间布局、spacer 或窗口激活都可能产生 ScrollChanged；只忽略
+    /// 用户意图判定，Follow 状态本身继续贴底。Pause 状态捕获锚点，回来
+    /// 后恢复阅读位置，绝不 ResetFollow。
     /// </summary>
     private void OnHostWindowDeactivated(object? sender, EventArgs e)
     {
-        _restoreBottomOnActivate = MessageList.IsFollowing || IsMessageAtBottom();
+        _restoreAnchor = MessageList.IsFollowing ? null : CaptureAnchor(MessageScroll.Offset.Y);
+        InvalidatePendingReveal();
         MessageList.SetWindowActive(false);
     }
 
     private void OnHostWindowActivated(object? sender, EventArgs e)
     {
         MessageList.SetWindowActive(true);
-        if (!_restoreBottomOnActivate)
+        if (MessageList.IsFollowing || _restoreAnchor is not { } anchor)
+        {
+            _restoreAnchor = null;
             return;
-        _restoreBottomOnActivate = false;
-        MessageList.ResetFollow();
+        }
+
+        _restoreAnchor = null;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!MessageList.IsFollowing)
+                    RestoreAnchor(anchor);
+            },
+            DispatcherPriority.Loaded
+        );
     }
 
-    private bool IsMessageAtBottom()
-    {
-        var max = Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height);
-        return MessageScroll.Offset.Y >= max - 1;
-    }
+    private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e) =>
+        InvalidatePendingReveal();
 
-    private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e) => _userScrollEpoch++;
+    /// <summary>让所有已投递但尚未执行的详情 reveal 失效。</summary>
+    private void InvalidatePendingReveal() => _revealVersion++;
 
     private void OnFollowChanged(object? sender, EventArgs e)
     {
@@ -144,8 +155,12 @@ public partial class ConversationView : UserControl
         SyncWindowToTail();
     }
 
-    /// <summary>窗口关闭/切走时停掉后台折叠定时器。</summary>
-    private void StopBackgroundWork() => CancelProcessFold();
+    /// <summary>窗口关闭/切走时停掉后台折叠定时器，并让未执行的 reveal 失效。</summary>
+    private void StopBackgroundWork()
+    {
+        CancelProcessFold();
+        InvalidatePendingReveal();
+    }
 
     // ── 全量行模型 + 可见窗口 ────────────────────────────────────────────
     // _rows 保存所有消息的行模型（不挂控件）；_windowRows 只保存视口附近的行，
@@ -163,9 +178,12 @@ public partial class ConversationView : UserControl
     private bool _windowSyncScheduled;
     private bool _forceWindowSync;
     private bool _syncingWindow;
+
+    private readonly record struct ScrollAnchor(ConversationRow Row, double Delta);
+
     private Window? _hostWindow;
-    private bool _restoreBottomOnActivate;
-    private int _userScrollEpoch;
+    private ScrollAnchor? _restoreAnchor;
+    private int _revealVersion;
     private bool _captureScheduled;
     private bool _restoringOffset;
     private double _lastObservedOffset = double.NaN;
@@ -415,7 +433,7 @@ public partial class ConversationView : UserControl
         var end = Math.Min(_rows.Count, start + maxLive);
         SetWindow(start, end);
         if (!MessageList.IsFollowing && anchor is { } value)
-            RestoreAnchor(value.Row, value.Delta);
+            RestoreAnchor(value);
     }
 
     /// <summary>设置可见窗口并同步上下 spacer；窗口外没有控件，也没有纯文本。</summary>
@@ -769,10 +787,10 @@ public partial class ConversationView : UserControl
         if (following)
             MessageList.ScrollToEndImmediate();
         else if (anchor is { } value)
-            RestoreAnchor(value.Row, value.Delta);
+            RestoreAnchor(value);
     }
 
-    private (ConversationRow Row, double Delta)? CaptureAnchor(double offset)
+    private ScrollAnchor? CaptureAnchor(double offset)
     {
         if (_rows.Count == 0)
             return null;
@@ -780,16 +798,16 @@ public partial class ConversationView : UserControl
         var index = _heightIndex.IndexAtOffset(offset);
         var row = _rows[index];
         var top = _heightIndex.OffsetOf(index);
-        return (row, Math.Max(0, offset - top));
+        return new ScrollAnchor(row, Math.Max(0, offset - top));
     }
 
-    private void RestoreAnchor(ConversationRow row, double delta)
+    private void RestoreAnchor(ScrollAnchor anchor)
     {
-        var index = _rows.IndexOf(row);
+        var index = _rows.IndexOf(anchor.Row);
         if (index < 0)
             return;
 
-        var target = TopOf(index) + delta;
+        var target = TopOf(index) + anchor.Delta;
         var max = Math.Max(0, TotalHeight() - ViewportHeight());
         target = Math.Clamp(target, 0, max);
         if (Math.Abs(MessageScroll.Offset.Y - target) <= 0.5)
@@ -847,7 +865,9 @@ public partial class ConversationView : UserControl
         MessageList.TopSpacerHeight = 0;
         MessageList.BottomSpacerHeight = 0;
         _lastObservedOffset = double.NaN;
+        _restoreAnchor = null;
         CancelProcessFold();
+        InvalidatePendingReveal();
     }
 
     /// <summary>
@@ -1065,6 +1085,8 @@ public partial class ConversationView : UserControl
             )
         )
             return;
+        // 自动折叠会让步骤详情一起消失；不能留下一个已经无目标的延迟 reveal。
+        InvalidatePendingReveal();
         message.IsProcessExpanded = false;
     }
 
@@ -1108,6 +1130,7 @@ public partial class ConversationView : UserControl
         if (sender is Control { DataContext: ConversationRow { Message: var message } })
         {
             // 展开历史过程会改变行高；先退出尾部跟随，避免把视口拉回最后一条。
+            InvalidatePendingReveal();
             MessageList.PauseFollow();
             message.ProcessTouchedByUser = true;
             CancelProcessFold();
@@ -1124,14 +1147,15 @@ public partial class ConversationView : UserControl
             // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
             // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
             var expand = !step.IsDetailsExpanded;
+            InvalidatePendingReveal();
             if (expand)
                 MessageList.PauseFollow();
             step.IsDetailsExpanded = expand;
             if (expand)
             {
-                var scrollEpoch = _userScrollEpoch;
+                var revealVersion = _revealVersion;
                 Dispatcher.UIThread.Post(
-                    () => BringStepDetailsIntoView(row, scrollEpoch),
+                    () => BringStepDetailsIntoView(row, revealVersion),
                     DispatcherPriority.Loaded
                 );
             }
@@ -1139,18 +1163,20 @@ public partial class ConversationView : UserControl
         e.Handled = true;
     }
 
-    private void BringStepDetailsIntoView(ConversationRow row, int scrollEpoch)
+    private void BringStepDetailsIntoView(ConversationRow row, int revealVersion)
     {
         if (row.Step is not { IsDetailsExpanded: true })
             return;
-        if (_userScrollEpoch != scrollEpoch)
+        if (_revealVersion != revealVersion || MessageList.IsFollowing)
             return;
         var details = this.GetVisualDescendants()
             .OfType<StackPanel>()
             .FirstOrDefault(panel =>
                 panel.Classes.Contains("StepDetails") && ReferenceEquals(panel.DataContext, row)
             );
-        if (details?.TranslatePoint(new Point(0, 0), MessageScroll) is not { } top)
+        if (details is not { IsVisible: true })
+            return;
+        if (details.TranslatePoint(new Point(0, 0), MessageScroll) is not { } top)
             return;
 
         // 详情顶部已经在视口上部（或完整可见）时不打扰用户；只有贴近/越过底边
@@ -1296,7 +1322,8 @@ public partial class ConversationView : UserControl
         }
 
         // 发送后回到最新内容：用户可能刚在历史里翻看，回车发送应看到自己刚发的消息，
-        // 并让本轮流式输出继续跟随到底部。
+        // 并让本轮流式输出继续跟随到底部；旧的详情 reveal 不应再反向拽回。
+        InvalidatePendingReveal();
         MessageList.ResetFollow();
         vm.SendMessageCommand.Execute().Subscribe();
         e.Handled = true;
@@ -1523,7 +1550,11 @@ public partial class ConversationView : UserControl
     // ── 拖放：把文件/目录路径插入输入框（@ 路径语义，与补全插入格式一致） ──
 
     /// <summary>点击发送按钮不经过 Enter 路径，这里补一次跟随重置（命令执行后由 Loaded 追底）。</summary>
-    private void SendButton_OnClick(object? sender, RoutedEventArgs e) => MessageList.ResetFollow();
+    private void SendButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        InvalidatePendingReveal();
+        MessageList.ResetFollow();
+    }
 
     private void InputBox_OnDragOver(object? sender, DragEventArgs e)
     {

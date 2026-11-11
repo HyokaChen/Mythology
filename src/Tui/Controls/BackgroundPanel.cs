@@ -1,6 +1,7 @@
 using System.Text;
 using XenoAtom.Terminal.UI;
 using XenoAtom.Terminal.UI.Controls;
+using XenoAtom.Terminal.UI.Input;
 using XenoAtom.Terminal.UI.Rendering;
 
 namespace Tui.Controls;
@@ -21,6 +22,19 @@ public sealed class BackgroundPanel : ContentVisual
     {
         HorizontalAlignment = Align.Stretch;
         VerticalAlignment = Align.Stretch;
+        AddHandler(Collapsible.ExpandedChangedEvent, OnDescendantExpanded);
+    }
+
+    /// <summary>
+    /// 任一后代 <see cref="Collapsible"/> 被展开时触发。用于把“用户展开对话块”
+    /// 与“跟随尾部”解耦；创建时直接设置 IsExpanded 不产生该事件。
+    /// </summary>
+    public event EventHandler<ExpandedChangedEventArgs>? DescendantExpanded;
+
+    private void OnDescendantExpanded(object? sender, ExpandedChangedEventArgs e)
+    {
+        if (e.NewValue)
+            DescendantExpanded?.Invoke(this, e);
     }
 
     /// <summary>
