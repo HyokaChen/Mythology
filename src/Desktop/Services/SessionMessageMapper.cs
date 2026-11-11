@@ -75,7 +75,7 @@ public static class SessionMessageMapper
 
                 case MessageRole.Assistant:
                 {
-                    var msg = new ChatMessage(MessageSender.Agent);
+                    var msg = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
 
                     // 旧会话把中断提示写成 Markdown 引用块；历史恢复时还原为独立中断行，
                     // 与实时停止一致，也避免引用块在消息卡里再套一层边框。

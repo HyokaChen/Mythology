@@ -493,40 +493,202 @@ public sealed class SessionEngine(
             return;
         }
 
+        await RunTurnAsync(
+            prepare: async () =>
+            {
+                await InjectNovelContextAsync();
+
+                // 主动压缩预检：接近动态阈值时先压缩再发送，阈值与显示分母一致（ModelProfile 窗口）
+                var estimatedTokens = calibrator.Project(
+                    ConversationLoop.EstimateMessagesTokens(agent.State.Messages)
+                );
+                var compactPercent = agent.ModelProfile?.CompactThresholdPercent ?? 0.85;
+                var contextWindow =
+                    agent.ModelProfile?.ContextWindowTokens
+                    ?? configStore.Load().Providers.ContextWindowSize;
+                var compactThreshold = (long)(contextWindow * compactPercent);
+                var keepRecent = agent.ModelProfile?.ScaledKeepRecent ?? 20;
+                // ★ 模式互斥：接续模式在发送前只换页（不压缩）；compact 模式保持原压缩路径。
+                if (estimatedTokens > compactThreshold)
+                {
+                    if (_contextManagement is { Mode: ContextMode.Continuation })
+                        await RollContextWindowAsync("threshold");
+                    else
+                        await AutoCompactAsync(keepRecent);
+                }
+
+                // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
+                _autoContinueCount = 0;
+                _lastRollReason = null;
+            },
+            send: token => bridge.SendAsync(text, token),
+            retryAfterOverflow: (count, token) => RunPromptAsync(text, token, count),
+            captureNotes: true,
+            ct: ct,
+            overflowRetryCount: overflowRetryCount
+        );
+    }
+
+    /// <summary>
+    /// 重新生成某个用户回合：把模型上下文裁到目标用户消息（纯重试保留它，编辑则裁到它之前），
+    /// 后续消息以目标父节点为新 parent 追加，旧助手分支自然落到非活跃路径。
+    /// </summary>
+    /// <param name="visibleUserMessageOrdinal">目标用户消息在 UI 可见用户消息中的零基序号
+    /// （过滤注入消息/ask_user 回复，与 <see cref="SessionMessageMapper"/> 一致）。</param>
+    /// <param name="editedText">编辑后的文本；null = 纯重试（保留原用户消息）。</param>
+    public async Task<bool> RetryFromUserMessageAsync(
+        int visibleUserMessageOrdinal,
+        string? editedText,
+        CancellationToken ct
+    )
+    {
+        if (_sessionPersistenceFaulted)
+        {
+            OnSystemNotice?.Invoke("会话保存故障尚未恢复，已拒绝继续生成以防止历史记录缺失。");
+            return false;
+        }
+        if (bridge.IsProcessing)
+        {
+            OnSystemNotice?.Invoke("Agent 正在处理中，请等待当前回合结束后再重试");
+            return false;
+        }
+
+        List<Core.Data.ChatMessage> active;
         try
         {
-            await InjectNovelContextAsync();
+            active = await store.GetActiveMessages(_sessionId);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "retry: read active messages failed");
+            OnSystemNotice?.Invoke("读取会话历史失败，无法重试");
+            return false;
+        }
 
-            // 主动压缩预检：接近动态阈值时先压缩再发送，阈值与显示分母一致（ModelProfile 窗口）
-            var estimatedTokens = calibrator.Project(
-                ConversationLoop.EstimateMessagesTokens(agent.State.Messages)
+        var visibleUsers = active.Where(IsVisibleUserMessage).ToList();
+        if (visibleUserMessageOrdinal < 0 || visibleUserMessageOrdinal >= visibleUsers.Count)
+        {
+            OnSystemNotice?.Invoke("找不到可重试的用户消息");
+            return false;
+        }
+
+        var target = visibleUsers[visibleUserMessageOrdinal];
+        if (string.IsNullOrEmpty(target.EntryId))
+        {
+            OnSystemNotice?.Invoke("当前会话缺少可回退的消息锚点");
+            return false;
+        }
+
+        // 纯重试：保留目标用户消息，只丢弃它之后的助手分支。
+        // 编辑后重发：新用户消息从目标消息的父节点开始，旧用户消息本身也不再属于活跃路径。
+        var branchParent = editedText is null ? target.EntryId : target.ParentEntryId;
+
+        try
+        {
+            var restored = await RestoreContextToEntryAsync(
+                target.EntryId,
+                includeEntry: editedText is null
             );
-            var compactPercent = agent.ModelProfile?.CompactThresholdPercent ?? 0.85;
-            var contextWindow =
-                agent.ModelProfile?.ContextWindowTokens
-                ?? configStore.Load().Providers.ContextWindowSize;
-            var compactThreshold = (long)(contextWindow * compactPercent);
-            var keepRecent = agent.ModelProfile?.ScaledKeepRecent ?? 20;
-            // ★ 模式互斥：接续模式在发送前只换页（不压缩）；compact 模式保持原压缩路径。
-            if (estimatedTokens > compactThreshold)
+            if (!restored)
             {
-                if (_contextManagement is { Mode: ContextMode.Continuation })
-                    await RollContextWindowAsync("threshold");
-                else
-                    await AutoCompactAsync(keepRecent);
+                OnSystemNotice?.Invoke("上下文恢复失败，无法重试");
+                return false;
             }
 
-            // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
+            var (nextOrder, _) = await store.GetSessionMetadataAsync(_sessionId);
+            _nextOrder = nextOrder;
+            _persistedMessageCount = agent.State.Messages.Count;
+            // 不依赖 leaf：新消息的 parentId 链决定活跃路径，旧助手分支自然被排除。
+            _lastParentEntryId = branchParent;
+            // 回退后的前缀已经扫描过，避免「编辑后重发」再次扫描旧消息产生重复随手记。
+            _noteScanIndex = agent.State.Messages.Count;
             _autoContinueCount = 0;
             _lastRollReason = null;
+            AssertOrderInvariant();
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "retry: rewind context failed");
+            OnSystemNotice?.Invoke("回退会话上下文失败，无法重试");
+            return false;
+        }
+
+        if (editedText is null)
+        {
+            await RunContinuationAsync(ct);
+        }
+        else
+        {
+            // 编辑后重发不经过 Agent.Prompt（那会再追加一条用户消息），
+            // 直接把新用户消息接到回退后的上下文尾部，再走 Continue。
+            var messages = agent.State.Messages.ToList();
+            messages.Add(new LlmChatMessage(ChatMessageRoles.User, editedText));
+            agent.ReplaceMessages(messages);
+            await RunContinuationAsync(ct);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 把模型上下文裁到指定 entry：用于重试/编辑后重发。
+    /// 与 <see cref="RestoreContextFromDbAsync"/> 不同，这里按 entryId 截断，而不是按 leaf。
+    /// </summary>
+    private async Task<bool> RestoreContextToEntryAsync(string entryId, bool includeEntry)
+    {
+        var context = await store.GetContextMessages(_sessionId);
+        var index = context.FindIndex(message =>
+            string.Equals(message.EntryId, entryId, StringComparison.Ordinal)
+        );
+        if (index < 0)
+            return false;
+
+        var count = includeEntry ? index + 1 : index;
+        var prefix = new LlmChatMessage[count];
+        for (var i = 0; i < count; i++)
+            prefix[i] = MapDbMessageToChatMessage(context[i]);
+
+        agent.ReplaceMessages(prefix);
+        var boundary = await store.GetWindowBoundaryAsync(_sessionId);
+        agent.SetContextWindowState(boundary);
+        return true;
+    }
+
+    /// <summary>继续当前回合（不追加用户消息），供重试与自动接续共用。</summary>
+    private Task RunContinuationAsync(CancellationToken ct, int overflowRetryCount = 0) =>
+        RunTurnAsync(
+            prepare: InjectNovelContextAsync,
+            send: token => bridge.ContinueAsync(token),
+            retryAfterOverflow: (count, token) => RunContinuationAsync(token, count),
+            captureNotes: false,
+            ct: ct,
+            overflowRetryCount: overflowRetryCount
+        );
+
+    /// <summary>
+    /// 一轮发送/继续的公共执行体：准备上下文 → 调 Agent → 增量落盘 → 错误恢复。
+    /// 发送与重试共用同一套取消/溢出/持久化故障语义。
+    /// </summary>
+    private async Task RunTurnAsync(
+        Func<Task> prepare,
+        Func<CancellationToken, Task> send,
+        Func<int, CancellationToken, Task> retryAfterOverflow,
+        bool captureNotes,
+        CancellationToken ct,
+        int overflowRetryCount
+    )
+    {
+        try
+        {
+            await prepare();
             // 提交准备期间（上下文注入 / 压缩预检）用户可能已按停止：进入 Agent 循环前兑现取消，
             // 避免已取消的请求仍然开跑、停止按钮看起来无效。
             ct.ThrowIfCancellationRequested();
             SetInteractionContext();
 
-            await bridge.SendAsync(text, ct);
+            await send(ct);
             await PersistNewMessagesAsync();
-            await CaptureNotesAsync(ct);
+            if (captureNotes)
+                await CaptureNotesAsync(ct);
             await PersistLoopStopEventAsync();
 
             // ★ 被迫换页后自动接续（新页直接接着做；模型判断已完成会自然停下）
@@ -627,7 +789,7 @@ public sealed class SessionEngine(
                         ? "上下文过长，已开启新的上下文页并重试..."
                         : "上下文溢出，已压缩并重试..."
                 );
-                _ = RunPromptAsync(text, ct, overflowRetryCount + 1);
+                _ = retryAfterOverflow(overflowRetryCount + 1, ct);
                 return;
             }
             todoStore.RevertInProgressToPending();
@@ -670,6 +832,17 @@ public sealed class SessionEngine(
                 HandleSessionPersistenceFailure(innerEx);
             }
         }
+    }
+
+    /// <summary>UI 可见用户消息的过滤口径（与 SessionMessageMapper 的历史气泡一致）。</summary>
+    private static bool IsVisibleUserMessage(Core.Data.ChatMessage message)
+    {
+        var text = message.Content ?? "";
+        return message.Role == MessageRole.User
+            && message.EventType != SessionEventType.Compact
+            && !string.IsNullOrWhiteSpace(text)
+            && !SessionInternalMessages.IsInjectedUserMessage(text)
+            && !SessionInternalMessages.IsAskUserReply(text);
     }
 
     /// <summary>更新小说上下文（每次发消息前调用）。文本块与 TUI 逐字符一致。</summary>

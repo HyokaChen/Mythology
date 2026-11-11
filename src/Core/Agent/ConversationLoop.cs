@@ -571,6 +571,14 @@ public sealed class ConversationLoop(
                     break;
                 }
                 default:
+                    // 分支回退/重试后 ContinueAsync 不追加用户消息；从恢复上下文还原
+                    // 最近一次真实请求，预算提醒才不会引用上一页的旧任务。
+                    if (
+                        msg.Role == ChatMessageRoles.User
+                        && !string.IsNullOrWhiteSpace(msg.Content)
+                        && !Core.Data.SessionInternalMessages.IsInjectedUserMessage(msg.Content)
+                    )
+                        _lastUserRequest = msg.Content;
                     _conversation.AddMessage(msg);
                     break;
             }

@@ -899,6 +899,102 @@ public sealed class ConversationVmContractTests
         Assert.Equal(text, step.ContentText);
     }
 
+    // ── 重试 / 编辑用户消息：分支回退语义 ──────────────────────────────
+
+    [Fact]
+    public async Task RetryFromUserMessage_KeepsTargetUser_AndDropsFollowingAssistant()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        var started = await h.Engine.RetryFromUserMessageAsync(
+            visibleUserMessageOrdinal: 0,
+            editedText: null,
+            CancellationToken.None
+        );
+
+        Assert.True(started);
+        var active = await h.Engine.GetUiMessagesAsync();
+        Assert.DoesNotContain(active, m => m.Role == MessageRole.Assistant);
+        Assert.Single(active, m => m.Role == MessageRole.User && m.Content == "第一问");
+        Assert.DoesNotContain(active, m => m.Content == "第二问");
+    }
+
+    [Fact]
+    public async Task RetryFromUserMessage_KeepsEarlierTurns_WhenTargetingSecondUser()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        await h.Engine.RetryFromUserMessageAsync(1, null, CancellationToken.None);
+
+        var active = await h.Engine.GetUiMessagesAsync();
+        Assert.Contains(active, m => m.Content == "第一答");
+        Assert.Contains(active, m => m.Content == "第二问");
+        Assert.DoesNotContain(active, m => m.Content == "第二答");
+    }
+
+    [Fact]
+    public async Task RetryFromUserMessage_WithEditedText_ReplacesUserMessageBranch()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        await h.Engine.RetryFromUserMessageAsync(0, "改写后的问题", CancellationToken.None);
+
+        var active = await h.Engine.GetUiMessagesAsync();
+        Assert.DoesNotContain(active, m => m.Content == "第一问");
+        Assert.DoesNotContain(active, m => m.Role == MessageRole.Assistant);
+        Assert.Single(active, m => m.Role == MessageRole.User && m.Content == "改写后的问题");
+    }
+
+    [Fact]
+    public async Task RetryMessage_TrimsUiAfterTargetUser_AndCreatesAgentPlaceholder()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+        var vm = h.CreateVm();
+        await vm.LoadConversationAsync(h.Engine.SessionId);
+
+        var firstAssistant = vm.Messages.First(m => m.Sender == MessageSender.Agent);
+        await vm.RetryMessageAsync(firstAssistant);
+
+        Assert.Equal(2, vm.Messages.Count);
+        Assert.Equal(MessageSender.User, vm.Messages[0].Sender);
+        Assert.Equal("第一问", vm.Messages[0].Content.ToString());
+        Assert.Equal(MessageSender.Agent, vm.Messages[1].Sender);
+    }
+
+    [Fact]
+    public async Task SubmitUserEdit_ReplacesBubble_AndAppendsEditedUser()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+        var vm = h.CreateVm();
+        await vm.LoadConversationAsync(h.Engine.SessionId);
+
+        var secondUser = vm.Messages.Where(m => m.Sender == MessageSender.User).ElementAt(1);
+        vm.BeginEditUserMessage(secondUser);
+        secondUser.EditDraft = "第二问-改";
+        await vm.SubmitUserEditAsync(secondUser);
+
+        Assert.Equal(4, vm.Messages.Count);
+        Assert.Equal("第一问", vm.Messages[0].Content.ToString());
+        Assert.Equal(MessageSender.Agent, vm.Messages[1].Sender);
+        Assert.Equal("第二问-改", vm.Messages[2].Content.ToString());
+        Assert.Equal(MessageSender.Agent, vm.Messages[3].Sender);
+    }
+
+    private static async Task SeedConversationAsync(Harness h)
+    {
+        h.Engine.NewSession();
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, "第一问"));
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.Assistant, "第一答"));
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, "第二问"));
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.Assistant, "第二答"));
+        Assert.True(await h.Engine.TryPersistNewMessagesAsync());
+    }
+
     private sealed class StubTool(string name, string label) : AgentTool
     {
         public override string Name => name;

@@ -44,6 +44,8 @@ public sealed class ConversationRowCollection : ObservableCollection<Conversatio
                 or nameof(ChatMessage.HasVisibleContent)
                 or nameof(ChatMessage.IsInterrupted)
                 or nameof(ChatMessage.IsProcessExpanded)
+                or nameof(ChatMessage.IsCompleted)
+                or nameof(ChatMessage.IsEditing)
         )
             Rebuild();
     }

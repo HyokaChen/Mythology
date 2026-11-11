@@ -154,6 +154,24 @@
     <Setter Property="Foreground" Value="{DynamicResource BrushCrimsonSpecimen}" />
   </Style>
 
+  <!-- 消息动作图标：悬停才出现的复制/编辑/重试。低强调、无边框，hover 用 Eucalyptus wash。 -->
+  <Style Selector="Button.ActionIcon">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushSageMist}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9999" />
+    <Setter Property="Padding" Value="5" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.ActionIcon:pointerover">
+    <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+  </Style>
+
   <!-- ── 透明导航 Pill（DESIGN.md §Transparent Nav Pill：9999px 圆角） ── -->
   <Style Selector="Button.NavPill">
     <Setter Property="Background" Value="Transparent" />

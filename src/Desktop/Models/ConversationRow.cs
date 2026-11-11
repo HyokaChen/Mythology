@@ -13,6 +13,7 @@ public enum ConversationRowKind
     Interrupted,
     Sources,
     Process,
+    Actions,
 }
 
 /// <summary>
@@ -92,6 +93,16 @@ public sealed class ConversationRow
                         new ConversationRow
                         {
                             Kind = ConversationRowKind.Sources,
+                            Message = message,
+                        }
+                    );
+                // 没有最终正文的助手回合（只有工具/思考、被中断、错误收尾）在末尾单独挂动作条，
+                // 让「重试」仍然有落点；有正文时重试随正文行一起出现，不重复占一行。
+                if (message.IsCompleted && !message.HasVisibleContent && !message.IsWaiting)
+                    rows.Add(
+                        new ConversationRow
+                        {
+                            Kind = ConversationRowKind.Actions,
                             Message = message,
                         }
                     );

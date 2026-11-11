@@ -1,0 +1,38 @@
+<UserControl
+  x:Class="Desktop.Controls.MessageActionBar"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+>
+  <StackPanel Orientation="Horizontal" Spacing="2">
+    <Button
+      x:Name="CopyButton"
+      Classes="ActionIcon"
+      Focusable="False"
+      Click="CopyButton_OnClick"
+      ToolTip.Tip="复制"
+    >
+      <lucide:LucideIcon x:Name="CopyIcon" Kind="Copy" Size="14" StrokeWidth="1.6" />
+    </Button>
+    <Button
+      x:Name="EditButton"
+      Classes="ActionIcon"
+      Focusable="False"
+      IsVisible="False"
+      Click="EditButton_OnClick"
+      ToolTip.Tip="编辑"
+    >
+      <lucide:LucideIcon Kind="Pencil" Size="14" StrokeWidth="1.6" />
+    </Button>
+    <Button
+      x:Name="RetryButton"
+      Classes="ActionIcon"
+      Focusable="False"
+      IsVisible="False"
+      Click="RetryButton_OnClick"
+      ToolTip.Tip="重试"
+    >
+      <lucide:LucideIcon Kind="RotateCcw" Size="14" StrokeWidth="1.6" />
+    </Button>
+  </StackPanel>
+</UserControl>

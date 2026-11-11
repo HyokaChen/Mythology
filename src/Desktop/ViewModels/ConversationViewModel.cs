@@ -39,6 +39,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private CancellationTokenSource? _cts;
     private StreamEventHandler? _handler;
     private ChatMessageModel? _agentMessage;
+    private bool _editSubmitting;
 
     /// <summary>本轮已先行插入的用户消息文本（抑制 Loop 对同一条消息的回显）。</summary>
     private string? _pendingEchoText;
@@ -1384,8 +1385,13 @@ public sealed class ConversationViewModel : ViewModelBase
     public void SetProcessing(bool processing)
     {
         IsProcessing = processing;
-        if (!processing && _agentMessage is { IsWaiting: true })
-            _agentMessage.IsWaiting = false;
+        if (processing || _agentMessage is null)
+            return;
+
+        // AgentEnd/Interrupted 正常收尾时 _agentMessage 已置空；这里处理的是错误路径：
+        // Core 可能只发 AgentError 不发 AgentEnd，UI 必须自行收口，否则「重试」永远不出现。
+        _pendingEchoText = null;
+        FinalizeAgentMessage(null);
     }
 
     /// <summary>发送消息。</summary>
@@ -1515,6 +1521,218 @@ public sealed class ConversationViewModel : ViewModelBase
         }
     }
 
+    /// <summary>进入用户消息内联编辑：同一时刻只允许一条消息在编辑。</summary>
+    public void BeginEditUserMessage(ChatMessageModel message)
+    {
+        if (IsBusy || message.Sender != MessageSender.User)
+            return;
+
+        foreach (var item in Messages)
+        {
+            if (item.IsEditing && !ReferenceEquals(item, message))
+                item.IsEditing = false;
+        }
+
+        message.EditDraft = message.Content.ToString();
+        message.IsEditing = true;
+    }
+
+    /// <summary>退出内联编辑，不写回原消息。</summary>
+    public void CancelUserEdit(ChatMessageModel message) => message.IsEditing = false;
+
+    /// <summary>
+    /// 提交用户消息编辑：原气泡及其后续内容从 UI 移除，按编辑后的文本从该回合重新生成。
+    /// 旧分支保留在会话树里，只是不再是活跃路径。
+    /// </summary>
+    public async Task SubmitUserEditAsync(ChatMessageModel message)
+    {
+        if (
+            IsBusy
+            || _bridge.IsProcessing
+            || _editSubmitting
+            || message.Sender != MessageSender.User
+        )
+            return;
+
+        _editSubmitting = true;
+        try
+        {
+            var editedText = (message.EditDraft ?? "").Trim();
+            if (editedText.Length == 0)
+                return;
+
+            var index = Messages.IndexOf(message);
+            if (index < 0)
+                return;
+            var ordinal = CountVisibleUserOrdinal(index);
+            if (ordinal < 0)
+                return;
+
+            var outbound = await InlineEntityReferencesAsync(editedText);
+            if (!message.IsEditing)
+                return; // 引用解析期间用户已取消，或另一条消息已进入编辑
+            PushHistory(editedText);
+            message.IsEditing = false;
+
+            var removed = Messages.Skip(index).ToArray();
+            TrimFrom(index);
+            await StartRetryTurnAsync(ordinal, outbound, editedText, index, removed);
+        }
+        finally
+        {
+            _editSubmitting = false;
+        }
+    }
+
+    /// <summary>
+    /// 助手消息重试：保留它对应的用户消息，丢掉该回合之后的 UI 内容，重新生成最终正文。
+    /// 只允许助手消息调用（用户气泡上的按钮是复制/编辑）。
+    /// </summary>
+    public async Task RetryMessageAsync(ChatMessageModel message)
+    {
+        if (IsBusy || _bridge.IsProcessing || message.Sender != MessageSender.Agent)
+            return;
+
+        foreach (var item in Messages)
+        {
+            if (item.IsEditing)
+                item.IsEditing = false;
+        }
+
+        var index = Messages.IndexOf(message);
+        if (index < 0)
+            return;
+
+        var userIndex = index;
+        while (userIndex >= 0 && Messages[userIndex].Sender != MessageSender.User)
+            userIndex--;
+        if (userIndex < 0)
+        {
+            AddSystemNotice("找不到这条回复对应的用户消息，无法重试");
+            return;
+        }
+
+        var ordinal = CountVisibleUserOrdinal(userIndex);
+        if (ordinal < 0)
+            return;
+
+        var removed = Messages.Skip(userIndex + 1).ToArray();
+        TrimFrom(userIndex + 1);
+        await StartRetryTurnAsync(
+            ordinal,
+            editedOutbound: null,
+            editedDisplay: null,
+            restoreIndex: userIndex + 1,
+            removed
+        );
+    }
+
+    /// <summary>
+    /// 重试/编辑共用的 UI 落点：创建（编辑时的）新用户气泡与 Agent 占位、挂流式 handler，
+    /// 再让引擎回退分支并继续生成。引擎拒绝时恢复被移除的 UI 行并保留系统提示。
+    /// </summary>
+    private async Task StartRetryTurnAsync(
+        int userOrdinal,
+        string? editedOutbound,
+        string? editedDisplay,
+        int restoreIndex,
+        ChatMessageModel[] removed
+    )
+    {
+        if (_engine.IsPersistenceFaulted)
+        {
+            AddSystemNotice("会话保存故障尚未恢复，已拒绝重试以防止历史记录缺失");
+            RestoreMessages(restoreIndex, removed);
+            return;
+        }
+        if (_bridge.IsProcessing)
+        {
+            AddSystemNotice("Agent 正在处理中，请等待当前回合结束后再重试");
+            RestoreMessages(restoreIndex, removed);
+            return;
+        }
+
+        IsSubmitting = true;
+        ChatMessageModel? localUser = null;
+        ChatMessageModel? localAgent = null;
+        try
+        {
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            // 编辑/重试都走 Continue：不会再有用户消息回显，不需要 echo 抑制。
+            _pendingEchoText = null;
+
+            if (editedDisplay is not null)
+            {
+                localUser = new ChatMessageModel(MessageSender.User);
+                localUser.Content.Append(editedDisplay);
+                Messages.Add(localUser);
+                HasMessages = true;
+            }
+
+            localAgent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
+            _agentMessage = localAgent;
+            _handler = new StreamEventHandler(
+                localAgent,
+                onError: null,
+                onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
+                toolDisplay: _toolDisplay
+            );
+            Messages.Add(localAgent);
+            HasMessages = true;
+            ContextStatsChanged?.Invoke();
+
+            var started = await _engine.RetryFromUserMessageAsync(
+                userOrdinal,
+                editedOutbound,
+                _cts.Token
+            );
+            if (!started)
+            {
+                if (localUser is not null)
+                    Messages.Remove(localUser);
+                if (ReferenceEquals(_agentMessage, localAgent))
+                {
+                    Messages.Remove(localAgent);
+                    _agentMessage = null;
+                    _handler = null;
+                }
+                RestoreMessages(restoreIndex, removed);
+            }
+
+            ContextStatsChanged?.Invoke();
+        }
+        finally
+        {
+            IsSubmitting = false;
+        }
+    }
+
+    /// <summary>UI 可见用户消息序号（与引擎的 active user 过滤口径一致）。</summary>
+    private int CountVisibleUserOrdinal(int messageIndex)
+    {
+        var ordinal = 0;
+        for (var i = 0; i <= messageIndex && i < Messages.Count; i++)
+        {
+            if (Messages[i].Sender == MessageSender.User)
+                ordinal++;
+        }
+        return ordinal - 1;
+    }
+
+    private void TrimFrom(int index)
+    {
+        for (var i = Messages.Count - 1; i >= index; i--)
+            Messages.RemoveAt(i);
+    }
+
+    private void RestoreMessages(int index, IReadOnlyList<ChatMessageModel> removed)
+    {
+        for (var i = 0; i < removed.Count; i++)
+            Messages.Insert(index + i, removed[i]);
+        HasMessages = Messages.Count > 0;
+    }
+
     /// <summary>中断当前处理。</summary>
     private void StopProcessing()
     {
@@ -1563,11 +1781,13 @@ public sealed class ConversationViewModel : ViewModelBase
 
             case AgentEnd:
                 FinalizeAgentMessage(null);
+                _pendingEchoText = null;
                 ConversationCompleted?.Invoke();
                 break;
 
             case AgentInterrupted:
                 FinalizeAgentMessage(null, interrupted: true);
+                _pendingEchoText = null;
                 break;
 
             // 用户消息（含注入的审计/系统消息）→ 创建用户气泡
@@ -1654,6 +1874,7 @@ public sealed class ConversationViewModel : ViewModelBase
         if (_agentMessage is null)
             return;
         _agentMessage.IsWaiting = false;
+        _agentMessage.IsCompleted = true;
         if (interrupted)
             _agentMessage.IsInterrupted = true;
         if (!string.IsNullOrEmpty(append))

@@ -39,6 +39,12 @@ public sealed class TuiInteractionParityTests
     private static List<XElement> Descendants(XElement root, string localName) =>
         [.. root.Descendants().Where(e => e.Name.LocalName == localName)];
 
+    private static List<XElement> TextBlocks(XElement root) =>
+        [
+            .. root.Descendants()
+                .Where(e => e.Name.LocalName is "TextBlock" or "SelectableTextBlock"),
+        ];
+
     // ── ConversationView ─────────────────────────────────────────────
 
     [Fact]
@@ -103,7 +109,7 @@ public sealed class TuiInteractionParityTests
         Assert.Equal("Right", Attr(bubble, "HorizontalAlignment"));
         Assert.Equal(
             "{Binding Message.Content, Converter={StaticResource StringBuilderToString}}",
-            Attr(Descendants(bubble, "TextBlock").Single(), "Text")
+            Attr(TextBlocks(bubble).Single(), "Text")
         );
     }
 
@@ -123,7 +129,7 @@ public sealed class TuiInteractionParityTests
     public void ConversationView_SystemNotice_UsesFullMessageWidth()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        var content = Descendants(root, "TextBlock")
+        var content = TextBlocks(root)
             .Single(t =>
                 Attr(t, "Classes").Contains("SystemNoticeText", StringComparison.Ordinal)
                 && Attr(t, "Text").Contains("StringBuilderToString", StringComparison.Ordinal)
@@ -134,8 +140,7 @@ public sealed class TuiInteractionParityTests
         Assert.Equal("Left", Attr(content, "TextAlignment"));
         Assert.Contains("SystemNoticeText", Attr(content, "Classes"));
 
-        var interrupted = Descendants(root, "TextBlock")
-            .Single(t => Attr(t, "Text") == "⏹ 中断生成");
+        var interrupted = TextBlocks(root).Single(t => Attr(t, "Text") == "⏹ 中断生成");
         Assert.Contains("SystemNoticeText", Attr(interrupted, "Classes"));
     }
 

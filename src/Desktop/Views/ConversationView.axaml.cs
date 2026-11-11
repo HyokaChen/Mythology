@@ -11,6 +11,7 @@ using Avalonia.VisualTree;
 using Desktop.Controls;
 using Desktop.Models;
 using Desktop.ViewModels;
+using Lucide.Avalonia;
 using ReactiveUI.Primitives;
 
 namespace Desktop.Views;
@@ -51,6 +52,7 @@ public partial class ConversationView : UserControl
         // Enter 必须在 TextBox 处理 AcceptsReturn 之前拦截（隧道），
         // 否则 TextBox 会先插入换行、把 KeyDown 标记为已处理。
         AddHandler(KeyDownEvent, InputBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, UserEditBox_OnPreviewKeyDown, RoutingStrategies.Tunnel);
         // 光标移动也会改变当前 @ / # token；只监听 TextChanged 会让
         // “先设置文本、后设置 CaretIndex”的路径停在旧建议上。
         InputBox.PropertyChanged += (_, e) =>
@@ -192,6 +194,7 @@ public partial class ConversationView : UserControl
     private bool _rowRefreshScheduled;
     private System.Threading.Timer? _processFoldTimer;
     private ChatMessage? _processFoldCandidate;
+    private bool _editWasFollowing;
 
     /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged 并重建全部行。</summary>
     private void AttachMessageSource()
@@ -590,6 +593,7 @@ public partial class ConversationView : UserControl
             ConversationRowKind.Interrupted => 28,
             ConversationRowKind.Sources => 20 + row.Message.Sources.Count * 16,
             ConversationRowKind.System => 28,
+            ConversationRowKind.Actions => 28,
             _ => 32,
         };
     }
@@ -602,7 +606,7 @@ public partial class ConversationView : UserControl
             bodyWidth,
             MarkdownHeightEstimator.Conversation
         );
-        return body + 26 + row.Margin.Bottom; // Bubble padding 12*2 + border 2
+        return body + 26 + 24 + row.Margin.Bottom; // Bubble padding 12*2 + border 2 + action bar 24
     }
 
     private double EstimateUserContentHeight(string content, ConversationRow row)
@@ -610,6 +614,7 @@ public partial class ConversationView : UserControl
         var textWidth = Math.Max(160, _estimateWidth - 32); // Bubble padding 16*2
         return MarkdownHeightEstimator.EstimatePlainText(content, textWidth, 15, 24)
             + 20 // Bubble padding 10*2
+            + 24 // action bar
             + row.Margin.Bottom;
     }
 
@@ -627,7 +632,9 @@ public partial class ConversationView : UserControl
                     step.ContentText,
                     Math.Max(160, width - 34),
                     MarkdownHeightEstimator.Step
-                ) + 34;
+                )
+                + 34
+                + 24; // + copy action bar
         }
         else if (step.IsNoticeStep)
         {
@@ -975,6 +982,7 @@ public partial class ConversationView : UserControl
                     or nameof(ChatMessage.HasVisibleContent)
                     or nameof(ChatMessage.IsInterrupted)
                     or nameof(ChatMessage.IsProcessExpanded)
+                    or nameof(ChatMessage.IsCompleted)
         )
         {
             MarkRowsDirty(message);
@@ -1122,6 +1130,170 @@ public partial class ConversationView : UserControl
             },
             DispatcherPriority.Background
         );
+    }
+
+    // ── 消息动作：复制 / 编辑 / 重试 ─────────────────────────────────────
+
+    /// <summary>复制单个步骤（思考/工具）或正文块的完整文本。</summary>
+    private async void StepCopy_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ConversationRow row } button)
+        {
+            var text = MessageCopy.Build(row);
+            if (await MessageCopy.CopyAsync(TopLevel.GetTopLevel(this), text))
+                await FlashCopyFeedbackAsync(button);
+        }
+        e.Handled = true;
+    }
+
+    /// <summary>用户消息「编辑」：原气泡换成内联输入框，并聚焦到草稿末尾。</summary>
+    private void UserMessageEdit_OnRequested(object? sender, EventArgs e)
+    {
+        if (
+            sender is not MessageActionBar { DataContext: ConversationRow { Message: var message } }
+            || Vm is not { } vm
+        )
+            return;
+
+        InvalidatePendingReveal();
+        _editWasFollowing = MessageList.IsFollowing;
+        MessageList.PauseFollow();
+        vm.BeginEditUserMessage(message);
+        Dispatcher.UIThread.Post(() => FocusUserEditor(message), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>助手消息「重试」：回到目标回合并重新生成（编辑态按钮共用同一入口）。</summary>
+    private void MessageRetry_On_Requested(object? sender, EventArgs e)
+    {
+        if (
+            sender is not MessageActionBar { DataContext: ConversationRow { Message: var message } }
+            || Vm is not { } vm
+        )
+            return;
+
+        InvalidatePendingReveal();
+        MessageList.ResetFollow();
+        _editWasFollowing = false;
+        _ = RetryMessageAsync(vm, message);
+    }
+
+    private async Task RetryMessageAsync(ConversationViewModel vm, ChatMessage message)
+    {
+        try
+        {
+            await vm.RetryMessageAsync(message);
+        }
+        catch (Exception ex)
+        {
+            vm.AddSystemNotice($"重试失败：{ex.Message}");
+        }
+    }
+
+    private void UserEditBox_OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Source is not TextBox { Name: "UserEditBox" } box || Vm is not { } vm)
+            return;
+        if (box.DataContext is not ConversationRow { Message: var message })
+            return;
+
+        // 中文输入法组合中（拼音未上屏）Enter 属于候选词确认，不能当成发送。
+        if (
+            box.GetVisualDescendants()
+                .OfType<TextPresenter>()
+                .Any(p => !string.IsNullOrEmpty(p.PreeditText))
+        )
+            return;
+
+        if (e.Key == Key.Escape)
+        {
+            vm.CancelUserEdit(message);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None)
+            return;
+
+        message.EditDraft = box.Text ?? "";
+        e.Handled = true;
+        MessageList.ResetFollow();
+        _editWasFollowing = false;
+        _ = SubmitUserEditAsync(vm, message);
+    }
+
+    private void CancelUserEdit_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (
+            sender is Control { DataContext: ConversationRow { Message: var message } }
+            && Vm is { } vm
+        )
+        {
+            vm.CancelUserEdit(message);
+            if (_editWasFollowing)
+                MessageList.ResetFollow();
+            _editWasFollowing = false;
+        }
+        e.Handled = true;
+    }
+
+    private void SubmitUserEdit_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (
+            sender is Control { DataContext: ConversationRow { Message: var message } }
+            && Vm is { } vm
+        )
+        {
+            var editor = FindUserEditor(message);
+            if (editor is not null)
+                message.EditDraft = editor.Text ?? "";
+            MessageList.ResetFollow();
+            _editWasFollowing = false;
+            _ = SubmitUserEditAsync(vm, message);
+        }
+        e.Handled = true;
+    }
+
+    private async Task SubmitUserEditAsync(ConversationViewModel vm, ChatMessage message)
+    {
+        try
+        {
+            await vm.SubmitUserEditAsync(message);
+        }
+        catch (Exception ex)
+        {
+            vm.AddSystemNotice($"编辑发送失败：{ex.Message}");
+        }
+    }
+
+    private TextBox? FindUserEditor(ChatMessage message) =>
+        MessageList
+            .GetVisualDescendants()
+            .OfType<TextBox>()
+            .FirstOrDefault(box =>
+                box.Name == "UserEditBox"
+                && box.DataContext is ConversationRow row
+                && ReferenceEquals(row.Message, message)
+            );
+
+    private void FocusUserEditor(ChatMessage message)
+    {
+        var editor = FindUserEditor(message);
+        if (editor is null)
+            return;
+        editor.Focus();
+        editor.CaretIndex = editor.Text?.Length ?? 0;
+        editor.BringIntoView();
+    }
+
+    private static async Task FlashCopyFeedbackAsync(Button button)
+    {
+        if (button.Content is not LucideIcon icon)
+            return;
+        icon.Kind = LucideIconKind.Check;
+        ToolTip.SetTip(button, "已复制");
+        await Task.Delay(1200);
+        icon.Kind = LucideIconKind.Copy;
+        ToolTip.SetTip(button, "复制此步骤");
     }
 
     /// <summary>展开历史过程的折叠行。</summary>

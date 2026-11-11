@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### Added
+- **Desktop 对话消息块动作条（悬停显示）**：用户气泡支持复制与内联编辑——点击「编辑」后
+  原气泡原位变成输入框，取消不写回、发送后从该回合父节点分支重发；助手最终正文支持
+  复制/重试，重试只在回合结束后、只出现在助手输出侧；思考/工具步骤与无正文回合的动作行
+  均可复制。正文、思考、参数、结果与系统通知改用 `SelectableTextBlock`，支持拖选后
+  Cmd/Ctrl+C；Markdown 选区统一到 Eucalyptus/Forest Ink 色板。动作条默认透明且不参与
+  命中，鼠标进入消息块才淡入，保留 24px 占位避免 hover 行高抖动。重试按目标用户消息
+  截断模型上下文，新消息以目标 parent 续写，旧助手分支保留在会话树。
+  回归：`MessageActionsTests`、`MessageActionsStructureTests`、`MessageActionsUiTests`、
+  `ConversationVmContractTests.RetryFromUserMessage_*` / `RetryMessage_*` /
+  `SubmitUserEdit_*`；Desktop 673/673、Core 1616/1616。
+
 ### Fixed
 - **章节正文读取不再误用通用 `read`**：`OutputZonesPrompt` 的“改正文前先 read”改为
   `read_chapter`；`ToolCallingPrompt` 把 `read` 限定为用户当前消息中明确给出的路径，

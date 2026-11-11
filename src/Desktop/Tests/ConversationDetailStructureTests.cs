@@ -42,8 +42,11 @@ public sealed class ConversationDetailStructureTests
             );
     }
 
+    private static bool IsTextual(XElement element) =>
+        element.Name.LocalName is "TextBlock" or "SelectableTextBlock";
+
     private static XElement TextBlockWithText(XElement root, string text) =>
-        root.Descendants().Single(e => e.Name.LocalName == "TextBlock" && Attr(e, "Text") == text);
+        root.Descendants().Single(e => IsTextual(e) && Attr(e, "Text") == text);
 
     [Fact]
     public void DetailsBlock_HasNoCardChrome()
@@ -65,11 +68,7 @@ public sealed class ConversationDetailStructureTests
     public void DetailsBlock_HasThinkingBodyAndToolLabels()
     {
         var details = DetailsBlock();
-        var textual = details
-            .Descendants()
-            .Where(e => e.Name.LocalName == "TextBlock")
-            .Select(e => Attr(e, "Text"))
-            .ToList();
+        var textual = details.Descendants().Where(IsTextual).Select(e => Attr(e, "Text")).ToList();
 
         Assert.Contains("参数", textual);
         Assert.Contains("结果", textual);
@@ -145,7 +144,7 @@ public sealed class ConversationDetailStructureTests
         var root = LoadConversationView();
         var notice = root.Descendants()
             .Single(e =>
-                e.Name.LocalName == "TextBlock"
+                IsTextual(e)
                 && Attr(e, "Classes").Contains("AgentStepNoticeText", StringComparison.Ordinal)
             );
 

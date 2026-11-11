@@ -15,9 +15,51 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isInterrupted;
     private bool _isProcessExpanded = true;
     private bool _isSpinnerVisible;
+    private bool _isCompleted = sender != MessageSender.Agent;
+    private bool _isEditing;
+    private string _editDraft = "";
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
+
+    /// <summary>本回合是否已经结束（正常结束、中断或错误收尾）。结束前不显示「重试」。</summary>
+    public bool IsCompleted
+    {
+        get => _isCompleted;
+        set
+        {
+            if (_isCompleted == value)
+                return;
+            _isCompleted = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsCompleted)));
+        }
+    }
+
+    /// <summary>用户消息是否进入内联编辑态（气泡原位变成输入框）。</summary>
+    public bool IsEditing
+    {
+        get => _isEditing;
+        set
+        {
+            if (_isEditing == value)
+                return;
+            _isEditing = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEditing)));
+        }
+    }
+
+    /// <summary>内联编辑草稿；进入编辑态时用原正文填充，取消后不覆盖原消息。</summary>
+    public string EditDraft
+    {
+        get => _editDraft;
+        set
+        {
+            if (_editDraft == value)
+                return;
+            _editDraft = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EditDraft)));
+        }
+    }
 
     /// <summary>
     /// 回合仍在执行、但当前没有可见活动（等首个正文/步骤，或阶段之间等下一段思考/工具）。
