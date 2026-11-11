@@ -985,6 +985,29 @@ public sealed class ConversationVmContractTests
         Assert.Equal(MessageSender.Agent, vm.Messages[3].Sender);
     }
 
+    [Fact]
+    public async Task StopProcessing_KeepsPartialAssistantMessage_ForCopyAndRetry()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        vm.Engine.NewSession();
+        await vm.SendEnginePromptAsync("写一段雨中送别");
+
+        var agent = vm.Messages[^1];
+        vm.SetProcessing(true);
+        vm.HandleAgentEvent(new StreamChunk("写到一半", "", StreamContentType.Text));
+        vm.StopProcessingCommand.Execute().Subscribe();
+
+        Assert.True(agent.IsInterrupted);
+        Assert.True(agent.IsCompleted);
+        Assert.True(agent.HasVisibleContent);
+
+        var rows = ConversationRow.FromMessage(agent);
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Content);
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Interrupted);
+        Assert.DoesNotContain(rows, row => row.Kind == ConversationRowKind.Actions);
+    }
+
     private static async Task SeedConversationAsync(Harness h)
     {
         h.Engine.NewSession();

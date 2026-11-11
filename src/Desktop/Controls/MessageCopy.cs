@@ -24,7 +24,7 @@ internal static class MessageCopy
             ConversationRowKind.System => Normalize(row.Message.Content.ToString()),
             ConversationRowKind.Content => MarkdownToPlain(row.Message.Content.ToString()),
             ConversationRowKind.Step when row.Step is { } step => BuildStep(step),
-            ConversationRowKind.Actions => BuildMessageOrSteps(row),
+            ConversationRowKind.Actions => BuildActions(row),
             ConversationRowKind.Interrupted => "⏹ 中断生成",
             _ => Normalize(row.Message.Content.ToString()),
         };
@@ -39,6 +39,16 @@ internal static class MessageCopy
             "\n\n",
             row.Message.AgentSteps.Select(BuildStep).Where(text => text.Length > 0)
         );
+    }
+
+    /// <summary>
+    /// 无正文助手回合的动作行：优先复制完整的步骤/工具记录；
+    /// 连一条步骤都没有的纯中断回合复制可见的中断标记，避免按钮点了没反应。
+    /// </summary>
+    private static string BuildActions(ConversationRow row)
+    {
+        var text = BuildMessageOrSteps(row);
+        return text.Length > 0 || !row.Message.IsInterrupted ? text : "⏹ 中断生成";
     }
 
     private static string BuildStep(AgentStep step)

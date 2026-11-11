@@ -72,20 +72,33 @@
                 HorizontalAlignment="Right"
                 Spacing="8"
               >
-                <Button
-                  Classes="Ghost"
-                  FontSize="13"
-                  Padding="12,5"
-                  Content="取消"
-                  Click="CancelUserEdit_OnClick"
-                />
+                <Button Classes="Ghost" FontSize="13" Padding="12,5" Click="CancelUserEdit_OnClick">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <lucide:LucideIcon
+                      Kind="X"
+                      Size="13"
+                      StrokeWidth="1.8"
+                      VerticalAlignment="Center"
+                    />
+                    <TextBlock Text="取消" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
                 <Button
                   Classes="Primary"
                   FontSize="13"
                   Padding="14,5"
-                  Content="发送"
                   Click="SubmitUserEdit_OnClick"
-                />
+                >
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="发送" VerticalAlignment="Center" />
+                    <lucide:LucideIcon
+                      Kind="CornerDownLeft"
+                      Size="13"
+                      StrokeWidth="1.8"
+                      VerticalAlignment="Center"
+                    />
+                  </StackPanel>
+                </Button>
               </StackPanel>
             </Grid>
           </Border>
@@ -374,11 +387,11 @@
       </Grid>
     </DataTemplate>
 
-    <!-- 没有最终正文的助手回合：动作条独立成行，保证「重试」始终有落点。 -->
+    <!-- 没有最终正文的助手回合：动作条独立成行并常显——
+         纯中断回合没有可 hover 的正文，若仍隐藏就永远找不到重试/复制。 -->
     <DataTemplate x:Key="RowActions" x:DataType="models:ConversationRow">
-      <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
+      <Grid Margin="{Binding Margin}">
         <controls:MessageActionBar
-          Classes="MessageActions"
           HorizontalAlignment="Left"
           ShowRetry="True"
           RetryRequested="MessageRetry_On_Requested"

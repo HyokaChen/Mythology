@@ -44,10 +44,20 @@ public sealed class MessageActionsUiTests
                     .Single(border => border.Classes.Contains("UserBubble"));
                 Assert.False(bubble.IsEffectivelyVisible);
 
-                var send = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Single(button => Equals(button.Content, "发送"));
+                var send = Assert.Single(
+                    view.GetVisualDescendants().OfType<Button>(),
+                    button =>
+                        button.DataContext is ConversationRow
+                        && button
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(text => text.Text == "发送")
+                );
                 Assert.True(send.IsEffectivelyVisible);
+                Assert.Contains(
+                    send.GetVisualDescendants(),
+                    visual => visual is Lucide.Avalonia.LucideIcon
+                );
             }
             finally
             {
@@ -137,6 +147,79 @@ public sealed class MessageActionsUiTests
 
                 bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
                 Assert.True(bar.ShowRetry);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void InterruptedAssistant_KeepsContentCardAndRetryCopyBar()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var agent = new ChatMessage(MessageSender.Agent)
+            {
+                IsCompleted = true,
+                IsInterrupted = true,
+            };
+            agent.AppendContent("已经生成的部分回答");
+            var view = CreateView(new ConversationRowCollection(agent));
+            var window = Show(view);
+            try
+            {
+                Pump();
+
+                var bubble = view.GetVisualDescendants()
+                    .OfType<Border>()
+                    .Single(border => border.Classes.Contains("AgentBubble"));
+                Assert.True(bubble.Bounds.Height > 0);
+
+                var bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
+                Assert.True(bar.ShowCopy);
+                Assert.True(bar.ShowRetry);
+
+                var interrupted = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(text => text.Text == "⏹ 中断生成");
+                Assert.True(interrupted.IsEffectivelyVisible);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void InterruptedAssistantWithoutContent_StillHasRetryCopyActionsRow()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var agent = new ChatMessage(MessageSender.Agent)
+            {
+                IsCompleted = true,
+                IsInterrupted = true,
+            };
+            var view = CreateView(new ConversationRowCollection(agent));
+            var window = Show(view);
+            try
+            {
+                Pump();
+
+                var bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
+                Assert.True(bar.ShowCopy);
+                Assert.True(bar.ShowRetry);
+                Assert.True(bar.IsEffectivelyVisible);
+                Assert.True(bar.IsHitTestVisible);
+                Assert.Equal(1, bar.Opacity);
+
+                var interrupted = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(text => text.Text == "⏹ 中断生成");
+                Assert.True(interrupted.IsEffectivelyVisible);
             }
             finally
             {

@@ -28,12 +28,16 @@ public sealed class MessageActionsStructureTests
         Assert.Equal("TextBox", editor.Name.LocalName);
         Assert.Contains("Message.EditDraft", Attr(editor, "Text"), StringComparison.Ordinal);
 
-        var buttons = row.Descendants()
-            .Where(e => e.Name.LocalName == "Button")
-            .Select(e => Attr(e, "Content"))
-            .ToList();
-        Assert.Contains("取消", buttons);
-        Assert.Contains("发送", buttons);
+        var cancel = Assert.Single(
+            row.Descendants(),
+            e => e.Name.LocalName == "Button" && Attr(e, "Click") == "CancelUserEdit_OnClick"
+        );
+        var send = Assert.Single(
+            row.Descendants(),
+            e => e.Name.LocalName == "Button" && Attr(e, "Click") == "SubmitUserEdit_OnClick"
+        );
+        Assert.Contains(cancel.Descendants(), e => e.Name.LocalName == "LucideIcon");
+        Assert.Contains(send.Descendants(), e => e.Name.LocalName == "LucideIcon");
     }
 
     [Fact]

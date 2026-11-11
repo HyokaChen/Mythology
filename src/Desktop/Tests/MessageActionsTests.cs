@@ -120,6 +120,59 @@ public sealed class MessageActionsTests
     }
 
     [Fact]
+    public void InterruptedAgentWithContent_KeepsContentAndInterruptedRows()
+    {
+        var message = new ChatMessage(MessageSender.Agent)
+        {
+            IsCompleted = true,
+            IsInterrupted = true,
+        };
+        message.AppendContent("已经生成的部分");
+
+        var rows = ConversationRow.FromMessage(message);
+
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Content);
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Interrupted);
+        Assert.DoesNotContain(rows, row => row.Kind == ConversationRowKind.Actions);
+    }
+
+    [Fact]
+    public void InterruptedAgentWithoutContent_GetsActionsRow_AndCopiesMarker()
+    {
+        var message = new ChatMessage(MessageSender.Agent)
+        {
+            IsCompleted = true,
+            IsInterrupted = true,
+        };
+
+        var rows = ConversationRow.FromMessage(message);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Interrupted);
+        Assert.True(actions.IsLastInMessage);
+        Assert.Equal("⏹ 中断生成", MessageCopy.Build(actions));
+    }
+
+    [Fact]
+    public void InterruptedAgentWithOnlySteps_CopiesStepContentFromActionsRow()
+    {
+        var message = new ChatMessage(MessageSender.Agent)
+        {
+            IsCompleted = true,
+            IsInterrupted = true,
+        };
+        var step = new AgentStep { Kind = StepKind.Thinking, Status = AgentStepStatus.Completed };
+        step.ThinkingBuilder.Append("写到一半的推理");
+        step.NotifyThinkingChanged();
+        message.AgentSteps.Add(step);
+
+        var rows = ConversationRow.FromMessage(message);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+
+        Assert.Contains("写到一半的推理", MessageCopy.Build(actions));
+    }
+
+    [Fact]
     public void Copy_ActionsRow_FallsBackToStepSummary()
     {
         var message = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
