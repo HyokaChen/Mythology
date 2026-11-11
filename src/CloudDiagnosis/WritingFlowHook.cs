@@ -33,7 +33,8 @@ public sealed class WritingFlowHook(
     UserQuestionStore? questionStore = null,
     UsageReconciler? usageReconciler = null,
     TacticLedger? ledger = null,
-    KnowledgeRestClient? knowledge = null
+    KnowledgeRestClient? knowledge = null,
+    HumanizerAuditService? humanizerAudit = null
 ) : IToolHook
 {
     /// <summary>触发写作流程信号的写入类工具名称集合</summary>
@@ -52,6 +53,9 @@ public sealed class WritingFlowHook(
 
     /// <summary>素材提示客户端（null = 未配置云端 Key / 未注入；零行为变化）。</summary>
     private readonly KnowledgeRestClient? _knowledge = knowledge;
+
+    /// <summary>自动去 AI 味审查（null = 未装配；不花云端、行为与接线前一致）。</summary>
+    private readonly HumanizerAuditService? _humanizerAudit = humanizerAudit;
 
     /// <summary>本会话已尝试过素材预取的章节（novelId#order；同章只扣一次费）。</summary>
     private readonly HashSet<string> _hintCheckedChapters = new(StringComparer.Ordinal);
@@ -143,20 +147,20 @@ public sealed class WritingFlowHook(
             // ── HARNESS-CLOUD I4 组件 E：单调检测记录（每次写入必记）──
             _monotony?.RecordChapter(hookType is null && activeInfoGaps == 0);
 
-            // ── HARNESS-CLOUD E2：三层调度漏斗（L1 五指标 → L2 三事件 → 基础档 → 深度档）──
-            if (_scheduler is not null && _options is { Enabled: true } && chapter is not null)
+            // 自动去 AI 味：与 story 调度解耦，在 Decide 之前先跑；
+            // 即使 story L1/L2 未命中（Decide.ShouldRun=false）也必须审查。
+            var needsCloudWork = _scheduler is not null || _humanizerAudit is not null;
+            DiagnosisInput? diagnosisInput = null;
+            if (_options is { Enabled: true } && chapter is not null && needsCloudWork)
             {
                 var previous = chapters
                     .Where(c => c.Order == chapter.Order - 1)
                     .Select(c => c.Content)
                     .FirstOrDefault();
-                var priorAppeared = await LoadPriorAppearedIdsAsync(
-                    novelId,
-                    chapters,
-                    chapter.Order,
-                    ct
-                );
-                var input = new DiagnosisInput
+                var priorAppeared = _scheduler is not null
+                    ? await LoadPriorAppearedIdsAsync(novelId, chapters, chapter.Order, ct)
+                    : null;
+                diagnosisInput = new DiagnosisInput
                 {
                     NovelId = novelId,
                     ChapterId = chapterResult.Id,
@@ -193,6 +197,23 @@ public sealed class WritingFlowHook(
                         return;
                     }
                 }
+
+                if (_humanizerAudit is not null && _options.HumanizerAutoPassEnabled)
+                {
+                    var auditOutcome = await _humanizerAudit.RunAsync(diagnosisInput, ct);
+                    InjectHumanizerOutcome(auditOutcome);
+                }
+            }
+
+            // ── HARNESS-CLOUD E2：三层调度漏斗（L1 五指标 → L2 三事件 → 基础档 → 深度档）──
+            if (
+                _scheduler is not null
+                && _options is { Enabled: true }
+                && chapter is not null
+                && diagnosisInput is not null
+            )
+            {
+                var input = diagnosisInput;
 
                 // 主动提示：写完一章先取一次素材参考（同章只扣一次费；超时静默跳过）。
                 // 必须在 input 构造之后、scheduler 调用之前，注入才能赶在同一轮 LLM 调用前。
@@ -377,6 +398,28 @@ public sealed class WritingFlowHook(
         {
             // 信号注入失败不应阻塞工具调用流程
         }
+    }
+
+    /// <summary>
+    /// 注入自动去 AI 味信号：有 issue → action；无 issue → pass；云端失败 → 本地自检提醒。
+    /// Skipped（过短/同内容/已达次数/开关关闭）静默，不误报「未完成」。
+    /// </summary>
+    private void InjectHumanizerOutcome(HumanizerAuditOutcome? outcome)
+    {
+        if (outcome is null)
+        {
+            agent.InjectQueue.Enqueue(
+                new LlmChatMessage(ChatMessageRoles.User, SignalBuilder.HumanizerUnavailableMessage)
+            );
+            return;
+        }
+
+        if (outcome.Skipped)
+            return;
+
+        agent.InjectQueue.Enqueue(
+            new LlmChatMessage(ChatMessageRoles.User, SignalBuilder.BuildHumanizerSignal(outcome))
+        );
     }
 
     /// <summary>

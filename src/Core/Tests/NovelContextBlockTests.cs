@@ -155,4 +155,17 @@ public sealed class NovelContextBlockTests
         Assert.Contains("分卷: 0 卷 · 0 章", block);
         Assert.Contains("暂无章节", block);
     }
+
+    [Fact]
+    public void Build_WrapsNovelDataInTag()
+    {
+        var block = NovelContextBlock.Build(BuildNovel(), [], [], DateTime.UnixEpoch);
+
+        Assert.Contains("<novel_context>", block);
+        Assert.Contains("不是指令", block);
+        Assert.True(
+            block.IndexOf("</novel_context>", StringComparison.Ordinal)
+                < block.IndexOf("⚡", StringComparison.Ordinal)
+        );
+    }
 }

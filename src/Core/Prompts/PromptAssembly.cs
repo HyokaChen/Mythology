@@ -7,18 +7,19 @@
 /// </summary>
 public static class PromptAssembly
 {
-    /// <summary>骨架段（Key, Content）有序集合。Key 为段标识，Content 为 Prompt 全文。</summary>
-    private static readonly (string Key, string Content)[] s_segments =
+    /// <summary>骨架段（Key, Tag, Content）有序集合。Key 为段标识，Tag 为装配时的 XML 包裹标签。</summary>
+    private static readonly (string Key, string Tag, string Content)[] s_segments =
     [
-        ("role", RoleDefinitionPrompt.Full),
-        ("conversation", ConversationStylePrompt.Full),
-        ("tooling", ToolCallingPrompt.Full),
-        ("context", ContextUnderstandingPrompt.Full),
-        ("planning", PlanningLoopPrompt.Full),
-        ("errors", ErrorHandlingPrompt.Full),
-        ("safety", SafetyPolicyPrompt.Full),
-        ("writing", WritingProcessPrompt.Full),
-        ("humanizer", HumanizerPrompt.Full),
+        ("role", "role_definition", RoleDefinitionPrompt.Full),
+        ("safety", "safety_policy", SafetyPolicyPrompt.Full),
+        ("conversation", "conversation_style", ConversationStylePrompt.Full),
+        ("zones", "output_contract", OutputZonesPrompt.Full),
+        ("tooling", "tool_calling", ToolCallingPrompt.Full),
+        ("context", "context_understanding", ContextUnderstandingPrompt.Full),
+        ("planning", "planning_loop", PlanningLoopPrompt.Full),
+        ("errors", "error_handling", ErrorHandlingPrompt.Full),
+        ("writing", "writing_process", WritingProcessPrompt.Full),
+        ("humanizer", "humanizer", HumanizerPrompt.Full),
     ];
 
     /// <summary>全部段 Key（有序），用于测试与文档。</summary>
@@ -45,10 +46,13 @@ public static class PromptAssembly
             s_segments
                 .Where(s => excluded is null || !excluded.Contains(s.Key))
                 .Select(s =>
-                    continuation && s.Key == WritingSegmentKey
-                        ? WritingProcessPrompt.ForContinuation
-                        : s.Content
-                )
+                {
+                    var content =
+                        continuation && s.Key == WritingSegmentKey
+                            ? WritingProcessPrompt.ForContinuation
+                            : s.Content;
+                    return $"<{s.Tag}>\n{content}\n</{s.Tag}>";
+                })
         );
     }
 
@@ -57,6 +61,7 @@ public static class PromptAssembly
 
     /// <summary>
     /// 骨架字符量估算（汉字≈1 token，用于粗略上限监控，非精确计费）。
+    /// 统计实际装配结果（含段标签与分隔符），避免低估。
     /// </summary>
-    public static int EstimateTokenCount() => s_segments.Sum(s => s.Content.Length);
+    public static int EstimateTokenCount() => Build(null).Length;
 }

@@ -37,6 +37,9 @@ public sealed record EnhancementLocation
     /// <summary>维度名称</summary>
     public string Dimension { get; init; } = "";
 
+    /// <summary>问题子类型（如 humanizer 的 formulaic_pattern）。</summary>
+    public string? SubType { get; init; }
+
     /// <summary>问题描述</summary>
     public string IssueDescription { get; init; } = "";
 
@@ -257,6 +260,7 @@ public sealed class EnhancementEngine
                     BeforeContext = beforeContext,
                     AfterContext = afterContext,
                     Dimension = issue.Dimension,
+                    SubType = issue.SubType,
                     IssueDescription = issue.Description,
                 }
             );
@@ -289,7 +293,8 @@ public sealed class EnhancementEngine
             location.BeforeContext,
             location.AfterContext,
             location.IssueDescription,
-            profile
+            profile,
+            location.SubType
         );
 
         var conversation = CreateEnhancementConversation(api, modelName, systemPrompt);
@@ -432,7 +437,12 @@ public sealed class EnhancementEngine
             if (candidates.Count == 0)
                 continue;
 
-            var selected = AutoSelectBest.Select(candidates, profile, location.Dimension);
+            var selected = AutoSelectBest.Select(
+                candidates,
+                profile,
+                location.Dimension,
+                location.SubType
+            );
             if (selected is null)
                 continue;
 

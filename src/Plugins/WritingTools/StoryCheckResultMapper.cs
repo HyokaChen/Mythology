@@ -105,7 +105,15 @@ internal static class StoryCheckResultMapper
 
         AddNetworkIssues(issues, strengths, dimensions);
 
+        // humanizer 不计入历史 OverallScore（避免既有综合分漂移）；在算完综合分后
+        // 单独挂到 DimensionScores/Issues，供 diagnose_writing(mode=deai) 与增强使用。
         var overall = scores.Count > 0 ? scores.Values.Average() : 0;
+        if (dimensions.TryGetProperty("humanizer", out var humanizer))
+        {
+            scores[DimensionKeys.Humanizer] = GetScore(humanizer, "overall-score");
+            AddIssues(issues, humanizer, DimensionKeys.Humanizer);
+        }
+
         return new DiagnosticReport
         {
             Depth = depth,
@@ -272,6 +280,10 @@ internal static class StoryCheckResultMapper
                 new DiagnosticIssue
                 {
                     Dimension = dimensionKey,
+                    SubType = item.TryGetProperty("sub-type", out var subType)
+                        ? subType.GetString()
+                        : null,
+                    Level = item.TryGetProperty("level", out var level) ? level.GetString() : null,
                     Severity = item.TryGetProperty("severity", out var severity)
                         ? severity.GetString() ?? ""
                         : "",

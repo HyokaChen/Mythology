@@ -25,6 +25,13 @@ public enum DiagnosticDepth
 public sealed record DiagnosticIssue
 {
     public string Dimension { get; init; } = "";
+
+    /// <summary>问题子类型（如 humanizer 的 formulaic_pattern / ai_buzzword）。</summary>
+    public string? SubType { get; init; }
+
+    /// <summary>去 AI 味分层：A/B/C/F/X/H。</summary>
+    public string? Level { get; init; }
+
     public string Severity { get; init; } = "";
     public string Description { get; init; } = "";
     public string Evidence { get; init; } = "";
@@ -46,4 +53,32 @@ public sealed record DiagnosticReport
     public Dictionary<string, double> DimensionScores { get; init; } = [];
     public List<DiagnosticIssue> Issues { get; init; } = [];
     public List<string> Strengths { get; init; } = [];
+
+    /// <summary>去 AI 味审计结果（仅 diagnose_writing(mode=deai) 填充；其他模式为 null）。</summary>
+    public DeAiAudit? DeAi { get; init; }
+}
+
+/// <summary>去 AI 味审计结果 — 云端 humanizer 维度的报告视图。</summary>
+public sealed record DeAiAudit
+{
+    public List<DeAiFinding> Findings { get; init; } = [];
+    public int SuppressedCount { get; init; }
+    public int NoChangeCount { get; init; }
+    public bool FullReport { get; init; }
+    public bool CloudAuditAvailable { get; init; }
+    public string RiskLevel { get; init; } = "none";
+    public List<string> Notes { get; init; } = [];
+}
+
+/// <summary>单条去 AI 味 finding — 保留子类型、证据、建议与段号。</summary>
+public sealed record DeAiFinding
+{
+    public string SubType { get; init; } = "";
+    public string Level { get; init; } = "";
+    public string Severity { get; init; } = "";
+    public string Description { get; init; } = "";
+    public string Evidence { get; init; } = "";
+    public string? Suggestion { get; init; }
+    public int ParagraphIndex { get; init; } = -1;
+    public double ImpactScore { get; init; }
 }

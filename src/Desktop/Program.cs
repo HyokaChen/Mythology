@@ -429,6 +429,13 @@ public static class Program
                     )
                     : null;
             CloudScheduler = scheduler;
+            var humanizerAudit = cloudHarness is not null
+                ? new HumanizerAuditService(
+                    cloudHarness,
+                    cloudOptions,
+                    loggerFactory.CreateLogger<HumanizerAuditService>()
+                )
+                : null;
             var decisionBridge = questionStore is not null
                 ? new HumanDecisionBridge(
                     interactionHub,
@@ -455,7 +462,8 @@ public static class Program
                 monotonyWatcher,
                 questionStore,
                 usageReconciler,
-                tacticLedger
+                tacticLedger,
+                humanizerAudit: humanizerAudit
             );
 
             if (retrievalKernel?.AgentMemory is { } memStore2)

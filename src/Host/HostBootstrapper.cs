@@ -1099,6 +1099,13 @@ public static class HostBootstrapper
                     provider.GetService<ClientPlatform.CloudCapabilityCatalogStore>()
                 )
                 : null;
+        var humanizerAudit = cloudHarness is not null
+            ? new HumanizerAuditService(
+                cloudHarness,
+                cloudOptions,
+                provider.GetService<ILogger<HumanizerAuditService>>()
+            )
+            : null;
         var decisionBridge = questionStore is not null
             ? new HumanDecisionBridge(
                 interactionHub,
@@ -1130,7 +1137,8 @@ public static class HostBootstrapper
                     monotonyWatcher,
                     questionStore,
                     usageReconciler,
-                    tacticLedger
+                    tacticLedger,
+                    humanizerAudit: humanizerAudit
                 ),
                 new AgentMemoryHook(logger),
                 new AssociativeTriggerHook(
@@ -1161,7 +1169,8 @@ public static class HostBootstrapper
                     monotonyWatcher,
                     questionStore,
                     usageReconciler,
-                    tacticLedger
+                    tacticLedger,
+                    humanizerAudit: humanizerAudit
                 ),
                 new AssociativeTriggerHook(
                     agent,

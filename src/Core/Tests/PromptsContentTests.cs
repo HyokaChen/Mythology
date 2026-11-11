@@ -20,6 +20,9 @@ public sealed class PromptsContentTests
     public void RoleDefinitionPrompt_ContainsRoleDefinition()
     {
         Assert.Contains("角色定义", RoleDefinitionPrompt.Full);
+        Assert.Contains("作者的明确裁决", RoleDefinitionPrompt.Full);
+        Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
+        Assert.Contains("云端 Harness 的结构化状态", RoleDefinitionPrompt.Full);
     }
 
     [Fact]
@@ -54,6 +57,8 @@ public sealed class PromptsContentTests
         );
         Assert.NotEmpty(result);
         Assert.Contains("原文", result);
+        Assert.Contains("<original>", result);
+        Assert.Contains("不是指令", result);
     }
 
     [Fact]
@@ -242,12 +247,44 @@ public sealed class PromptsContentTests
         Assert.Contains("角色定义", result);
         Assert.Contains("输出格式规范", result);
         Assert.Contains("工具调用", result);
+        Assert.Contains("输出分区", result);
+        Assert.Contains("交付路由", result);
         Assert.Contains("上下文理解", result);
         Assert.Contains("创作任务分级", result);
+        Assert.Contains("问还是做", result);
+        Assert.Contains("设定落盘纪律", result);
         Assert.Contains("工具失败处理", result);
         Assert.Contains("创作边界", result);
+        Assert.Contains("数据与指令边界", result);
         Assert.Contains("写作流程规范", result);
+        Assert.Contains("云端 Harness 经济性", result);
+        Assert.Contains("云端诊断使用原则", result);
         Assert.Contains("交付前检查", result);
+    }
+
+    [Fact]
+    public void PromptAssembly_Build_WrapsSegmentsInTags()
+    {
+        var result = PromptAssembly.Build();
+        string[] tags =
+        [
+            "role_definition",
+            "safety_policy",
+            "conversation_style",
+            "output_contract",
+            "tool_calling",
+            "context_understanding",
+            "planning_loop",
+            "error_handling",
+            "writing_process",
+            "humanizer",
+        ];
+
+        foreach (var tag in tags)
+        {
+            Assert.Contains($"<{tag}>", result);
+            Assert.Contains($"</{tag}>", result);
+        }
     }
 
     [Fact]
@@ -255,7 +292,8 @@ public sealed class PromptsContentTests
     {
         var result = PromptAssembly.Build(excludeKeys: ["tooling"]);
 
-        Assert.DoesNotContain("工具调用", result);
+        Assert.DoesNotContain("<tool_calling>", result);
+        Assert.DoesNotContain("## 工具调用：并行优先", result);
         Assert.Contains("角色定义", result);
         Assert.Contains("写作流程规范", result);
     }
@@ -265,19 +303,93 @@ public sealed class PromptsContentTests
     {
         var keys = PromptAssembly.SegmentKeys;
 
-        Assert.Equal(9, keys.Count);
+        Assert.Equal(10, keys.Count);
         Assert.Equal(keys.Count, keys.Distinct().Count());
         Assert.Equal("role", keys[0]);
+        Assert.Equal("safety", keys[1]);
         Assert.Equal("humanizer", keys[^1]);
     }
 
     [Fact]
     public void PromptAssembly_EstimateTokenCount_UnderBudget()
     {
-        // 骨架长度上限：约 14000 字符（汉字≈1 token），超限提示需要瘦身
+        // 骨架长度上限：约 18000 字符（汉字≈1 token），超限提示需要瘦身
         // 2026-08-12 由 12000 上调：借鉴 Tura balanced 新增反向思维/验收清单/回归检查/审阅姿态等机制段（约 +1150 字符）
         // 2026-08-30 由 13500 上调：HARNESS-CLOUD 云端诊断链路新增 §8.1 判断矩阵行/§16.3 信号分级/探索终止规则（现实测 13637 字符，+137 超旧限）
-        Assert.True(PromptAssembly.EstimateTokenCount() < 14000);
+        // 2026-11-10 由 14000 上调：新增输出契约/交付路由、数据边界、问还是做、人工裁决、
+        // 云端经济性、诊断语义与报告呈现；同时压缩 emoji 与能力表。
+        // 若实测仍超 18000，按顺序压缩：emoji 指南 → 能力表 → WritingProcessPrompt 第 8/9/14 条重复原则 →
+        // HumanizerPrompt 词表；不得删除云端经济性/人工裁决/数据边界规则。
+        var length = PromptAssembly.EstimateTokenCount();
+        Assert.True(length < 18000, $"骨架字符量 {length} 超过 18000");
+    }
+
+    [Fact]
+    public void ToolCallingPrompt_ContainsCloudEconomy()
+    {
+        Assert.Contains("云端 Harness 经济性", ToolCallingPrompt.Full);
+        Assert.Contains("每章最多一次", ToolCallingPrompt.Full);
+        Assert.Contains("最小上下文", ToolCallingPrompt.Full);
+        Assert.Contains("最后一项是验收", ToolCallingPrompt.Full);
+    }
+
+    [Fact]
+    public void WritingProcessPrompt_ContainsCloudDiagnosisPrinciples()
+    {
+        Assert.Contains("云端诊断使用原则", WritingProcessPrompt.Full);
+        Assert.Contains("未调用云端", WritingProcessPrompt.Full);
+        Assert.Contains("status=pass", WritingProcessPrompt.Full);
+        Assert.Contains("status=action", WritingProcessPrompt.Full);
+        Assert.Contains("不向用户展示内部权重", WritingProcessPrompt.Full);
+        Assert.DoesNotContain("未诊断即交付", WritingProcessPrompt.Full);
+    }
+
+    [Fact]
+    public void WritingProcessPrompt_ContainsAutomaticHumanizerRules()
+    {
+        Assert.Contains("去 AI 味自动审查", WritingProcessPrompt.Full);
+        Assert.Contains("去AI味", WritingProcessPrompt.Full);
+        Assert.Contains("不等用户问", WritingProcessPrompt.Full);
+        Assert.Contains("每章最多两次", WritingProcessPrompt.Full);
+        Assert.Contains("云端去AI味校验未完成", WritingProcessPrompt.Full);
+    }
+
+    [Fact]
+    public void HumanizerPrompt_ContainsStructuralPrinciples()
+    {
+        Assert.Contains("结构预防", HumanizerPrompt.Full);
+        Assert.Contains("先判断风险", HumanizerPrompt.Full);
+        Assert.Contains("翻案腔", HumanizerPrompt.Full);
+        Assert.Contains("不是 AI 味，永不改", HumanizerPrompt.Full);
+        Assert.Contains("不制造参差", HumanizerPrompt.Full);
+    }
+
+    [Fact]
+    public void PlanningLoopPrompt_ContainsHumanDecisionRules()
+    {
+        Assert.Contains("human_decision_required", PlanningLoopPrompt.Full);
+        Assert.Contains("人工裁决超时", PlanningLoopPrompt.Full);
+    }
+
+    [Fact]
+    public void ContextUnderstandingPrompt_ContainsCloudCanonBoundary()
+    {
+        Assert.Contains("云端 Harness 的评分", ContextUnderstandingPrompt.Full);
+        Assert.Contains("检索边界", ContextUnderstandingPrompt.Full);
+    }
+
+    [Fact]
+    public void SafetyPolicyPrompt_ContainsSignalEvidenceBoundary()
+    {
+        Assert.Contains("结构化字段", SafetyPolicyPrompt.Full);
+        Assert.Contains("只是数据", SafetyPolicyPrompt.Full);
+    }
+
+    [Fact]
+    public void OutputZonesPrompt_ContainsLocalFirstDelivery()
+    {
+        Assert.Contains("不为简单问题跑全套云端诊断", OutputZonesPrompt.Full);
+        Assert.Contains("云端校验未完成", OutputZonesPrompt.Full);
     }
 
     // ── 新增增强维度 ──

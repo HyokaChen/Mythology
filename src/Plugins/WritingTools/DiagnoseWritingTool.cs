@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -26,7 +27,7 @@ public sealed class DiagnoseWritingTool(
     public override string Name => "diagnose_writing";
     public override string Label => "写作诊断";
     public override string Description =>
-        "复合诊断写作质量：按深度(quick/standard/deep)分析多维度(代入感/爽感/冲突/节奏/描写/对话/去AI味)，返回段落级问题定位和加权总分";
+        "复合诊断写作质量：按深度(quick/standard/deep)分析多维度(代入感/爽感/冲突/节奏/描写/对话/去AI味)，返回段落级问题定位和加权总分；mode=deai 时只返回云端去AI味 1-3 条完整报告/复测（默认自动审查，无需手动调用）";
     public override ToolCategory Category => ToolCategory.EntityRead;
 
     /// <summary>
@@ -96,6 +97,30 @@ public sealed class DiagnoseWritingTool(
             "deep" => DiagnosticDepth.Deep,
             _ => DiagnosticDepth.Standard,
         };
+
+        // 手动去 AI 味：quick + humanizer focus，只审计一个目标章；
+        // 默认自动路径由 WritingFlowHook/HumanizerAuditService 承担，这里只做完整报告/复测。
+        if (string.Equals(args.Mode, "deai", StringComparison.OrdinalIgnoreCase))
+        {
+            // 未指定 ChapterIds 时，默认审计最近一章（更接近“当前写作章”）。
+            var targetChapter = targetChapters[^1];
+            var deAiReport = CloudHarness is null
+                ? BuildDeAiFallbackReport("未配置云端连接；本次未执行云端去AI味检测。")
+                : await CloudDeAiAsync(targetChapter, novelId, ct);
+            deAiReport = AttachDeAiAudit(deAiReport, args.MaxFindings, args.FullReport);
+
+            var deAiText = BuildDeAiReportText(
+                deAiReport,
+                targetChapter,
+                args.MaxFindings,
+                args.FullReport
+            );
+            return new AgentToolResult<DiagnosticReport>
+            {
+                Content = [new TextContent(deAiText)],
+                Details = deAiReport,
+            };
+        }
 
         // 云端不可用 → 返回可读错误，不伪造分数
         if (CloudHarness is null)
@@ -244,6 +269,277 @@ public sealed class DiagnoseWritingTool(
             return CloudUnavailableReport(depth);
         }
     }
+
+    /// <summary>
+    /// 手动去 AI 味审计：只提交目标章，quick + humanizer focus（云端 focused quick = 2 units）。
+    /// 远端失败不伪造 findings；返回带通用自检清单的降级报告。
+    /// </summary>
+    private async Task<DiagnosticReport> CloudDeAiAsync(
+        Chapter chapter,
+        string novelId,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var request = new HarnessRequest
+            {
+                Capability = "fiction.story.check",
+                Depth = "quick",
+                Locale = "zh-CN",
+                NovelId = novelId,
+                Chapters =
+                [
+                    new ChapterInput(
+                        chapter.Id,
+                        chapter.Order,
+                        chapter.Title,
+                        "target",
+                        chapter.Content ?? ""
+                    ),
+                ],
+                Options = new AnalysisOptionsInput(AnalyzerFocus: ["humanizer"]),
+            };
+
+            var result = await CloudHarness!.ExecuteAsync(
+                request,
+                $"deai-{novelId}-{chapter.Id}-{HashContent(chapter.Content ?? "")}",
+                ct
+            );
+
+            if (result.Result is not JsonElement element)
+                return BuildDeAiFallbackReport("云端未返回可解析的去AI味结果。");
+
+            return StoryCheckResultMapper.Map(element, DiagnosticDepth.Quick);
+        }
+        catch (CloudApiException ex)
+        {
+            return BuildDeAiFallbackReport(
+                CloudErrorMapper.IsBusinessRejection(ex.Code) || ex.Code == "result_timeout"
+                    ? $"云端去AI味检测未完成：{ex.Message}"
+                    : "云端去AI味检测不可用。"
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return BuildDeAiFallbackReport("云端去AI味检测不可用。");
+        }
+    }
+
+    /// <summary>把云端 humanizer 问题整理为 1–3 条（FullReport 时全部）报告视图。</summary>
+    private static DiagnosticReport AttachDeAiAudit(
+        DiagnosticReport report,
+        int maxFindings,
+        bool fullReport
+    )
+    {
+        if (report.DeAi is not null)
+            return report;
+
+        var all = report.Issues.Where(issue => issue.Dimension == DimensionKeys.Humanizer).ToList();
+
+        // 旧服务端/畸形响应没有 humanizer 维度：绝不把「没返回」伪装成「未发现问题」。
+        if (
+            !report.DimensionScores.TryGetValue(DimensionKeys.Humanizer, out var humanizerScore)
+            || (humanizerScore < 100 && all.Count == 0)
+        )
+            return BuildDeAiFallbackReport("云端未返回去AI味维度；本次未完成检测。");
+
+        var actionable = all.Where(IsActionableIssue).ToList();
+        var ordered = actionable
+            .OrderByDescending(issue => SeverityRank(issue.Severity))
+            .ThenByDescending(issue => issue.ImpactScore)
+            .ToList();
+
+        var limit = Math.Clamp(maxFindings, 1, 10);
+        List<DiagnosticIssue> selected;
+        if (fullReport)
+        {
+            // 完整报告也展开 X/H/C；默认只给可执行项，避免把「不改」项混进修复建议。
+            selected = all.OrderByDescending(issue => SeverityRank(issue.Severity))
+                .ThenByDescending(issue => issue.ImpactScore)
+                .ToList();
+        }
+        else
+        {
+            // 同类合并：每种 sub-type 只留影响最大的一条，避免 3 条都在说同一个模板。
+            selected = ordered
+                .GroupBy(issue =>
+                    string.IsNullOrWhiteSpace(issue.SubType) ? issue.Description : issue.SubType
+                )
+                .Select(group => group.First())
+                .Take(limit)
+                .ToList();
+        }
+
+        var findings = selected
+            .Select(issue => new DeAiFinding
+            {
+                SubType = issue.SubType ?? "",
+                Level = issue.Level ?? "",
+                Severity = issue.Severity,
+                Description = issue.Description,
+                Evidence = issue.Evidence,
+                Suggestion = issue.Suggestion,
+                ParagraphIndex = issue.ParagraphIndex,
+                ImpactScore = issue.ImpactScore,
+            })
+            .ToList();
+
+        var score = report.DimensionScores.TryGetValue(DimensionKeys.Humanizer, out var value)
+            ? value
+            : 0;
+        return report with
+        {
+            DeAi = new DeAiAudit
+            {
+                Findings = findings,
+                SuppressedCount = fullReport ? 0 : Math.Max(0, actionable.Count - findings.Count),
+                NoChangeCount = fullReport ? 0 : Math.Max(0, all.Count - actionable.Count),
+                FullReport = fullReport,
+                CloudAuditAvailable = true,
+                RiskLevel = RiskLevel(score, actionable),
+                Notes = ["这是云端规则审计，不是 AI 作者判定；比喻/声音需人审。"],
+            },
+        };
+    }
+
+    /// <summary>云端不可用时的去 AI 味降级报告：只给通用自检，不伪造具体 findings。</summary>
+    private static DiagnosticReport BuildDeAiFallbackReport(string note) =>
+        new()
+        {
+            Depth = DiagnosticDepth.Quick,
+            DeAi = new DeAiAudit
+            {
+                CloudAuditAvailable = false,
+                RiskLevel = "unknown",
+                Notes =
+                [
+                    note,
+                    "云端去AI味校验未完成：本次未执行云端检测，以下只是通用自检，不是具体检测结果：",
+                    "1. 有没有否定式对举（不是……而是……）或结论宣告式冒号（核心是：）？",
+                    "2. 有没有口头禅式开场、翻译腔（对于……而言、在……的过程中）？",
+                    "3. 同一人物是否在少年/青年/银发男子之间轮换称呼？",
+                    "4. 有没有连续同骨架句、密集顿号、段间过度衔接或高度同构三连？",
+                    "5. 有没有为了「参差」故意拆句？",
+                ],
+            },
+        };
+
+    private static string BuildDeAiReportText(
+        DiagnosticReport report,
+        Chapter chapter,
+        int maxFindings,
+        bool fullReport
+    )
+    {
+        var audit = report.DeAi ?? new DeAiAudit();
+        var sb = new StringBuilder();
+        sb.AppendLine("## 去 AI 味检测（云端 humanizer）");
+        sb.AppendLine();
+        sb.AppendLine(
+            $"**审计章节**: {chapter.Title}（第 {chapter.Order} 章，{chapter.Content?.Length ?? 0} 字）"
+        );
+        sb.AppendLine();
+
+        if (!audit.CloudAuditAvailable)
+        {
+            sb.AppendLine($"**⚠️ {audit.Notes.FirstOrDefault() ?? "云端去AI味检测不可用。"}**");
+            sb.AppendLine();
+            foreach (var note in audit.Notes.Skip(1))
+                sb.AppendLine(note);
+            sb.AppendLine();
+            sb.AppendLine(
+                "> 本地创作功能不受影响；恢复云端连接后可重新执行 `diagnose_writing(mode=\"deai\")`。"
+            );
+            return sb.ToString();
+        }
+
+        if (audit.Findings.Count == 0)
+        {
+            sb.AppendLine("未检测到高风险模板。");
+            sb.AppendLine();
+            sb.AppendLine($"> {audit.Notes.FirstOrDefault()}");
+            return sb.ToString();
+        }
+
+        sb.AppendLine(
+            $"检测到 {audit.Findings.Count + audit.SuppressedCount} 处高信号问题，按影响先给 {audit.Findings.Count} 处。"
+        );
+        sb.AppendLine();
+
+        var limit = fullReport ? audit.Findings.Count : Math.Clamp(maxFindings, 1, 10);
+        var shown = audit.Findings.Take(limit).ToList();
+        for (var i = 0; i < shown.Count; i++)
+        {
+            var finding = shown[i];
+            var location =
+                finding.ParagraphIndex >= 0 ? $"（第{finding.ParagraphIndex + 1}段）" : "";
+            var level = string.IsNullOrWhiteSpace(finding.Level)
+                ? ""
+                : $"[{LevelLabel(finding.Level)}] ";
+            sb.AppendLine($"{i + 1}. **{level}{finding.Description}**{location}");
+            if (!string.IsNullOrWhiteSpace(finding.Evidence))
+                sb.AppendLine($"   原文：「{finding.Evidence}」");
+            if (!string.IsNullOrWhiteSpace(finding.Suggestion))
+                sb.AppendLine($"   建议：{finding.Suggestion}");
+            sb.AppendLine();
+        }
+
+        if (audit.SuppressedCount > 0)
+            sb.AppendLine($"另有 {audit.SuppressedCount} 处可执行问题未展开（同类或低优先级）。");
+        if (audit.NoChangeCount > 0)
+            sb.AppendLine(
+                $"另有 {audit.NoChangeCount} 处为只报告/指纹/人审/已否决，不自动改，"
+                    + "避免把正常写法当 AI 味清理。"
+            );
+        if (audit.SuppressedCount > 0 || audit.NoChangeCount > 0)
+            sb.AppendLine();
+        sb.AppendLine($"> {audit.Notes.FirstOrDefault()}");
+        return sb.ToString();
+    }
+
+    private static bool IsActionableIssue(DiagnosticIssue issue) =>
+        (string.IsNullOrEmpty(issue.Level) || issue.Level is "A" or "B" or "F")
+        && issue.SubType is not ("dash_density_high" or "semicolon_density_high");
+
+    private static string LevelLabel(string level) =>
+        level switch
+        {
+            "A" => "机械改",
+            "B" => "建议改",
+            "C" => "只报告",
+            "F" => "指纹",
+            "H" => "人审",
+            "X" => "不改",
+            _ => "",
+        };
+
+    private static int SeverityRank(string severity) =>
+        severity switch
+        {
+            Severity.High => 3,
+            Severity.Medium => 2,
+            _ => 1,
+        };
+
+    private static string RiskLevel(double score, IReadOnlyList<DiagnosticIssue> issues)
+    {
+        if (issues.Any(issue => issue.Severity == Severity.High) || score < 70)
+            return "high";
+        if (issues.Any(issue => issue.Severity == Severity.Medium) || score < 90)
+            return "medium";
+        if (issues.Count > 0)
+            return "low";
+        return "none";
+    }
+
+    private static string HashContent(string text) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
 
     /// <summary>
     /// 云端不可用时的空报告 — 不伪造分数，明确标注未执行分析。
@@ -417,4 +713,15 @@ public sealed record DiagnoseWritingParams
 
     [Description("诊断深度: quick(3维度快速), standard(7维度标准), deep(13维度深度)")]
     public string Depth { get; init; } = "standard";
+
+    [Description(
+        "模式: quality(综合诊断), deai(去AI味完整报告/复测；默认自动审查，不需要手动调用)"
+    )]
+    public string Mode { get; init; } = "quality";
+
+    [Description("去AI味报告最多展示几条（默认 3；FullReport=true 时忽略）")]
+    public int MaxFindings { get; init; } = 3;
+
+    [Description("去AI味是否展开全部问题（默认 false，只给 1-3 条可执行修复）")]
+    public bool FullReport { get; init; }
 }

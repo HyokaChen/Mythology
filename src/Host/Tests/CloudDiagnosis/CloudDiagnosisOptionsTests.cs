@@ -39,6 +39,10 @@ public sealed class CloudDiagnosisOptionsTests
         Assert.Equal(0.7, options.LateNovelOrderRatio, precision: 10);
         Assert.Equal(5, options.UsageReconcileChapterInterval);
         Assert.Equal(100, options.UsageLowRemainingThreshold);
+        Assert.True(options.HumanizerAutoPassEnabled);
+        Assert.Equal(2, options.HumanizerMaxPassesPerChapter);
+        Assert.Equal(10, options.HumanizerPassTimeoutSeconds);
+        Assert.Equal(50, options.HumanizerMinContentChars);
     }
 
     [Fact]
@@ -61,7 +65,10 @@ public sealed class CloudDiagnosisOptionsTests
                 ("CloudDiagnosis:DecisionMinChapterOrder", "x"),
                 ("CloudDiagnosis:LateNovelOrderRatio", "abc"),
                 ("CloudDiagnosis:UsageReconcileChapterInterval", "abc"),
-                ("CloudDiagnosis:UsageLowRemainingThreshold", "xyz")
+                ("CloudDiagnosis:UsageLowRemainingThreshold", "xyz"),
+                ("CloudDiagnosis:HumanizerMaxPassesPerChapter", "abc"),
+                ("CloudDiagnosis:HumanizerPassTimeoutSeconds", "x"),
+                ("CloudDiagnosis:HumanizerMinContentChars", "?")
             )
         );
 
@@ -81,6 +88,9 @@ public sealed class CloudDiagnosisOptionsTests
         Assert.Equal(0.7, options.LateNovelOrderRatio, precision: 10);
         Assert.Equal(5, options.UsageReconcileChapterInterval);
         Assert.Equal(100, options.UsageLowRemainingThreshold);
+        Assert.Equal(2, options.HumanizerMaxPassesPerChapter);
+        Assert.Equal(10, options.HumanizerPassTimeoutSeconds);
+        Assert.Equal(50, options.HumanizerMinContentChars);
     }
 
     [Fact]
@@ -103,7 +113,11 @@ public sealed class CloudDiagnosisOptionsTests
                 ("CloudDiagnosis:DecisionMinChapterOrder", "9"),
                 ("CloudDiagnosis:LateNovelOrderRatio", "0.5"),
                 ("CloudDiagnosis:UsageReconcileChapterInterval", "9"),
-                ("CloudDiagnosis:UsageLowRemainingThreshold", "250")
+                ("CloudDiagnosis:UsageLowRemainingThreshold", "250"),
+                ("CloudDiagnosis:HumanizerAutoPassEnabled", "false"),
+                ("CloudDiagnosis:HumanizerMaxPassesPerChapter", "3"),
+                ("CloudDiagnosis:HumanizerPassTimeoutSeconds", "7"),
+                ("CloudDiagnosis:HumanizerMinContentChars", "80")
             )
         );
 
@@ -123,6 +137,10 @@ public sealed class CloudDiagnosisOptionsTests
         Assert.Equal(0.5, options.LateNovelOrderRatio);
         Assert.Equal(9, options.UsageReconcileChapterInterval);
         Assert.Equal(250, options.UsageLowRemainingThreshold);
+        Assert.False(options.HumanizerAutoPassEnabled);
+        Assert.Equal(3, options.HumanizerMaxPassesPerChapter);
+        Assert.Equal(7, options.HumanizerPassTimeoutSeconds);
+        Assert.Equal(80, options.HumanizerMinContentChars);
     }
 
     [Fact]

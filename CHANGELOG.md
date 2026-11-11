@@ -25,6 +25,32 @@
   `ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll`；Desktop 640/640。
 
 ### Changed
+- **去 AI 味改为每章自动审查（云端测量 + 本地预防）**：`HumanizerAuditService`
+  在 `write_chapter` / `rewrite_selection` 成功后、`DiagnosisScheduler.Decide` 之前
+  自动调用 focused quick `fiction.story.check`（2 units），把
+  `dimensions.humanizer` 的 1–3 条问题注入 `[云端诊断] 去AI味`；模型按
+  `WritingProcessPrompt` 自动修高/中风险模板，每章最多首检+复审 2 次，同内容
+  指纹不重复，超时/云端不可用降级为本地自检。手动
+  `diagnose_writing(mode="deai")` 仅用于完整报告/复测，默认路径不再依赖用户主动
+  询问。云端补 `DiagnosticIssue.SubType` 全链路、`dimensions.humanizer`、
+  `suggested-action=rewrite_selection` 与分层结构信号（A/B/C/F/X/H，shadow，不改变
+  已校准计分）；云端新增 C# 版分层检测器：翻案腔、提示语冒号、起手式、翻译腔四类、
+  顿号过密、同义重命名、相邻/三连同构、衔接连环、破折号/分号指纹、X 级不改清单，
+  并把句长 CV、节长 CV、小标题密度、MTLD 等指标随 `dimensions.humanizer.metrics`
+  返回，便于后续用真实语料重标阈值。客户端 `HumanizerPrompt` 增加结构预防/X 级
+  清单，`EnhancementPrompt` 增加子类型指南。回归：Cloud.Api 567 passed（46 skipped）、
+  FictionIntelligence 1404/1404、
+  `HumanizerDetectorTests`、`HumanizerAuditServiceTests`、`DiagnoseWritingToolCloudTests`、
+  `StoryCheckResultMapperTests`、`PromptsContentTests`。
+- **Prompt 骨架 9 → 10 段（小说创作场景硬化）**：`OutputZonesPrompt` 以
+  `zones` 段纳入，各段包 XML 标签，`safety` 提前到第 2 位；新增交付路由、
+  数据/指令边界、问还是做、人工裁决停等/超时、云端 Harness 经济性、云端诊断
+  语义与报告呈现；`ConversationStylePrompt` 仅约束对话区，`HumanizerPrompt`
+  仅约束小说正文；`WritingProcessPrompt` 的 compact/continuation 变体改为
+  占位符组装，骨架预算 14,000 → 18,000。回归：
+  `PromptAssembly_Build_WrapsSegmentsInTags`、
+  `PromptAssembly_Build_ContainsAllSegments` 等 `PromptsContentTests` /
+  `NovelContextBlockTests` 49/49，Core 1612/1612。
 - **Desktop 对话等待行覆盖阶段间隙**：等待行不再只在回合开头出现。思考结束
   （`ThinkingEnd`）、工具结束（`ToolExecutionEnd`）、下一轮（`TurnStart`）时，只要没有
   正在处理的可见步骤，就立即在时间线尾部重新显示 spinner +「执行中」；下一段思考/正文
@@ -43,9 +69,6 @@
   回归：`LargeConversation_WindowsAndPinsToBottom`（全量 extent、顶部历史、窗口有界）、
   `VirtualizedScroll_UserReading_NewMessageDoesNotMoveOffset`、
   `VirtualizedScroll_StreamingLiveMarkdown_StaysPinned`；Desktop 605/605。
-- **Desktop 过程行展开不再抢滚动**：点击历史「过程」折叠行时先 `PauseFollow`，展开步骤
-  导致的总高度变化不再把视口拉回最后一条；用户主动滚轮下滚/PageDown/End 到底部后才恢复
-  跟随。回归：`ProcessRows_ExpandClickedMessage_NotBottomMessage`。
 - **Desktop 设置窗口保存后自动关闭**：`保存并生效` 成功落盘后触发
   `SettingsViewModel.Saved`，`SettingsView` 收到即关闭窗口（与 TUI SettingsDialog 保存后关闭一致）；
   `SettingsWindow` 支持 Esc 关闭；窗口退场动画加 400ms 看门狗：
@@ -78,23 +101,6 @@
   执行期的 `:disabled` 灰态，右侧同帧切换为「停止」；Enter 与 Esc 守卫同步改用 `IsBusy`
   （提交准备阶段 Enter 不重发、Esc 可中断；引擎在进入 Agent 循环前兑现已受理的取消）。回归：`ComposerBusyStateUiTests`（门控
   `INovelStore.GetNovel` 卡住引擎准备，断言 StopButton 已可见、SendButton 已隐藏；停止后 bridge 不得开始处理）；Desktop 598/598。
-- **Desktop 虚拟化补齐 Fenwick + focusIndex + 重型 block 延迟**：行/block 高度索引改为
-  Fenwick 前缀树，scroll offset 通过二分求 focusIndex；行窗口为 `focusIndex ± buffer`
-  的固定窗口，最大行数按视口/平均高度动态计算（48–200）；超长消息 block 窗口为
-  16–40 个 segment。Mermaid/KaTeX/超大代码块/大 SVG 在离屏时只保留 spacer，
-  接近视口才创建 renderer。回归：`HeightIndexTests`、长消息首尾可达、
-  `LargeConversation` 全量 extent。
-- **Desktop 移除 LiveMarkdown Math/Mermaid/Svg 扩展**：产品是小说写作场景，正文只需要
-  段落/标题/列表/表格/代码块/图片。删除三个 PackageReference、App 的节点注册/Mermaid
-  style 与 SVG decoder 注册；Math/Mermaid/SVG 内容不再渲染为富控件，避免不可估算的
-  异步图形高度，也减少启动与依赖体积。回归：Desktop 612/612。
-- **Desktop 基础 Markdown 源码级高度估算**：新增 `MarkdownHeightEstimator`，按
-  LiveMarkdown 源码常量（TextLayout/行高、段落 margin、标题字号与 margin、列表网格、
-  表格 cell padding/行高、引用/代码块模板）估算正文高度；表格按每行最大 cell 高度求和。
-  估算值进入 Fenwick 高度索引，可见行实测后覆盖；回归：
-  `MarkdownEstimator_MatchesRenderedNovelTextAndTable`（正文+标题+列表+表格+引用+代码块，
-  与真实 `MarkdownRenderer.DesiredSize` 误差 ≤2px）；代码块按
-  `Styles/MarkdownStyles.axaml` 的 header/字体/margin 校准；Desktop 616/616。
 - **`#` 实体引用覆盖设定面板全部可引用条目**：新增 `场景` / `章节` / `分卷` / `小说` 四种类型
   （旧 `#大纲:` 保留为章节别名），大纲的书 / 卷 / 章与七个实体分区都能从 `⋯ → 插入引用` 进入；
   “插入引用”现在统一输出 `#类型:名称 `，发送时再内联为 `类型[ID:xxx]:名称`。

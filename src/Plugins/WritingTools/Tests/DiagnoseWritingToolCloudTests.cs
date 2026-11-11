@@ -694,4 +694,220 @@ public sealed class DiagnoseWritingToolCloudTests
 
         Assert.True(result.IsError);
     }
+
+    private static HarnessResult DeAiResult(int issueCount = 3) =>
+        new()
+        {
+            Status = "completed",
+            Capability = "fiction.story.check",
+            Result = JsonSerializer.SerializeToElement(
+                new Dictionary<string, object>
+                {
+                    ["status"] = "pass",
+                    ["capability"] = "fiction.story.check",
+                    ["dimensions"] = new Dictionary<string, object>
+                    {
+                        ["humanizer"] = new Dictionary<string, object>
+                        {
+                            ["overall-score"] = 60.0,
+                            ["issues"] = Enumerable
+                                .Range(0, issueCount)
+                                .Select(i => new Dictionary<string, object?>
+                                {
+                                    ["severity"] = i == 0 ? Severity.High : Severity.Medium,
+                                    ["sub-type"] = i == 0 ? "formulaic_pattern" : $"type_{i}",
+                                    ["description"] = $"模板问题 {i + 1}",
+                                    ["evidence"] = $"证据 {i + 1}",
+                                    ["suggestion"] = "直接陈述",
+                                    ["paragraph-index"] = i,
+                                    ["impact-score"] = 90 - i,
+                                })
+                                .ToArray(),
+                        },
+                    },
+                }
+            ),
+        };
+
+    private static DiagnoseWritingParams DeAiParams(int maxFindings = 3, bool fullReport = false) =>
+        new()
+        {
+            NovelId = "n1",
+            Mode = "deai",
+            MaxFindings = maxFindings,
+            FullReport = fullReport,
+        };
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_UsesFocusedQuickAndReturnsAudit()
+    {
+        var harness = new StubHarness(DeAiResult(4));
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
+
+        var result = await tool.ExecuteAsync(
+            "deai-1",
+            DeAiParams(maxFindings: 2),
+            CancellationToken.None,
+            null
+        );
+
+        Assert.Equal("quick", harness.LastRequest!.Depth);
+        Assert.Equal(["humanizer"], harness.LastRequest.Options!.AnalyzerFocus);
+        Assert.Single(harness.LastRequest.Chapters);
+        Assert.Equal("target", harness.LastRequest.Chapters[0].Role);
+
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        Assert.NotNull(report.DeAi);
+        Assert.True(report.DeAi.CloudAuditAvailable);
+        Assert.Equal(2, report.DeAi.Findings.Count);
+        Assert.Equal(2, report.DeAi.SuppressedCount);
+        Assert.Equal("high", report.DeAi.RiskLevel);
+        var text = result.Content[0].ToString();
+        Assert.Contains("去 AI 味检测", text);
+        Assert.Contains("模板问题 1", text);
+        Assert.DoesNotContain("综合评分", text);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_FullReport_ExpandsAllFindings()
+    {
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, new StubHarness(DeAiResult(4)));
+
+        var result = await tool.ExecuteAsync(
+            "deai-2",
+            DeAiParams(maxFindings: 1, fullReport: true),
+            CancellationToken.None,
+            null
+        );
+
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        Assert.Equal(4, report.DeAi!.Findings.Count);
+        Assert.Equal(0, report.DeAi.SuppressedCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_CloudFailure_ReturnsSelfCheckWithoutFindings()
+    {
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, new ThrowingHarness());
+
+        var result = await tool.ExecuteAsync("deai-3", DeAiParams(), CancellationToken.None, null);
+
+        Assert.False(result.IsError);
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        Assert.NotNull(report.DeAi);
+        Assert.False(report.DeAi.CloudAuditAvailable);
+        Assert.Empty(report.DeAi.Findings);
+        Assert.Contains("本次未执行云端检测", result.Content[0].ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_DefaultHidesNoChangeLevels()
+    {
+        var harness = new StubHarness(
+            new HarnessResult
+            {
+                Status = "completed",
+                Capability = "fiction.story.check",
+                Result = JsonSerializer.SerializeToElement(
+                    new Dictionary<string, object>
+                    {
+                        ["dimensions"] = new Dictionary<string, object>
+                        {
+                            ["humanizer"] = new Dictionary<string, object>
+                            {
+                                ["overall-score"] = 90.0,
+                                ["issues"] = new object[]
+                                {
+                                    new Dictionary<string, object?>
+                                    {
+                                        ["level"] = "A",
+                                        ["severity"] = Severity.High,
+                                        ["sub-type"] = "negation_contrast",
+                                        ["description"] = "翻案腔",
+                                        ["evidence"] = "不是A而是B",
+                                    },
+                                    new Dictionary<string, object?>
+                                    {
+                                        ["level"] = "X",
+                                        ["severity"] = Severity.Low,
+                                        ["sub-type"] = "this_means",
+                                        ["description"] = "这意味着",
+                                        ["evidence"] = "这意味着",
+                                    },
+                                    new Dictionary<string, object?>
+                                    {
+                                        ["level"] = "H",
+                                        ["severity"] = Severity.Low,
+                                        ["sub-type"] = "personification",
+                                        ["description"] = "拟人",
+                                        ["evidence"] = "像一位导师",
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ),
+            }
+        );
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
+
+        var result = await tool.ExecuteAsync(
+            "deai-levels",
+            DeAiParams(),
+            CancellationToken.None,
+            null
+        );
+
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        var finding = Assert.Single(report.DeAi!.Findings);
+        Assert.Equal("A", finding.Level);
+        Assert.Equal(2, report.DeAi.NoChangeCount);
+        Assert.DoesNotContain("这意味着", result.Content[0].ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_MissingHumanizerDimension_DoesNotFakePass()
+    {
+        var harness = new StubHarness(
+            new HarnessResult
+            {
+                Status = "completed",
+                Capability = "fiction.story.check",
+                Result = JsonSerializer.SerializeToElement(
+                    new Dictionary<string, object>
+                    {
+                        ["dimensions"] = new Dictionary<string, object>
+                        {
+                            ["immersion"] = new Dictionary<string, object>
+                            {
+                                ["overall-score"] = 90.0,
+                            },
+                        },
+                    }
+                ),
+            }
+        );
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
+
+        var result = await tool.ExecuteAsync("deai-5", DeAiParams(), CancellationToken.None, null);
+
+        Assert.False(result.IsError);
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        Assert.False(report.DeAi!.CloudAuditAvailable);
+        Assert.Empty(report.DeAi.Findings);
+        Assert.Contains("未完成检测", result.Content[0].ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DeAiMode_NoHarness_ReturnsSelfCheck()
+    {
+        var tool = new DiagnoseWritingTool(new StoreStub(), null, null);
+
+        var result = await tool.ExecuteAsync("deai-4", DeAiParams(), CancellationToken.None, null);
+
+        Assert.False(result.IsError);
+        var report = Assert.IsType<DiagnosticReport>(result.Details);
+        Assert.False(report.DeAi!.CloudAuditAvailable);
+        Assert.Contains("云端去AI味校验未完成", result.Content[0].ToString());
+    }
 }

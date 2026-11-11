@@ -119,6 +119,18 @@ public sealed class CloudDiagnosisOptions
     /// <summary>预取超时毫秒（默认 3000；超时静默跳过，不阻塞写作轮）。</summary>
     public int MaterialHintTimeoutMs { get; init; } = 3000;
 
+    /// <summary>每章写完后自动跑一次去 AI 味检测（focused quick，2 units）。默认开启。</summary>
+    public bool HumanizerAutoPassEnabled { get; init; } = true;
+
+    /// <summary>每章最多自动审查次数（首检 + 复审；默认 2）。</summary>
+    public int HumanizerMaxPassesPerChapter { get; init; } = 2;
+
+    /// <summary>单次去 AI 味检测超时秒数（默认 10；超时按不可用降级）。</summary>
+    public int HumanizerPassTimeoutSeconds { get; init; } = 10;
+
+    /// <summary>去 AI 味检测最小正文长度；过短不调用云端（默认 50 字）。</summary>
+    public int HumanizerMinContentChars { get; init; } = 50;
+
     /// <summary>双速自进化：会话内战术注入块上限（默认 20）。</summary>
     public int MaxInjectPerSession { get; init; } = 20;
 
@@ -230,6 +242,23 @@ public sealed class CloudDiagnosisOptions
             MaterialHintTimeoutMs = ParseInt(
                 config[ConfigurationKeys.CloudDiagnosisMaterialHintTimeoutMs],
                 3000
+            ),
+            HumanizerAutoPassEnabled =
+                config[ConfigurationKeys.CloudDiagnosisHumanizerAutoPassEnabled]
+                    is not { } humanizerOn
+                || !bool.TryParse(humanizerOn, out var humanizerEnabled)
+                || humanizerEnabled,
+            HumanizerMaxPassesPerChapter = ParseInt(
+                config[ConfigurationKeys.CloudDiagnosisHumanizerMaxPassesPerChapter],
+                2
+            ),
+            HumanizerPassTimeoutSeconds = ParseInt(
+                config[ConfigurationKeys.CloudDiagnosisHumanizerPassTimeoutSeconds],
+                10
+            ),
+            HumanizerMinContentChars = ParseInt(
+                config[ConfigurationKeys.CloudDiagnosisHumanizerMinContentChars],
+                50
             ),
             MaxInjectPerSession = ParseInt(
                 config[ConfigurationKeys.CloudDiagnosisEvolutionMaxInjectPerSession],

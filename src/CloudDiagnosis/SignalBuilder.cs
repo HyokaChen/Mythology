@@ -349,6 +349,93 @@ public static class SignalBuilder
     }
 
     /// <summary>
+    /// 自动去 AI 味审查信号：有 issue → action + 1–3 条；无 issue → pass。
+    /// 只给模型可执行信息，不展示分数/内部阈值/analyzer 名。
+    /// </summary>
+    public static string BuildHumanizerSignal(HumanizerAuditOutcome outcome)
+    {
+        if (outcome.Findings.Count == 0)
+            return $"{Prefix} 去AI味 status=pass 未检测到高风险模板。";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(
+            $"{Prefix} 去AI味 status=action 风险={RiskLabel(outcome.RiskLevel)} 复审={outcome.PassNumber}"
+        );
+        for (var i = 0; i < outcome.Findings.Count; i++)
+        {
+            var finding = outcome.Findings[i];
+            var label = HumanizerLabel(finding.SubType);
+            var title = string.IsNullOrWhiteSpace(label) ? finding.Description : label;
+            var location = finding.ParagraphIndex >= 0 ? $"第{finding.ParagraphIndex + 1}段：" : "";
+            sb.AppendLine($"{i + 1}. [{title}] {location}「{finding.Evidence}」");
+            if (!string.IsNullOrWhiteSpace(finding.Suggestion))
+                sb.AppendLine($"   建议：{finding.Suggestion}");
+        }
+        if (outcome.SuppressedCount > 0)
+            sb.AppendLine($"（另有 {outcome.SuppressedCount} 处同类未展开）");
+        if (outcome.NoChangeCount > 0)
+            sb.AppendLine(
+                $"（另有 {outcome.NoChangeCount} 处为只报告/指纹/人审/已否决，不自动改）"
+            );
+        sb.AppendLine(
+            outcome.PassNumber >= 2
+                ? "这是复审；仍有问题，交付时说明，不再自动循环。不要贴完整报告。"
+                : "请先自动修 1–3 处再交付；人物对话/作者风格命中则保留并说明；不要贴完整报告。"
+        );
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>云端不可用时的本地自检提醒（不伪造 findings）。</summary>
+    public const string HumanizerUnavailableMessage =
+        "[本地自检] 云端去AI味校验未完成。交付前按 HumanizerPrompt 自检"
+        + "（对举/结论冒号/口头禅/翻译腔/同义称呼/同骨架构句），"
+        + "并在回复中标注「云端去AI味校验未完成」；不要伪造检测结果。";
+
+    private static string RiskLabel(string risk) =>
+        risk switch
+        {
+            "high" => "高",
+            "medium" => "中",
+            "low" => "低",
+            _ => "无",
+        };
+
+    private static string HumanizerLabel(string subType) =>
+        subType switch
+        {
+            "ai_buzzword" => "AI高频词",
+            "formulaic_pattern" => "公式化句式",
+            "propaganda_style" => "宣传语风格",
+            "filler_phrase" => "填充短语",
+            "vague_attribution" => "模糊归因",
+            "dash_abuse" => "破折号滥用",
+            "fawning_tone" => "协作残留",
+            "soulless_pattern" => "无灵魂模式",
+            "negation_contrast" => "否定式对举",
+            "conclusion_colon" => "结论宣告式冒号",
+            "cliche_opening" => "口头禅开场",
+            "translationese" => "翻译腔",
+            "translationese_when_clause" => "翻译腔·当…时",
+            "translationese_topic_shell" => "翻译腔·话题壳",
+            "translationese_long_modifier" => "翻译腔·长定语",
+            "over_transition" => "句首连接词",
+            "dense_enumeration" => "顿号并列过密",
+            "synonym_rotation" => "同义称呼轮换",
+            "synonym_renaming" => "同义重命名",
+            "same_skeleton" => "相邻句同款",
+            "isomorphic_triplet" => "高度同构三连",
+            "cohesion_chain" => "衔接连环",
+            "dash_density_high" => "破折号密度",
+            "semicolon_density_high" => "分号密度",
+            "personification" => "拟人化喻体",
+            "summary_substitution" => "概括替代（不改）",
+            "this_means" => "这意味着（不改）",
+            "empty_colon_list" => "空转冒号（不改）",
+            "ordinal_heading" => "序数小标题（不改）",
+            _ => "",
+        };
+
+    /// <summary>
     /// 顶层 rule-findings[]（规则引擎 findings，服务端 standard/deep 才产出）。
     /// 容忍缺失/畸形条目（按 key 读、未知键忽略；旧服务端无该键 → 空表）。
     /// </summary>

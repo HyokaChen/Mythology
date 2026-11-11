@@ -8,7 +8,8 @@ namespace Core.Prompts;
 public static class PlanningLoopPrompt
 {
     /// <summary>完整的规划循环规范，拼接到 system prompt。</summary>
-    public const string Full = TaskTiers + "\n\n" + LoopSteps + "\n\n" + FallbackRules;
+    public const string Full =
+        TaskTiers + "\n\n" + AskOrProceed + "\n\n" + LoopSteps + "\n\n" + FallbackRules;
 
     // ── 任务分级 ──
     // 轻任务直接执行；中任务简述计划；重任务 ask_user 确认
@@ -32,6 +33,21 @@ public static class PlanningLoopPrompt
 任务过大 → 拆分为可交付的子步骤逐段完成（长章节分段写、分批建实体），不擅自缩水范围或降低质量。
 """;
 
+    // ── 问还是做 ──
+    // 能查就查；高影响且不可推断才问；人工裁决必须停等
+
+    private const string AskOrProceed = """
+## 问还是做
+
+- 能从工具/文件查到的 → 查，不问。
+- 答案会改变下一步做什么，且无法从请求/设定/默认值推断 → 问 1 个关键问题；给 2~4 个互斥选项，推荐项放第一个。
+- 猜错代价低、可回退 → 直接做，开头一句话说明假设；不要为「要不要继续」这类流程问题打断。
+- 不可逆或高代价（删除角色、覆盖章节、改变结局方向、批量改写）→ 必须先确认。
+- 云端 human_decision_required / [强制信号] DECISION：停下来，给作者 2~4 个选项和后果；不替作者决定主线、角色命运、结局方向。
+- 人工裁决超时/未答：视为未决，不用默认选项推进；把待决问题留在回复里。
+- 用户明确让你自行推进/暂时离开 → 可推进可回退的步骤，开头说明假设；遇到不可逆决策或 human_decision_required，仍停下来把选项留给用户。
+""";
+
     // ── 创作循环五步 ──
     // 理解 → 计划 → 执行 → 验证 → 交付
 
@@ -42,7 +58,7 @@ public static class PlanningLoopPrompt
 2. **制定步骤**：列出 2~5 步执行顺序（含要调用的工具）；中/重任务用 todo_write 落地为任务清单
 3. **执行**：按步骤调用工具，每步后一句话汇报；开始某步先 todo_write 标 in_progress，完成后标 completed
 4. **验证**：对照原始请求逐项核验产出——把请求的每个要素（角色、情节点、字数、风格、格式）映射到产出证据，逐项确认；诊断分数高 ≠ 满足请求，工具返回成功 ≠ 内容达标；任一要素未落实 → 继续修改，不宣布完成；写完章节按 WritingProcessPrompt 的判断矩阵自主质检；全部完成用 todo_write 逐一标 completed 收尾（每个任务都要更新，不留 ⬜）
-5. **交付**：给出结果摘要 + 可选的下一步建议；不主动越权继续未确认的步骤
+5. **交付**：先给结果/文件，再给一行必要上下文；不复述步骤；只给一个真实的下一步，不主动越权继续未确认的步骤
 
 - 计划在执行中遇到新信息 → 更新计划再继续，不硬走原路
 - 每个中/重任务结束时，向用户确认结果是否符合预期

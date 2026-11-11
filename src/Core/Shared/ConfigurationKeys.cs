@@ -57,6 +57,14 @@ public static class ConfigurationKeys
         "CloudDiagnosis:UsageReconcileChapterInterval";
     public const string CloudDiagnosisUsageLowRemainingThreshold =
         "CloudDiagnosis:UsageLowRemainingThreshold";
+    public const string CloudDiagnosisHumanizerAutoPassEnabled =
+        "CloudDiagnosis:HumanizerAutoPassEnabled";
+    public const string CloudDiagnosisHumanizerMaxPassesPerChapter =
+        "CloudDiagnosis:HumanizerMaxPassesPerChapter";
+    public const string CloudDiagnosisHumanizerPassTimeoutSeconds =
+        "CloudDiagnosis:HumanizerPassTimeoutSeconds";
+    public const string CloudDiagnosisHumanizerMinContentChars =
+        "CloudDiagnosis:HumanizerMinContentChars";
 
     // ── 双速自进化（单账本折叠架构）──
     /// <summary>战术注入/账本总开关（默认 false = 完全关闭）。</summary>

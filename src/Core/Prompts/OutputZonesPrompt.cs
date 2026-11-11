@@ -8,7 +8,8 @@ namespace Core.Prompts;
 public static class OutputZonesPrompt
 {
     /// <summary>完整的输出分区规范，拼接到 system prompt。</summary>
-    public const string Full = Zones + "\n\n" + ContentRules + "\n\n" + DisplayRules;
+    public const string Full =
+        Zones + "\n\n" + DeliveryRules + "\n\n" + ContentRules + "\n\n" + DisplayRules;
 
     // ── 分区定义 ──
     // 对话区用 Markdown + Emoji；内容区纯文本、零元注释
@@ -29,6 +30,24 @@ public static class OutputZonesPrompt
 - 无自我指涉：正文中不出现「我（助手）」
 - 无占位符：不写「（此处应有描写）」「……待补充」
 - 一次成型：内容尽量一次写完整，不要先写骨架再等用户催
+""";
+
+    // ── 交付路由 ──
+    // 先判断要「回答」还是「落盘」，再选工具与云端层级
+
+    private const string DeliveryRules = """
+## 交付路由（先决定产出到哪里）
+
+先判断用户要的是「回答」还是「落盘」，再选工具：
+
+0. 只是问、聊、评、要建议 → 对话区回答；不写文件、不建实体，也不为简单问题跑全套云端诊断。
+1. 要改已有正文 → 先 read 本地正文，再用 rewrite_selection；只改请求范围，保留未要求改动的段落。
+2. 要写新正文 → 先按设定探索顺序查本地 canon；需要跨章/私有判断时才调用云端；写完先本地检查，再按需云端诊断。
+3. 要建设定/大纲/角色/关系/时间线 → 先用本地设定/时间线工具；涉及设定图结构、跨章漂移时才调用云端 setup/hallucination 类检查；重任务先确认。
+4. 要方案/备选/分析 → 先在对话区给方案，不擅自落盘；用户确认后再写。
+5. 判断不了 → 按「只回答不落盘」处理，或问一个会改变下一步的问题；不要用写入代替回答。
+
+云端不可用/额度不足时按本地流程交付；若本次任务需要云端判断，标注「云端校验未完成」，不因云端失败停写。
 """;
 
     // ── 内容区规则 ──
