@@ -687,7 +687,7 @@ public partial class ConversationView : UserControl
             bodyWidth,
             MarkdownHeightEstimator.Conversation
         );
-        return body + AgentBubbleChrome + RowSpacing + ActionBarHeight + row.Margin.Bottom;
+        return body + AgentBubbleChrome + row.Margin.Bottom;
     }
 
     private double EstimateUserContentHeight(string content, ConversationRow row)
@@ -730,6 +730,18 @@ public partial class ConversationView : UserControl
                     13,
                     NoticeLineHeight
                 ) + 2; // AgentStepNoticeText Margin 1*2
+        }
+        else if (step.IsSystemEvent)
+        {
+            height +=
+                NoticeChrome
+                + MarkdownHeightEstimator.EstimatePlainText(
+                    step.ContentText,
+                    bodyWidth,
+                    13,
+                    NoticeLineHeight
+                )
+                + 4; // margin 2*2
         }
         else if (step.IsStepHeader)
         {

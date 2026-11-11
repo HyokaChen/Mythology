@@ -1005,7 +1005,8 @@ public sealed class ConversationVmContractTests
         var rows = ConversationRow.FromMessage(agent);
         Assert.Contains(rows, row => row.Kind == ConversationRowKind.Content);
         Assert.Contains(rows, row => row.Kind == ConversationRowKind.Interrupted);
-        Assert.DoesNotContain(rows, row => row.Kind == ConversationRowKind.Actions);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(actions.IsLastInMessage);
     }
 
     private static async Task SeedConversationAsync(Harness h)

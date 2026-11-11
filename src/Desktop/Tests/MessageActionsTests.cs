@@ -108,19 +108,21 @@ public sealed class MessageActionsTests
     }
 
     [Fact]
-    public void CompletedAgentWithContent_HasNoSeparateActionsRow()
+    public void CompletedAgentWithContent_StillHasOneActionsRowAtEnd()
     {
         var message = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
         message.AppendContent("最终答复");
 
         var rows = ConversationRow.FromMessage(message);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
 
         Assert.Contains(rows, row => row.Kind == ConversationRowKind.Content);
-        Assert.DoesNotContain(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(actions.IsLastInMessage);
+        Assert.Equal("最终答复", MessageCopy.Build(actions));
     }
 
     [Fact]
-    public void InterruptedAgentWithContent_KeepsContentAndInterruptedRows()
+    public void InterruptedAgentWithContent_KeepsContentAndPutsActionsAfterInterruptedRow()
     {
         var message = new ChatMessage(MessageSender.Agent)
         {
@@ -130,10 +132,13 @@ public sealed class MessageActionsTests
         message.AppendContent("已经生成的部分");
 
         var rows = ConversationRow.FromMessage(message);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
 
         Assert.Contains(rows, row => row.Kind == ConversationRowKind.Content);
         Assert.Contains(rows, row => row.Kind == ConversationRowKind.Interrupted);
-        Assert.DoesNotContain(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.Equal(ConversationRowKind.Actions, rows[^1].Kind);
+        Assert.True(actions.IsLastInMessage);
+        Assert.Equal("已经生成的部分", MessageCopy.Build(actions));
     }
 
     [Fact]

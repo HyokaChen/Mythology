@@ -8,9 +8,10 @@ namespace Desktop.Services;
 /// <summary>
 /// JSONL 会话消息 → Desktop UI 气泡的映射（恢复会话时用）。
 /// 渲染语义对齐 TUI <c>Tui/Controls/MessageRestorer.cs</c>：
-/// User→用户气泡（跳过 ask_user 回复前缀）；Assistant→Agent 气泡 + 思考步骤 +
-/// 工具调用步骤（参数摘要）；Tool 结果按 ToolCallId 回填前一条消息的步骤状态；
-/// compact/事件条目→dim 系统行。
+/// User→用户气泡（跳过 ask_user 回复前缀）；同一 turn 的 Assistant/Tool/回合内事件
+/// 合并为一条 Agent 消息（思考步骤 + 工具步骤 + 中间正文 + 最终正文/系统事件），
+/// Tool 结果按 ToolCallId 回填对应步骤；compact/非回合事件→dim 系统行。
+/// 复制/重试动作条因此每轮只出现在回合末尾一次。
 /// </summary>
 public static class SessionMessageMapper
 {
@@ -23,6 +24,24 @@ public static class SessionMessageMapper
         var result = new List<ChatMessage>(msgs.Count);
         // ToolCallId → 所属步骤（回填结果用）
         var stepsByCallId = new Dictionary<string, AgentStep>(StringComparer.Ordinal);
+        // 一个 turn = 一条 Agent 消息：连续 Assistant/Tool/回合内事件都并进 currentAgent，
+        // 直到下一条可见用户消息或会话结束。这样复制/重试只出现在回合末尾一次。
+        ChatMessage? currentAgent = null;
+
+        void EnsureAgent()
+        {
+            if (currentAgent is not null)
+                return;
+            currentAgent = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
+            result.Add(currentAgent);
+        }
+
+        void FlushAgent()
+        {
+            if (currentAgent is { IsEmpty: true })
+                result.Remove(currentAgent);
+            currentAgent = null;
+        }
 
         for (var i = 0; i < msgs.Count; i++)
         {
@@ -43,7 +62,8 @@ public static class SessionMessageMapper
                 }
 
                 case MessageRole.User when SessionInternalMessages.IsAskUserReply(text):
-                    // ask_user 回复：工具卡 Q&A 已展示完整信息，跳过气泡（对齐 TUI）
+                    // ask_user 回复：工具卡 Q&A 已展示完整信息，跳过气泡（对齐 TUI），
+                    // 也不结束当前 turn。
                     break;
 
                 case MessageRole.User:
@@ -56,6 +76,7 @@ public static class SessionMessageMapper
                     )
                         break;
 
+                    FlushAgent();
                     var msg = new ChatMessage(MessageSender.User);
                     msg.Content.Append(text);
                     result.Add(msg);
@@ -67,15 +88,29 @@ public static class SessionMessageMapper
                 {
                     if (string.IsNullOrWhiteSpace(text))
                         break;
-                    var msg = new ChatMessage(MessageSender.System);
-                    msg.Content.Append(SessionInternalMessages.NormalizeSystemText(text));
-                    result.Add(msg);
+                    var normalized = SessionInternalMessages.NormalizeSystemText(text);
+                    // 回合内系统提醒：有正文时按时间顺序接到正文后面，
+                    // 否则作为 SystemEvent 步骤留在回合时间线里（动作行之前）。
+                    if (currentAgent is not null)
+                    {
+                        if (currentAgent.HasVisibleContent)
+                            currentAgent.AppendContent($"\n\n{normalized}");
+                        else
+                            currentAgent.AgentSteps.Add(AgentStep.CreateSystemEvent(normalized));
+                    }
+                    else
+                    {
+                        var msg = new ChatMessage(MessageSender.System);
+                        msg.Content.Append(normalized);
+                        result.Add(msg);
+                    }
                     break;
                 }
 
                 case MessageRole.Assistant:
                 {
-                    var msg = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
+                    EnsureAgent();
+                    var agent = currentAgent!;
 
                     // 旧会话把中断提示写成 Markdown 引用块；历史恢复时还原为独立中断行，
                     // 与实时停止一致，也避免引用块在消息卡里再套一层边框。
@@ -84,7 +119,7 @@ public static class SessionMessageMapper
                     if (trimmedText.EndsWith(interruptedMarker, StringComparison.Ordinal))
                     {
                         text = trimmedText[..^interruptedMarker.Length].TrimEnd();
-                        msg.IsInterrupted = true;
+                        agent.IsInterrupted = true;
                     }
 
                     if (!string.IsNullOrEmpty(m.ReasoningContent))
@@ -98,7 +133,7 @@ public static class SessionMessageMapper
                         };
                         thinking.ThinkingBuilder.Append(m.ReasoningContent);
                         thinking.NotifyThinkingChanged();
-                        msg.AgentSteps.Add(thinking);
+                        agent.AgentSteps.Add(thinking);
                     }
                     var toolCalls = m.ToolCallsJson is { Length: > 0 } json
                         ? DeserializeToolCalls(json)
@@ -113,9 +148,13 @@ public static class SessionMessageMapper
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         if (hasVisibleToolCall)
-                            msg.AgentSteps.Add(AgentStep.CreateContent(text.Trim()));
+                            agent.AgentSteps.Add(AgentStep.CreateContent(text.Trim()));
                         else
-                            msg.AppendContent(text);
+                        {
+                            if (agent.HasVisibleContent)
+                                agent.AppendContent("\n\n");
+                            agent.AppendContent(text);
+                        }
                     }
 
                     if (toolCalls.Count > 0)
@@ -137,12 +176,9 @@ public static class SessionMessageMapper
                             };
                             if (!string.IsNullOrEmpty(tc.Id))
                                 stepsByCallId[tc.Id] = step;
-                            msg.AgentSteps.Add(step);
+                            agent.AgentSteps.Add(step);
                         }
                     }
-
-                    if (!msg.IsEmpty)
-                        result.Add(msg);
                     break;
                 }
 
@@ -151,7 +187,7 @@ public static class SessionMessageMapper
                     break;
                 case MessageRole.Tool:
                 {
-                    // 工具结果：回填到发起它的 Assistant 步骤；找不到归属时降级为独立 dim 行
+                    // 工具结果：回填到发起它的 Assistant 步骤；找不到归属时降级为回合内系统行
                     var callId = m.ToolCallId;
                     if (callId is not null && stepsByCallId.TryGetValue(callId, out var owner))
                     {
@@ -189,28 +225,52 @@ public static class SessionMessageMapper
                             owner.ResultSummary = "失败";
                         break;
                     }
-                    var msg = new ChatMessage(MessageSender.System);
                     var summary = ToolDisplayFormatter.Result(text);
-                    msg.Content.Append(
+                    var line =
                         $"{(m.IsError ? "✗" : "•")} {display.Label(m.ToolName)}"
-                            + (summary.Length > 0 ? $"：{summary}" : "")
-                    );
-                    result.Add(msg);
+                        + (summary.Length > 0 ? $"：{summary}" : "");
+                    if (currentAgent is not null)
+                        currentAgent.AgentSteps.Add(AgentStep.CreateSystemEvent(line));
+                    else
+                    {
+                        var msg = new ChatMessage(MessageSender.System);
+                        msg.Content.Append(line);
+                        result.Add(msg);
+                    }
                     break;
                 }
 
                 case MessageRole.Unknown:
                 {
-                    // event 条目（Error/Interrupt/ModelChange/VariantSelected）→ dim 系统行
                     if (string.IsNullOrEmpty(text))
                         break;
-                    var msg = new ChatMessage(MessageSender.System);
                     var prefix = m.EventType switch
                     {
                         SessionEventType.Error => "⚠️ ",
                         SessionEventType.Interrupt => "⏹ ",
                         _ => "",
                     };
+
+                    if (currentAgent is not null && m.EventType == SessionEventType.Interrupt)
+                    {
+                        // 中断也属于 turn 结束：复用独立中断行，动作行排在其后。
+                        currentAgent.IsInterrupted = true;
+                        break;
+                    }
+
+                    if (currentAgent is not null && m.EventType == SessionEventType.Error)
+                    {
+                        var line = prefix + text;
+                        // 有最终正文时按时间顺序追加；否则作为回合内系统步骤。
+                        if (currentAgent.HasVisibleContent)
+                            currentAgent.AppendContent($"\n\n{line}");
+                        else
+                            currentAgent.AgentSteps.Add(AgentStep.CreateSystemEvent(line));
+                        break;
+                    }
+
+                    // 其他 event（model_change / variant_selected 等）仍为 dim 系统行。
+                    var msg = new ChatMessage(MessageSender.System);
                     msg.Content.Append(prefix + text);
                     result.Add(msg);
                     break;
@@ -227,6 +287,7 @@ public static class SessionMessageMapper
             }
         }
 
+        FlushAgent();
         return result;
     }
 

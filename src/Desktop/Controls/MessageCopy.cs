@@ -55,7 +55,7 @@ internal static class MessageCopy
     {
         if (step.Kind == StepKind.Content)
             return MarkdownToPlain(step.ContentText);
-        if (step.Kind == StepKind.Notice)
+        if (step.Kind is StepKind.Notice or StepKind.SystemEvent)
             return Normalize(step.ContentText);
         if (step.Kind == StepKind.Thinking)
             return Normalize(step.ThinkingText);

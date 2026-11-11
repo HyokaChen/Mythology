@@ -197,6 +197,22 @@ public sealed class ConversationDetailStructureTests
     }
 
     [Fact]
+    public void SystemEventStep_RendersSystemLabelAndText()
+    {
+        var root = LoadConversationView();
+        var block = Assert.Single(
+            root.Descendants(),
+            e =>
+                e.Name.LocalName == "StackPanel"
+                && Attr(e, "IsVisible") == "{Binding Step.IsSystemEvent}"
+        );
+        var texts = block.Descendants().Where(IsTextual).Select(e => Attr(e, "Text")).ToList();
+
+        Assert.Contains("系统", texts);
+        Assert.Contains("{Binding Step.ContentText}", texts);
+    }
+
+    [Fact]
     public void DetailsToggleButton_BindsStateLabel_AndClickHandler()
     {
         var button = LoadConversationView()

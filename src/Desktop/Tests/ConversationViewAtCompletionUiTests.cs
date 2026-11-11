@@ -2381,7 +2381,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 AssertRow(FindRow(user, Desktop.Models.ConversationRowKind.User), 102, "user");
                 AssertRow(
                     FindRow(content, Desktop.Models.ConversationRowKind.Content),
-                    96,
+                    70,
                     "content"
                 );
                 AssertRow(

@@ -42,19 +42,10 @@ public sealed class MessageActionsStructureTests
     }
 
     [Fact]
-    public void ContentRow_HasCopyAndRetry_RetryOnlyAfterTurnCompletion()
+    public void ContentRow_HasNoInlineActionBar()
     {
         var row = Template("RowContent");
-        var bar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
-
-        Assert.Contains("Message.IsCompleted", Attr(bar, "ShowRetry"), StringComparison.Ordinal);
-        Assert.Equal("", Attr(bar, "EditRequested"));
-        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(bar, "Classes.Hovered"));
-        Assert.Contains(
-            "MessageRetry_On_Requested",
-            Attr(bar, "RetryRequested"),
-            StringComparison.Ordinal
-        );
+        Assert.DoesNotContain(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
     }
 
     [Fact]
@@ -80,12 +71,13 @@ public sealed class MessageActionsStructureTests
     }
 
     [Fact]
-    public void ContentlessAssistant_HasRetryActionsRow()
+    public void TurnActionsRow_HasCopyAndRetry()
     {
         var row = Template("RowActions");
         var bar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
 
         Assert.Equal("True", Attr(bar, "ShowRetry"));
+        Assert.Equal("", Attr(bar, "EditRequested"));
         Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(bar, "Classes.Hovered"));
         Assert.Contains(
             "MessageRetry_On_Requested",

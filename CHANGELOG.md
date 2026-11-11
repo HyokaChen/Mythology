@@ -8,20 +8,22 @@
 
 ### Added
 - **Desktop 对话消息块动作条（悬停显示）**：用户气泡支持复制与内联编辑——点击「编辑」后
-  原气泡原位变成输入框，取消不写回、发送后从该回合父节点分支重发；助手最终正文支持
-  复制/重试，重试只在回合结束后、只出现在助手输出侧；思考/工具步骤与无正文回合的动作行
-  均可复制。中断回合同样保留内容卡与动作条：有正文时复制/重试随正文行出现，无正文时
-  动作行置底，纯中断回合的复制回退为「⏹ 中断生成」。正文、思考、参数、结果与系统通知
-  改用 `SelectableTextBlock`，支持拖选后 Cmd/Ctrl+C；Markdown 选区统一到
+  原气泡原位变成输入框，取消不写回、发送后从该回合父节点分支重发；助手每一轮只挂一条
+  复制/重试动作行，固定在回合末尾（正文/步骤/中断/来源之后），重试只在回合结束后出现。
+  历史恢复时同一 turn 的 Assistant/Tool/回合内事件合并成一条 Agent 消息，回合内错误
+  作为系统步骤排在动作行之前；思考/工具步骤只保留各自的复制，不挂重试。中断回合同样
+  保留内容卡与末尾动作行，纯中断回合的复制回退为「⏹ 中断生成」。正文、思考、参数、结果
+  与系统通知改用 `SelectableTextBlock`，支持拖选后 Cmd/Ctrl+C；Markdown 选区统一到
   Eucalyptus/Forest Ink 色板。动作条默认透明且不参与命中，由消息级 hover 控制：悬停
   助手消息任意一行（正文/步骤/中断行/动作行）都会淡入复制/重试，保留 24px 占位避免
   hover 行高抖动。内联编辑的取消/发送按钮也带 Lucide 图标（X /
   CornerDownLeft）。重试按目标用户消息截断模型上下文，新消息以目标 parent 续写，
   旧助手分支保留在会话树。
   回归：`MessageActionsTests`、`MessageActionsStructureTests`、`MessageActionsUiTests`、
+  `SessionMessageMapperDisplayTests`、
   `ConversationVmContractTests.RetryFromUserMessage_*` / `RetryMessage_*` /
   `SubmitUserEdit_*` / `StopProcessing_KeepsPartialAssistantMessage_*`；
-  Desktop 680/680、Core 1616/1616。
+  Desktop 687/687、Core 1616/1616。
 
 ### Fixed
 - **Desktop 对话虚拟化高度补齐动作条与固定行 chrome**： 动作条是 24px 常占位按钮层，

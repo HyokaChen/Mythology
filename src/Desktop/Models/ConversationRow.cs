@@ -96,9 +96,9 @@ public sealed class ConversationRow
                             Message = message,
                         }
                     );
-                // 没有最终正文的助手回合（只有工具/思考、被中断、错误收尾）在末尾单独挂动作条，
-                // 让「重试」仍然有落点；有正文时重试随正文行一起出现，不重复占一行。
-                if (message.IsCompleted && !message.HasVisibleContent && !message.IsWaiting)
+                // 一轮助手回复只挂一条动作行，统一放在回合末尾（中断/来源之后）。
+                // 有正文时它不再挂在正文卡上，避免动作条出现在回合中间。
+                if (message.IsCompleted && !message.IsWaiting)
                     rows.Add(
                         new ConversationRow
                         {

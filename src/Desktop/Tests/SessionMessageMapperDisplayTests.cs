@@ -28,6 +28,188 @@ public sealed class SessionMessageMapperDisplayTests
         ) => Task.FromResult(new AgentToolResult());
     }
 
+    [Fact]
+    public void MapUi_MergesAssistantProcessIntoOneTurnBubble()
+    {
+        var user = new Core.Data.ChatMessage { Role = MessageRole.User, Content = "写一章" };
+        var assistantTool = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = "先查角色。",
+            ToolCallsJson = JsonSerializer.Serialize(
+                new[]
+                {
+                    new
+                    {
+                        id = "c1",
+                        name = "manage_character",
+                        arguments = """{"action":"list","name":"林月如","novelId":"n1"}""",
+                    },
+                }
+            ),
+        };
+        var result = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Tool,
+            ToolCallId = "c1",
+            ToolName = "manage_character",
+            Content = """{"success":true,"characters":[{"name":"林月如"}]}""",
+        };
+        var assistantFinal = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = "最终答复",
+        };
+
+        var ui = SessionMessageMapper.MapUi(
+            [user, assistantTool, result, assistantFinal],
+            CreateFormatter()
+        );
+
+        Assert.Equal(2, ui.Count);
+        var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
+        Assert.Equal("最终答复", agent.Content.ToString());
+        Assert.Contains(
+            agent.AgentSteps,
+            step => step.Kind == StepKind.Content && step.ContentText == "先查角色。"
+        );
+        Assert.Contains(agent.AgentSteps, step => step.Kind == StepKind.ToolCall);
+
+        var rows = TurnRows(agent);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(actions.IsLastInMessage);
+    }
+
+    [Fact]
+    public void MapUi_ErrorEventAfterToolCall_StaysInsideTurnBeforeActions()
+    {
+        var user = new Core.Data.ChatMessage { Role = MessageRole.User, Content = "写一章" };
+        var assistantTool = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            ToolCallsJson = JsonSerializer.Serialize(
+                new[]
+                {
+                    new
+                    {
+                        id = "c1",
+                        name = "manage_character",
+                        arguments = """{"action":"list","novelId":"n1"}""",
+                    },
+                }
+            ),
+        };
+        var result = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Tool,
+            ToolCallId = "c1",
+            ToolName = "manage_character",
+            Content = """{"success":true}""",
+        };
+        var error = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Unknown,
+            EventType = SessionEventType.Error,
+            Content = "429 rate limit",
+        };
+
+        var ui = SessionMessageMapper.MapUi(
+            [user, assistantTool, result, error],
+            CreateFormatter()
+        );
+
+        Assert.Equal(2, ui.Count);
+        Assert.DoesNotContain(ui, msg => msg.Sender == MessageSender.System);
+        var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
+        Assert.Contains(
+            agent.AgentSteps,
+            step => step.Kind == StepKind.SystemEvent && step.ContentText.Contains("429")
+        );
+
+        var rows = TurnRows(agent);
+        var systemEvent = Assert.Single(rows, row => row.Step?.IsSystemEvent == true);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(rows.IndexOf(systemEvent) < rows.IndexOf(actions));
+        Assert.True(actions.IsLastInMessage);
+    }
+
+    [Fact]
+    public void MapUi_ErrorEventAfterFinalContent_AppendsToContentBeforeActions()
+    {
+        var user = new Core.Data.ChatMessage { Role = MessageRole.User, Content = "写一章" };
+        var assistant = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = "最终答复",
+        };
+        var error = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Unknown,
+            EventType = SessionEventType.Error,
+            Content = "429 rate limit",
+        };
+
+        var ui = SessionMessageMapper.MapUi([user, assistant, error]);
+
+        var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
+        Assert.Contains("最终答复", agent.Content.ToString());
+        Assert.Contains("429 rate limit", agent.Content.ToString());
+        Assert.DoesNotContain(agent.AgentSteps, step => step.IsSystemEvent);
+
+        var rows = TurnRows(agent);
+        var content = Assert.Single(rows, row => row.Kind == ConversationRowKind.Content);
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(rows.IndexOf(content) < rows.IndexOf(actions));
+    }
+
+    [Fact]
+    public void MapUi_InterruptEvent_SetsInterruptedBeforeActions()
+    {
+        var user = new Core.Data.ChatMessage { Role = MessageRole.User, Content = "写一章" };
+        var assistant = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Assistant,
+            Content = "写好的正文",
+        };
+        var interrupted = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Unknown,
+            EventType = SessionEventType.Interrupt,
+            Content = "用户中断生成",
+        };
+
+        var ui = SessionMessageMapper.MapUi([user, assistant, interrupted]);
+
+        var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
+        Assert.True(agent.IsInterrupted);
+        var rows = TurnRows(agent);
+        var interruptedRow = Assert.Single(
+            rows,
+            row => row.Kind == ConversationRowKind.Interrupted
+        );
+        var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
+        Assert.True(rows.IndexOf(interruptedRow) < rows.IndexOf(actions));
+        Assert.True(actions.IsLastInMessage);
+    }
+
+    [Fact]
+    public void MapUi_SeparatesTurnsByVisibleUserMessage()
+    {
+        var ui = SessionMessageMapper.MapUi([
+            new Core.Data.ChatMessage { Role = MessageRole.User, Content = "第一问" },
+            new Core.Data.ChatMessage { Role = MessageRole.Assistant, Content = "第一答" },
+            new Core.Data.ChatMessage { Role = MessageRole.User, Content = "第二问" },
+            new Core.Data.ChatMessage { Role = MessageRole.Assistant, Content = "第二答" },
+        ]);
+
+        Assert.Equal(4, ui.Count);
+        Assert.Equal("第一答", ui[1].Content.ToString());
+        Assert.Equal("第二答", ui[3].Content.ToString());
+    }
+
+    private static List<ConversationRow> TurnRows(ChatMessage message) =>
+        ConversationRow.FromMessage(message);
+
     private static ToolDisplayFormatter CreateFormatter()
     {
         var registry = new ToolRegistry();
@@ -136,13 +318,16 @@ public sealed class SessionMessageMapperDisplayTests
             Content = "> ⏹ 已中断",
         };
 
-        var ui = SessionMessageMapper.MapUi([withBody, markerOnly]);
+        var ui = SessionMessageMapper.MapUi([withBody]);
 
-        Assert.Equal(2, ui.Count);
-        Assert.Equal("写好的正文", ui[0].Content.ToString());
-        Assert.True(ui[0].IsInterrupted);
-        Assert.True(ui[1].IsInterrupted);
-        Assert.Equal("", ui[1].Content.ToString());
+        var bubble = Assert.Single(ui);
+        Assert.Equal("写好的正文", bubble.Content.ToString());
+        Assert.True(bubble.IsInterrupted);
+
+        var markerUi = SessionMessageMapper.MapUi([markerOnly]);
+        var markerBubble = Assert.Single(markerUi);
+        Assert.True(markerBubble.IsInterrupted);
+        Assert.Equal("", markerBubble.Content.ToString());
     }
 
     [Fact]

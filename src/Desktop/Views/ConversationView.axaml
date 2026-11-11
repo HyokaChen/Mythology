@@ -167,6 +167,15 @@
             IsVisible="{Binding Step.IsContentStep}"
           />
 
+          <StackPanel IsVisible="{Binding Step.IsSystemEvent}" Spacing="3" Margin="18,2,0,2">
+            <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+            <SelectableTextBlock
+              Classes="SystemNoticeText"
+              Text="{Binding Step.ContentText}"
+              TextAlignment="Left"
+            />
+          </StackPanel>
+
           <SelectableTextBlock
             Classes="SystemNoticeText AgentStepNoticeText"
             IsVisible="{Binding Step.IsNoticeStep}"
@@ -369,30 +378,21 @@
 
     <DataTemplate x:Key="RowContent" x:DataType="models:ConversationRow">
       <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
-        <StackPanel Spacing="2">
-          <Border
-            Classes="AgentBubble"
-            HorizontalAlignment="Stretch"
-            IsVisible="{Binding Message.HasVisibleContent}"
-          >
-            <ContentControl
-              Content="{Binding Message}"
-              ContentTemplate="{StaticResource RichAgentBody}"
-            />
-          </Border>
-          <controls:MessageActionBar
-            Classes="MessageActions"
-            Classes.Hovered="{Binding Message.IsPointerOverMessage}"
-            HorizontalAlignment="Left"
-            ShowRetry="{Binding Message.IsCompleted}"
-            RetryRequested="MessageRetry_On_Requested"
+        <Border
+          Classes="AgentBubble"
+          HorizontalAlignment="Stretch"
+          IsVisible="{Binding Message.HasVisibleContent}"
+        >
+          <ContentControl
+            Content="{Binding Message}"
+            ContentTemplate="{StaticResource RichAgentBody}"
           />
-        </StackPanel>
+        </Border>
       </Grid>
     </DataTemplate>
 
-    <!-- 没有最终正文的助手回合：动作条独立成行，由消息级 hover 唤出；
-         即使没有正文，悬停中断行/步骤行也能看到复制/重试。 -->
+    <!-- 每轮助手回复唯一的动作行：放在回合最末尾（正文/步骤/中断/来源之后），
+         由消息级 hover 唤出；有无正文都只有这一条复制/重试。 -->
     <DataTemplate x:Key="RowActions" x:DataType="models:ConversationRow">
       <Grid Margin="{Binding Margin}" Background="Transparent">
         <controls:MessageActionBar

@@ -25,6 +25,9 @@ public enum StepKind
     /// <summary>实体变更提示（按发生位置穿插在工具步骤之间，不堆到回合末尾）。</summary>
     Notice,
 
+    /// <summary>回合内系统事件（错误/中断/系统提醒）：属于本轮，排在回合动作条之前。</summary>
+    SystemEvent,
+
     /// <summary>工具调用。</summary>
     ToolCall,
 

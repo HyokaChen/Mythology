@@ -88,7 +88,7 @@ public sealed class MessageActionsUiTests
                     bar.DataContext is ConversationRow { Kind: ConversationRowKind.User }
                 );
                 var agentBar = bars.Single(bar =>
-                    bar.DataContext is ConversationRow { Kind: ConversationRowKind.Content }
+                    bar.DataContext is ConversationRow { Kind: ConversationRowKind.Actions }
                 );
                 Assert.False(userBar.IsHitTestVisible);
                 Assert.False(agentBar.IsHitTestVisible);
@@ -147,14 +147,13 @@ public sealed class MessageActionsUiTests
             {
                 Pump();
 
-                var bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
-                Assert.True(bar.ShowCopy);
-                Assert.False(bar.ShowRetry);
+                Assert.Empty(view.GetVisualDescendants().OfType<MessageActionBar>());
 
                 agent.IsCompleted = true;
                 Pump();
 
-                bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
+                var bar = Assert.Single(view.GetVisualDescendants().OfType<MessageActionBar>());
+                Assert.True(bar.ShowCopy);
                 Assert.True(bar.ShowRetry);
             }
             finally

@@ -64,6 +64,9 @@ public sealed class AgentStep : INotifyPropertyChanged
     /// <summary>是否为实体变更提示步骤（轻量系统行，穿插在工具步骤之间）。</summary>
     public bool IsNoticeStep => Kind == StepKind.Notice;
 
+    /// <summary>是否为回合内系统事件（错误/中断/系统提醒），随回合动作条一起收尾。</summary>
+    public bool IsSystemEvent => Kind == StepKind.SystemEvent;
+
     /// <summary>是否为带步骤头的步骤（思考/工具/子步骤）。</summary>
     public bool IsStepHeader => Kind is StepKind.Thinking or StepKind.ToolCall or StepKind.SubStep;
 
@@ -81,6 +84,15 @@ public sealed class AgentStep : INotifyPropertyChanged
         new()
         {
             Kind = StepKind.Notice,
+            Status = AgentStepStatus.Completed,
+            ContentText = text,
+        };
+
+    /// <summary>创建一条回合内系统事件步骤（错误/中断/系统提醒）。</summary>
+    public static AgentStep CreateSystemEvent(string text) =>
+        new()
+        {
+            Kind = StepKind.SystemEvent,
             Status = AgentStepStatus.Completed,
             ContentText = text,
         };
