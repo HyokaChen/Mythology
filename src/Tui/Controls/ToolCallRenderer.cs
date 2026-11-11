@@ -70,6 +70,19 @@ public static class ToolCallRenderer
     /// <summary>上下文行颜色（月光灰）。</summary>
     private const string DiffContextColor = "#bdae93";
 
+    /// <summary>参数详情最大字符数；超出后截断，避免单卡拖垮终端。</summary>
+    private const int MaxArgumentDetailLength = 8_000;
+
+    /// <summary>参数短于该长度时直接展开，否则默认折叠。</summary>
+    private const int ArgumentDetailAutoExpandLength = 240;
+
+    /// <summary>参数详情 JSON 的稳定缩进格式（中文不转成 \\uXXXX）。</summary>
+    private static readonly System.Text.Json.JsonSerializerOptions ArgumentJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     /// <summary>
     /// 构建工具调用气泡项（运行中状态）。
     /// 包含工具名称、副标题、参数和状态图标（🔄/✅/❌）。
@@ -80,7 +93,7 @@ public static class ToolCallRenderer
     /// <param name="isRunning">是否正在运行。</param>
     /// <param name="isError">是否出错。</param>
     /// <param name="colors">面板颜色配置。</param>
-    /// <param name="argsJson">工具调用参数 JSON（可选，用于 ask_user 渲染）。</param>
+    /// <param name="argsJson">工具调用参数 JSON（可选；用于可折叠参数详情与 ask_user 渲染）。</param>
     public static DocumentFlowItem BuildToolCallItem(
         string toolName,
         string subtitle,
@@ -105,6 +118,11 @@ public static class ToolCallRenderer
         AttachCopyHandlers(markup);
 
         var doc = new FlowDocument().Add(markup);
+
+        // 参数详情：头部只放语义摘要，完整参数放进可折叠区。
+        // 小参数直接展开；长参数默认折叠，避免工具卡吞掉整屏。
+        if (toolName != "ask_user" && !string.IsNullOrWhiteSpace(argsJson))
+            AddArgumentDetail(doc, argsJson, isRunning);
 
         // For ask_user while running: render Q&A card with all options as hollow circles (○)
         if (toolName == "ask_user" && isRunning && !string.IsNullOrEmpty(argsJson))
@@ -135,7 +153,7 @@ public static class ToolCallRenderer
     /// <param name="colors">面板颜色配置。</param>
     /// <param name="onNavigateToEntity">导航到实体的回调（可选）。</param>
     /// <param name="details">结构化详情对象（IDiffDetails/ExploreDetails，可选）。</param>
-    /// <param name="argsJson">工具调用参数 JSON（可选）。</param>
+    /// <param name="argsJson">工具调用参数 JSON（可选；用于可折叠参数详情与 ask_user 渲染）。</param>
     public static DocumentFlowItem BuildToolCallResultItem(
         ToolCategory category,
         string? entityType,
@@ -156,7 +174,8 @@ public static class ToolCallRenderer
             paramDisplay,
             isRunning: false,
             isError,
-            colors
+            colors,
+            argsJson: argsJson
         );
         var headerDoc = (FlowDocument)headerItem.Content;
 
@@ -219,6 +238,49 @@ public static class ToolCallRenderer
                 .WithForeground(colors.ToolBubbleFg),
             Padding = new Thickness(3, 1, 3, 1),
         };
+    }
+
+    /// <summary>
+    /// 把完整工具参数渲染成可折叠的 JSON 详情。
+    /// 小参数默认展开，长参数默认折叠；ask_user 由专用 Q&amp;A 卡负责，不复用这里。
+    /// </summary>
+    private static void AddArgumentDetail(FlowDocument doc, string argsJson, bool isRunning)
+    {
+        var detail = FormatArgumentDetail(argsJson);
+        if (string.IsNullOrWhiteSpace(detail))
+            return;
+
+        var header = new Markup("[dim]参数[/]");
+        var content = new Markup("[dim]" + Escape(detail) + "[/]").Wrap(true);
+        AttachCopyHandlers(content);
+        doc.Add(
+            new Collapsible(header, content)
+            {
+                IsExpanded = isRunning || argsJson.Length <= ArgumentDetailAutoExpandLength,
+            }
+        );
+    }
+
+    /// <summary>参数 JSON 的稳定 pretty-print；非法/超长参数回退原文并截断。</summary>
+    private static string FormatArgumentDetail(string argsJson)
+    {
+        var text = argsJson.Trim();
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(text);
+            text = System.Text.Json.JsonSerializer.Serialize(
+                document.RootElement,
+                ArgumentJsonOptions
+            );
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // 历史/异常参数不是合法 JSON：保留原文，便于用户排查。
+        }
+
+        if (text.Length <= MaxArgumentDetailLength)
+            return text;
+        return text[..MaxArgumentDetailLength] + "\n…（已截断）";
     }
 
     /// <summary>
