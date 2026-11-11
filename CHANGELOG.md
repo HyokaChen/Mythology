@@ -31,8 +31,11 @@
   「系统」行，出现 `⚠️ ❌ 429 {...}` 双层图标和整段 JSON。新增共享
   `AgentErrorFormatter`，统一剥离重复标记、状态码前缀并解析 `error.message` /
   `status`；Desktop 实时错误、会话恢复与 TUI 恢复共用，展示为
-  `⚠️ 调用出错：HTTP 429 · <可读消息>`，原始错误仍完整保留在 JSONL。回归：
-  `AgentErrorFormatterTests`、`SessionMessageMapperDisplayTests.MapUi_ErrorJson_IsRenderedAsReadableSystemNotice`。
+  `⚠️ 调用出错：HTTP 429 · <可读消息>`，原始错误仍完整保留在 JSONL。错误通知
+  按 `DESIGN.md` 使用满宽 Amber Wash 卡片（10px 圆角、1px 边、14/10 内边距），
+  普通系统状态仍保持扁平 dim 行。回归：`AgentErrorFormatterTests`、
+  `SessionMessageMapperDisplayTests.MapUi_ErrorJson_IsRenderedAsReadableSystemNotice`、
+  `ConversationRenderingTests.SystemEventError_UsesFullWidthAmberCard`。
 - **Desktop 对话虚拟化高度补齐动作条与固定行 chrome**： 动作条是 24px 常占位按钮层，
   hover 只改透明度，但未实测行的高度估算此前漏算 `RowUser` 的标签/行距、`RowContent`
   与步骤正文的 `StackPanel` 间距、`RowActions` 尾行 12px margin，以及 System /

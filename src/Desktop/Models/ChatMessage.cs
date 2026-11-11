@@ -13,6 +13,7 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isWaiting;
     private bool _hasVisibleContent;
     private bool _isInterrupted;
+    private bool _isError;
     private bool _isProcessExpanded = true;
     private bool _isSpinnerVisible;
     private bool _isCompleted = sender != MessageSender.Agent;
@@ -124,6 +125,19 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
             _isInterrupted = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInterrupted)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEmpty)));
+        }
+    }
+
+    /// <summary>本条系统通知是否为错误（用于警告卡片；普通状态行保持 dim）。</summary>
+    public bool IsError
+    {
+        get => _isError;
+        set
+        {
+            if (_isError == value)
+                return;
+            _isError = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsError)));
         }
     }
 

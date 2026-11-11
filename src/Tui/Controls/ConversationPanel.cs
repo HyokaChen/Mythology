@@ -590,8 +590,8 @@ public sealed class ConversationPanel
         _streamBubbleManager.Clear();
 
         var icon = recoverable ? "❗" : "❌";
-        var statusHint = httpStatusCode.HasValue ? $" (HTTP {httpStatusCode})" : "";
-        var errorBlock = new TextBlock($"{icon}{statusHint} {rawMessage}")
+        var errorText = AgentErrorFormatter.Format(rawMessage, httpStatusCode);
+        var errorBlock = new TextBlock($"{icon} 调用出错：{errorText}")
             .TextAlignment(TextAlignment.Left)
             .Wrap(true)
             .HorizontalAlignment(Align.Stretch)

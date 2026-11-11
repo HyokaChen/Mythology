@@ -192,7 +192,12 @@ public sealed class StreamEventHandler(
             {
                 CloseThinking();
                 var message = FormatError(ae);
-                target.AppendContent($"\n\n> ⚠️ **调用出错**：{message}");
+                // 保留已流出的正文，错误作为回合时间线中的独立警告卡片；
+                // 不再塞进 Markdown 引用块（会被正文卡片吞掉，也没有 Amber 语义）。
+                SealDraftContent();
+                target.AgentSteps.Add(
+                    AgentStep.CreateSystemEvent($"⚠️ 调用出错：{message}", isError: true)
+                );
                 onError?.Invoke(message);
                 break;
             }

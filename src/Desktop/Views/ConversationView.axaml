@@ -108,27 +108,34 @@
     </DataTemplate>
 
     <DataTemplate x:Key="RowSystem" x:DataType="models:ConversationRow">
-      <StackPanel Margin="{Binding Margin}" Spacing="3">
-        <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-        <!-- 压缩等长任务：BusySpinner 与文本同排，任务完成后只关 spinner，不换行不跳动。 -->
-        <DockPanel>
-          <controls:BusySpinner
-            DockPanel.Dock="Left"
-            IsActive="{Binding Message.IsSpinnerVisible}"
-            IsVisible="{Binding Message.IsSpinnerVisible}"
-            FontSize="12"
-            Foreground="{DynamicResource BrushSageLeaf}"
-            Margin="0,0,8,0"
-            VerticalAlignment="Center"
-          />
-          <SelectableTextBlock
-            Classes="SystemNoticeText"
-            Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
-            TextAlignment="Left"
-            HorizontalAlignment="Stretch"
-          />
-        </DockPanel>
-      </StackPanel>
+      <Border
+        Classes="SystemNoticeCard"
+        Classes.Error="{Binding Message.IsError}"
+        Margin="{Binding Margin}"
+        HorizontalAlignment="Stretch"
+      >
+        <StackPanel Spacing="3">
+          <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+          <!-- 压缩等长任务：BusySpinner 与文本同排，任务完成后只关 spinner，不换行不跳动。 -->
+          <DockPanel>
+            <controls:BusySpinner
+              DockPanel.Dock="Left"
+              IsActive="{Binding Message.IsSpinnerVisible}"
+              IsVisible="{Binding Message.IsSpinnerVisible}"
+              FontSize="12"
+              Foreground="{DynamicResource BrushSageLeaf}"
+              Margin="0,0,8,0"
+              VerticalAlignment="Center"
+            />
+            <SelectableTextBlock
+              Classes="SystemNoticeText"
+              Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
+              TextAlignment="Left"
+              HorizontalAlignment="Stretch"
+            />
+          </DockPanel>
+        </StackPanel>
+      </Border>
     </DataTemplate>
 
     <DataTemplate x:Key="RowWaiting" x:DataType="models:ConversationRow">
@@ -167,14 +174,22 @@
             IsVisible="{Binding Step.IsContentStep}"
           />
 
-          <StackPanel IsVisible="{Binding Step.IsSystemEvent}" Spacing="3" Margin="18,2,0,2">
-            <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-            <SelectableTextBlock
-              Classes="SystemNoticeText"
-              Text="{Binding Step.ContentText}"
-              TextAlignment="Left"
-            />
-          </StackPanel>
+          <Border
+            Classes="SystemNoticeCard"
+            Classes.Error="{Binding Step.IsError}"
+            IsVisible="{Binding Step.IsSystemEvent}"
+            Margin="0,2,0,2"
+            HorizontalAlignment="Stretch"
+          >
+            <StackPanel Spacing="3">
+              <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+              <SelectableTextBlock
+                Classes="SystemNoticeText"
+                Text="{Binding Step.ContentText}"
+                TextAlignment="Left"
+              />
+            </StackPanel>
+          </Border>
 
           <SelectableTextBlock
             Classes="SystemNoticeText AgentStepNoticeText"
@@ -569,6 +584,20 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
+    </Style>
+    <!-- 系统通知默认保持扁平；错误使用 DESIGN.md 的 Amber Wash 卡片（10px 圆角、
+         1px 发丝边、14/10 内边距），与助手正文一样占满整行。 -->
+    <Style Selector="Border.SystemNoticeCard">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusCards}" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Border.SystemNoticeCard.Error">
+      <Setter Property="Background" Value="{DynamicResource BrushAmberWash}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BrushAmberPin}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="14,10" />
     </Style>
     <!-- 系统状态行（中断/实体变更/压缩等）：13px，比正文小一档，但比旧 12px 更易读。
          所有系统状态共用这一套排版，避免中断、实体变更各长一套。 -->

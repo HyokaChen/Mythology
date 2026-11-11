@@ -89,11 +89,12 @@ public sealed class AgentStep : INotifyPropertyChanged
         };
 
     /// <summary>创建一条回合内系统事件步骤（错误/中断/系统提醒）。</summary>
-    public static AgentStep CreateSystemEvent(string text) =>
+    public static AgentStep CreateSystemEvent(string text, bool isError = false) =>
         new()
         {
             Kind = StepKind.SystemEvent,
             Status = AgentStepStatus.Completed,
+            IsError = isError,
             ContentText = text,
         };
 

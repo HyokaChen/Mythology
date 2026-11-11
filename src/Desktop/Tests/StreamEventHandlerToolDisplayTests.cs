@@ -149,7 +149,9 @@ public sealed class StreamEventHandlerToolDisplayTests
             )
         );
 
-        var rendered = target.Content.ToString();
+        var step = Assert.Single(target.AgentSteps, s => s.IsSystemEvent);
+        Assert.True(step.IsError);
+        var rendered = step.ContentText;
         Assert.Contains("HTTP 429", rendered, StringComparison.Ordinal);
         Assert.Contains("Too Many Requests", rendered, StringComparison.Ordinal);
         Assert.DoesNotContain("{\"error\"", rendered, StringComparison.Ordinal);
@@ -170,7 +172,8 @@ public sealed class StreamEventHandlerToolDisplayTests
             )
         );
 
-        var rendered = target.Content.ToString();
+        var step = Assert.Single(target.AgentSteps, s => s.IsSystemEvent);
+        var rendered = step.ContentText;
         Assert.DoesNotContain("OpenAIException", rendered, StringComparison.Ordinal);
         Assert.Contains("…", rendered, StringComparison.Ordinal);
     }

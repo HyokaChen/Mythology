@@ -928,6 +928,54 @@ public class ConversationRenderingTests
         });
     }
 
+    [Fact]
+    public void SystemEventError_UsesFullWidthAmberCard()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = true };
+            message.AgentSteps.Add(
+                AgentStep.CreateSystemEvent(
+                    "⚠️ 调用出错：HTTP 429 · rate limit reached",
+                    isError: true
+                )
+            );
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                var card = Assert.Single(
+                    view.GetVisualDescendants().OfType<Border>(),
+                    border =>
+                        border.Classes.Contains("SystemNoticeCard")
+                        && border.Classes.Contains("Error")
+                );
+                var background = Assert.IsType<SolidColorBrush>(card.Background);
+                Assert.Equal(Color.Parse("#80581C"), background.Color);
+                Assert.Equal(0.13, background.Opacity, 2);
+                Assert.Equal(new Thickness(1), card.BorderThickness);
+                Assert.Equal(new CornerRadius(10), card.CornerRadius);
+                Assert.True(card.Bounds.Width > 600, $"card width={card.Bounds.Width:0.0}");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static Color Blend(Color foreground, Color background)
     {
         var a = foreground.A / 255.0;

@@ -231,10 +231,12 @@ public static class SessionMessageMapper
                         $"{(m.IsError ? "✗" : "•")} {display.Label(m.ToolName)}"
                         + (summary.Length > 0 ? $"：{summary}" : "");
                     if (currentAgent is not null)
-                        currentAgent.AgentSteps.Add(AgentStep.CreateSystemEvent(line));
+                        currentAgent.AgentSteps.Add(
+                            AgentStep.CreateSystemEvent(line, isError: m.IsError)
+                        );
                     else
                     {
-                        var msg = new ChatMessage(MessageSender.System);
+                        var msg = new ChatMessage(MessageSender.System) { IsError = m.IsError };
                         msg.Content.Append(line);
                         result.Add(msg);
                     }
@@ -270,12 +272,17 @@ public static class SessionMessageMapper
                         if (currentAgent.HasVisibleContent)
                             currentAgent.AppendContent($"\n\n{line}");
                         else
-                            currentAgent.AgentSteps.Add(AgentStep.CreateSystemEvent(line));
+                            currentAgent.AgentSteps.Add(
+                                AgentStep.CreateSystemEvent(line, isError: true)
+                            );
                         break;
                     }
 
                     // 其他 event（model_change / variant_selected 等）仍为 dim 系统行。
-                    var msg = new ChatMessage(MessageSender.System);
+                    var msg = new ChatMessage(MessageSender.System)
+                    {
+                        IsError = m.EventType == SessionEventType.Error,
+                    };
                     msg.Content.Append(prefix + displayText);
                     result.Add(msg);
                     break;

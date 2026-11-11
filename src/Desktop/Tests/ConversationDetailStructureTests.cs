@@ -200,14 +200,16 @@ public sealed class ConversationDetailStructureTests
     public void SystemEventStep_RendersSystemLabelAndText()
     {
         var root = LoadConversationView();
-        var block = Assert.Single(
+        var card = Assert.Single(
             root.Descendants(),
             e =>
-                e.Name.LocalName == "StackPanel"
+                e.Name.LocalName == "Border"
+                && Attr(e, "Classes") == "SystemNoticeCard"
                 && Attr(e, "IsVisible") == "{Binding Step.IsSystemEvent}"
         );
-        var texts = block.Descendants().Where(IsTextual).Select(e => Attr(e, "Text")).ToList();
+        Assert.Equal("{Binding Step.IsError}", Attr(card, "Classes.Error"));
 
+        var texts = card.Descendants().Where(IsTextual).Select(e => Attr(e, "Text")).ToList();
         Assert.Contains("系统", texts);
         Assert.Contains("{Binding Step.ContentText}", texts);
     }

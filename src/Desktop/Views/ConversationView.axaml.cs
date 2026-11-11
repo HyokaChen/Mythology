@@ -668,13 +668,15 @@ public partial class ConversationView : UserControl
         )
             return cached.Height;
 
+        var cardChrome = row.Message.IsError ? 22 : 0; // padding 10*2 + border 2
+        var textWidth = Math.Max(160, _estimateWidth - (row.Message.IsError ? 30 : 0));
         var textHeight = MarkdownHeightEstimator.EstimatePlainText(
             content.ToString(),
-            Math.Max(160, _estimateWidth),
+            textWidth,
             13,
             NoticeLineHeight
         );
-        var height = NoticeChrome + textHeight + row.Margin.Bottom;
+        var height = NoticeChrome + textHeight + cardChrome + row.Margin.Bottom;
         _rowHeightCache[row.Message] = (content.Version, _estimateWidth, height);
         return height;
     }
@@ -733,14 +735,17 @@ public partial class ConversationView : UserControl
         }
         else if (step.IsSystemEvent)
         {
+            var cardChrome = step.IsError ? 22 : 0; // padding 10*2 + border 2
+            var textWidth = Math.Max(160, bodyWidth - (step.IsError ? 30 : 0));
             height +=
                 NoticeChrome
                 + MarkdownHeightEstimator.EstimatePlainText(
                     step.ContentText,
-                    bodyWidth,
+                    textWidth,
                     13,
                     NoticeLineHeight
                 )
+                + cardChrome
                 + 4; // margin 2*2
         }
         else if (step.IsStepHeader)
