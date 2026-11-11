@@ -113,6 +113,14 @@ public sealed record OutlineRow
 
     /// <summary>是否章行。</summary>
     public bool IsChapter => Kind == OutlineRowKind.Chapter;
+
+    /// <summary>是否可打开正文（书 = 全书 / 卷 = 本卷 / 章 = 从该章起）。</summary>
+    public bool CanOpenContent =>
+        Kind
+            is OutlineRowKind.Novel
+                or OutlineRowKind.VolumeHeader
+                or OutlineRowKind.UnassignedHeader
+                or OutlineRowKind.Chapter;
 }
 
 /// <summary>

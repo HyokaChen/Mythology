@@ -559,7 +559,7 @@
                         <Button
                           Classes="MoreButton"
                           Click="OutlineNodeMore_OnClick"
-                          ToolTip.Tip="更多（详情 / 检查 / 删除）"
+                          ToolTip.Tip="更多操作"
                         >
                           <lucide:LucideIcon Kind="Ellipsis" Size="14" StrokeWidth="1.8" />
                           <Button.ContextMenu>
@@ -583,6 +583,21 @@
                                   <lucide:LucideIcon Kind="PenLine" Size="14" StrokeWidth="1.8" />
                                 </MenuItem.Icon>
                               </MenuItem>
+                              <!-- 正文（书 / 卷 / 章）：打开章节内容窗口（默认可编辑）。
+                                   书 = 全书从第一章起；卷 = 仅本卷；章 = 从该章起。 -->
+                              <MenuItem
+                                Header="正文"
+                                Click="ChapterBody_OnClick"
+                                IsVisible="{Binding CanOpenContent}"
+                              >
+                                <MenuItem.Icon>
+                                  <lucide:LucideIcon
+                                    Kind="BookOpenText"
+                                    Size="14"
+                                    StrokeWidth="1.8"
+                                  />
+                                </MenuItem.Icon>
+                              </MenuItem>
                               <MenuItem
                                 Header="细纲"
                                 Click="ChapterOutline_OnClick"
@@ -590,15 +605,6 @@
                               >
                                 <MenuItem.Icon>
                                   <lucide:LucideIcon Kind="ListTree" Size="14" StrokeWidth="1.8" />
-                                </MenuItem.Icon>
-                              </MenuItem>
-                              <MenuItem
-                                Header="内容"
-                                Click="ChapterContent_OnClick"
-                                IsVisible="{Binding IsChapter}"
-                              >
-                                <MenuItem.Icon>
-                                  <lucide:LucideIcon Kind="BookOpen" Size="14" StrokeWidth="1.8" />
                                 </MenuItem.Icon>
                               </MenuItem>
                               <!-- 插入 # 引用（书 / 卷 / 章；未分卷组头与分页行不可引用） -->

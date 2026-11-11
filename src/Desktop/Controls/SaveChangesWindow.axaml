@@ -1,0 +1,42 @@
+<Window
+  x:Class="Desktop.Controls.SaveChangesWindow"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:motion="clr-namespace:Desktop.Styles"
+  Title="未保存的修改"
+  Width="520"
+  Height="240"
+  MinWidth="460"
+  MinHeight="220"
+  WindowStartupLocation="CenterOwner"
+  Background="{DynamicResource BrushLinen}"
+  motion:Motion.Enter="True"
+>
+  <Grid RowDefinitions="*,Auto" Margin="24,22,24,18">
+    <StackPanel Spacing="8">
+      <TextBlock
+        x:Name="HeadingText"
+        FontSize="16"
+        FontWeight="Medium"
+        Foreground="{DynamicResource BrushOlivePress}"
+        TextWrapping="Wrap"
+      />
+      <TextBlock
+        x:Name="MessageText"
+        FontSize="13"
+        Foreground="{DynamicResource BrushSageGray}"
+        TextWrapping="Wrap"
+      />
+    </StackPanel>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+      <Button x:Name="CancelButton" Classes="Ghost" Content="返回编辑" />
+      <Button
+        x:Name="DiscardButton"
+        Classes="Ghost"
+        Content="不保存"
+        Foreground="{DynamicResource BrushCrimsonSpecimen}"
+      />
+      <Button x:Name="SaveButton" Classes="Primary" Content="保存并继续" />
+    </StackPanel>
+  </Grid>
+</Window>

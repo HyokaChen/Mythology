@@ -513,8 +513,8 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// /read [序号|ID|标题片段]：打开只读章节阅读器（与 TUI 的 /read 同源逻辑：
-    /// Core.Novels.ChapterLocator 定位，Desktop 侧用 ChapterReaderWindow 呈现）。
+    /// /read [序号|ID|标题片段]：打开章节内容窗口（与 TUI 的 /read 同源逻辑：
+    /// Core.Novels.ChapterLocator 定位，Desktop 侧用 ChapterReaderWindow 呈现；默认可编辑）。
     /// </summary>
     private async Task ExecuteChapterReadAsync(string[] parts)
     {

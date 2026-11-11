@@ -51,7 +51,7 @@ public partial class AboutDialog : Window
         new("/tree", "对话分支树导航"),
         new("/mode", "切换增强模式（手动 / 半自动 / 全自动）"),
         new("/context", "上下文管理模式（压缩 / 接续，立即生效，无需重启）"),
-        new("/read", "读章节（序号 / ID / 标题片段；阅读器 ← → 翻章）"),
+        new("/read", "打开章节（序号 / ID / 标题片段；默认可编辑，按钮翻章）"),
         new("/chapter", "定位章节（设定面板 · 大纲：按卷收窄 + 标题过滤）"),
         new("/search", "全书检索（正文 / 细纲 / 标题，双击打开该章）"),
         new("/variants", "重新打开变体审阅"),

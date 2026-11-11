@@ -685,7 +685,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             RecentConversations.Add(s);
     }
 
-    /// <summary>/read：打开只读章节阅读器（窗口）。</summary>
+    /// <summary>/read：打开章节内容窗口（默认可编辑）。</summary>
     private void OpenChapterReader(string chapterId)
     {
         var novelId = SelectedNovel?.Id;
@@ -1299,7 +1299,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new()
             {
                 Title = "/read",
-                Description = "读章节（序号 / ID / 标题片段；阅读器可翻章）",
+                Description = "打开章节（序号 / ID / 标题片段；默认可编辑，按钮翻章）",
                 Execute = () => ActiveConversationVm?.TryExecuteCommand("/read"),
             },
             new()

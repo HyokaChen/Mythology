@@ -149,7 +149,7 @@ public sealed class AdalineDesignSystemTests
             );
         }
 
-        // 2) 章节阅读器编辑态：顶对齐 + 两端对齐
+        // 2) 章节内容编辑器（默认可编辑）：顶对齐 + 两端对齐
         var reader = Load("Controls", "ChapterReaderWindow.axaml");
         var editor = reader.Descendants().Single(e => Attr(e, "Name") == "ContentEditor");
         Assert.Equal("Top", Attr(editor, "VerticalContentAlignment"));

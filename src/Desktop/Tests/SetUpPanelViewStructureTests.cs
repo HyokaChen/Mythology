@@ -138,12 +138,15 @@ public sealed class SetUpPanelViewStructureTests
             .Single(e => Attr(e, "ItemsSource").Contains("OutlineNodes", StringComparison.Ordinal));
         var markup = tree.ToString();
 
-        // 层级菜单收敛：小说/卷 = 详情 · 检查 · 删除；章 = 细纲 · 内容 · 删除
+        // 层级菜单收敛：小说/卷 = 详情 · 正文 · 检查 · 删除；章 = 正文 · 细纲 · 删除
         Assert.Equal(2, markup.Split("Header=\"详情\"").Length - 1); // 小说 / 卷各一条
+        Assert.Equal(1, markup.Split("Header=\"正文\"").Length - 1); // 书 / 卷 / 章共用一条
         Assert.Equal(2, markup.Split("Header=\"检查\"").Length - 1); // 书 / 卷各一条
         Assert.Equal(3, markup.Split("Header=\"删除\"").Length - 1); // 书 / 卷 / 章各一条
         Assert.Equal(1, markup.Split("Header=\"细纲\"").Length - 1); // 章节一条
-        Assert.Equal(1, markup.Split("Header=\"内容\"").Length - 1); // 章节一条
+        // 「内容」入口已被「正文」取代：两者不再并存
+        Assert.DoesNotContain("Header=\"内容\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"预览\"", markup, StringComparison.Ordinal);
 
         // 旧菜单项已全部下线：新建/重命名/换序/移动到卷/打开正文/状态/检查运行/规则/完结状态
         foreach (
@@ -176,10 +179,14 @@ public sealed class SetUpPanelViewStructureTests
         Assert.Contains("IsVisible=\"{Binding IsVolume}\"", markup, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsChapter}\"", markup, StringComparison.Ordinal);
 
-        // 新入口处理器（细纲 / 内容 / 书级删除）已接线
+        // 新入口处理器（正文 / 细纲 / 书级删除）已接线；旧「内容」处理器下线
+        Assert.Contains("ChapterBody_OnClick", markup, StringComparison.Ordinal);
         Assert.Contains("ChapterOutline_OnClick", markup, StringComparison.Ordinal);
-        Assert.Contains("ChapterContent_OnClick", markup, StringComparison.Ordinal);
         Assert.Contains("NovelDelete_OnClick", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ChapterContent_OnClick", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Preview_OnClick", markup, StringComparison.Ordinal);
+        // 正文项对书 / 卷 / 章可见（行模型统一判定），未分卷组头也走卷范围
+        Assert.Contains("IsVisible=\"{Binding CanOpenContent}\"", markup, StringComparison.Ordinal);
 
         // 大纲工具行已收敛为「范围/状态 + 云同步」两行（book 级重复按钮全部上树）
         var outlineChrome =

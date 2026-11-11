@@ -385,11 +385,47 @@ public partial class SetUpPanelView : UserControl
             vm.ToggleOutlineRow(row);
     }
 
-    /// <summary>打开只读章节阅读器（列表永不渲染正文）。</summary>
+    /// <summary>打开章节内容窗（默认可编辑；列表永不渲染正文）。</summary>
     private void OpenChapterReader(string chapterId)
     {
         if (Store is { } store && CurrentNovelId is { Length: > 0 } novelId)
-            ShowDialog(new ChapterReaderWindow(store, novelId, chapterId));
+        {
+            var reader = new ChapterReaderWindow(store, novelId, chapterId);
+            reader.Closed += async (_, _) => await RefreshPanelAsync();
+            ShowDialog(reader);
+        }
+    }
+
+    /// <summary>
+    /// 书 / 卷 / 章「⋯ → 正文」：打开章节内容窗口（默认可编辑）。
+    /// 书 = 全书从第一章起；卷 = 仅本卷；未分卷 = 仅未分卷章节；章 = 从该章起。
+    /// </summary>
+    private void ChapterBody_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (
+            sender is not MenuItem { DataContext: OutlineRow row }
+            || Store is not { } store
+            || CurrentNovelId is not { Length: > 0 } novelId
+        )
+            return;
+
+        var (scope, volumeId) = row.Kind switch
+        {
+            OutlineRowKind.VolumeHeader => (ChapterPreviewScope.Volume, row.Id),
+            OutlineRowKind.UnassignedHeader => (ChapterPreviewScope.Unassigned, (string?)null),
+            _ => (ChapterPreviewScope.Novel, (string?)null),
+        };
+        var reader = new ChapterReaderWindow(
+            store,
+            novelId,
+            row.IsChapter ? row.Id : null,
+            scope,
+            volumeId
+        );
+        // 阅读态可改正文：关闭后刷新字数 / 待发布计数，避免大纲显示旧值。
+        reader.Closed += async (_, _) => await RefreshPanelAsync();
+        ShowDialog(reader);
     }
 
     /// <summary>卷头 ⋯ → 打开上下文菜单。</summary>
@@ -415,28 +451,6 @@ public partial class SetUpPanelView : UserControl
                 novelId,
                 row.Id,
                 chapterScope: ChapterEditScope.Outline
-            );
-            window.Closed += async (_, _) => await RefreshPanelAsync();
-            ShowDialog(window);
-        }
-        e.Handled = true;
-    }
-
-    /// <summary>章行「⋯ → 内容」→ 章节正文编辑窗（只含正文字段）。</summary>
-    private void ChapterContent_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (
-            sender is MenuItem { DataContext: OutlineRow row }
-            && Store is { } store
-            && CurrentNovelId is { Length: > 0 } novelId
-        )
-        {
-            var window = new EntityEditWindow(
-                store,
-                EntityType.Chapter,
-                novelId,
-                row.Id,
-                chapterScope: ChapterEditScope.Content
             );
             window.Closed += async (_, _) => await RefreshPanelAsync();
             ShowDialog(window);

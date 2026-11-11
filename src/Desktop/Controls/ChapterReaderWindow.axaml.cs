@@ -1,29 +1,45 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
 using Core.Data;
 using Core.Evolution;
-using LiveMarkdown.Avalonia;
+using Lucide.Avalonia;
 using Microsoft.Extensions.Logging;
 
 namespace Desktop.Controls;
 
 /// <summary>
-/// 章节正文读/写窗口（Desktop 补齐 TUI 的章节正文缺口）：
-/// 阅读态 = LiveMarkdown 渲染（对齐 ConversationView），编辑态 = TextArea，
+/// 章节预览的阅读范围：全书（默认）/ 指定卷 / 未分卷。
+/// 范围只影响上一章 / 下一章的可达集合，不影响编辑与保存。
+/// </summary>
+public enum ChapterPreviewScope
+{
+    Novel,
+    Volume,
+    Unassigned,
+}
+
+/// <summary>
+/// 章节内容窗口：默认就是可编辑的正文编辑器（无阅读 / 编辑模式切换），
+/// 顶部「上一章 / 下一章」按预览范围翻页；有未保存修改时切换章节前，
+/// 弹「保存 / 不保存 / 取消」。
 /// 保存经 FileNovelStore.BeginManualWrite 包裹（与 AI 写入/冲突检测区分）。
 /// 顶部「细纲」信息带展示大纲三层数据（梗概/计划关系/实际出场与状态变化）。
+///
+/// 预览范围由 <c>scope</c> / <c>volumeId</c> 决定：
+/// 书 = 全书、卷 = 本卷、未分卷 = 未归属章节；章预览 = 全书从该章起。
 /// </summary>
 public partial class ChapterReaderWindow : Window
 {
     private readonly INovelStore _store;
     private readonly string _novelId;
-    private string _chapterId;
+    private readonly ChapterPreviewScope _scope;
+    private readonly string? _volumeId;
+    private string? _chapterId;
     private Chapter? _chapter;
     private List<Chapter> _chapters = [];
-    private bool _editing;
+    private bool _outlineExpanded;
 
     /// <summary>本体关系索引（名称解析 + 计划关系胶囊）。</summary>
     private EntityRelationIndex? _relations;
@@ -34,41 +50,98 @@ public partial class ChapterReaderWindow : Window
     /// <summary>全实体时间线（变化行的待发布标记 + 地点 / 情节线摘要）。</summary>
     private EntityLogView? _logView;
 
-    public ChapterReaderWindow(INovelStore store, string novelId, string chapterId)
+    public ChapterReaderWindow(
+        INovelStore store,
+        string novelId,
+        string? chapterId,
+        ChapterPreviewScope scope = ChapterPreviewScope.Novel,
+        string? volumeId = null
+    )
     {
         _store = store;
         _novelId = novelId;
         _chapterId = chapterId;
+        _scope = scope;
+        _volumeId = volumeId;
 
         InitializeComponent();
-        DialogTheme.ApplyWindowStyle(this, "章节", 780, 680);
+        DialogTheme.ApplyWindowStyle(this, "章节内容", 820, 720);
+        // ApplyWindowStyle 会把最小尺寸压到 460×340；内容窗需要更稳的编辑区。
+        MinWidth = 640;
+        MinHeight = 540;
 
-        EditToggleButton.Click += OnEditToggle_Click;
         SaveButton.Click += async (_, _) => await SaveAsync();
         CloseButton.Click += (_, _) => Close();
-        PrevButton.Click += (_, _) => Navigate(1);
-        NextButton.Click += (_, _) => Navigate(-1);
-        OutlineButton.Click += (_, _) =>
-        {
-            var window = new EntityEditWindow(_store, EntityType.Chapter, _novelId, _chapterId);
-            // 细纲窗可能改状态（发布 / 撤回）或换序：整窗数据重建（时间线 / 待发布标记同步）
-            window.Closed += async (_, _) => await LoadAsync();
-            window.ShowDialog(this);
-        };
-        KeyDown += (_, e) =>
-        {
-            if (e.Key == Avalonia.Input.Key.Escape)
-                Close();
-        };
+        PrevButton.Click += async (_, _) => await NavigateAsync(-1);
+        NextButton.Click += async (_, _) => await NavigateAsync(1);
+        ContentEditor.TextChanged += (_, _) => UpdateDirtyState();
+        KeyDown += OnWindowKeyDown;
 
         _ = LoadAsync();
+    }
+
+    /// <summary>正文是否有未落盘修改（与当前章快照逐字比较）。</summary>
+    private bool IsDirty =>
+        _chapter is not null
+        && !string.Equals(ContentEditor.Text ?? "", _chapter.Content, StringComparison.Ordinal);
+
+    /// <summary>Esc 关闭窗口；Cmd/Ctrl+S 保存。</summary>
+    private async void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            Close();
+            return;
+        }
+        if (e.Key == Key.S && (e.KeyModifiers & (KeyModifiers.Meta | KeyModifiers.Control)) != 0)
+        {
+            e.Handled = true;
+            await SaveAsync();
+        }
+    }
+
+    /// <summary>
+    /// 有未保存修改时询问：保存（失败则返回 false）/ 不保存 / 取消。
+    /// 无修改直接放行。
+    /// </summary>
+    private async Task<bool> ConfirmLeaveAsync(string action, string saveText)
+    {
+        if (!IsDirty)
+            return true;
+
+        var prompt = new SaveChangesWindow(
+            $"「{_chapter!.Title}」有未保存的修改",
+            $"{action}前是否保存？",
+            saveText
+        );
+        var choice = await prompt.ShowAsync(this);
+        return choice switch
+        {
+            SaveChangesChoice.Save => await SaveAsync(),
+            SaveChangesChoice.Discard => true,
+            _ => false,
+        };
     }
 
     private async Task LoadAsync()
     {
         try
         {
-            _chapters = (await _store.GetChapters(_novelId)).OrderBy(c => c.Order).ToList();
+            _chapters = await LoadScopedChaptersAsync();
+            if (_chapters.Count == 0)
+            {
+                ShowUnavailable(
+                    _scope switch
+                    {
+                        ChapterPreviewScope.Volume => "本卷还没有章节",
+                        ChapterPreviewScope.Unassigned => "未分卷还没有章节",
+                        _ => "全书还没有章节",
+                    }
+                );
+                return;
+            }
+
             try
             {
                 _relations = await EntityRelationIndex.BuildAsync(_store, _novelId);
@@ -93,7 +166,13 @@ public partial class ChapterReaderWindow : Window
             {
                 _logView = null;
             }
-            await LoadChapterAsync(_chapterId);
+
+            // 指定章不在预览范围内（被删 / 换卷）→ 从范围首章开始，而不是空窗。
+            var targetId =
+                _chapterId is { Length: > 0 } id && _chapters.Exists(c => c.Id == id)
+                    ? id
+                    : _chapters[0].Id;
+            await LoadChapterAsync(targetId);
         }
         catch (Exception ex)
         {
@@ -102,18 +181,85 @@ public partial class ChapterReaderWindow : Window
         }
     }
 
+    /// <summary>按预览范围读取章节（保持全书 Order 升序）。</summary>
+    private async Task<List<Chapter>> LoadScopedChaptersAsync()
+    {
+        var chapters = (await _store.GetChapters(_novelId)).OrderBy(c => c.Order).ToList();
+        if (_scope == ChapterPreviewScope.Novel)
+            return chapters;
+
+        // 未分卷 = VolumeId 为空或指向已删除的卷；需要卷集合才能判定悬挂 id。
+        var knownVolumeIds =
+            _scope == ChapterPreviewScope.Unassigned
+                ? (await _store.GetVolumes(_novelId))
+                    .Select(v => v.Id)
+                    .ToHashSet(StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+        return SelectChapters(chapters, _scope, _volumeId, knownVolumeIds);
+    }
+
+    /// <summary>
+    /// 预览范围筛选（纯函数，供测试锁定）：不重排，只决定哪些章节可达。
+    /// </summary>
+    internal static List<Chapter> SelectChapters(
+        IReadOnlyList<Chapter> chapters,
+        ChapterPreviewScope scope,
+        string? volumeId,
+        IReadOnlySet<string> knownVolumeIds
+    ) =>
+        scope switch
+        {
+            ChapterPreviewScope.Volume when string.IsNullOrEmpty(volumeId) => [],
+            ChapterPreviewScope.Volume => chapters
+                .Where(c => string.Equals(c.VolumeId, volumeId, StringComparison.Ordinal))
+                .ToList(),
+            ChapterPreviewScope.Unassigned => chapters
+                .Where(c =>
+                    string.IsNullOrEmpty(c.VolumeId) || !knownVolumeIds.Contains(c.VolumeId)
+                )
+                .ToList(),
+            _ => [.. chapters],
+        };
+
+    /// <summary>范围内没有章节 / 章节已删除：清空旧快照并禁用编辑、翻页、细纲。</summary>
+    private void ShowUnavailable(string message)
+    {
+        _chapter = null;
+        _chapterId = null;
+        Title = "章节内容";
+        EyebrowText.Text = "CHAPTER";
+        TitleBlock.Text = message;
+        StatusTag.Text = "";
+        WordCountBlock.Text = "";
+        ScopeTag.IsVisible = false;
+        DirtyTag.IsVisible = false;
+        ContentEditor.Text = "";
+        ContentEditor.IsVisible = false;
+        SaveButton.IsEnabled = false;
+        SaveButton.IsVisible = false;
+        OutlinePanel.IsVisible = false;
+        PrevButton.IsEnabled = false;
+        NextButton.IsEnabled = false;
+    }
+
     private async Task LoadChapterAsync(string chapterId)
     {
         var chapter = await _store.GetChapter(_novelId, chapterId);
         if (chapter is null)
         {
-            TitleBlock.Text = "章节不存在（可能已被删除）";
+            // 不能留着上一章的快照：否则保存会把旧章内容写回新章 id。
+            ShowUnavailable("章节不存在（可能已被删除）");
             return;
         }
+
         _chapter = chapter;
         _chapterId = chapterId;
 
-        TitleBlock.Text = $"{chapter.Order}. {chapter.Title}";
+        Title = $"章节内容 · {chapter.Title}";
+        EyebrowText.Text = $"CHAPTER {chapter.Order:D2}";
+        TitleBlock.Text = string.IsNullOrWhiteSpace(chapter.Title)
+            ? "（未命名章节）"
+            : chapter.Title;
         StatusTag.Text = chapter.Status switch
         {
             ChapterStatus.Draft => "草稿",
@@ -122,18 +268,47 @@ public partial class ChapterReaderWindow : Window
         };
         WordCountBlock.Text = $"{chapter.Content.Length:N0} 字";
 
-        var builder = new ObservableStringBuilder();
-        builder.Append(chapter.Content);
-        MarkdownView.MarkdownBuilder = builder;
         ContentEditor.Text = chapter.Content;
-        SetEditing(false);
+        ContentEditor.CaretIndex = 0;
+        ContentEditor.IsVisible = true;
+        ContentEditor.Focus();
+        SaveButton.IsVisible = true;
+        UpdateDirtyState();
 
-        // 上/下章可用性
+        // 上/下章可用性 + 范围位置
         var idx = _chapters.FindIndex(c => c.Id == chapterId);
         PrevButton.IsEnabled = idx > 0;
         NextButton.IsEnabled = idx >= 0 && idx < _chapters.Count - 1;
+        ScopeTag.Text = $"{ScopeName} · {idx + 1}/{_chapters.Count}";
+        ScopeTag.IsVisible = idx >= 0;
+        ToolTip.SetTip(PrevButton, idx > 0 ? $"上一章 · {_chapters[idx - 1].Title}" : "已是第一章");
+        ToolTip.SetTip(
+            NextButton,
+            idx >= 0 && idx < _chapters.Count - 1
+                ? $"下一章 · {_chapters[idx + 1].Title}"
+                : "已是最后一章"
+        );
 
         RenderOutlineInfo(chapter);
+    }
+
+    /// <summary>范围名（位置指示 + 空态标题共用）。</summary>
+    private string ScopeName =>
+        _scope switch
+        {
+            ChapterPreviewScope.Volume => "本卷",
+            ChapterPreviewScope.Unassigned => "未分卷",
+            _ => "全书",
+        };
+
+    /// <summary>刷新「未保存」提示、保存按钮可用性与实时字数。</summary>
+    private void UpdateDirtyState()
+    {
+        var dirty = IsDirty;
+        SaveButton.IsEnabled = dirty;
+        DirtyTag.IsVisible = dirty;
+        if (_chapter is not null)
+            WordCountBlock.Text = $"{ContentEditor.Text?.Length ?? 0:N0} 字";
     }
 
     /// <summary>
@@ -205,8 +380,56 @@ public partial class ChapterReaderWindow : Window
         RecordsText.Text = string.Join(" · ", recordParts);
         RecordsText.IsVisible = recordParts.Count > 0;
 
+        // 折叠态也能读到数据量：梗概 / 计划 / 出场 / 变化；正文首行做 teaser。
+        var metaParts = new List<string>();
+        if (SummaryText.IsVisible)
+            metaParts.Add("梗概");
+        var planCount = chapter.PlotlineIds.Count + chapter.CharacterIds.Count;
+        if (planCount > 0)
+            metaParts.Add($"计划 {planCount}");
+        if (appearances.Count > 0)
+            metaParts.Add($"出场 {appearances.Count}");
+        if (changes.Count > 0)
+            metaParts.Add($"变化 {changes.Count}");
+        OutlineMeta.Text = string.Join(" · ", metaParts);
+
+        var teaser = FirstLine(chapter.Summary);
+        if (teaser.Length == 0)
+            teaser = string.Join(" · ", chipTexts.Take(3));
+        if (teaser.Length == 0 && recordParts.Count > 0)
+            teaser = recordParts[0];
+        OutlineTeaser.Text = teaser;
+
         OutlinePanel.IsVisible =
             SummaryText.IsVisible || ChipsPanel.Children.Count > 0 || RecordsText.IsVisible;
+        UpdateOutlineExpansion();
+    }
+
+    /// <summary>展开 / 收起细纲；展开态在切换章节后保持。</summary>
+    private void OnOutlineToggle_Click(object? sender, RoutedEventArgs e)
+    {
+        _outlineExpanded = !_outlineExpanded;
+        UpdateOutlineExpansion();
+        e.Handled = true;
+    }
+
+    private void UpdateOutlineExpansion()
+    {
+        OutlineDetails.IsVisible = _outlineExpanded;
+        OutlineChevron.Kind = _outlineExpanded
+            ? LucideIconKind.ChevronDown
+            : LucideIconKind.ChevronRight;
+        OutlineTeaser.IsVisible =
+            !_outlineExpanded && !string.IsNullOrWhiteSpace(OutlineTeaser.Text);
+    }
+
+    /// <summary>取正文首行（细纲折叠态的 teaser）。</summary>
+    private static string FirstLine(string text)
+    {
+        foreach (var line in text.Split('\n'))
+            if (!string.IsNullOrWhiteSpace(line))
+                return line.Trim();
+        return "";
     }
 
     /// <summary>关系胶囊（TagPill + mono 文本）。</summary>
@@ -226,7 +449,11 @@ public partial class ChapterReaderWindow : Window
     /// <summary>实体显示名（关系索引解析；索引不可用时原样返回 id）。</summary>
     private string NameOf(EntityType type, string id) => _relations?.NameOf(type, id) ?? id;
 
-    private void Navigate(int direction)
+    /// <summary>
+    /// 上一章 / 下一章：有未保存正文时先询问保存 / 不保存 / 取消。
+    /// 保存失败或取消则留在本章。
+    /// </summary>
+    private async Task NavigateAsync(int direction)
     {
         var idx = _chapters.FindIndex(c => c.Id == _chapterId);
         if (idx < 0)
@@ -234,39 +461,26 @@ public partial class ChapterReaderWindow : Window
         var target = idx + direction;
         if (target < 0 || target >= _chapters.Count)
             return;
-        _ = LoadChapterAsync(_chapters[target].Id);
+        if (!await ConfirmLeaveAsync("切换章节", "保存并切换"))
+            return;
+        await LoadChapterAsync(_chapters[target].Id);
     }
 
-    private void OnEditToggle_Click(object? sender, RoutedEventArgs e)
+    /// <summary>保存正文；返回 false 表示失败（调用方应阻止翻页 / 关闭 / 进入细纲）。</summary>
+    private async Task<bool> SaveAsync()
     {
         if (_chapter is null)
-            return;
-        if (_editing)
-        {
-            // 编辑态 → 保存按钮可见；再次点编辑视为取消回到阅读态
-            SetEditing(false);
-            ContentEditor.Text = _chapter.Content;
-        }
-        else
-        {
-            SetEditing(true);
-        }
-    }
+            return false;
 
-    private void SetEditing(bool editing)
-    {
-        _editing = editing;
-        ReadPanel.IsVisible = !editing;
-        ContentEditor.IsVisible = editing;
-        SaveButton.IsVisible = editing;
-        EditToggleButton.Content = editing ? "取消" : "编辑";
-    }
+        if (!IsDirty)
+        {
+            UpdateDirtyState();
+            return true;
+        }
 
-    private async Task SaveAsync()
-    {
-        if (_chapter is null)
-            return;
-        _chapter.Content = ContentEditor.Text ?? "";
+        var content = ContentEditor.Text ?? "";
+        var previous = _chapter.Content;
+        _chapter.Content = content;
         using var _ = Core.Evolution.OntologyWriteContext.BeginUser();
         try
         {
@@ -280,16 +494,19 @@ public partial class ChapterReaderWindow : Window
                 await _store.SaveChapter(_chapter);
             }
             WordCountBlock.Text = $"{_chapter.Content.Length:N0} 字";
-            var b = new ObservableStringBuilder();
-            b.Append(_chapter.Content);
-            MarkdownView.MarkdownBuilder = b;
-            SetEditing(false);
             TitleBlock.Text = $"{_chapter.Order}. {_chapter.Title}（已保存）";
+            UpdateDirtyState();
+            ContentEditor.Focus();
+            return true;
         }
         catch (Exception ex)
         {
+            // 内存快照回滚：未落盘正文不会被后续翻页 / 关闭当作已保存内容。
+            _chapter.Content = previous;
             Log().LogWarning(ex, "章节保存失败 chapterId={ChapterId}", _chapterId);
             TitleBlock.Text = $"{_chapter.Order}. {_chapter.Title}（保存失败）";
+            UpdateDirtyState();
+            return false;
         }
     }
 

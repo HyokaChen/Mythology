@@ -12,7 +12,7 @@ namespace Desktop.Controls;
 
 /// <summary>
 /// 全书检索结果窗口（Desktop）：跨章节列出命中（序号 + 标题 + 字段 + 处数 + 片段），
-/// 双击/Enter 打开该章阅读器。定位场景是「我忘了这个设定在哪章提过」——离线、结果确定。
+/// 双击/Enter 打开该章内容。定位场景是「我忘了这个设定在哪章提过」——离线、结果确定。
 /// </summary>
 public sealed class ChapterSearchWindow : Window
 {
@@ -60,7 +60,7 @@ public sealed class ChapterSearchWindow : Window
             Margin = new Avalonia.Thickness(14, 12, 14, 6),
             FontSize = 11,
             Opacity = 0.7,
-            Text = "双击（或 Enter）打开该章阅读器 · 共 " + hits.Count + " 章命中，按命中处数排序",
+            Text = "双击（或 Enter）打开该章内容 · 共 " + hits.Count + " 章命中，按命中处数排序",
         };
         DockPanel.SetDock(hint, Dock.Top);
 
