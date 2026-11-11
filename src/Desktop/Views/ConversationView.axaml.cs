@@ -593,6 +593,19 @@ public partial class ConversationView : UserControl
 
     // ── 高度索引：估算 + 实测缓存 + 锚点 ────────────────────────────────
 
+    // 固定行高必须与 ConversationView.axaml 的模板/样式同步；动作条是 24px
+    // 按钮层，且在布局里真实占位（hover 只改 Opacity，不改高度）。
+    private const double ActionBarHeight = 24;
+    private const double AgentBubbleChrome = 26; // padding 12*2 + border 2
+    private const double StepBubbleChrome = 34; // padding 12*2 + border 2 + margin 4*2
+    private const double UserBubbleChrome = 20; // padding 10*2
+    private const double LabelLineHeight = 16; // TextBlock.Eyebrow LineHeight
+    private const double NoticeLineHeight = 20; // SystemNoticeText LineHeight
+    private const double RowSpacing = 2; // RowContent/RowStep StackPanel Spacing
+    private const double UserRowSpacing = 3; // RowUser StackPanel Spacing
+    private const double StepHeaderHeight = 21; // grid 20 + margin top 1
+    private const double NoticeChrome = LabelLineHeight + UserRowSpacing; // eyebrow + gap
+
     private double ViewportHeight() => Math.Max(FallbackViewport, MessageScroll.Viewport.Height);
 
     private double RowHeight(ConversationRow row)
@@ -602,7 +615,7 @@ public partial class ConversationView : UserControl
         return EstimateRowHeight(row);
     }
 
-    private double EstimateRowHeight(ConversationRow row)
+    internal double EstimateRowHeight(ConversationRow row)
     {
         if (
             row.Kind is ConversationRowKind.Content or ConversationRowKind.User
@@ -630,14 +643,40 @@ public partial class ConversationView : UserControl
 
         return row.Kind switch
         {
-            ConversationRowKind.Process => 30,
-            ConversationRowKind.Waiting => 30,
-            ConversationRowKind.Interrupted => 28,
-            ConversationRowKind.Sources => 20 + row.Message.Sources.Count * 16,
-            ConversationRowKind.System => 28,
-            ConversationRowKind.Actions => 28,
-            _ => 32,
+            ConversationRowKind.Process => 20 + row.Margin.Bottom,
+            ConversationRowKind.Waiting => LabelLineHeight + row.Margin.Bottom,
+            ConversationRowKind.Interrupted => NoticeChrome + NoticeLineHeight + row.Margin.Bottom,
+            ConversationRowKind.Sources => row.Message.Sources.Count * LabelLineHeight
+                + row.Margin.Bottom,
+            ConversationRowKind.System => EstimateSystemRowHeight(row),
+            ConversationRowKind.Actions => ActionBarHeight + row.Margin.Bottom,
+            _ => 32 + row.Margin.Bottom,
         };
+    }
+
+    private double EstimateSystemRowHeight(ConversationRow row)
+    {
+        if (row.Message.Content is not { } content)
+            return NoticeChrome + NoticeLineHeight + row.Margin.Bottom;
+
+        // RebuildHeightIndex 会在每次消息/步骤变化时重跑；系统通知不允许
+        // 每次重建都 new TextBlock 做文本测量。
+        if (
+            _rowHeightCache.TryGetValue(row.Message, out var cached)
+            && cached.Version == content.Version
+            && Math.Abs(cached.Width - _estimateWidth) <= 1
+        )
+            return cached.Height;
+
+        var textHeight = MarkdownHeightEstimator.EstimatePlainText(
+            content.ToString(),
+            Math.Max(160, _estimateWidth),
+            13,
+            NoticeLineHeight
+        );
+        var height = NoticeChrome + textHeight + row.Margin.Bottom;
+        _rowHeightCache[row.Message] = (content.Version, _estimateWidth, height);
+        return height;
     }
 
     private double EstimateAgentContentHeight(string content, ConversationRow row)
@@ -648,15 +687,18 @@ public partial class ConversationView : UserControl
             bodyWidth,
             MarkdownHeightEstimator.Conversation
         );
-        return body + 26 + 24 + row.Margin.Bottom; // Bubble padding 12*2 + border 2 + action bar 24
+        return body + AgentBubbleChrome + RowSpacing + ActionBarHeight + row.Margin.Bottom;
     }
 
     private double EstimateUserContentHeight(string content, ConversationRow row)
     {
         var textWidth = Math.Max(160, _estimateWidth - 32); // Bubble padding 16*2
         return MarkdownHeightEstimator.EstimatePlainText(content, textWidth, 15, 24)
-            + 20 // Bubble padding 10*2
-            + 24 // action bar
+            + LabelLineHeight
+            + UserRowSpacing
+            + UserBubbleChrome
+            + UserRowSpacing
+            + ActionBarHeight
             + row.Margin.Bottom;
     }
 
@@ -668,27 +710,33 @@ public partial class ConversationView : UserControl
 
         if (step.IsContentStep)
         {
-            // AgentBubble: 16,12 padding + 1px border；Border 模板内还有 0,4 外边距。
+            // AgentBubble: 16,12 padding + 1px border + 0,4 外边距；再加动作条。
             height +=
                 MarkdownHeightEstimator.EstimateDocument(
                     step.ContentText,
                     Math.Max(160, width - 34),
                     MarkdownHeightEstimator.Step
                 )
-                + 34
-                + 24; // + copy action bar
+                + StepBubbleChrome
+                + RowSpacing
+                + ActionBarHeight;
         }
         else if (step.IsNoticeStep)
         {
             height +=
-                MarkdownHeightEstimator.EstimatePlainText(step.ContentText, bodyWidth, 11, 16) + 2;
+                MarkdownHeightEstimator.EstimatePlainText(
+                    step.ContentText,
+                    bodyWidth,
+                    13,
+                    NoticeLineHeight
+                ) + 2; // AgentStepNoticeText Margin 1*2
         }
         else if (step.IsStepHeader)
         {
-            height += 20; // 12px status icon / 11px title line + grid margin
+            height += StepHeaderHeight;
             if (step.HasResult)
                 height +=
-                    2
+                    RowSpacing
                     + MarkdownHeightEstimator.EstimatePlainText(
                         step.ResultSummary ?? "",
                         bodyWidth,
@@ -696,17 +744,17 @@ public partial class ConversationView : UserControl
                         16
                     );
             if (step.ShowStreamingPreview)
-                height += 42; // StreamingReasoningPreview 固定 40 + spacing
+                height += RowSpacing + 40; // StreamingReasoningPreview 固定 40
             if (step.IsDetailsExpanded)
                 height += EstimateStepDetailsHeight(step, bodyWidth);
         }
 
-        return Math.Max(24, height) + row.Margin.Bottom;
+        return Math.Max(StepHeaderHeight, height) + row.Margin.Bottom;
     }
 
     private static double EstimateStepDetailsHeight(AgentStep step, double bodyWidth)
     {
-        var height = 2.0; // StepDetails.Margin top
+        var height = RowSpacing + 2.0; // StackPanel spacing + StepDetails.Margin top
         var items = 0;
 
         void Add(double value)

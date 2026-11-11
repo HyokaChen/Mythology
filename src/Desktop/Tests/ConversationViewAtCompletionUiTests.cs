@@ -2245,6 +2245,184 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// 动作条/标签/行距都是固定高度，必须进入虚拟化估算；否则未实测行
+    /// 会让 extent、锚点和“接近底部”判断整体偏移。
+    /// </summary>
+    [Fact]
+    public void RowHeightEstimates_MatchFixedActionBarLayout()
+    {
+        Ui.Run(() =>
+        {
+            var user = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+            user.AppendContent("user-probe");
+            _vm.Messages.Add(user);
+
+            var content = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            content.AppendContent("agent-probe");
+            _vm.Messages.Add(content);
+
+            var stepContent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsProcessExpanded = true,
+            };
+            stepContent.AgentSteps.Add(Desktop.Models.AgentStep.CreateContent("step-probe"));
+            _vm.Messages.Add(stepContent);
+
+            var stepHeader = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsProcessExpanded = true,
+            };
+            stepHeader.AgentSteps.Add(
+                new Desktop.Models.AgentStep
+                {
+                    Kind = Desktop.Models.StepKind.ToolCall,
+                    Title = "tool-probe",
+                    Status = Desktop.Models.AgentStepStatus.Completed,
+                }
+            );
+            _vm.Messages.Add(stepHeader);
+
+            var actions = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsCompleted = true,
+            };
+            _vm.Messages.Add(actions);
+
+            var system = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.System);
+            system.AppendContent("system-probe");
+            _vm.Messages.Add(system);
+
+            var interrupted = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            interrupted.AppendContent("interrupted-probe");
+            interrupted.IsInterrupted = true;
+            _vm.Messages.Add(interrupted);
+
+            var process = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsProcessExpanded = false,
+            };
+            process.AgentSteps.Add(
+                new Desktop.Models.AgentStep
+                {
+                    Kind = Desktop.Models.StepKind.ToolCall,
+                    Title = "process-probe",
+                    Status = Desktop.Models.AgentStepStatus.Completed,
+                }
+            );
+            _vm.Messages.Add(process);
+
+            var waiting = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsWaiting = true,
+            };
+            _vm.Messages.Add(waiting);
+            _vm.HasMessages = true;
+
+            var (window, view, list, _) = ShowConversation(height: 1600);
+            try
+            {
+                // RebuildRows 默认展开最后 4 条消息；显式还原本用例要覆盖的行状态。
+                stepContent.IsProcessExpanded = true;
+                stepHeader.IsProcessExpanded = true;
+                process.IsProcessExpanded = false;
+                PumpUntil(
+                    () =>
+                        list.Items.Count >= 9
+                        && view.GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p =>
+                                p.DataContext
+                                    is Desktop.Models.ConversationRow
+                                    {
+                                        Message: var mountedMessage,
+                                    }
+                                && ReferenceEquals(mountedMessage, user)
+                            ),
+                    "探针行挂载"
+                );
+
+                var actualRows = view.GetVisualDescendants()
+                    .OfType<ContentPresenter>()
+                    .Where(p =>
+                        p.DataContext is Desktop.Models.ConversationRow && p.Bounds.Height > 0.5
+                    )
+                    .GroupBy(p => (Desktop.Models.ConversationRow)p.DataContext!)
+                    .Select(g => g.OrderBy(p => p.GetVisualAncestors().Count()).First())
+                    .ToDictionary(
+                        p => (Desktop.Models.ConversationRow)p.DataContext!,
+                        p => p.Bounds.Height
+                    );
+
+                void AssertRow(
+                    Desktop.Models.ConversationRow row,
+                    double expectedHeight,
+                    string label
+                )
+                {
+                    Assert.True(actualRows.TryGetValue(row, out var actual), $"{label} 行未挂载");
+                    Assert.InRange(
+                        view.EstimateRowHeight(row),
+                        Math.Min(expectedHeight, actual) - 1,
+                        Math.Max(expectedHeight, actual) + 1
+                    );
+                    Assert.InRange(actual, expectedHeight - 1, expectedHeight + 1);
+                }
+
+                Desktop.Models.ConversationRow FindRow(
+                    Desktop.Models.ChatMessage message,
+                    Desktop.Models.ConversationRowKind kind
+                ) =>
+                    Assert.Single(
+                        actualRows.Keys,
+                        r => ReferenceEquals(r.Message, message) && r.Kind == kind
+                    );
+
+                AssertRow(FindRow(user, Desktop.Models.ConversationRowKind.User), 102, "user");
+                AssertRow(
+                    FindRow(content, Desktop.Models.ConversationRowKind.Content),
+                    96,
+                    "content"
+                );
+                AssertRow(
+                    FindRow(stepContent, Desktop.Models.ConversationRowKind.Step),
+                    104,
+                    "step-content"
+                );
+                AssertRow(
+                    FindRow(stepHeader, Desktop.Models.ConversationRowKind.Step),
+                    33,
+                    "step-header"
+                );
+                AssertRow(
+                    FindRow(actions, Desktop.Models.ConversationRowKind.Actions),
+                    36,
+                    "actions"
+                );
+                AssertRow(FindRow(system, Desktop.Models.ConversationRowKind.System), 51, "system");
+                AssertRow(
+                    FindRow(interrupted, Desktop.Models.ConversationRowKind.Interrupted),
+                    51,
+                    "interrupted"
+                );
+                AssertRow(
+                    FindRow(process, Desktop.Models.ConversationRowKind.Process),
+                    32,
+                    "process"
+                );
+                AssertRow(
+                    FindRow(waiting, Desktop.Models.ConversationRowKind.Waiting),
+                    28,
+                    "waiting"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private void SeedHistory(int count, string prefix = "历史")
     {
         for (var i = 0; i < count; i++)
@@ -2265,13 +2443,13 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         Desktop.Views.ConversationView View,
         Desktop.Controls.AutoScrollItemsControl List,
         ScrollViewer Scroll
-    ) ShowConversation()
+    ) ShowConversation(int height = 700)
     {
         var view = new Desktop.Views.ConversationView { DataContext = _vm };
         var window = new Window
         {
             Width = 900,
-            Height = 700,
+            Height = height,
             Content = view,
         };
         window.Show();

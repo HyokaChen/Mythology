@@ -24,6 +24,14 @@
   Desktop 680/680、Core 1616/1616。
 
 ### Fixed
+- **Desktop 对话虚拟化高度补齐动作条与固定行 chrome**： 动作条是 24px 常占位按钮层，
+  hover 只改透明度，但未实测行的高度估算此前漏算 `RowUser` 的标签/行距、`RowContent`
+  与步骤正文的 `StackPanel` 间距、`RowActions` 尾行 12px margin，以及 System /
+  Interrupted / Process / Waiting / Sources 的固定行高和底边距；这些偏差会直接污染
+  `HeightIndex` 的 extent、锚点与“接近底部”判定。估算改为共享固定常量并逐行对齐模板，
+  系统通知文本高度按内容测量并缓存，避免每次 `RebuildHeightIndex` 重新建 `TextBlock`。
+  回归：`RowHeightEstimates_MatchFixedActionBarLayout` 实测 9 类行的 DOM 高度与估算
+  一致；Desktop 681/681。
 - **章节正文读取不再误用通用 `read`**：`OutputZonesPrompt` 的“改正文前先 read”改为
   `read_chapter`；`ToolCallingPrompt` 把 `read` 限定为用户当前消息中明确给出的路径，
   禁止列目录/扫描工作区；`WritingProcessPrompt` 明确诊断工具直接读章节，
