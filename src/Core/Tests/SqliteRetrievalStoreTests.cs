@@ -10,6 +10,7 @@ namespace Core.Tests;
 /// ArgumentOutOfRangeException("ordinal", Actual=16)，表现为"第二次召回失败"。
 /// 修复：改用 reader.GetOrdinal("metadata_json") 按列名读取。
 /// </summary>
+[Collection("NovelLexicon")]
 public sealed class SqliteRetrievalStoreTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(

@@ -153,13 +153,38 @@ public sealed class SessionMessageMapperDisplayTests
 
         var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
         Assert.Contains("最终答复", agent.Content.ToString());
-        Assert.Contains("429 rate limit", agent.Content.ToString());
+        Assert.Contains("HTTP 429", agent.Content.ToString());
+        Assert.Contains("rate limit", agent.Content.ToString());
         Assert.DoesNotContain(agent.AgentSteps, step => step.IsSystemEvent);
 
         var rows = TurnRows(agent);
         var content = Assert.Single(rows, row => row.Kind == ConversationRowKind.Content);
         var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
         Assert.True(rows.IndexOf(content) < rows.IndexOf(actions));
+    }
+
+    [Fact]
+    public void MapUi_ErrorJson_IsRenderedAsReadableSystemNotice()
+    {
+        var error = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Unknown,
+            EventType = SessionEventType.Error,
+            Content =
+                """❌ 429 {"error":{"code":"","message":"You've reached the API rate limit for free users.","type":"AgnesAI_error"}}""",
+        };
+
+        var ui = SessionMessageMapper.MapUi([error]);
+
+        var notice = Assert.Single(ui);
+        Assert.Equal(MessageSender.System, notice.Sender);
+        var text = notice.Content.ToString();
+        Assert.Equal(
+            "⚠️ 调用出错：HTTP 429 · You've reached the API rate limit for free users.",
+            text
+        );
+        Assert.DoesNotContain("❌", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("{\"error\"", text, StringComparison.Ordinal);
     }
 
     [Fact]

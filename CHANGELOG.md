@@ -26,6 +26,13 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **会话恢复时 provider 错误不再直接展示 JSON**：历史 `error` 事件此前经
+  `FileSessionStore` 拼成 `❌ 429 {"error":...}`，Desktop/TUI 恢复时原样显示成
+  「系统」行，出现 `⚠️ ❌ 429 {...}` 双层图标和整段 JSON。新增共享
+  `AgentErrorFormatter`，统一剥离重复标记、状态码前缀并解析 `error.message` /
+  `status`；Desktop 实时错误、会话恢复与 TUI 恢复共用，展示为
+  `⚠️ 调用出错：HTTP 429 · <可读消息>`，原始错误仍完整保留在 JSONL。回归：
+  `AgentErrorFormatterTests`、`SessionMessageMapperDisplayTests.MapUi_ErrorJson_IsRenderedAsReadableSystemNotice`。
 - **Desktop 对话虚拟化高度补齐动作条与固定行 chrome**： 动作条是 24px 常占位按钮层，
   hover 只改透明度，但未实测行的高度估算此前漏算 `RowUser` 的标签/行距、`RowContent`
   与步骤正文的 `StackPanel` 间距、`RowActions` 尾行 12px margin，以及 System /

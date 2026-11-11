@@ -11,6 +11,7 @@ namespace Core.Tests;
 /// 旧实现把小说级 lexical_version 当作文档级过期条件，改名会让该小说所有文档重新 embedding；
 /// 现在版本挂在 FTS 分区上，重分词在取版本快照之前完成。
 /// </summary>
+[Collection("NovelLexicon")]
 public sealed class VectorSyncRetokenizeTests : IAsyncLifetime
 {
     private readonly string _root = Path.Combine(

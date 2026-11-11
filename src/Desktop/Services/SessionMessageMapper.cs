@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Core.Data;
+using Core.Shared;
 using Desktop.Models;
 using ChatMessage = Desktop.Models.ChatMessage;
 
@@ -242,14 +243,18 @@ public static class SessionMessageMapper
 
                 case MessageRole.Unknown:
                 {
-                    if (string.IsNullOrEmpty(text))
+                    if (string.IsNullOrEmpty(text) && m.EventType != SessionEventType.Error)
                         break;
                     var prefix = m.EventType switch
                     {
-                        SessionEventType.Error => "⚠️ ",
+                        SessionEventType.Error => "⚠️ 调用出错：",
                         SessionEventType.Interrupt => "⏹ ",
                         _ => "",
                     };
+                    var displayText =
+                        m.EventType == SessionEventType.Error
+                            ? AgentErrorFormatter.Format(text)
+                            : text;
 
                     if (currentAgent is not null && m.EventType == SessionEventType.Interrupt)
                     {
@@ -260,7 +265,7 @@ public static class SessionMessageMapper
 
                     if (currentAgent is not null && m.EventType == SessionEventType.Error)
                     {
-                        var line = prefix + text;
+                        var line = prefix + displayText;
                         // 有最终正文时按时间顺序追加；否则作为回合内系统步骤。
                         if (currentAgent.HasVisibleContent)
                             currentAgent.AppendContent($"\n\n{line}");
@@ -271,7 +276,7 @@ public static class SessionMessageMapper
 
                     // 其他 event（model_change / variant_selected 等）仍为 dim 系统行。
                     var msg = new ChatMessage(MessageSender.System);
-                    msg.Content.Append(prefix + text);
+                    msg.Content.Append(prefix + displayText);
                     result.Add(msg);
                     break;
                 }

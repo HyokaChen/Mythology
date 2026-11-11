@@ -1,3 +1,4 @@
+using Core.Shared;
 using Core.Tools;
 using LlmTornado.Chat;
 using LlmTornado.ChatFunctions;
@@ -185,7 +186,8 @@ public sealed class MessageRestorer
                     // error 事件：内容格式 "❌ errorCode content"
                     else if (text.StartsWith('❌'))
                     {
-                        var errorBlock = new TextBlock(text)
+                        var errorText = $"❗ 调用出错：{AgentErrorFormatter.Format(text)}";
+                        var errorBlock = new TextBlock(errorText)
                             .TextAlignment(TextAlignment.Left)
                             .Wrap(true)
                             .HorizontalAlignment(Align.Stretch)

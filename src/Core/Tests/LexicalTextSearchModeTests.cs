@@ -7,6 +7,7 @@ namespace Core.Tests;
 /// 发射模式：索引侧用搜索模式（长词 + 已知子词），查询侧 AND 只取最佳路径、OR 含子词。
 /// 依据 docs/lexical-retokenize-plan.md §A0。
 /// </summary>
+[Collection("NovelLexicon")]
 public sealed class LexicalTextSearchModeTests
 {
     private static string[] Tokens(string text) =>

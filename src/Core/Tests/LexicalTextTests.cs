@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Core.Tests;
 
+[Collection("NovelLexicon")]
 public sealed class LexicalTextTests
 {
     [Fact]

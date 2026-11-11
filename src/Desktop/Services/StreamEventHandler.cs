@@ -1,5 +1,5 @@
-﻿using System.Text.Json;
-using Core.Agent;
+﻿using Core.Agent;
+using Core.Shared;
 using Core.Tools;
 using Desktop.Models;
 
@@ -288,45 +288,6 @@ public sealed class StreamEventHandler(
     /// 把 provider 原始错误（常见为整段 JSON）压成一行用户可读文本。
     /// 原始错误仍由 Core 日志保留；这里只负责展示。
     /// </summary>
-    internal static string FormatError(AgentError error)
-    {
-        var raw = error.Message?.Trim();
-        if (string.IsNullOrEmpty(raw))
-            return "未知错误";
-
-        var message = raw;
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            var root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                if (
-                    root.TryGetProperty("error", out var nested)
-                    && nested.ValueKind == JsonValueKind.Object
-                    && nested.TryGetProperty("message", out var nestedMessage)
-                    && nestedMessage.ValueKind == JsonValueKind.String
-                )
-                    message = nestedMessage.GetString() ?? raw;
-                else if (
-                    root.TryGetProperty("message", out var direct)
-                    && direct.ValueKind == JsonValueKind.String
-                )
-                    message = direct.GetString() ?? raw;
-            }
-        }
-        catch (JsonException)
-        {
-            // 非 JSON：直接使用原文。
-        }
-
-        message = message.Replace("\r", " ").Replace("\n", " ").Trim();
-        const string prefix = "OpenAIException - ";
-        if (message.StartsWith(prefix, StringComparison.Ordinal))
-            message = message[prefix.Length..];
-        if (message.Length > 300)
-            message = message[..299].TrimEnd() + "…";
-
-        return error.HttpStatusCode is { } status ? $"HTTP {status} · {message}" : message;
-    }
+    internal static string FormatError(AgentError error) =>
+        AgentErrorFormatter.Format(error.Message, error.HttpStatusCode);
 }
