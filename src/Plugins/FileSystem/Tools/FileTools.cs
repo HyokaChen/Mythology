@@ -41,7 +41,9 @@ public sealed class ReadFileTool : AgentTool<ReadFileParams, ReadFileDetails>
 
     // 工具功能描述
     public override string Description =>
-        "读取本地文件内容。支持文本和图片。@ 前缀路径从工作目录解析。支持 offset+lines 分页读取（默认200行/50KB截断）。大文件请分批读取";
+        "读取用户当前消息中明确给出的本地文件（文本/图片）。只读用户提供的路径，不要自行构造路径、"
+        + "列目录或扫描工作区找文件；小说章节正文用 read_chapter，不要用本工具按文件路径读取章节。"
+        + "支持 @ 前缀（从工作目录解析）和 offset+lines 分页读取（默认200行/50KB截断）。";
 
     // 工具所属分类
     public override ToolCategory Category => ToolCategory.Generic;
@@ -235,9 +237,9 @@ public sealed class ReadFileTool : AgentTool<ReadFileParams, ReadFileDetails>
 public sealed record ReadFileParams
 {
     [Description(
-        "文件路径。@ 前缀表示从工作目录解析（如 @序章.txt → {CWD}/序章.txt）。"
-            + "小说章节路径格式：@novels/{书名}/chapters/{ch*}.md（如 @novels/恋爱吧！折花君/chapters/ch001.md）。"
-            + "相对路径也从工作目录解析"
+        "文件路径，必须来自用户当前消息中明确给出的路径（@ 引用会保留 @）。"
+            + "不要自行构造小说章节路径；章节正文用 read_chapter。"
+            + "相对路径从工作目录解析"
     )]
     public string Path { get; init; } = "";
 

@@ -7,6 +7,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **章节正文读取不再误用通用 `read`**：`OutputZonesPrompt` 的“改正文前先 read”改为
+  `read_chapter`；`ToolCallingPrompt` 把 `read` 限定为用户当前消息中明确给出的路径，
+  禁止列目录/扫描工作区；`WritingProcessPrompt` 明确诊断工具直接读章节，
+  增强工具要求人工确认时不得回退到“读整章 + rewrite_selection”。新增只读工具
+  `read_chapter`（按章节 ID 或 `novel-id + 章节号` 取正文；别名含 `manage_chapter`），
+  `export_chapter` 保持导出语义不变；TUI 的 `@` 引用保留来源标记，避免模型把裸路径
+  当成可自由探索的文件入口。回归：Core 1616/1616、TUI 901（2 skipped）、
+  NovelTools 183/183、FileSystem 44/44。
 - **Desktop 工具参数流式阶段的等待行空档**：模型开始流式生成工具调用参数、但
   `ToolExecutionStart` 尚未到达时，对话内不再出现空白间隙。Core 新增
   `ToolCallStreamStarted` / `LlmStreamFinished`，分别由

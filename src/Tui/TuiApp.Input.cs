@@ -130,14 +130,13 @@ public sealed partial class TuiApp
     }
 
     /// <summary>
-    /// 将文件引用内联到文本中。
-    /// 将 @path 格式转换为纯路径（去掉 @ 前缀）。
+    /// 将文件引用内联到文本中：保留 @ 作为「用户明确引用」标记。
+    /// 绝对路径保持原样；相对路径保留 @，由 read 工具按工作目录解析。
     /// </summary>
     /// <param name="text">原始文本。</param>
     /// <returns>处理后的文本。</returns>
-    private static string InlineFileReferences(string text)
+    internal static string InlineFileReferences(string text)
     {
-        // 去掉 @ 前缀，LLM 看到裸路径后可调用 read 工具获取内容
         return PathRegex()
             .Replace(
                 text,
@@ -148,7 +147,8 @@ public sealed partial class TuiApp
                     if (!File.Exists(resolved) && !Directory.Exists(resolved))
                         // 路径不存在时返回提示，避免 LLM 调用不存在的文件
                         return $"[文件不存在: {pathPart}]";
-                    return pathPart;
+                    // 保留来源：模型只能读取用户当前消息里明确出现的 @ 路径
+                    return Path.IsPathRooted(pathPart) ? pathPart : "@" + pathPart;
                 }
             );
     }

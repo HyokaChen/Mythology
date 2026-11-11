@@ -75,6 +75,8 @@ public sealed class NovelContextBlockTests
         Assert.Contains("📦 第1卷 风起（2章）— 入城夺宝，结识旧友", block);
         Assert.Contains("3. 夺宝 (Draft) ← 当前进度", block); // 最后一条标当前进度
         Assert.Contains("get_outline", block); // 细纲不在注入块，指路按需查
+        Assert.Contains("read_chapter", block); // 正文走小说工具，不走通用 read
+        Assert.Contains("不要用通用 read", block);
     }
 
     [Fact]

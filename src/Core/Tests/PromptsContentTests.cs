@@ -23,6 +23,7 @@ public sealed class PromptsContentTests
         Assert.Contains("作者的明确裁决", RoleDefinitionPrompt.Full);
         Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
         Assert.Contains("云端 Harness 的结构化状态", RoleDefinitionPrompt.Full);
+        Assert.Contains("read_chapter", RoleDefinitionPrompt.Full);
     }
 
     [Fact]
@@ -215,7 +216,7 @@ public sealed class PromptsContentTests
         Assert.Contains("new_context", WritingProcessPrompt.ForContinuation);
         Assert.DoesNotContain("/compact", WritingProcessPrompt.ForContinuation);
 
-        // 只替换第 16 条：章节结构逐字段保留（变体不是重写，而是同一份规范换一条规则）
+        // 只替换第 9 条：章节结构逐字段保留（变体不是重写，而是同一份规范换一条规则）
         foreach (
             var structural in new[] { "## 写作流程规范", "### 品质标准", "## 商业写作十二铁律" }
         )
@@ -260,6 +261,26 @@ public sealed class PromptsContentTests
         Assert.Contains("云端 Harness 经济性", result);
         Assert.Contains("云端诊断使用原则", result);
         Assert.Contains("交付前检查", result);
+    }
+
+    [Fact]
+    public void ToolCallingPrompt_ContainsReadBoundary()
+    {
+        Assert.Contains("只读用户当前消息中明确给出的路径", ToolCallingPrompt.Full);
+        Assert.Contains("禁止构造路径", ToolCallingPrompt.Full);
+        Assert.Contains("章节正文 → `read_chapter`", ToolCallingPrompt.Full);
+        Assert.DoesNotContain("列目录/看文件", ToolCallingPrompt.Full);
+    }
+
+    [Fact]
+    public void PromptAssembly_RoutesChapterReadsToExportChapter()
+    {
+        var result = PromptAssembly.Build();
+
+        Assert.Contains("先用 read_chapter", result);
+        Assert.Contains("章节正文 → `read_chapter`", result);
+        Assert.Contains("不要先 `read` 正文", result);
+        Assert.Contains("不要读整章后手动 rewrite", result);
     }
 
     [Fact]
@@ -318,7 +339,7 @@ public sealed class PromptsContentTests
         // 2026-08-30 由 13500 上调：HARNESS-CLOUD 云端诊断链路新增 §8.1 判断矩阵行/§16.3 信号分级/探索终止规则（现实测 13637 字符，+137 超旧限）
         // 2026-11-10 由 14000 上调：新增输出契约/交付路由、数据边界、问还是做、人工裁决、
         // 云端经济性、诊断语义与报告呈现；同时压缩 emoji 与能力表。
-        // 若实测仍超 18000，按顺序压缩：emoji 指南 → 能力表 → WritingProcessPrompt 第 8/9/14 条重复原则 →
+        // 若实测仍超 18000，按顺序压缩：emoji 指南 → 能力表 → WritingProcessPrompt 的重复原则 →
         // HumanizerPrompt 词表；不得删除云端经济性/人工裁决/数据边界规则。
         var length = PromptAssembly.EstimateTokenCount();
         Assert.True(length < 18000, $"骨架字符量 {length} 超过 18000");
@@ -388,8 +409,10 @@ public sealed class PromptsContentTests
     [Fact]
     public void OutputZonesPrompt_ContainsLocalFirstDelivery()
     {
-        Assert.Contains("不为简单问题跑全套云端诊断", OutputZonesPrompt.Full);
+        Assert.Contains("诊断工具直接读章节", OutputZonesPrompt.Full);
         Assert.Contains("云端校验未完成", OutputZonesPrompt.Full);
+        Assert.Contains("read_chapter", OutputZonesPrompt.Full);
+        Assert.Contains("不先 read", OutputZonesPrompt.Full);
     }
 
     // ── 新增增强维度 ──

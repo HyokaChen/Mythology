@@ -29,6 +29,8 @@ public sealed class NovelToolsPluginRegistrationTests
         // 云端能力工具已注册（检索 ×4 + 爬取 ×3 + 素材库 ×4）
         // 设定面板批量编辑工具（跨类型字段修改）也必须注册
         Assert.Contains("edit_entities", names);
+        Assert.Contains("read_chapter", names);
+        Assert.Contains("export_chapter", names);
         foreach (
             var expected in new[]
             {

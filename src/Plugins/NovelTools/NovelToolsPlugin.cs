@@ -63,6 +63,7 @@ public sealed class NovelToolsPlugin : IToolPlugin
         // ════════════════════════════════════════════════
         yield return new CreateOutlineTool(_store, _kernel);
         yield return new GetOutlineTool(_store);
+        yield return new ReadChapterTool(_store);
         yield return new ManageVolumeTool(_store);
         yield return new ReorderChaptersTool(_store);
         yield return new WriteChapterTool(_store, _kernel);

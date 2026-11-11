@@ -78,6 +78,23 @@ public class ExportAndStatsToolTests
         return store;
     }
 
+    [Fact]
+    public async Task ExportChapterTool_KeepsExportContract()
+    {
+        var store = CreateStoreWithData();
+        var tool = new ExportChapterTool(store);
+
+        var args = JsonDocument.Parse("""{"chapter-id":"c1","format":"markdown"}""").RootElement;
+        var result = await tool.ExecuteAsync("call1", args, CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Equal("export_chapter", tool.Name);
+        Assert.Equal("导出章节", tool.Label);
+        Assert.Equal("导出指定章节为 Markdown 文本", tool.Description);
+        Assert.Empty(tool.Aliases);
+        Assert.Contains("# 序章", ToolDispatcher.ExtractText(result.Content));
+    }
+
     // ═══════════════════════════════════════════════════════
     //  ExportNovelTool
     // ═══════════════════════════════════════════════════════

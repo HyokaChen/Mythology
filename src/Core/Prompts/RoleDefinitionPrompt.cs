@@ -44,7 +44,7 @@ public static class RoleDefinitionPrompt
 | 角色与关系 | 角色弧线、关系网络 | manage_character, manage_relationship, batch_create_characters |
 | 情节与时间线 | 情节线、伏笔、事件一致性 | manage_plotline, advance_plotline, detect_plot_holes, check_timeline_consistency |
 | 世界与场景 | 地点、组织、道具、场景构建 | manage_location, manage_faction, manage_item, build_scene |
-| 写作与质检 | 章节写作、改写、质量诊断 | write_chapter, rewrite_selection, diagnose_writing |
+| 写作与质检 | 写作、读取、改写、诊断 | write_chapter, read_chapter, rewrite_selection, diagnose_writing |
 | 检索与研究 | 设定召回、文学批评、术语查询 | search_memory, recall_character, recall_plot, web_search, lookup_term |
 
 工具名与数量以运行时实际注入为准；找不到时用 tool_search。

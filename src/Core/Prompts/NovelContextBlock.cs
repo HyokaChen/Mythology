@@ -7,8 +7,8 @@ namespace Core.Prompts;
 /// 每轮注入模型的「当前小说环境」块（TUI 与 Desktop 共用同一实现，避免两个宿主的注入口径漂移）。
 ///
 /// 三层大纲都在这里出现：<b>总纲</b>（<see cref="Novel.Outline"/>，截断摘要）、
-/// <b>卷纲概览</b>（每卷一行的卷名 + 章数 + 梗概摘要）、<b>章节细纲</b>（不进注入块——
-/// 细纲按需用 get_outline / 读章节文件获取，注入块只带章节标题与进度）。
+/// <b>卷纲概览</b>（每卷一行的卷名 + 章数 + 梗概摘要）。<b>章节细纲</b>不进注入块——
+/// 细纲按需用 get_outline 获取，正文用 read_chapter 读取；注入块只带章节标题与进度。
 ///
 /// 长度有界：长篇（上千章 / 上百卷）注入块大小恒定，不随规模增长。
 /// </summary>
@@ -81,7 +81,7 @@ public static class NovelContextBlock
             .Append("」的工作环境中。所有需要 novel_id 的工具，传 \"")
             .Append(novel.Id)
             .Append(
-                "\"。章节细纲用 get_outline 查看；不要调用 create_novel 除非用户明确要求创建新项目。"
+                "\"。章节细纲用 get_outline 查看；章节正文用 read_chapter 读取（不要用通用 read 按文件路径找章节）；不要调用 create_novel 除非用户明确要求创建新项目。"
                     + "如果用户的请求偏离当前小说设定，先用 ask_user 确认意图。\n"
             );
         return sb.ToString();

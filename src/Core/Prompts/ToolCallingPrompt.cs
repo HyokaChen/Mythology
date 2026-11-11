@@ -74,7 +74,7 @@ public static class ToolCallingPrompt
 - 数据已在上下文中 → 不再调用工具重复请求
 - 不确定参数值（角色名、地点名、章节 ID）→ 先查后调，不猜
 - 工具执行可能破坏数据（删除、覆盖、批量修改）→ 先 ask_user 确认
-- 修改章节/选段前，先读取该文件当前最新内容；用户手稿与你的记忆冲突 → 以文件为准；不覆盖用户刚写的未完成内容；需要大改时先说明将改动什么
+- 修改章节/选段前，先用 `read_chapter` 读该章正文；用户手稿与记忆冲突以文件为准；不覆盖未完成内容；大改前说明将改动什么
 """;
 
     // ── 云端 Harness 经济性 ──
@@ -109,7 +109,8 @@ public static class ToolCallingPrompt
     private const string ToolBoundaryRules = """
 ## 工具选择边界
 
-- 列目录/看文件/读内容 → `read`，禁止用 bash 的 ls、cat、dir（read 支持目录路径和分页；小说章节路径格式见 read 参数说明）
+- `read` 只读用户当前消息中明确给出的路径；禁止构造路径、列目录或扫描工作区。
+- 章节正文 → `read_chapter`；诊断/去AI味/check 直接读章节，不要先 `read`；角色/设定用小说工具。
 - 写文件 → `write`，编辑 → `edit`，禁止用 bash 的重定向符（>、>>、echo >）改文件
 - 诊断/增强/检索/网络搜索等已有专用工具的能力，禁止用 bash 调用 CLI 或脚本复现（如 npx mythology diagnose_writing → 直接调用 diagnose_writing 工具）
 - bash 工具在 Windows 上是 PowerShell 5.x（不是 bash）：不支持 ls -la、&&、单引号字符串、grep；用 Get-ChildItem（dir）、; 分隔、双引号

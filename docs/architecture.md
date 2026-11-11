@@ -1,7 +1,7 @@
 # Mythology 架构设计
 
 > 本文档整合了整体架构、Agent/ToolSearch、云端协作、会话架构、Provider 配置、快捷键/命令参考、实体引用系统等核心设计。
-> 最后更新：2026-08-30（工具数/注册表对齐源码：116 注册；embedding 现状校准：本地 LlmTornado，CloudEmbeddingClient 未实现；Desktop 已入 .slnx + CloudDiagnosis；默认延迟名单收窄；LlmTornado 3.8.67）
+> 最后更新：2026-08-30（工具数/注册表对齐源码：145 注册；embedding 现状校准：本地 LlmTornado，CloudEmbeddingClient 未实现；Desktop 已入 .slnx + CloudDiagnosis；默认延迟名单收窄；LlmTornado 3.8.67）
 
 ---
 
@@ -58,7 +58,7 @@
 | **Desktop** | Avalonia 12 + ReactiveUI + SukiUI GUI（`src/Desktop/`，**已入 .slnx**），复用 Core 共享注册（`CoreServiceExtensions`：`INovelStore` / Agent / plugins / `RetrievalKernel`）：MainWindow / ConversationView / SetUpPanelView / TodoPanelView / SettingsView，经 `DesktopAgentBridge` + `StreamEventHandler` 桥接 Agent，`NovelContextHook` 注入小说上下文，`CloudAuthService` 云端账号门面，装配 `CloudDiagnosis` 诊断链路。注意：Desktop 未接 ToolInjector / tool_search / decompress / AgentMemory 工具注册（仅 Host 装配） |
 | **ClientPlatform** | 云端客户端库（`ClientPlatform`）：`RetrievalRestClient`（/v1/retrieval REST，扣费）、`HttpFictionHarnessClient`（/v1/agent/runs SSE）、`DeviceAuthorizationClient`（RFC 8628 设备码）、`OAuthLoopbackClient`（本地回调 OAuth + PKCE）、`CloudSessionStore`（DPAPI 加密凭据）、`CloudEndpoints`/`CloudTimings` 收口。纯 HttpClient，无 LlmTornado 依赖。**embedding 客户端（CloudEmbeddingClient）未实现**——embedding 走本地 `Core.Vector.EmbeddingService`（LlmTornado） |
 | **StabilityHarness** | 独立 NuGet 库（`PackageId=StabilityHarness`，引用 Core，Host 编译时引用它）。提供 Lyapunov 能量监控、GrowthRatioGuard、CompositeStabilityMonitor（两者聚合）、RGDecimator 冗余裁剪、VSA 全息引擎。Host 启动时**自动注入** `CompositeStabilityMonitor` 到 `Agent.StabilityMonitor`（阈值从 `ModelContextProfile` 动态计算） |
-| **Plugins** | 运行时 DLL：NovelTools（67 工具，含 23 个云端分析器）、SemanticRetrievalTool（8 工具）、WebSearchTools（6 工具）、FileSystem（6 工具；`BashTool` 已实现但未注册）、WritingTools（10 工具 — `diagnose_writing` + 9 个 `enhance_*`，增强工具需 Agent + harness 双非空）。另 Host 注册 Core 组 20 工具（tool_search + decompress + 13 个 AgentMemory + 4 个偏好工具 + tool_analyze_style）；`web_search` 同名注册表按名覆盖去重，总注册 116 |
+| **Plugins** | 运行时 DLL：NovelTools（94 工具，含 23 个云端分析器）、SemanticRetrievalTool（10 工具；8 基础 + 2 联想）、WebSearchTools（6 工具）、FileSystem（6 工具；`BashTool` 已实现但未注册）、WritingTools（10 工具 — `diagnose_writing` + 9 个 `enhance_*`，增强工具需 Agent + harness 双非空）。另 Host 注册 Core 组 20 工具（tool_search + decompress + 13 个 AgentMemory + 4 个偏好工具 + tool_analyze_style）；`web_search` 同名注册表按名覆盖去重，总注册 145 |
 
 > 云端仓库（Cloud.Api / 云端私有引擎 / Retrieval / 云端内部实现 / Web 前端）已迁移至独立仓库 **云端私有仓库**，本仓库仅保留本地客户端与云端客户端库。
 
@@ -418,7 +418,7 @@ vectors.db
 5. **按需工具注入** — `BuildChatRequest()` 优先走 `_toolInjector?.BuildRequestTools()`（常驻 + 已展开 + 非延迟），null 时回退全量注入 `_toolRegistry.GetAll()`
 
 **按需工具注入（Tool Search，2026-08）**：
-- 每轮请求不再全量注入 116 个工具的 schema，而是由 `ToolInjector` 注入子集（常驻 `tool_search`/`ask_user`/`todo_write` + 已展开 LRU 20 + 非延迟工具；默认名单下约 84 个——核心写作/分析工具常驻是 2026-08-23 起的有意取舍）
+- 每轮请求不再全量注入 145 个工具的 schema，而是由 `ToolInjector` 注入子集（常驻 `tool_search`/`ask_user`/`todo_write` + 已展开 LRU 20 + 非延迟工具；默认名单下约 99 个——核心写作/分析工具常驻是 2026-08-23 起的有意取舍）
 - LLM 需要更多工具时调用 `tool_search`，命中后 `ToolInjector.ExpandAsync()` 展开完整定义注入后续请求
 - 延迟插件名单（默认 `Semantic Retrieval Tool` / `Web Search Tools` + 所有第三方插件，按 `PluginManifest.Name` 匹配；`Agent:ToolSearchDeferredPlugins` 可覆盖）下工具不预注入
 - 灰度开关 `Agent:ToolSearchMode`：`dynamic`（默认，按需注入）| `all`（全量注入，仅 DeferLoading=true 延迟）
@@ -767,12 +767,12 @@ public sealed class ConfigStore
 
 | 插件 | 工具数 | 默认信任 | 存储接口 | 说明 |
 |------|--------|:---:|---|---|
-| NovelTools | 67 | Builtin | `INovelStore` + `IFictionHarnessClient` + `RetrievalRestClient` | 小说创作核心工具：项目管理、章节/大纲、实体 CRUD + 批量、**23 个云端分析器**（`CloudAnalysisTool` 派生）、Explore（需 Agent 非空）、导出、统计、`web_scrape`/`web_search`（走云端检索 REST） |
+| NovelTools | 94 | Builtin | `INovelStore` + `IFictionHarnessClient` + `RetrievalRestClient` | 小说创作核心工具：项目管理、章节/大纲、实体 CRUD + 批量、**23 个云端分析器**（`CloudAnalysisTool` 派生）、Explore（需 Agent 非空）、导出、统计、`web_scrape`/`web_search`（走云端检索 REST） |
 | WritingTools | 10 | Builtin | `INovelStore` + `IFictionHarnessClient` | `diagnose_writing` + 9 个 `enhance_*`（immersion/satisfaction/pacing/description/dialogue/foreshadowing/humanizer/prose_quality/chapter_hook）。CHANGE_07 后诊断走云端 Harness，增强的定位/生成/写回走本地 |
-| SemanticRetrievalTool | 8 | Builtin | `PluginStore` + `RetrievalKernel` | 语义检索：search_memory / batch_search_memory / recall_character / recall_plot / find_consistency / recall_scene / recall_timeline / recall_related，走 `RetrievalKernel` |
+| SemanticRetrievalTool | 10 | Builtin | `PluginStore` + `RetrievalKernel` | 8 个基础检索（search_memory / batch_search_memory / recall_character / recall_plot / find_consistency / recall_scene / recall_timeline / recall_related，走 `RetrievalKernel`）+ 2 个云端联想（index_associative_memory / recall_associative） |
 | WebSearchTools | 6 | Builtin | `INovelStore` | 网络搜索（含 batch_web_search） |
 | FileSystem | 6 | Builtin | `TodoStore` + `UserQuestionStore` | 文件操作 + Todo 管理 + 用户交互（`read`/`write`/`edit`/`todo_write`/`ask_user`/`get_pending_questions`）。`BashTool` 类已实现但 `GetTools()` 未注册 |
-| Core（Host 注册） | 20 | — | `ToolRegistry` | `tool_search`（按需检索）+ `decompress`（恢复压缩原文）+ 13 个 AgentMemory 工具 + 4 个偏好工具 + `tool_analyze_style`（后 18 个全部 DeferLoading）。注：NovelTools 与 WebSearchTools 的 `web_search` 同名，注册表按名覆盖去重后总注册 116 |
+| Core（Host 注册） | 20 | — | `ToolRegistry` | `tool_search`（按需检索）+ `decompress`（恢复压缩原文）+ 13 个 AgentMemory 工具 + 4 个偏好工具 + `tool_analyze_style`（后 18 个全部 DeferLoading）。注：NovelTools 与 WebSearchTools 的 `web_search` 同名，注册表按名覆盖去重后总注册 145 |
 
 > **云端分析 Harness 接线（CHANGE_07 已接通）**：`IFictionHarnessClient` 接口位于 `Core.Cloud`（与 `PluginCapabilities` 同程序集，可被权限系统映射），`HttpFictionHarnessClient` 实现位于 ClientPlatform。Host DI 已注册（`MYTHOLOGY_CLOUD_URL` + 动态 API Key），插件声明 `cloud:harness` 权限（`PluginCapabilities` 映射放行 `IFictionHarnessClient`）。23 个 NovelTools 分析器走云端，WritingTools 10 工具（1 诊断 + 9 增强，增强工具需 Agent + harness 双非空）注册。⚠️ 遗留：`diagnose_writing` 深度模式发送 `"deep"`，但 backend `AgentModule.ValidateInvocation` 仅允许 `quick|standard` → 深度诊断会被 400 拒绝（backend 引擎层已支持 deep/ultra，需 API 层放行）。
 

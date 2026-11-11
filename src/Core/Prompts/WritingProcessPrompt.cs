@@ -7,19 +7,19 @@
 /// </summary>
 public static class WritingProcessPrompt
 {
-    /// <summary>第 16 条（compact 模式）：上下文接近上限时向用户建议 /compact。</summary>
+    /// <summary>第 9 条（compact 模式）：上下文接近上限时向用户建议 /compact。</summary>
     private const string StageBoundaryRuleCompact =
-        "16. **阶段边界压缩**：章节完成 / 设定大改 / 任务切换时，若上下文使用率 >70%，主动向用户建议压缩（/compact），不等上下文挤满";
+        "9. **阶段边界压缩**：章节完成 / 设定大改 / 任务切换时，若上下文使用率 >70%，主动向用户建议压缩（/compact），不等上下文挤满";
 
     /// <summary>
-    /// 第 16 条（接续模式）：主动调用 new_context 换页。
+    /// 第 9 条（接续模式）：主动调用 new_context 换页。
     /// 接续模式下 /compact 不可用，且机制对用户隐藏（context_management.mode=continuation），
     /// 所以这里不能让模型去建议用户压缩，也不能向用户描述机制本身。
     /// </summary>
     private const string StageBoundaryRuleContinuation =
-        "16. **阶段边界换页**：章节完成 / 设定大改 / 任务切换时，若上下文使用率接近上限，直接调用 new_context 开启新页继续（这是内部机制，不要向用户说明），不等上下文挤满";
+        "9. **阶段边界换页**：章节完成 / 设定大改 / 任务切换时，若上下文使用率接近上限，直接调用 new_context 开启新页继续（这是内部机制，不要向用户说明），不等上下文挤满";
 
-    /// <summary>写作流程规范正文，含第 16 条占位符，由 <see cref="Compose"/> 组装。</summary>
+    /// <summary>写作流程规范正文，含第 9 条占位符，由 <see cref="Compose"/> 组装。</summary>
     private const string Body = """
 ## 写作流程规范
 
@@ -50,21 +50,14 @@ public static class WritingProcessPrompt
 1. **信号优先**：有写作流程信号时，优先按信号建议诊断
 2. **humanizer 优先**：AI 味密度高时先修 AI 味，再做其他增强
 3. **Profile 驱动**：商业向优先代入感+爽感，文学向优先冲突+描写+对话
-4. **过渡章**：节奏正常可跳过诊断
+4. **过渡章**：节奏正常可跳过诊断，不查商业要素
 5. **问题导向**：只在发现问题时才调用增强工具，不无差别增强
 6. **避免过度修改**：同一章最多修改 2 次
-7. **humanizer 自动审查**：有 action 先修 1–3 处；用户可保留作者风格
-8. **章末无钩子** → S2 风险
-9. **prose_quality<40** → 建议增强
-10. **题材适配**：悬疑查悬念，玄幻/仙侠查爽感
-11. **commercial 且分数<阈值** → 必须 enhance
-12. **literary** → 诊断仅作参考
-13. **过渡章不查商业要素**
-14. **humanizer 优先于其他维度**
-15. **根源优先**：先定位根源，再选增强工具；不反复头痛医头
+7. **题材适配**：悬疑查悬念，玄幻/仙侠查爽感；commercial 分数低必须 enhance，literary 仅参考
+8. **根源优先**：先定位根源，再选增强工具；不反复头痛医头
 {{STAGE_BOUNDARY}}
-17. **云端信号服从**：[云端诊断]/[人工裁决]/[风格观察] 是系统注入信号，优先级高于本地矩阵。优先级：人工裁决 > 强制信号 > 处方信号 > 观察信号 > 信息信号 > 本地建议。处方与小说事实冲突时，以本地工具/正文为准并说明。
-18. **信号分级**：
+10. **云端信号服从**：[云端诊断]/[人工裁决]/[风格观察] 是系统注入信号，优先级高于本地矩阵。优先级：人工裁决 > 强制信号 > 处方信号 > 观察信号 > 信息信号 > 本地建议。处方与小说事实冲突时，以本地工具/正文为准并说明。
+11. **信号分级**：
     - [强制信号] (DECISION): 必须等待用户回答，不得推进相关情节。
     - [处方信号] (A-1/A-3/A-7): 推荐执行，但如与当前情节上下文冲突，可解释性偏离并说明原因。
     - [观察信号] (F-1~F-5, M-1/M-2): 仅供参考，不强制行动。
@@ -83,7 +76,9 @@ public static class WritingProcessPrompt
 #### 去 AI 味自动审查
 
 每章写完/改写后，宿主会自动跑云端去AI味检测。收到 `[云端诊断] 去AI味`：
+- 诊断工具直接读章节，不要先 `read` 正文。
 - `status=action`：修 1–3 处 A/B/F；X/H/C 只报，C 不制造参差；不等用户问。
+- 增强工具说「需人工确认」时，报告 1~3 条并等作者选择；不要读整章后手动 rewrite。
 - 只改表达，不改情节/设定/人物命运；人物对话/作者风格命中时保留并说明。
 - 修完一句话说明；不贴完整报告。每章最多两次；第二次仍有问题只说明，不再循环。
 - `status=pass` 不返工；云端不可用时按 HumanizerPrompt 自检，并标注「云端去AI味校验未完成」。
@@ -92,7 +87,7 @@ public static class WritingProcessPrompt
 
 **先行检查（必做）**：交付前至少做一次本地基础检查（上下文/硬设定/时间线/局部统计）；需要跨章判断再按矩阵调云端。同一章深度诊断最多一次；跳过须说明理由。“未调用云端”不等于“未诊断”。
 
-诊断→增强→复诊：发现问题 → `enhance_*` 生成变体 → 用户选择写入 → 复诊；未提升则回退。
+诊断→增强→复诊：发现问题 → `enhance_*` 生成变体 → 用户选择写入 → 复诊；未提升则回退。改写前用 `read_chapter` 取正文，不要先 `read`。
 
 ### 商业写作十二铁律（必须遵守）
 
@@ -181,7 +176,7 @@ public static class WritingProcessPrompt
 
     /// <summary>
     /// 接续模式（context_management.mode=continuation）的写作流程规范：
-    /// 仅把第 16 条替换为换页指引，其余逐字与 <see cref="Full"/> 一致。
+    /// 仅把第 9 条替换为换页指引，其余逐字与 <see cref="Full"/> 一致。
     /// </summary>
     public static string ForContinuation { get; } = Compose(StageBoundaryRuleContinuation);
 }

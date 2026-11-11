@@ -357,6 +357,88 @@ public sealed record OutlineDetails
 }
 
 /// <summary>
+/// 读取章节工具：按章节 ID 或 novel-id + 章节号读取正文；只读，不修改。
+/// </summary>
+public sealed class ReadChapterTool(INovelStore store)
+    : AgentTool<ReadChapterParams, ReadChapterDetails>
+{
+    public override string Name => "read_chapter";
+    public override string[] Aliases =>
+        ["get_chapter", "manage_chapter", "查看章节", "读取章节", "章节正文"];
+    public override string[] ExampleQueries => ["查看第一章正文", "读取第3章内容"];
+    public override string Label => "读取章节";
+    public override string Description =>
+        "读取指定章节正文（按章节 ID，或 novel-id + 章节号）。只读，不修改。"
+        + "诊断/去AI味/check 由 diagnose_writing 或云端 story.check 直接读取章节，不需要先调用本工具；"
+        + "改写前用本工具取正文，再用 rewrite_selection；不要用通用 read 按文件路径读取章节。";
+    public override ToolCategory Category => ToolCategory.EntityRead;
+
+    public override async Task<AgentToolResult<ReadChapterDetails>> ExecuteAsync(
+        string toolCallId,
+        ReadChapterParams args,
+        CancellationToken ct,
+        IProgress<AgentToolResult<ReadChapterDetails>>? onUpdate = null
+    )
+    {
+        ThrowIfCancelled(ct);
+        var chapter = await store.GetChapter(args.ChapterId, ct);
+        if (
+            chapter is null
+            && int.TryParse(args.ChapterId, out var order)
+            && !string.IsNullOrWhiteSpace(args.NovelId)
+        )
+            chapter = await store.GetChapterByOrder(args.NovelId, order, ct);
+        ThrowIfCancelled(ct);
+        if (chapter is null)
+            return new AgentToolResult<ReadChapterDetails>
+            {
+                Content =
+                [
+                    new TextContent($"章节 {args.ChapterId} 不存在；传章节号时请同时提供 novel-id"),
+                ],
+                IsError = true,
+            };
+
+        var content = chapter.Content;
+        return new AgentToolResult<ReadChapterDetails>
+        {
+            Content =
+            [
+                new TextContent(
+                    string.IsNullOrEmpty(content)
+                        ? $"第{chapter.Order}章「{chapter.Title}」暂无正文"
+                        : content
+                ),
+            ],
+            Details = new ReadChapterDetails
+            {
+                Id = chapter.Id,
+                Title = chapter.Title,
+                Order = chapter.Order,
+                WordCount = content.Length,
+            },
+        };
+    }
+}
+
+public sealed record ReadChapterParams
+{
+    [Description("章节 ID（GUID，如 7b2be66d2f56；也支持章节号如 1、2）")]
+    public string ChapterId { get; init; } = "";
+
+    [Description("小说 ID；chapter-id 传章节号时必填，用于按序号定位")]
+    public string? NovelId { get; init; }
+}
+
+public sealed record ReadChapterDetails
+{
+    public string Id { get; init; } = "";
+    public string Title { get; init; } = "";
+    public int Order { get; init; }
+    public int WordCount { get; init; }
+}
+
+/// <summary>
 /// 导出章节工具：导出指定章节为 Markdown 文本
 /// </summary>
 public sealed class ExportChapterTool(INovelStore store)
