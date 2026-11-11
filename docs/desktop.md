@@ -791,8 +791,13 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 底部边界：用户下滚到达旧 max 后 extent 增长留下的 gap，以及 macOS
   overscroll 的负 offset，都不能关闭跟随；`BottomSnapDistance=128` 内直接吸附，
   “旧 max + extent 增长”则持续 follow 到真实底部。回到跟随后立即投递
-  `ScheduleFollowTail`，不能只改状态而不 `ScrollToEnd`。回归：
-  `BottomNearGap_WheelDown_SnapsToBottom`、`BottomOverscroll_DoesNotStopFollowing`
+  `ScheduleFollowTail`，不能只改状态而不 `ScrollToEnd`。
+  滚轮上/下不再依赖符号：上滚以 offset 实际减少为准，先停 follow；
+  若 80ms 后回弹到真实 max 再恢复，避免自然滚动反转或回弹造成
+  “小幅上滚却自动到底”。回归：
+  `BottomNearGap_WheelDown_SnapsToBottom`、
+  `BottomOverscroll_DoesNotStopFollowing`、
+  `BottomSmallWheelUp_DoesNotSnapToBottom`
 - 消息 ItemTemplate 内不挂 `Motion.Enter/Fade/Pop`（窗口裁剪会重播）
 
 ### 10.2 MentionParser / EntityRefParser

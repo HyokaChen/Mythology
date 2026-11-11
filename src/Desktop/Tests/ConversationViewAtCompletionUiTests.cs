@@ -1011,6 +1011,67 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 在底部附近只向上滚一小步时，不能因为 128px 吸附窗口或自然滚动
+    /// 符号反转又被自动拉回底部并闪烁。
+    /// </summary>
+    [Fact]
+    public void BottomSmallWheelUp_DoesNotSnapToBottom()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 150; i++)
+            {
+                var message = new Desktop.Models.ChatMessage(
+                    i % 2 == 0
+                        ? Desktop.Models.MessageSender.User
+                        : Desktop.Models.MessageSender.Agent
+                );
+                message.AppendContent(
+                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 12))
+                );
+                _vm.Messages.Add(message);
+            }
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                var sv = FindMessageScroll(view);
+                PumpUntil(() => AtBottom(sv), "初始贴底");
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 1));
+                for (var i = 0; i < 40; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var max = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                Assert.True(
+                    sv.Offset.Y < max - 1,
+                    $"小幅上滚后又到底部：offset={sv.Offset.Y:0.0} max={max:0.0} following={list.IsFollowing}"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 快速滚到底后可能停在 maxOffset-20；用户再向下滚时应吸附到底，
     /// 不能要求再滚一次。
     /// </summary>

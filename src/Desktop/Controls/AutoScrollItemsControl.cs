@@ -26,8 +26,6 @@ public class AutoScrollItemsControl : ItemsControl
     private bool _autoFollow = true;
     private bool _resumeOnBottom = true;
     private bool _followPostPending;
-    private bool _wheelScrollPending;
-    private int _wheelDirection;
     private double _lastMaxOffset = double.NaN;
     private int _layoutUpdateDepth;
     private bool _windowActive = true;
@@ -226,31 +224,69 @@ public class AutoScrollItemsControl : ItemsControl
     {
         if (!_windowActive || e.Delta.Y == 0)
             return;
+
         _resumeOnBottom = true;
-        _wheelScrollPending = true;
-        _wheelDirection = Math.Sign(e.Delta.Y);
-        // 明确上滚立即停跟随；下滚只唤醒底部意图，避免把底部
-        // overscroll 的负 offset 当成上滚。自然滚动反转时仍由
-        // ScrollChanged 的 offset 判定兜底。
+        // 上滚符号可信时立即停；但 macOS 自然滚动可能反转符号，所以不能
+        // 依赖它做“下滚就吸附”。下滚是否真的靠近底部，在这一次输入
+        // 造成 offset 变化之后再判断。
         if (e.Delta.Y > 0)
             DisableFollow();
-        else if (IsNearBottom())
-        {
-            SetFollow(true);
-            ScheduleFollowTail();
-        }
-        // 该标志只用于下一次 offset 变化；若滚轮没有产生滚动（边界），
-        // 不要让后续布局变化误消费它。
+
+        var offsetBefore = _scrollViewer?.Offset.Y ?? 0;
         Dispatcher.UIThread.Post(
             () =>
             {
-                _wheelScrollPending = false;
-                _wheelDirection = 0;
+                if (!_windowActive || _scrollViewer is null)
+                    return;
+                // 用户这次输入让 offset 上移了，说明是在向上滚：绝不吸附，
+                // 并在离开底部回弹区后停止跟随。这里用 offset 实际变化，
+                // 不依赖 macOS 自然滚动可能反转的 Delta 符号。
+                if (_scrollViewer.Offset.Y < offsetBefore - 1)
+                {
+                    var max = Math.Max(
+                        0,
+                        _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height
+                    );
+                    var wasNearBottom = _scrollViewer.Offset.Y >= max - 64;
+                    // 先停掉自动贴底，避免用户上滚时 OnLayoutUpdated 又把
+                    // 视口拉回去；如果是底部 overscroll 回弹，80ms 后
+                    // offset 回到 max 再恢复 follow。
+                    DisableFollow();
+                    if (wasNearBottom)
+                    {
+                        var timer = new DispatcherTimer
+                        {
+                            Interval = TimeSpan.FromMilliseconds(80),
+                        };
+                        timer.Tick += (_, _) =>
+                        {
+                            timer.Stop();
+                            if (
+                                _windowActive
+                                && _scrollViewer is not null
+                                && _scrollViewer.Offset.Y
+                                    >= Math.Max(
+                                        0,
+                                        _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height
+                                    ) - 2
+                            )
+                            {
+                                SetFollow(true);
+                                ScheduleFollowTail();
+                            }
+                        };
+                        timer.Start();
+                    }
+                    return;
+                }
+                if (IsNearBottom())
+                {
+                    SetFollow(true);
+                    ScheduleFollowTail();
+                }
             },
-            DispatcherPriority.Input
+            DispatcherPriority.Background
         );
-        if (IsAtBottom())
-            SetFollow(true);
     }
 
     /// <summary>键盘上滚：停止跟随。</summary>
@@ -310,25 +346,6 @@ public class AutoScrollItemsControl : ItemsControl
             ScheduleFollowTail();
         }
 
-        // 滚轮产生的第一次 offset 变化优先按方向判定；即使同一帧里
-        // 虚拟化高度修正也改变了 extent，上滚仍必须立即停跟随。
-        if (_wheelScrollPending)
-        {
-            _wheelScrollPending = false;
-            // 下滚手势在底部可能产生 macOS overscroll 的负 offset；
-            // 只有明确的上滚符号才在这里停跟随，不能把回弹当上滚。
-            if (
-                e.OffsetDelta.Y < -0.5
-                && _wheelDirection >= 0
-                && _scrollViewer.Offset.Y < maxOffset - 64
-            )
-            {
-                DisableFollow();
-                return;
-            }
-            _wheelDirection = 0;
-        }
-
         // 跟随状态下任何 extent 增长（流式正文长高 / 新行被测量）都重新贴底。
         if (_autoFollow && e.ExtentDelta.Y > 0)
             ScheduleFollowTail();
@@ -344,7 +361,6 @@ public class AutoScrollItemsControl : ItemsControl
             // 底部 64px 是 overscroll/rubber-band 回弹区；滚轮上滚和
             // 键盘上滚已经显式停跟随，不能让回弹把刚到底的跟随关掉。
             && _scrollViewer.Offset.Y < maxOffset - 64
-            && _wheelDirection >= 0
         )
             DisableFollow();
 
@@ -357,7 +373,7 @@ public class AutoScrollItemsControl : ItemsControl
             !_autoFollow
             && _resumeOnBottom
             && _layoutUpdateDepth == 0
-            && (e.OffsetDelta.Y >= 0 || e.ExtentDelta.Y > 0)
+            && e.OffsetDelta.Y > 0.5
             && _scrollViewer.Offset.Y >= maxOffset - BottomSnapDistance
         )
         {
