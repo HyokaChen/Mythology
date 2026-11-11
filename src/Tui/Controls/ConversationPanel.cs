@@ -6,7 +6,6 @@ using XenoAtom.Terminal.UI;
 using XenoAtom.Terminal.UI.Controls;
 using XenoAtom.Terminal.UI.Figlet;
 using XenoAtom.Terminal.UI.Geometry;
-using XenoAtom.Terminal.UI.Input;
 using XenoAtom.Terminal.UI.Styling;
 
 namespace Tui.Controls;
@@ -63,7 +62,12 @@ public sealed class ConversationPanel
         _registry = registry;
         _colors = colors;
 
-        Flow = new DocumentFlow { FollowTail = true, ItemSpacing = 0 };
+        Flow = new DocumentFlow
+        {
+            FollowTail = true,
+            ItemSpacing = 0,
+            WheelScrollStep = 4,
+        };
         Flow.SetStyle(
             new ScrollViewerStyle
             {
@@ -82,8 +86,6 @@ public sealed class ConversationPanel
             FillStyle = Style.None.WithBackground(colors.ConversationBg),
             Content = Flow,
         };
-
-        Flow.PointerWheelRouted += OnFlowPointerWheel;
 
         _streamBubbleManager = new StreamBubbleManager(Flow, colors);
         _messageRestorer = new MessageRestorer(Flow, registry, colors, OnNavigateToEntity);
@@ -136,27 +138,6 @@ public sealed class ConversationPanel
                 Padding = new Thickness(0),
             }
         );
-    }
-
-    /// <summary>
-    /// 处理鼠标滚轮事件，实现自定义滚动。
-    /// </summary>
-    /// <param name="sender">事件源。</param>
-    /// <param name="e">指针事件参数。</param>
-    private void OnFlowPointerWheel(object? sender, PointerEventArgs e)
-    {
-        // Only intercept in Preview (Tunnel) phase — before ScrollViewer's Bubble handler runs.
-        // ScrollViewer.OnPointerWheel scrolls only 1 row per tick; we scroll 3 instead.
-        if (e.RoutingPhase != RoutingPhase.Preview)
-            return;
-
-        if (e.WheelDelta == 0)
-            return;
-
-        const int scrollStep = 4;
-        var dy = e.WheelDelta > 0 ? -scrollStep : scrollStep;
-        Flow.Scroll.ScrollBy(0, dy);
-        e.Handled = true;
     }
 
     /// <summary>

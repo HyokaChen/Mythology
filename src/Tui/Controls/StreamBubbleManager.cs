@@ -30,6 +30,12 @@ public sealed class StreamBubbleManager(DocumentFlow flow, PanelColors colors)
     /// <summary>思考内容缓冲区。</summary>
     private readonly StringBuilder _thinkingBuffer = new(512);
 
+    /// <summary>流式阶段每次重建 UI 所需的最小新增字符数。</summary>
+    private const int StreamRenderChunk = 16;
+
+    /// <summary>上次重建 UI 时的 AI 回复长度。</summary>
+    private int _lastRenderedAssistantLength;
+
     /// <summary>当前流式气泡在 Flow.Items 中的索引。</summary>
     private int _streamingItemIndex = -1;
 
@@ -49,6 +55,7 @@ public sealed class StreamBubbleManager(DocumentFlow flow, PanelColors colors)
         _streamingItemIndex = -1;
         _thinkingPhase = ThinkingPhase.None;
         _finalizedThinking = null;
+        _lastRenderedAssistantLength = 0;
     }
 
     /// <summary>
@@ -88,6 +95,9 @@ public sealed class StreamBubbleManager(DocumentFlow flow, PanelColors colors)
             _finalizedThinking = _thinkingBuffer.ToString();
         }
         _markdownBuffer.Append(delta);
+        if (_markdownBuffer.Length - _lastRenderedAssistantLength < StreamRenderChunk)
+            return;
+
         UpdateBubble();
     }
 
@@ -120,6 +130,7 @@ public sealed class StreamBubbleManager(DocumentFlow flow, PanelColors colors)
         _thinkingBuffer.Clear();
         _thinkingPhase = ThinkingPhase.None;
         _finalizedThinking = null;
+        _lastRenderedAssistantLength = 0;
     }
 
     /// <summary>
@@ -146,6 +157,8 @@ public sealed class StreamBubbleManager(DocumentFlow flow, PanelColors colors)
             flow.Items.Add(item);
             _streamingItemIndex = flow.Items.Count - 1;
         }
+
+        _lastRenderedAssistantLength = _markdownBuffer.Length;
     }
 
     /// <summary>
