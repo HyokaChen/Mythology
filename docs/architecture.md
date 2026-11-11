@@ -517,24 +517,27 @@ Main → cts (Ctrl+C)
 
 ### 3.6 Prompt 系统
 
-**9 段 Prompt 骨架**（`PromptAssembly`）自动注入到 system prompt，按固定顺序拼接：
+**10 段 Prompt 骨架**（`PromptAssembly`）自动注入到 system prompt，按固定顺序拼接，每段包一层 XML 标签（如 `<role_definition>`、`<output_contract>`）：
 
 | 序 | Key | 类 | 说明 |
 |----|-----|------|------|
-| 1 | `role` | `RoleDefinitionPrompt` | 角色定义：身份、核心能力、工作原则。锚定模型全局行为 |
-| 2 | `conversation` | `ConversationStylePrompt` | 对话格式引导（Full ~500 字 / Compact ~100 字）+ 审阅评价规则（发现先行、按严重度、附位置与残余风险） |
-| 3 | `tooling` | `ToolCallingPrompt` | 工具调用规范：并行规则 / 依赖规则 / 批量与写回规则 / 调用前后规则 / **ToolSearchRules** / **TodoRules** / 禁止规则 |
-| 4 | `context` | `ContextUnderstandingPrompt` | 上下文理解（小说状态、实体引用）+ 创作反向思维（识别目标/不变量/改动边界，最小必要改动） |
-| 5 | `planning` | `PlanningLoopPrompt` | 规划循环（多步任务的分解与收敛）；验证步骤逐项核验产出，工具返回成功 ≠ 内容达标 |
-| 6 | `errors` | `ErrorHandlingPrompt` | 错误处理（工具失败、重试、降级） |
-| 7 | `safety` | `SafetyPolicyPrompt` | 安全策略 |
-| 8 | `writing` | `WritingProcessPrompt` | 写作流程规范（Full ~300 字 / Compact ~80 字）；根源优先（先定位根源再选增强工具）+ 阶段边界压缩（上下文 >70% 主动建议 /compact） |
-| 9 | `humanizer` | `HumanizerPrompt` | AI 痕迹消除规则（预防层） |
+| 1 | `role` | `RoleDefinitionPrompt` | 角色定义：身份、核心能力、指令优先级（安全 > 作者裁决 > 本地事实 > 云端判断 > 格式）、工作原则 |
+| 2 | `safety` | `SafetyPolicyPrompt` | 数据/指令边界、创作边界、拒绝方式、工具边界 |
+| 3 | `conversation` | `ConversationStylePrompt` | 对话区格式引导（仅对话区）+ 审阅评价规则（发现先行、按严重度、附位置与残余风险） |
+| 4 | `zones` | `OutputZonesPrompt` | 输出分区、交付路由（本地优先/云端按需）、内容区规则、工具结果展示 |
+| 5 | `tooling` | `ToolCallingPrompt` | 工具调用规范：并行 / 依赖 / 批量与写回 / **云端 Harness 经济性** / 调用前后 / **ToolSearchRules** / **TodoRules** / 禁止规则 |
+| 6 | `context` | `ContextUnderstandingPrompt` | 反向思维、检索边界、设定落盘纪律、假设禁止、探索终止 |
+| 7 | `planning` | `PlanningLoopPrompt` | 任务分级、**问还是做**、创作循环五步、回退机制；验证逐项核验产出，工具成功 ≠ 内容达标 |
+| 8 | `errors` | `ErrorHandlingPrompt` | 错误处理（工具失败、重试、降级） |
+| 9 | `writing` | `WritingProcessPrompt` | 写作流程规范：判断矩阵、**云端诊断使用原则**、诊断→增强闭环、商业写作十二铁律、品质标准；compact/continuation 变体由占位符组装 |
+| 10 | `humanizer` | `HumanizerPrompt` | AI 痕迹消除规则（预防层，仅约束小说正文） |
 
-此外，`EnhancementPrompt`（增强维度指南，修复层）和 `OutputZonesPrompt` 存在但未纳入骨架，由具体工具/场景动态注入。`PromptAssembly` 支持 `excludeKeys` 按需裁剪段。
+`EnhancementPrompt`（增强维度指南，修复层）由具体工具按需注入，不进入骨架。`PromptAssembly` 支持 `excludeKeys` 按需裁剪段，`EstimateTokenCount` 统计实际装配结果（含标签）。
 
 在 `ConversationLoop.CreateConversation` 中自动拼接到 system prompt。
 
+> **2026-11-10 提示词骨架调整**：`OutputZonesPrompt` 以 `zones` 段纳入，骨架 9 → 10 段并改为 XML 分段；`safety` 提到第 2 位；新增交付路由、数据/指令边界、问还是做、人工裁决、云端 Harness 经济性、云端诊断语义与报告呈现；`ConversationStylePrompt` 与 `HumanizerPrompt` 各自限定作用域；`WritingProcessPrompt` 的 compact/continuation 变体改为占位符组装。
+>
 > **2026-08-12 提示词策略优化**：`ContextUnderstandingPrompt` 增加「创作反向思维」（识别真正目标/叙事不变量/改动边界，最小必要改动）；`ConversationStylePrompt` 增加「审阅与评价」；`PlanningLoopPrompt` 强化验证步骤（逐项核验 + 工具成功 ≠ 内容达标）与改方向先复述确认；`WritingProcessPrompt` 增加根源优先 + 阶段边界压缩；`ToolCallingPrompt` 强化调用前数据一致性自检（修改前先读文件最新内容）；`EnhancementPrompt` 默认推荐保守版最小改动。
 
 ---

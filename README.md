@@ -145,7 +145,7 @@ export MYTHOLOGY_CLOUD_URL="https://cloud.mythology.example"
                  │                    │
                  │        ┌───────────▼───────────┐
                  │        │  LLM（LlmTornado）      │
-                 │        │  · 9 段 Prompt 骨架     │
+                 │        │  · 10 段 Prompt 骨架    │
                  │        │  · 工具调用 / 文本流式   │
                  │        └───────────┬───────────┘
                  │                    │ tool_calls
@@ -453,7 +453,7 @@ mythology index --rebuild       # 从小说事实源重建检索索引
 | **ToolInjector** | 按需工具注入器：常驻（`tool_search`/`ask_user`/`todo_write`）+ 已展开（LRU 20）+ 非延迟工具。会话切换（`CurrentNovelId` 变化）时清空已展开集合 |
 | **ToolSearchEngine** | 工具检索：jieba 分词 + BM25 倒排 + dense embedding + RRF 融合（k=60）。索引一次构建，进程内常驻。云端不可达 → 纯 BM25 |
 | **ToolSearchTool** | `tool_search` 工具：搜索频率熔断（8 次/会话），命中后自动展开完整工具定义 |
-| **PromptAssembly** | 9 段 Prompt 骨架：role → conversation → tooling → context → planning → errors → safety → writing → humanizer。`ToolCallingPrompt` 含 ToolSearchRules / TodoRules / 并行与依赖规则 |
+| **PromptAssembly** | 10 段 Prompt 骨架（每段包 XML 标签）：role → safety → conversation → zones → tooling → context → planning → errors → writing → humanizer。`ToolCallingPrompt` 含 CloudEconomyRules / ToolSearchRules / TodoRules / 并行与依赖规则；`OutputZonesPrompt` 以 `zones` 段纳入 |
 | **AgentEvent** | 全生命周期：`agent_start → turn_start → message_* → tool_* → turn_end → agent_end` |
 | **IToolPlugin** | 插件契约：`Initialize(IServiceProvider) / GetTools()`（元数据由 csproj 驱动，构建时写入 plugin.json） |
 | **IPluginStore** | 独立的只读数据接口（非 `INovelStore` 子集）；`PluginStore` sealed class 实现，`novel:read` 权限可获取 |
@@ -542,7 +542,7 @@ Mythology/
 │   ├── Core/                 # NuGet 包 (Mythology.Core)
 │   │   ├── Agent/             # Agent 引擎（Agent / ConversationLoop / SteeringQueue / ToolUsageStats）
 │   │   ├── Tools/             # 工具系统（AgentTool + ToolSearchEngine + ToolInjector + ToolSearchTool + ToolRegistry + DecompressTool）
-│   │   ├── Prompts/           # 9 段 Prompt 骨架（PromptAssembly + RoleDefinition + ToolCalling + ...）
+│   │   ├── Prompts/           # 10 段 Prompt 骨架（PromptAssembly + RoleDefinition + ToolCalling + ...）
 │   │   ├── Plugins/           # 插件系统（IToolPlugin / PluginLoader / PluginCapabilities / 三级信任）
 │   │   ├── Stability/         # 稳定性监控接口（IStabilityMonitor / ModelContextProfile）
 │   │   ├── Vector/            # 检索内核 + Agent 记忆（RetrievalKernel / IRetrievalStore / SqliteRetrievalStore / AgentMemoryStore / IEmbeddingService）
@@ -718,7 +718,7 @@ Mythology/
 - **断路器** — 高频/重复调用检测，TurnId 去重，batch 工具减少并行
 - **混合检索** — `RetrievalKernel`：metadata 过滤 + dense vec0 + FTS5（中文 simple tokenizer）+ RRF 融合 + RankingProfile 重排；embedding 未配置/零向量时纯词法降级
 - **10 预设 Provider** — OpenAI / Claude / Google / Groq / xAI / DeepSeek / Mistral / OpenRouter / Kimi / 阿里百炼 + 自定义 Provider
-- **9 段 Prompt 骨架** — role / conversation / tooling / context / planning / errors / safety / writing / humanizer，ToolCallingPrompt 含 ToolSearchRules
+- **10 段 Prompt 骨架** — role / safety / conversation / zones / tooling / context / planning / errors / writing / humanizer（XML 分段），ToolCallingPrompt 含 CloudEconomyRules / ToolSearchRules
 - **Markdown 渲染** — 预处理管线：表格盒绘+对齐、CJK ZWSP、标题层次递减、引用/Alert 五色、列表 ▸ bullet
 - **Diff 展示** ✅ — EditHunk → DiffComputer（DiffPlex Myers diff）→ FoldContext GitHub 式折叠 → Markup + ANSI color
 - **Explore 变体选择** ✅ — LLM 生成多变体 → 用户选择 → 持久化 + 提升为正式消息
@@ -785,7 +785,7 @@ installer\build-windows.ps1 -Version 1.2.3   # Inno Setup 安装器（需 ISCC.e
 |------|--------|
 | 工具集 | 🟢 116 注册工具：NovelTools 67（含 23 云端分析器）+ WritingTools 10 + SemanticRetrievalTool 8 + WebSearchTools 6 + FileSystem 6 + Core 20（13 AgentMemory + 4 偏好 + tool_analyze_style + tool_search + decompress）；`web_search` 同名覆盖去重 |
 | 按需工具注入 | 🟢 ToolInjector 常驻 3 + LRU 20 展开 + 延迟插件名单 + `Agent:ToolSearchMode` 灰度开关 |
-| Core 引擎 | 🟢 ConversationLoop + 9 段 PromptAssembly + TodoStore + UserQuestionStore + CircuitBreaker + CancellationHttpHandler |
+| Core 引擎 | 🟢 ConversationLoop + 10 段 PromptAssembly + TodoStore + UserQuestionStore + CircuitBreaker + CancellationHttpHandler |
 | 存储架构 | 🟢 三层存储（文件+JSONL+向量）+ FileSessionStore 分片存储 + 分支树 + 自动迁移 |
 | TUI | 🟢 8 Tab Accordion + 实体编辑 + 主题切换 + #实体引用 + 分支树 + compact 反馈 |
 | 云端协作 | 🟢 检索 REST + 分析 Harness + 本地回调 OAuth / 设备流登录（/login）+ 心跳 + 状态栏 + 401/403 事件驱动吊销；🟡 embedding 走本地 LlmTornado（云端 CloudEmbeddingClient 未实现） |
