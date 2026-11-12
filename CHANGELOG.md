@@ -46,6 +46,8 @@
 - **会话存储后台 GC**：新增 Desktop 长生命周期 `SessionStorageGcScheduler`（启动 2 分钟后、
   每 6 小时），当前保守清理崩溃残留的 `*.tmp`；不自动删除用户消息/分支。
   回归：`SessionA2CheckpointTests`、`RetryFromUserMessage_LeavesOldBranchOnDisk`。
+- **会话读取增量解析缓存**：append-only 写入后只解析新增 JSONL 行并更新 ParseCache，
+  不再让整份 8MB 会话在每次写入后重新反序列化；旧分片/外部修改仍回退全量解析。
 - **会话恢复时 provider 错误不再直接展示 JSON**：历史 `error` 事件此前经
   `FileSessionStore` 拼成 `❌ 429 {"error":...}`，Desktop/TUI 恢复时原样显示成
   「系统」行，出现 `⚠️ ❌ 429 {...}` 双层图标和整段 JSON。新增共享

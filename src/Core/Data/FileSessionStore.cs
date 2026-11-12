@@ -418,6 +418,9 @@ public sealed class FileSessionStore
             RotateActiveSegmentIfNeeded(mgr, startOrder);
             var path = mgr.ActivePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var previousMtime = File.Exists(path)
+                ? File.GetLastWriteTimeUtc(path)
+                : DateTime.MinValue;
 
             var previousEntryId = lastParentEntryId;
             var lastEntryId = previousEntryId;
@@ -526,7 +529,7 @@ public sealed class FileSessionStore
                 lines,
                 checkConflict: !SkipConflictCheck
             );
-            InvalidateParseCache(path);
+            AppendToParseCache(path, lines, sessionId, previousMtime);
             RegisterSessionIndex(sessionId, novelId, path);
 
             // 更新 MANIFEST
@@ -1137,6 +1140,9 @@ public sealed class FileSessionStore
         {
             var path = mgr.ActivePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var previousMtime = File.Exists(path)
+                ? File.GetLastWriteTimeUtc(path)
+                : DateTime.MinValue;
 
             var entryId = evt.EntryId ?? GenerateEntryId();
             var entry = new JsonlEventEntry
@@ -1164,7 +1170,7 @@ public sealed class FileSessionStore
                 [json],
                 checkConflict: !SkipConflictCheck
             );
-            InvalidateParseCache(path);
+            AppendToParseCache(path, [json], sessionId, previousMtime);
 
             UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
@@ -1187,6 +1193,9 @@ public sealed class FileSessionStore
         {
             var path = mgr.ActivePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var previousMtime = File.Exists(path)
+                ? File.GetLastWriteTimeUtc(path)
+                : DateTime.MinValue;
 
             var entry = new JsonlLeafEntry { TargetId = leaf.TargetId };
             var leafOrder = mgr.NextOrder;
@@ -1197,7 +1206,7 @@ public sealed class FileSessionStore
                 [json],
                 checkConflict: !SkipConflictCheck
             );
-            InvalidateParseCache(path);
+            AppendToParseCache(path, [json], sessionId, previousMtime);
 
             UpdateManifestSegment(mgr, 1, 0, null, leafOrder);
         }
@@ -1220,6 +1229,9 @@ public sealed class FileSessionStore
         {
             var path = mgr.ActivePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var previousMtime = File.Exists(path)
+                ? File.GetLastWriteTimeUtc(path)
+                : DateTime.MinValue;
 
             var entryId = summary.EntryId ?? GenerateEntryId();
             var entry = new JsonlBranchSummaryEntry
@@ -1238,7 +1250,7 @@ public sealed class FileSessionStore
                 [json],
                 checkConflict: !SkipConflictCheck
             );
-            InvalidateParseCache(path);
+            AppendToParseCache(path, [json], sessionId, previousMtime);
 
             UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
@@ -1261,6 +1273,9 @@ public sealed class FileSessionStore
         {
             var path = mgr.ActivePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var previousMtime = File.Exists(path)
+                ? File.GetLastWriteTimeUtc(path)
+                : DateTime.MinValue;
 
             var entryId = label.EntryId ?? GenerateEntryId();
             var entry = new JsonlLabelEntry
@@ -1279,7 +1294,7 @@ public sealed class FileSessionStore
                 [json],
                 checkConflict: !SkipConflictCheck
             );
-            InvalidateParseCache(path);
+            AppendToParseCache(path, [json], sessionId, previousMtime);
 
             UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
@@ -2167,6 +2182,57 @@ public sealed class FileSessionStore
     /// <summary>
     /// 使指定 JSONL 文件的解析缓存失效。写入新条目后调用。
     /// </summary>
+    /// <summary>
+    /// 会话 append-only 写入后增量更新解析缓存：只解析新增行，避免下一次读取
+    /// 把整个 8MB JSONL 重新反序列化。若文件在写入前已被外部修改，则回退为失效。
+    /// </summary>
+    private void AppendToParseCache(
+        string path,
+        IReadOnlyList<string> newLines,
+        string sessionId,
+        DateTime previousMtime
+    )
+    {
+        if (!_parseCache.TryGetValue(path, out var cached) || cached.Mtime != previousMtime)
+        {
+            InvalidateParseCache(path);
+            return;
+        }
+
+        var (newEntries, newLeafTarget, newLabels) = ParseAllEntries(newLines.ToArray(), sessionId);
+        // label / 未知行不会产生新的 last-entry；无法安全增量更新 leaf/last 语义时失效。
+        if (newLines.Count > 0 && newLeafTarget is null)
+        {
+            InvalidateParseCache(path);
+            return;
+        }
+
+        var entries = new List<ParsedEntry>(cached.Entries.Count + newEntries.Count);
+        entries.AddRange(cached.Entries);
+        entries.AddRange(newEntries);
+
+        var labels = cached.LabelMap;
+        if (newLabels.Count > 0)
+        {
+            labels = new Dictionary<string, List<string>>(cached.LabelMap, StringComparer.Ordinal);
+            foreach (var (targetId, values) in newLabels)
+            {
+                if (!labels.TryGetValue(targetId, out var existing))
+                    labels[targetId] = [.. values];
+                else
+                    existing.AddRange(values);
+            }
+        }
+
+        _parseCache[path] = new ParseCacheEntry(
+            File.GetLastWriteTimeUtc(path),
+            entries,
+            newLeafTarget ?? cached.LeafTargetId,
+            labels,
+            DateTime.UtcNow
+        );
+    }
+
     private void InvalidateParseCache(string path)
     {
         _parseCache.TryRemove(path, out _);
