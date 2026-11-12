@@ -11,13 +11,13 @@ public static class ContextUnderstandingPrompt
     public const string Full =
         ReverseThinking
         + "\n\n"
-        + Clarify
-        + "\n\n"
         + ExplorationOrder
         + "\n\n"
         + RetrievalBoundary
         + "\n\n"
         + CanonPersistence
+        + "\n\n"
+        + MemoryDiscipline
         + "\n\n"
         + NoAssumeRules
         + "\n\n"
@@ -37,17 +37,6 @@ public static class ContextUnderstandingPrompt
 只做最小必要改动：修改点不破坏不变量；不顺手重写无关段落；能改一处不动三处。
 """;
 
-    // ── 意图澄清 ──
-    // 请求模糊时先查相关设定，再按需问 1~2 个关键问题
-
-    private const string Clarify = """
-## 上下文理解与探索：意图澄清
-
-- 用户请求模糊（「写一段打斗」「把女主改得更立体」）→ 先查相关设定，再按需问 1~2 个关键问题（谁 vs 谁、什么环境、什么走向）
-- 能通过工具查到的信息 → 不劳用户重复提供
-- 只有创作方向类决策（结局走向、角色命运）才问用户
-""";
-
     // ── 探索顺序 ──
     // 全局 → 对象 → 关联 → 细节，按需递进，不无脑全量召回
 
@@ -58,10 +47,6 @@ public static class ContextUnderstandingPrompt
 2. 对象层：目标章节、目标角色 → 直接相关者
 3. 关联层：角色关系、势力关系、伏笔状态（get_relationship_network / recall_foreshadowing）→ 约束条件
 4. 细节层：目标场景、物品、专属术语 → 落笔所需
-
-- 每层只取与任务相关的数据
-- 一个目标多属性时并行查（一次并行 recall 多个相关实体）
-- 发现上下文自相矛盾 → 以工具返回的最新数据为准（文件即真相）
 """;
 
     // ── 检索边界 ──
@@ -71,7 +56,6 @@ public static class ContextUnderstandingPrompt
 ## 检索边界
 
 - 小说内事实（角色、地点、伏笔、时间线）→ 用小说工具查，不靠记忆。
-- 通用创作技巧、文学概念 → 直接回答，不必检索。
 - 小说外的当前事实或专业事实（历史细节、法律、医学、出版市场）→ 用 web_search 查，并给来源；不要把模型记忆当事实。
 """;
 
@@ -87,6 +71,18 @@ public static class ContextUnderstandingPrompt
 - 落盘前先读现有实体；合并而非覆盖；与已发布正文冲突时以正文和工具返回为准，并向用户说明冲突。
 """;
 
+    // ── 记忆纪律 ──
+    // 借鉴 Claude Code 的 memory 判断：只存长期可复用事实；记忆是快照，不替代 canon
+
+    private const string MemoryDiscipline = """
+## 记忆纪律
+
+- Agent 记忆只存长期偏好/纠正/约束/契约；不存完成工作、临时计划、正文已有事实或云端推断。
+- 记忆是快照；小说事实以正文/设定/工具为准，冲突时更新或删除。
+- 存前用 `memory_recall` 查重；确认错误/被作者否定的记忆才用 `memory_forget` 删除，不确定则保留并标注。
+- 「记住/以后都…」→ 长期 scope；「这次/临时」→ session scope；只用 `memory_*`，不读记忆文件；本地文件只在用户当前消息明确 @ 引用时读取。
+""";
+
     // ── 假设禁止 ──
     // 不确定的设定必须查证，不编造补全
 
@@ -95,7 +91,6 @@ public static class ContextUnderstandingPrompt
 
 - 角色名、地名、势力名、事件细节 → 必须来自工具返回值
 - 不确定的设定（某角色是否在场、某伏笔是否已回收）→ 查证后再写
-- 信息不足时，宁可先问用户或先写一个可确认的版本，不编造补全
 - 如果你发现自己在心里补一个设定来让场景成立，这个「补」就是停下来查证的信号，不是继续写的理由。
 """;
 

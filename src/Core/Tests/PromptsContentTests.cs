@@ -24,6 +24,15 @@ public sealed class PromptsContentTests
         Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
         Assert.Contains("云端 Harness 的结构化状态", RoleDefinitionPrompt.Full);
         Assert.Contains("read_chapter", RoleDefinitionPrompt.Full);
+        Assert.Contains("Agent 记忆", RoleDefinitionPrompt.Full);
+    }
+
+    [Fact]
+    public void RoleDefinitionPrompt_ContainsAgentMemoryPrecedence()
+    {
+        Assert.Contains("Agent 记忆是写入时快照", RoleDefinitionPrompt.Full);
+        Assert.Contains("不作小说事实", RoleDefinitionPrompt.Full);
+        Assert.Contains("冲突时以本地事实为准", RoleDefinitionPrompt.Full);
     }
 
     [Fact]
@@ -250,7 +259,7 @@ public sealed class PromptsContentTests
         Assert.Contains("工具调用", result);
         Assert.Contains("输出分区", result);
         Assert.Contains("交付路由", result);
-        Assert.Contains("上下文理解", result);
+        Assert.Contains("设定探索顺序", result);
         Assert.Contains("创作任务分级", result);
         Assert.Contains("问还是做", result);
         Assert.Contains("设定落盘纪律", result);
@@ -261,6 +270,7 @@ public sealed class PromptsContentTests
         Assert.Contains("云端 Harness 经济性", result);
         Assert.Contains("云端诊断使用原则", result);
         Assert.Contains("交付前检查", result);
+        Assert.Contains("记忆纪律", result);
     }
 
     [Fact]
@@ -409,6 +419,20 @@ public sealed class PromptsContentTests
     {
         Assert.Contains("云端 Harness 的评分", ContextUnderstandingPrompt.Full);
         Assert.Contains("检索边界", ContextUnderstandingPrompt.Full);
+    }
+
+    [Fact]
+    public void ContextUnderstandingPrompt_ContainsMemoryDiscipline()
+    {
+        Assert.Contains("记忆纪律", ContextUnderstandingPrompt.Full);
+        Assert.Contains("Agent 记忆只存长期偏好", ContextUnderstandingPrompt.Full);
+        Assert.Contains("memory_recall", ContextUnderstandingPrompt.Full);
+        Assert.Contains("memory_forget", ContextUnderstandingPrompt.Full);
+        Assert.Contains("不读记忆文件", ContextUnderstandingPrompt.Full);
+        Assert.Contains(
+            "本地文件只在用户当前消息明确 @ 引用时读取",
+            ContextUnderstandingPrompt.Full
+        );
     }
 
     [Fact]
