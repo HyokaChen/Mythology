@@ -173,6 +173,36 @@ public sealed class ConversationVmContractTests
         Assert.Equal([true, false], states);
     }
 
+    /// <summary>
+    /// 压缩 End 事件完全丢失时，Agent 开始/结束处理是兜底对账点：
+    /// 引擎已不在压缩，就不能让「上下文压缩中…」继续占着系统行。
+    /// </summary>
+    [Fact]
+    public void ProcessingChange_ClearsStaleCompactingRow()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = (Action)
+            typeof(SessionEngine)
+                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine)!;
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(vm.IsCompacting);
+
+            vm.SetProcessing(true);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.False(vm.IsCompacting);
+            var message = Assert.Single(vm.Messages);
+            Assert.Equal("上下文压缩已结束", message.Content.ToString());
+            Assert.False(message.IsSpinnerVisible);
+        });
+    }
+
     [Fact]
     public void EntityChangeNotice_WhileIdle_IsSystemRow()
     {

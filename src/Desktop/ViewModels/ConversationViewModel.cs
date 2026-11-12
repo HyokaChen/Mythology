@@ -116,6 +116,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private ChatMessageModel? _compactStatusMessage;
     private bool _compactStartObserved;
     private string? _pendingCompactEnd;
+    private DispatcherTimer? _compactWatch;
 
     /// <summary>上下文压缩是否进行中（系统状态行 + 状态栏 spinner 的单一事实源）。</summary>
     public bool IsCompacting
@@ -1324,6 +1325,8 @@ public sealed class ConversationViewModel : ViewModelBase
                     HasMessages = true;
                 }
 
+                EnsureCompactWatch();
+
                 // 跨线程事件到达顺序不保证：End 可能先排进 UI 队列。
                 // Start 的 UI action 跑起来后立即收尾，避免留下永久旋转的「压缩中」行。
                 if (_pendingCompactEnd is { } pending)
@@ -1353,6 +1356,7 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>把压缩结束事件落到同一条系统状态行，并清掉压缩态。</summary>
     private void ApplyCompactEnd(string message)
     {
+        _compactWatch?.Stop();
         _pendingCompactEnd = null;
         _compactStartObserved = false;
         IsCompacting = false;
@@ -1372,6 +1376,32 @@ public sealed class ConversationViewModel : ViewModelBase
         }
 
         ContextStatsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 压缩态的兜底看门狗：事件丢失/乱序时，只要引擎已不在压缩，2 秒内收掉残留状态行。
+    /// 正常结束仍走 OnCompactEnd，保留真实的完成文案。
+    /// </summary>
+    private void EnsureCompactWatch()
+    {
+        _compactWatch ??= new DispatcherTimer(
+            TimeSpan.FromSeconds(2),
+            DispatcherPriority.Background,
+            (_, _) => ReconcileCompactState()
+        );
+        if (!_compactWatch.IsEnabled)
+            _compactWatch.Start();
+    }
+
+    /// <summary>UI 压缩态与引擎真实状态对账；引擎仍在压缩时不动。</summary>
+    private void ReconcileCompactState()
+    {
+        if (_engine.IsCompacting)
+            return;
+        if (!IsCompacting && _compactStatusMessage is not { IsSpinnerVisible: true })
+            return;
+
+        ApplyCompactEnd("上下文压缩已结束");
     }
 
     /// <summary>从设定面板插入实体引用（如 `角色「林月如」`）。</summary>
@@ -1411,6 +1441,7 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>主窗口把处理状态转发到活跃对话（后台对话不被转发）。</summary>
     public void SetProcessing(bool processing)
     {
+        ReconcileCompactState();
         IsProcessing = processing;
         if (processing || _agentMessage is null)
             return;
