@@ -61,8 +61,11 @@ public static class LlmErrorHelper
         // 原始错误消息（不翻译，直接透传 LLM API 返回的内容）
         var rawMessage = ex.InnerException?.Message ?? ex.Message;
 
-        // 仅检测 context_overflow（唯一需要自动恢复的错误类型）
-        var isContextOverflow = statusCode == 400 && DetectContextOverflow(rawMessage);
+        // 仅检测 context_overflow（唯一需要自动恢复的错误类型）。
+        // 不能依赖 statusCode == 400：部分 OpenAI-compatible 网关会把内层 400
+        // 包成外层 500（例如 deepseek/agnes 返回 maximum context length），
+        // 但内容仍是明确的溢出；此时必须继续走 compact，而不是当普通 500 重试。
+        var isContextOverflow = DetectContextOverflow(rawMessage);
 
         return (statusCode, rawMessage, isContextOverflow);
     }

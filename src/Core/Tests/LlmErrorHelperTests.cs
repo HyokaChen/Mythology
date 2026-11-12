@@ -130,8 +130,9 @@ public class LlmErrorHelperTests
     }
 
     [Fact]
-    public void Extract_Non400StatusCode_ReturnsFalse()
+    public void Extract_ContextOverflowWrappedIn500_ReturnsTrue()
     {
+        // OpenAI-compatible 网关可能把内层 400 包成外层 500；内容仍是明确溢出。
         var ex = new HttpRequestException(
             "context length exceeded",
             null,
@@ -140,7 +141,31 @@ public class LlmErrorHelperTests
         var (code, msg, isOverflow) = LlmErrorHelper.Extract(ex);
 
         Assert.Equal(500, code);
-        Assert.False(isOverflow);
+        Assert.Equal("context length exceeded", msg);
+        Assert.True(isOverflow);
+    }
+
+    [Fact]
+    public void Extract_TotalContextLimitWithOutputReservation_ReturnsTrue()
+    {
+        // 复现 2026-11-12 会话：200K 窗口 = 134465 input + 65536 output。
+        var inner = new InvalidOperationException(
+            "{\"error\":{\"message\":\"This model's maximum context length is 200000 tokens. "
+                + "However, you requested 65536 output tokens and your prompt contains at least "
+                + "134465 input tokens, for a total of at least 200001 tokens.\","
+                + "\"type\":\"BadRequestError\",\"code\":400}}"
+        );
+        var ex = new HttpRequestException(
+            "error",
+            inner,
+            System.Net.HttpStatusCode.InternalServerError
+        );
+
+        var (code, msg, isOverflow) = LlmErrorHelper.Extract(ex);
+
+        Assert.Equal(500, code);
+        Assert.Contains("maximum context length", msg);
+        Assert.True(isOverflow);
     }
 
     [Fact]

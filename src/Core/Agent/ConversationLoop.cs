@@ -3006,6 +3006,11 @@ public sealed class ConversationLoop(
         {
             Model = _modelName,
             ReasoningFormat = ChatReasoningFormats.Parsed,
+            // 上下文窗口是 input + output 的总额。显式发送一个受控的 max_tokens，
+            // 让 provider 预留的 output 与 ModelContextProfile 的扣减一致；
+            // 不能省略：部分网关会默认按模型最大 output（如 65536）预扣，
+            // 导致 input 134K + output 64K 在 200K 窗口上报 400。
+            MaxTokens = _modelProfile.OutputTokenBudget,
         };
 
         // 注册工具：ToolInjector 优先（按需注入），否则全量注入（向后兼容）

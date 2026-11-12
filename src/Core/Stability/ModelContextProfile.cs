@@ -25,6 +25,24 @@ public sealed record ModelContextProfile
     public bool IsAdaptiveThinking { get; init; }
 
     /// <summary>
+    /// 单次请求允许的 completion 上限。上下文窗口是 input + output 的总预算，
+    /// 这个值必须从总窗口里扣掉，否则会在“输入看似没满”时被 provider 拒绝。
+    /// 默认 16K：足够小说章节（约 2.4 万汉字）与 high thinking；
+    /// 小窗口模型按窗口比例自动收紧，避免 output 挤掉输入。
+    /// </summary>
+    public int MaxOutputTokens { get; init; } = 16_384;
+
+    /// <summary>
+    /// 真正从总窗口中预留的 output token 数（同时用于 ChatRequest.MaxTokens）。
+    /// 上限为窗口的 1/8，避免 8K/32K 窗口被固定的 16K output 预算挤空输入。
+    /// </summary>
+    public int OutputTokenBudget =>
+        (int)Math.Clamp(MaxOutputTokens, 1, Math.Max(1, ContextWindowTokens / 8));
+
+    /// <summary>留给 prompt/历史的输入预算（总窗口扣除 output 预留）。</summary>
+    public long InputTokenBudget => Math.Max(1, ContextWindowTokens - OutputTokenBudget);
+
+    /// <summary>
     /// 估算的单轮典型 token 消耗。
     /// 使用锚点间线性插值而非分段常量，消除边界跳变。
     /// 锚点基于实际模型观测数据：
@@ -198,20 +216,27 @@ public sealed record ModelContextProfile
         };
 
     /// <summary>
-    /// Compact 阈值：上下文 token 使用达到预算的多少百分比时触发主动压缩。
+    /// Compact 阈值：上下文 token 使用达到总窗口的多少百分比时触发主动压缩。
     /// 复用 Pre-flight 阈值的计算逻辑，确保 compact 和 pre-flight 使用一致的百分比。
-    /// 1M → 99.25%, 128K → 96.5%, 8K → 85%。
-    /// 给当轮 LLM 调用和工具结果留余量（1.5 × TypicalTurnTokens）。
+    /// 200K → ~89%, 128K → ~84%, 1M → ~97.6%, 8K → ~72.5%。
+    /// 余量 = 预留 output（provider 会按 max_tokens 扣总窗口）+ 1.5 × TypicalTurnTokens。
     /// </summary>
     public double CompactThresholdPercent => PreflightThresholdPercent;
 
     /// <summary>
-    /// Pre-flight 阈值：token 使用达到预算的多少百分比时提前触发 compact。
-    /// 需要给当轮 LLM 调用留余量。余量 = 1.5 × TypicalTurnTokens。
-    /// 1M → 99.25%, 128K → 96.5%, 8K → 85%。
+    /// Pre-flight 阈值：token 使用达到总窗口的多少百分比时提前触发 compact。
+    /// 关键：provider 的上下文窗口是 input + output 的总额；
+    /// 必须先扣掉本次请求的 max_tokens（OutputTokenBudget），再给当轮估算误差留
+    /// 1.5 × TypicalTurnTokens。否则 input 134K + output 65536 会在 200K 窗口上直接 400。
     /// </summary>
     public double PreflightThresholdPercent =>
-        ContextWindowTokens > 0 ? 1.0 - TypicalTurnTokens * 1.5 / ContextWindowTokens : 0.85;
+        ContextWindowTokens > 0
+            ? Math.Clamp(
+                1.0 - (OutputTokenBudget + TypicalTurnTokens * 1.5) / ContextWindowTokens,
+                0.50,
+                0.99
+            )
+            : 0.85;
 
     /// <summary>
     /// Nudge 分级提醒阈值（P0）：从 PreflightThresholdPercent 向下推导，确保提醒先于 pre-flight 拦截触发。

@@ -76,6 +76,35 @@ public sealed class ModelContextProfileTests
         Assert.True(small.NudgeInfoPercent >= 0.50, "info 不低于下限 0.50");
     }
 
+    // ── 总窗口预算：input + output，不能把 200K 当 input-only ──
+
+    [Theory]
+    [InlineData(8_000, 1_000)]
+    [InlineData(32_000, 4_000)]
+    [InlineData(128_000, 16_000)]
+    [InlineData(200_000, 16_384)]
+    [InlineData(1_000_000, 16_384)]
+    public void OutputTokenBudget_IsReservedFromTotalWindow(long contextWindow, int expected)
+    {
+        var profile = new ModelContextProfile { ContextWindowTokens = contextWindow };
+        Assert.Equal(expected, profile.OutputTokenBudget);
+        Assert.Equal(contextWindow - expected, profile.InputTokenBudget);
+    }
+
+    [Fact]
+    public void Preflight_LeavesRoomForOutputAndTypicalTurn_On200K()
+    {
+        var profile = new ModelContextProfile { ContextWindowTokens = 200_000 };
+
+        var thresholdTokens = (long)(200_000 * profile.PreflightThresholdPercent);
+        Assert.True(
+            thresholdTokens + profile.OutputTokenBudget + profile.TypicalTurnTokens * 1.5
+                <= 200_000,
+            $"preflight={thresholdTokens}, output={profile.OutputTokenBudget}, "
+                + $"typical={profile.TypicalTurnTokens}"
+        );
+    }
+
     // ── P1：工具结果截断阈值随窗口缩放 ──
 
     [Theory]
