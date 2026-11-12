@@ -11,7 +11,6 @@ using Avalonia.VisualTree;
 using Desktop.Controls;
 using Desktop.Models;
 using Desktop.ViewModels;
-using Lucide.Avalonia;
 using ReactiveUI.Primitives;
 
 namespace Desktop.Views;
@@ -603,7 +602,8 @@ public partial class ConversationView : UserControl
     private const double NoticeLineHeight = 20; // SystemNoticeText LineHeight
     private const double RowSpacing = 2; // RowContent/RowStep StackPanel Spacing
     private const double UserRowSpacing = 3; // RowUser StackPanel Spacing
-    private const double StepHeaderHeight = 21; // grid 20 + margin top 1
+    private const double StepHeaderHeight = 21; // details button 20 + margin top 1
+    private const double StepHeaderCompactHeight = 17; // title line 16 + margin top 1
     private const double NoticeChrome = LabelLineHeight + UserRowSpacing; // eyebrow + gap
 
     private double ViewportHeight() => Math.Max(FallbackViewport, MessageScroll.Viewport.Height);
@@ -709,19 +709,18 @@ public partial class ConversationView : UserControl
         var width = Math.Max(160, _estimateWidth);
         var bodyWidth = Math.Max(160, width - 18);
         var height = 0.0;
+        var headerHeight =
+            step.IsStepHeader && !step.HasDetails ? StepHeaderCompactHeight : StepHeaderHeight;
 
         if (step.IsContentStep)
         {
-            // AgentBubble: 16,12 padding + 1px border + 0,4 外边距；再加动作条。
+            // AgentBubble: 16,12 padding + 1px border + 0,4 外边距；步骤行不再挂动作条。
             height +=
                 MarkdownHeightEstimator.EstimateDocument(
                     step.ContentText,
                     Math.Max(160, width - 34),
                     MarkdownHeightEstimator.Step
-                )
-                + StepBubbleChrome
-                + RowSpacing
-                + ActionBarHeight;
+                ) + StepBubbleChrome;
         }
         else if (step.IsNoticeStep)
         {
@@ -750,7 +749,7 @@ public partial class ConversationView : UserControl
         }
         else if (step.IsStepHeader)
         {
-            height += StepHeaderHeight;
+            height += headerHeight;
             if (step.HasResult)
                 height +=
                     RowSpacing
@@ -766,7 +765,7 @@ public partial class ConversationView : UserControl
                 height += EstimateStepDetailsHeight(step, bodyWidth);
         }
 
-        return Math.Max(StepHeaderHeight, height) + row.Margin.Bottom;
+        return Math.Max(headerHeight, height) + row.Margin.Bottom;
     }
 
     private static double EstimateStepDetailsHeight(AgentStep step, double bodyWidth)
@@ -1242,18 +1241,6 @@ public partial class ConversationView : UserControl
 
     // ── 消息动作：复制 / 编辑 / 重试 ─────────────────────────────────────
 
-    /// <summary>复制单个步骤（思考/工具）或正文块的完整文本。</summary>
-    private async void StepCopy_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { DataContext: ConversationRow row } button)
-        {
-            var text = MessageCopy.Build(row);
-            if (await MessageCopy.CopyAsync(TopLevel.GetTopLevel(this), text))
-                await FlashCopyFeedbackAsync(button);
-        }
-        e.Handled = true;
-    }
-
     /// <summary>用户消息「编辑」：原气泡换成内联输入框，并聚焦到草稿末尾。</summary>
     private void UserMessageEdit_OnRequested(object? sender, EventArgs e)
     {
@@ -1391,17 +1378,6 @@ public partial class ConversationView : UserControl
         editor.Focus();
         editor.CaretIndex = editor.Text?.Length ?? 0;
         editor.BringIntoView();
-    }
-
-    private static async Task FlashCopyFeedbackAsync(Button button)
-    {
-        if (button.Content is not LucideIcon icon)
-            return;
-        icon.Kind = LucideIconKind.Check;
-        ToolTip.SetTip(button, "已复制");
-        await Task.Delay(1200);
-        icon.Kind = LucideIconKind.Copy;
-        ToolTip.SetTip(button, "复制此步骤");
     }
 
     /// <summary>展开历史过程的折叠行。</summary>

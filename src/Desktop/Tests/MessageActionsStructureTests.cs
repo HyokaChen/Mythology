@@ -4,8 +4,9 @@ using Xunit;
 namespace Desktop.Tests;
 
 /// <summary>
-/// 消息动作条的结构锁：用户消息只能复制/编辑，助手最终正文才有复制/重试；
-/// hover 默认透明、进入块区域才显示。运行期行为由进程内探针覆盖。
+/// 消息动作条的结构锁：用户消息只能复制/编辑，助手回合末尾才有复制/重试；
+/// 思考/工具/正文步骤行不挂动作条。hover 默认透明、进入块区域才显示；
+/// 运行期行为由进程内探针覆盖。
 /// </summary>
 public sealed class MessageActionsStructureTests
 {
@@ -49,25 +50,28 @@ public sealed class MessageActionsStructureTests
     }
 
     [Fact]
-    public void StepRow_HasCopyOnly_AndNoRetry()
+    public void StepRow_HasNoCopyOrActionBar()
     {
         var row = Template("RowStep");
-        var copy = Assert.Single(
+
+        Assert.DoesNotContain(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
+        Assert.DoesNotContain(
             row.Descendants(),
             e =>
                 e.Name.LocalName == "Button"
                 && Attr(e, "Classes").Contains("StepHeaderAction", StringComparison.Ordinal)
         );
-
-        Assert.Contains("StepCopy_OnClick", Attr(copy, "Click"), StringComparison.Ordinal);
-        var stepBar = Assert.Single(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
-        Assert.Equal("False", Attr(stepBar, "ShowRetry"));
-        Assert.Equal("{Binding Message.IsPointerOverMessage}", Attr(stepBar, "Classes.Hovered"));
+        Assert.DoesNotContain(row.Descendants(), e => Attr(e, "Click") == "StepCopy_OnClick");
         Assert.DoesNotContain(
             row.Descendants(),
-            bar =>
-                bar.Name.LocalName == "MessageActionBar" && Attr(bar, "RetryRequested").Length > 0
+            e => e.Name.LocalName == "LucideIcon" && Attr(e, "Kind") == "Copy"
         );
+
+        var details = Assert.Single(
+            row.Descendants(),
+            e => Attr(e, "Click") == "StepDetails_OnClick"
+        );
+        Assert.Equal("3", Attr(details, "Grid.Column"));
     }
 
     [Fact]

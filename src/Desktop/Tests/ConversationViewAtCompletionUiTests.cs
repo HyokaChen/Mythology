@@ -2469,14 +2469,16 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     70,
                     "content"
                 );
+                // 正文步骤不再挂动作条：只保留气泡高度。
                 AssertRow(
                     FindRow(stepContent, Desktop.Models.ConversationRowKind.Step),
-                    104,
+                    78,
                     "step-content"
                 );
+                // 无详情按钮时标题行只有 16px 文本 + 1px 上边距。
                 AssertRow(
                     FindRow(stepHeader, Desktop.Models.ConversationRowKind.Step),
-                    33,
+                    29,
                     "step-header"
                 );
                 AssertRow(

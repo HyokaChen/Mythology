@@ -166,14 +166,6 @@
             />
           </Border>
 
-          <controls:MessageActionBar
-            Classes="MessageActions"
-            Classes.Hovered="{Binding Message.IsPointerOverMessage}"
-            HorizontalAlignment="Left"
-            ShowRetry="False"
-            IsVisible="{Binding Step.IsContentStep}"
-          />
-
           <Border
             Classes="SystemNoticeCard"
             Classes.Error="{Binding Step.IsError}"
@@ -200,7 +192,7 @@
           />
 
           <StackPanel Spacing="2" IsVisible="{Binding Step.IsStepHeader}">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6" Margin="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6" Margin="0,1,0,0">
               <Grid Grid.Column="0" Width="12" Height="12" VerticalAlignment="Center">
                 <controls:BusySpinner
                   IsActive="{Binding Step.IsProcessing}"
@@ -244,18 +236,6 @@
                 VerticalAlignment="Center"
                 Click="StepDetails_OnClick"
               />
-              <Button
-                Grid.Column="4"
-                Classes="ActionIcon StepHeaderAction"
-                Height="20"
-                Width="20"
-                Padding="3"
-                VerticalAlignment="Center"
-                ToolTip.Tip="复制此步骤"
-                Click="StepCopy_OnClick"
-              >
-                <lucide:LucideIcon Kind="Copy" Size="12" StrokeWidth="1.6" />
-              </Button>
             </Grid>
             <SelectableTextBlock
               Text="{Binding Step.ResultSummary}"
@@ -515,24 +495,6 @@
       <Setter Property="Opacity" Value="1" />
       <Setter Property="IsHitTestVisible" Value="True" />
     </Style>
-    <Style Selector="Grid.MessageHoverHost Button.StepHeaderAction">
-      <Setter Property="Opacity" Value="0" />
-      <Setter Property="IsHitTestVisible" Value="False" />
-      <Setter Property="Transitions">
-        <Transitions>
-          <DoubleTransition
-            Property="Opacity"
-            Duration="{x:Static motion:Motion.Fast}"
-            Easing="SineEaseOut"
-          />
-        </Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Grid.MessageHoverHost:pointerover Button.StepHeaderAction">
-      <Setter Property="Opacity" Value="1" />
-      <Setter Property="IsHitTestVisible" Value="True" />
-    </Style>
-
     <!-- 用户消息内联编辑：原位替换气泡，但不使用用户气泡的深色填充。 -->
     <Style Selector="Border.UserEditCard">
       <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
