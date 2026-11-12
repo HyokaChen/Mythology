@@ -1969,7 +1969,9 @@ public sealed class FileSessionStore
         string? leafTargetId = null;
         var labelMap = new Dictionary<string, List<string>>();
 
-        foreach (var segPath in mgr.AllSegmentPaths)
+        // 与消息读取一致：从新到旧，leaf 必须是“最新分片里实际解析出的 currentLeaf”。
+        // 旧分片的 leaf 可能只是历史标记，不能覆盖新分片的 currentLeaf。
+        foreach (var segPath in Enumerable.Reverse(mgr.AllSegmentPaths))
         {
             if (!File.Exists(segPath))
                 continue;
