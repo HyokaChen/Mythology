@@ -1558,7 +1558,7 @@ public partial class ConversationView : UserControl
         }
     }
 
-    // ── 输入区按键：Enter 发送 / Shift+Enter 换行 / Esc 中断 / @ 弹窗导航 ──
+    // ── 输入区按键：Enter 发送 / Shift+Enter 换行 / Esc 中断 / 补全弹窗导航 ──
 
     /// <summary>
     /// 隧道阶段拦截 Enter：TextBox.AcceptsReturn=true 时，类处理器会先插入换行，
@@ -1611,6 +1611,7 @@ public partial class ConversationView : UserControl
 
     /// <summary>
     /// 弹窗打开时消费 Enter / Up / Down / Tab / Esc。
+    /// Up / Down 在候选列表首尾循环。
     /// 返回 true 表示按键已归弹窗所有。
     /// </summary>
     private bool TryHandlePopupKey(ConversationViewModel vm, KeyEventArgs e)
@@ -1621,14 +1622,19 @@ public partial class ConversationView : UserControl
             {
                 case Key.Down:
                     if (vm.CommandSuggestions.Count > 0)
-                        vm.SelectedCommandIndex = Math.Min(
-                            vm.SelectedCommandIndex + 1,
-                            vm.CommandSuggestions.Count - 1
+                        vm.SelectedCommandIndex = WrapSelectionIndex(
+                            vm.SelectedCommandIndex,
+                            1,
+                            vm.CommandSuggestions.Count
                         );
                     return true;
                 case Key.Up:
                     if (vm.CommandSuggestions.Count > 0)
-                        vm.SelectedCommandIndex = Math.Max(vm.SelectedCommandIndex - 1, 0);
+                        vm.SelectedCommandIndex = WrapSelectionIndex(
+                            vm.SelectedCommandIndex,
+                            -1,
+                            vm.CommandSuggestions.Count
+                        );
                     return true;
                 case Key.Tab:
                 case Key.Enter:
@@ -1646,14 +1652,19 @@ public partial class ConversationView : UserControl
             {
                 case Key.Down:
                     if (vm.Suggestions.Count > 0)
-                        vm.SelectedSuggestionIndex = Math.Min(
-                            vm.SelectedSuggestionIndex + 1,
-                            vm.Suggestions.Count - 1
+                        vm.SelectedSuggestionIndex = WrapSelectionIndex(
+                            vm.SelectedSuggestionIndex,
+                            1,
+                            vm.Suggestions.Count
                         );
                     return true;
                 case Key.Up:
                     if (vm.Suggestions.Count > 0)
-                        vm.SelectedSuggestionIndex = Math.Max(vm.SelectedSuggestionIndex - 1, 0);
+                        vm.SelectedSuggestionIndex = WrapSelectionIndex(
+                            vm.SelectedSuggestionIndex,
+                            -1,
+                            vm.Suggestions.Count
+                        );
                     return true;
                 case Key.Tab:
                 case Key.Enter:
@@ -1666,6 +1677,20 @@ public partial class ConversationView : UserControl
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 补全列表循环导航：首项再向上跳到末项，末项再向下回到首项。
+    /// 列表重建期间索引可能短暂为 -1：此时向下选首项、向上选末项。
+    /// </summary>
+    private static int WrapSelectionIndex(int current, int delta, int count)
+    {
+        if (count <= 0)
+            return 0;
+        if (current < 0 || current >= count)
+            return delta > 0 ? 0 : count - 1;
+        var next = (current + delta) % count;
+        return next < 0 ? next + count : next;
     }
 
     private void InputBox_OnKeyDown(object? sender, KeyEventArgs e)
