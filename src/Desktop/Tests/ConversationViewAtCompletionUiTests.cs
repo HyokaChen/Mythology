@@ -1503,6 +1503,76 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// Running 中的流式更新通常不是 Messages.Add，而是同一条 Agent 消息里追加
+    /// step/正文（ReplaceRowsForMessage）。失焦时跟随态必须继续同步窗口并贴底，
+    /// 不能等用户回来后手动滚动才继续渲染。
+    /// </summary>
+    [Fact]
+    public void WindowDeactivated_WhileFollowing_StreamingRowUpdatesKeepFollowing()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(80);
+            var live = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            live.AppendContent("开始生成");
+            live.AgentSteps.Add(
+                new Desktop.Models.AgentStep
+                {
+                    Kind = Desktop.Models.StepKind.ToolCall,
+                    Title = "初始工具",
+                    Status = Desktop.Models.AgentStepStatus.Completed,
+                    ArgumentsSummary = "参数",
+                    ResultSummary = "结果",
+                }
+            );
+            _vm.Messages.Add(live);
+            _vm.HasMessages = true;
+
+            var (window, view, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始贴底");
+
+                RaiseWindowEvent(window, "Deactivated");
+                for (var i = 0; i < 20; i++)
+                {
+                    live.AppendContent($"\n\n流式段落 {i} " + new string('文', 80));
+                    live.AgentSteps.Add(
+                        new Desktop.Models.AgentStep
+                        {
+                            Kind = Desktop.Models.StepKind.ToolCall,
+                            Title = $"流式工具 {i}",
+                            Status = Desktop.Models.AgentStepStatus.Completed,
+                            ArgumentsSummary = "参数",
+                            ResultSummary = "结果",
+                        }
+                    );
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                PumpUntil(() => AtBottom(sv), "失焦流式行更新继续贴底");
+                Assert.True(list.IsFollowing, "失焦期间跟随态不得被流式行替换关闭");
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p =>
+                                (p.DataContext as Desktop.Models.ConversationRow)?.Step?.Title
+                                == "流式工具 19"
+                            ),
+                    "最新流式 step 已进入 live window"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// Agent 运行中用户展开详情：立即中断跟随；失焦/新增内容/切回来都不能
     /// 把展开位置重置到底部，也不能让延迟 reveal 再次拽动视口。
     /// </summary>

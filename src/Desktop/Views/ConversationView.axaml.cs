@@ -454,7 +454,9 @@ public partial class ConversationView : UserControl
 
     private void SyncWindowForCurrentState()
     {
-        if (_syncingWindow || !_hostWindowActive)
+        // 失焦只冻结“阅读态”的窗口换页/锚点校正；跟随态必须继续处理
+        // 流式行替换（Running 中新增 step/正文不一定走 Messages.Add）。
+        if (_syncingWindow || (!_hostWindowActive && !MessageList.IsFollowing))
             return;
         if (_rows.Count == 0)
         {
