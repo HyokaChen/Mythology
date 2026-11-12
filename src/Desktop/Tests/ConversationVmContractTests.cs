@@ -136,6 +136,43 @@ public sealed class ConversationVmContractTests
         Assert.Equal([true, false], states);
     }
 
+    /// <summary>
+    /// 跨线程事件顺序不保证：End 的 UI action 可能先于 Start 执行。
+    /// 此时 Start 必须立即消费挂起的 End，不能留下永久旋转的「上下文压缩中…」。
+    /// </summary>
+    [Fact]
+    public void CompactEnd_BeforeStart_StillClearsCompactingRow()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var states = new List<bool>();
+        vm.CompactStateChanged += states.Add;
+
+        var start = (Action)
+            typeof(SessionEngine)
+                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine)!;
+        var end =
+            (Action<string>)
+                typeof(SessionEngine)
+                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(h.Engine)!;
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            end("上下文压缩完成：202 → 20 条");
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.False(vm.IsCompacting);
+            var message = Assert.Single(vm.Messages);
+            Assert.Equal("上下文压缩完成：202 → 20 条", message.Content.ToString());
+            Assert.False(message.IsSpinnerVisible);
+        });
+
+        Assert.Equal([true, false], states);
+    }
+
     [Fact]
     public void EntityChangeNotice_WhileIdle_IsSystemRow()
     {

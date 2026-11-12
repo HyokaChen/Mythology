@@ -88,6 +88,9 @@ public sealed class SessionEngine(
     private int _noteScanIndex;
     private int _nextOrder;
     private volatile bool _isCompacting;
+
+    /// <summary>AI 摘要的硬超时；超时回退规则摘要，防止压缩永久挂起。</summary>
+    private static readonly TimeSpan AiSummaryTimeout = TimeSpan.FromSeconds(45);
     private readonly List<string> _inputHistory = [];
     private ExploreDetails? _lastExploreDetails;
 
@@ -514,7 +517,7 @@ public sealed class SessionEngine(
                     if (_contextManagement is { Mode: ContextMode.Continuation })
                         await RollContextWindowAsync("threshold");
                     else
-                        await AutoCompactAsync(keepRecent);
+                        await AutoCompactAsync(keepRecent, ct);
                 }
 
                 // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
@@ -787,7 +790,7 @@ public sealed class SessionEngine(
             }
 
             var keepRecentOverflow = agent.ModelProfile?.ScaledKeepRecent ?? 20;
-            var relieved = await RelieveOverflowAsync(keepRecentOverflow);
+            var relieved = await RelieveOverflowAsync(keepRecentOverflow, ct);
             if (relieved)
             {
                 OnSystemNotice?.Invoke(
@@ -885,7 +888,11 @@ public sealed class SessionEngine(
     // ══════════════════════════════════════════════════════════
 
     /// <summary>手动/智能压缩入口（/compact）。</summary>
-    public async Task<CompactOutcome> CompactAsync(bool smart, int keepRecent)
+    public async Task<CompactOutcome> CompactAsync(
+        bool smart,
+        int keepRecent,
+        CancellationToken ct = default
+    )
     {
         // ★ 模式互斥：接续模式不使用压缩（有损摘要与换页语义互相干扰），指路到换页机制
         if (_contextManagement is { Mode: ContextMode.Continuation })
@@ -909,13 +916,19 @@ public sealed class SessionEngine(
             );
 
         if (smart && agent.MessageScorer is not null)
-            return await CompactSmartCoreAsync(keepRecent);
+            return await CompactSmartCoreAsync(keepRecent, ct);
 
         OnCompactStart?.Invoke();
         try
         {
             var keep = Math.Min(keepRecent, messages.Count);
-            var result = await PrepareAndCompactAsync(messages, keep, "manual", willRetry: false);
+            var result = await PrepareAndCompactAsync(
+                messages,
+                keep,
+                "manual",
+                willRetry: false,
+                ct: ct
+            );
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
                 OnCompactEnd?.Invoke(DescribeRejection(result));
@@ -953,7 +966,7 @@ public sealed class SessionEngine(
         }
     }
 
-    private async Task<CompactOutcome> CompactSmartCoreAsync(int keepRecent)
+    private async Task<CompactOutcome> CompactSmartCoreAsync(int keepRecent, CancellationToken ct)
     {
         var messages = agent.State.Messages;
         var decimator = agent.MessageScorer!;
@@ -963,7 +976,13 @@ public sealed class SessionEngine(
             var scoredTurns = ScoreTurnsWithDecimator(messages, decimator);
             var cutIndex = FindSmartCutPoint(messages, scoredTurns, keepRecent);
             var keep = messages.Count - cutIndex;
-            var result = await PrepareAndCompactAsync(messages, keep, "smart", willRetry: false);
+            var result = await PrepareAndCompactAsync(
+                messages,
+                keep,
+                "smart",
+                willRetry: false,
+                ct: ct
+            );
 
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
@@ -979,7 +998,7 @@ public sealed class SessionEngine(
             {
                 // 智能失败退回普通
                 OnCompactEnd?.Invoke($"智能压缩失败，退回普通模式");
-                return await CompactAsync(smart: false, keepRecent);
+                return await CompactAsync(smart: false, keepRecent, ct);
             }
             OnCompactEnd?.Invoke(
                 $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
@@ -1000,62 +1019,70 @@ public sealed class SessionEngine(
     }
 
     /// <summary>自动压缩：token 阈值触发，静默执行（不弹压缩进度外的额外文案）。</summary>
-    private async Task AutoCompactAsync(int keepRecent)
+    private async Task AutoCompactAsync(int keepRecent, CancellationToken ct)
     {
+        var messages = agent.State.Messages;
+        var novelId = agent.CurrentNovelId;
+        if (string.IsNullOrEmpty(novelId) || messages.Count <= keepRecent)
+            return;
+
+        OnCompactStart?.Invoke();
+        var endMessage = "自动压缩失败";
         try
         {
-            var messages = agent.State.Messages;
-            var novelId = agent.CurrentNovelId;
-            if (string.IsNullOrEmpty(novelId) || messages.Count <= keepRecent)
-                return;
-
             if (agent.MessageScorer is not null)
             {
-                OnCompactStart?.Invoke();
                 var scoredTurns = ScoreTurnsWithDecimator(messages, agent.MessageScorer);
                 var cutIndex = FindSmartCutPoint(messages, scoredTurns, keepRecent);
                 var keep = messages.Count - cutIndex;
-                var r = await PrepareAndCompactAsync(messages, keep, "smart", willRetry: false);
-                OnCompactEnd?.Invoke(
-                    r switch
-                    {
-                        CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
-                            DescribeRejection(r),
-                        CompactResult.Failed => "自动压缩失败",
-                        _ =>
-                            $"自动压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
-                    }
+                var r = await PrepareAndCompactAsync(
+                    messages,
+                    keep,
+                    "smart",
+                    willRetry: false,
+                    ct: ct
                 );
+                endMessage = DescribeAutoCompact(r, messages.Count);
             }
             else
             {
-                OnCompactStart?.Invoke();
                 var r = await PrepareAndCompactAsync(
                     messages,
                     keepRecent,
                     "threshold",
-                    willRetry: false
+                    willRetry: false,
+                    ct: ct
                 );
-                OnCompactEnd?.Invoke(
-                    r switch
-                    {
-                        CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
-                            DescribeRejection(r),
-                        CompactResult.Failed => "自动压缩失败",
-                        _ =>
-                            $"自动压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
-                    }
-                );
+                endMessage = DescribeAutoCompact(r, messages.Count);
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            endMessage = "自动压缩已取消";
+            throw;
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "auto-compact session failed");
         }
+        finally
+        {
+            // 无论成功、失败还是取消，都必须结束 UI 的压缩态，否则界面永久停在「压缩中」。
+            OnCompactEnd?.Invoke(endMessage);
+        }
     }
 
+    private string DescribeAutoCompact(CompactResult result, int before) =>
+        result switch
+        {
+            CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
+                DescribeRejection(result),
+            CompactResult.Failed => "自动压缩失败",
+            _ => $"自动压缩完成：{before} → {KeptMessageCountAfterCompact()} 条",
+        };
+
     /// <summary>上下文溢出时压缩：compact 后验证 token 是否真的降低，无效时返回 false 防死循环。</summary>
-    private async Task<bool> CompactForOverflowAsync(int keepRecent)
+    private async Task<bool> CompactForOverflowAsync(int keepRecent, CancellationToken ct)
     {
         try
         {
@@ -1079,7 +1106,8 @@ public sealed class SessionEngine(
                 messages,
                 keepRecent,
                 "overflow",
-                willRetry: true
+                willRetry: true,
+                ct: ct
             );
 
             // 两种拒绝语义分开：已有压缩进行中 → true 交上层重试；模式互斥 → false 停止重试
@@ -1105,6 +1133,10 @@ public sealed class SessionEngine(
             }
             return true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             log.LogWarning(ex, "compact after context overflow failed");
@@ -1129,7 +1161,8 @@ public sealed class SessionEngine(
         IReadOnlyList<LlmChatMessage> messages,
         int keepRecent,
         string reason,
-        bool willRetry
+        bool willRetry,
+        CancellationToken ct = default
     )
     {
         if (_isCompacting)
@@ -1153,7 +1186,11 @@ public sealed class SessionEngine(
         _isCompacting = true;
         try
         {
-            return await PrepareAndCompactCoreAsync(messages, keepRecent, reason, willRetry);
+            return await PrepareAndCompactCoreAsync(messages, keepRecent, reason, willRetry, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -1171,7 +1208,8 @@ public sealed class SessionEngine(
         IReadOnlyList<LlmChatMessage> messages,
         int keepRecent,
         string reason,
-        bool willRetry
+        bool willRetry,
+        CancellationToken ct
     )
     {
         var novelId = agent.CurrentNovelId ?? "";
@@ -1209,9 +1247,9 @@ public sealed class SessionEngine(
             return CompactResult.Failed;
         }
 
-        var previousSummary = await store.GetLatestCompactSummaryAsync(_sessionId);
+        var previousSummary = await store.GetLatestCompactSummaryAsync(_sessionId, ct);
 
-        var summary = await GenerateCompactSummaryAsync(messages, cutIndex, previousSummary);
+        var summary = await GenerateCompactSummaryAsync(messages, cutIndex, previousSummary, ct);
         var recentBlock = BuildRecentExecutionBlock(messages, cutIndex);
         if (recentBlock.Length > 0)
             summary = summary + "\n\n" + recentBlock;
@@ -1220,7 +1258,7 @@ public sealed class SessionEngine(
         // Skip/Take(cutIndex) 会错位到换页前的旧消息 → firstKeptEntryId 落在旧页、
         // compact 截断点跑到 window 之前 → 重载会话时页内消息全部回归。
         var pageStart = agent.ContextWindowState.StartOrder;
-        var dbMsgs = (await store.GetActiveMessages(_sessionId))
+        var dbMsgs = (await store.GetActiveMessages(_sessionId, ct))
             .Where(m => pageStart == 0 || m.Order >= pageStart)
             .ToList();
 
@@ -1257,7 +1295,8 @@ public sealed class SessionEngine(
             reason: reason,
             willRetry: willRetry,
             estimatedTokensAfter: EstimateCompactTokensAfter(summary, cutIndex, messages),
-            compressedMessageIds: compressedIds
+            compressedMessageIds: compressedIds,
+            ct: ct
         );
 
         // 直接更新 Agent 内存消息，避免重新读取 JSONL
@@ -1428,7 +1467,8 @@ public sealed class SessionEngine(
     private async Task<string> GenerateCompactSummaryAsync(
         IReadOnlyList<LlmChatMessage> messages,
         int cutIndex,
-        string? previousSummary
+        string? previousSummary,
+        CancellationToken ct
     )
     {
         const int aiSummaryMinCompressed = 20;
@@ -1439,10 +1479,15 @@ public sealed class SessionEngine(
                 var aiSummary = await TryGenerateAiSummaryAsync(
                     messages,
                     cutIndex,
-                    previousSummary
+                    previousSummary,
+                    ct
                 );
                 if (aiSummary is not null)
                     return aiSummary;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -1459,7 +1504,8 @@ public sealed class SessionEngine(
     private async Task<string?> TryGenerateAiSummaryAsync(
         IReadOnlyList<LlmChatMessage> messages,
         int cutIndex,
-        string? previousSummary
+        string? previousSummary,
+        CancellationToken ct
     )
     {
         var api = agent.TornadoApi;
@@ -1510,11 +1556,19 @@ public sealed class SessionEngine(
         );
         conversation.AddUserMessage(prompt.ToString());
 
+        // 摘要调用必须可取消且有硬超时：主模型/网关卡住时不能把整个压缩
+        // 永久挂在「上下文压缩中」。超时后回退到规则摘要。
+        using var summaryCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        summaryCts.CancelAfter(AiSummaryTimeout);
+
         var summaryBuilder = new StringBuilder();
-        await conversation.StreamResponse(token =>
-        {
-            summaryBuilder.Append(token);
-        });
+        await conversation.StreamResponse(
+            token =>
+            {
+                summaryBuilder.Append(token);
+            },
+            summaryCts.Token
+        );
         var result = summaryBuilder.ToString().Trim();
         return string.IsNullOrEmpty(result) ? null : Truncate(result, 800);
     }
@@ -2132,10 +2186,10 @@ public sealed class SessionEngine(
     /// 溢出恢复分支（**模式互斥**，唯一入口）：接续 → 换页；compact → 分片压缩。
     /// 两条路径互不回落——接续模式下换页失败即报错，不做有损压缩。
     /// </summary>
-    private Task<bool> RelieveOverflowAsync(int keepRecent) =>
+    private Task<bool> RelieveOverflowAsync(int keepRecent, CancellationToken ct) =>
         _contextManagement is { Mode: ContextMode.Continuation }
             ? RollContextWindowAsync("overflow")
-            : CompactForOverflowAsync(keepRecent);
+            : CompactForOverflowAsync(keepRecent, ct);
 
     /// <summary>
     /// 封页后异步建立向量索引（仅 vector_retrieval: true 且注入 kernel 时）。

@@ -765,10 +765,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                         StatusTooltip = poem;
                     }
                 }
-                else if (!IsProcessing)
+                else
                 {
-                    StatusText = IdleStatusText;
-                    StatusTooltip = null;
+                    // compact 改变了上下文大小，旧 API 实测是压缩前的完整 prompt。
+                    // 必须作废，否则仪表会钉在旧值（例如压缩后仍显示 278K）。
+                    InvalidateContextMeasure();
+                    if (!IsProcessing)
+                    {
+                        StatusText = IdleStatusText;
+                        StatusTooltip = null;
+                    }
                 }
             });
 
@@ -1938,6 +1944,13 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// API 实测是否仍代表当前上下文：仅当实时值未超过采样值、且没有因 compact/裁剪
+    /// 大幅下降（&lt;80%）时有效。下降说明旧 PromptTokens 已过期，应改用实时估算。
+    /// </summary>
+    internal static bool IsContextMeasureFresh(long live, long measuredLive) =>
+        measuredLive > 0 && live <= measuredLive && live >= measuredLive * 0.8;
+
+    /// <summary>
     /// 刷新状态栏上下文占用（会话上下文口径 0 起算，不含固定开销）：
     /// 有实测且已校准时用 ToConversationTokens；否则回退 ProjectConversation 估算。
     /// 超 100% 变 Crimson，超 warningRatio（ModelProfile.CompactThresholdPercent）变 Amber。
@@ -1954,10 +1967,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         long used;
-        // 实时上下文（运行中也随消息增长）。实测只在采样后上下文未继续增长时有效——
-        // 否则那是旧快照，用实时估算，避免仪表钉在旧值。
+        // 实时上下文（运行中也随消息增长）。实测只在采样后上下文未显著变化时有效——
+        // 增长或 compact/裁剪导致的下降都会让旧 PromptTokens 过期。
         var live = _agent.LiveContextTokens;
-        if (_hasContextMeasure && _calibrator.HasCalibration && live <= _measureLiveTokens)
+        if (
+            _hasContextMeasure
+            && _calibrator.HasCalibration
+            && IsContextMeasureFresh(live, _measureLiveTokens)
+        )
             used = _calibrator.ToConversationTokens(_measuredContextTokens);
         else
             used = _calibrator.ProjectConversation(live);

@@ -115,6 +115,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private bool _isCompacting;
     private ChatMessageModel? _compactStatusMessage;
     private bool _compactStartObserved;
+    private string? _pendingCompactEnd;
 
     /// <summary>上下文压缩是否进行中（系统状态行 + 状态栏 spinner 的单一事实源）。</summary>
     public bool IsCompacting
@@ -1322,29 +1323,55 @@ public sealed class ConversationViewModel : ViewModelBase
                     Messages.Add(_compactStatusMessage);
                     HasMessages = true;
                 }
+
+                // 跨线程事件到达顺序不保证：End 可能先排进 UI 队列。
+                // Start 的 UI action 跑起来后立即收尾，避免留下永久旋转的「压缩中」行。
+                if (_pendingCompactEnd is { } pending)
+                    ApplyCompactEnd(pending);
             });
         };
         _engine.OnCompactEnd += message =>
             Dispatcher.UIThread.Post(() =>
             {
-                IsCompacting = false;
-                CompactStateChanged?.Invoke(false);
+                if (_compactStatusMessage is null)
+                {
+                    // Start 的 UI action 尚未执行：先挂起，由 Start 收尾。
+                    if (_compactStartObserved)
+                    {
+                        _pendingCompactEnd = message;
+                        return;
+                    }
 
-                var status = _compactStatusMessage;
-                _compactStatusMessage = null;
-                if (status is not null)
-                {
-                    status.IsSpinnerVisible = false;
-                    status.ResetContent();
-                    status.AppendContent(message);
-                }
-                else
-                {
                     AddSystemNotice(message);
+                    return;
                 }
 
-                ContextStatsChanged?.Invoke();
+                ApplyCompactEnd(message);
             });
+    }
+
+    /// <summary>把压缩结束事件落到同一条系统状态行，并清掉压缩态。</summary>
+    private void ApplyCompactEnd(string message)
+    {
+        _pendingCompactEnd = null;
+        _compactStartObserved = false;
+        IsCompacting = false;
+        CompactStateChanged?.Invoke(false);
+
+        var status = _compactStatusMessage;
+        _compactStatusMessage = null;
+        if (status is not null)
+        {
+            status.IsSpinnerVisible = false;
+            status.ResetContent();
+            status.AppendContent(message);
+        }
+        else
+        {
+            AddSystemNotice(message);
+        }
+
+        ContextStatsChanged?.Invoke();
     }
 
     /// <summary>从设定面板插入实体引用（如 `角色「林月如」`）。</summary>

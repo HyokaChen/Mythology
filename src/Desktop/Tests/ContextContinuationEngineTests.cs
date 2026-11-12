@@ -124,7 +124,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
     private async Task<bool> RelieveOverflowAsync(int keepRecent)
     {
         var method = typeof(SessionEngine).GetMethod("RelieveOverflowAsync", Flags)!;
-        var task = (Task<bool>)method.Invoke(_engine, [keepRecent])!;
+        var task = (Task<bool>)method.Invoke(_engine, [keepRecent, CancellationToken.None])!;
         return await task;
     }
 
@@ -133,7 +133,10 @@ public sealed class ContextContinuationEngineTests : IDisposable
     {
         var method = typeof(SessionEngine).GetMethod("PrepareAndCompactAsync", Flags)!;
         var task = (Task)
-            method.Invoke(_engine, [_agent.State.Messages, keepRecent, "manual", false])!;
+            method.Invoke(
+                _engine,
+                [_agent.State.Messages, keepRecent, "manual", false, CancellationToken.None]
+            )!;
         await task;
     }
 
@@ -143,8 +146,30 @@ public sealed class ContextContinuationEngineTests : IDisposable
         var method = typeof(SessionEngine).GetMethod("PrepareAndCompactAsync", Flags)!;
         var task =
             (Task<CompactResult>)
-                method.Invoke(_engine, [_agent.State.Messages, keepRecent, "manual", false])!;
+                method.Invoke(
+                    _engine,
+                    [_agent.State.Messages, keepRecent, "manual", false, CancellationToken.None]
+                )!;
         return await task;
+    }
+
+    /// <summary>
+    /// 自动压缩内部异常（例如评分器抛错）也必须触发 OnCompactEnd，
+    /// 否则 UI 的「上下文压缩中…」会永久旋转。
+    /// </summary>
+    [Fact]
+    public async Task AutoCompact_ScorerFailure_StillFiresCompactEnd()
+    {
+        await SeedSessionAsync(count: 6, charsPerMessage: 300);
+        _agent.MessageScorer = new ThrowingScorer();
+        var ended = new List<string>();
+        _engine.OnCompactEnd += ended.Add;
+
+        var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
+        await (Task)method.Invoke(_engine, [2, CancellationToken.None])!;
+
+        Assert.Contains("自动压缩失败", Assert.Single(ended));
+        Assert.False(_engine.IsCompacting);
     }
 
     /// <summary>拒绝原因 → 用户文案（私有助手，反射调用以钉死两种语义不混词）。</summary>
@@ -405,6 +430,14 @@ public sealed class ContextContinuationEngineTests : IDisposable
     {
         public double Score(ReadOnlySpan<char> message, ReadOnlySpan<char> context) =>
             message.IndexOf("第 0 条", StringComparison.Ordinal) >= 0 ? 2.0 : 0.1;
+
+        public void ApplyProfile(ModelContextProfile profile) { }
+    }
+
+    private sealed class ThrowingScorer : IMessageScorer
+    {
+        public double Score(ReadOnlySpan<char> message, ReadOnlySpan<char> context) =>
+            throw new InvalidOperationException("scorer boom");
 
         public void ApplyProfile(ModelContextProfile profile) { }
     }

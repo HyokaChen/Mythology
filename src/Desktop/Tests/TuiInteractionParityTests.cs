@@ -269,6 +269,17 @@ public sealed class TuiInteractionParityTests
     }
 
     [Fact]
+    public void MainWindowViewModel_CompactEnd_InvalidatesContextMeasure()
+    {
+        var src = File.ReadAllText(Find("src", "Desktop", "ViewModels", "MainWindowViewModel.cs"));
+        var start = src.IndexOf("vm.CompactStateChanged +=", StringComparison.Ordinal);
+        var end = src.IndexOf("// 斜杠命令请求", start, StringComparison.Ordinal);
+
+        Assert.True(start >= 0 && end > start);
+        Assert.Contains("InvalidateContextMeasure();", src[start..end], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ConversationViewModel_ExposesCompactState()
     {
         var src = File.ReadAllText(
