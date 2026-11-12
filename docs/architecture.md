@@ -1101,7 +1101,7 @@ CircuitBreaker 精确重复调用阈值通过 `ModelContextProfile.ScaledCircuit
 
 **树读取**：`GetTreeStructure` 合并所有分片的条目（跳过 compact 条目自身），构建完整的对话分支树。合并后的条目数与单文件方案一致（数据总量不变，分片只是物理切分）。
 
-**compact 语义**：每次 compact 创建新分片文件（`{newSeq:D6}.jsonl`），包含一条 `type=compact` 条目和从 `firstKeptEntryId` 开始的保留消息行。旧分片冻结为只读。活跃路径的 `leafTargetId` 隐式由最新分片的最后一条条目决定（无需独立 leaf 条目）。
+**compact 语义**：每次 compact 创建新分片文件（`{newSeq:D6}.jsonl`），包含一条 `type=compact` 条目和从 `firstKeptEntryId` 开始的保留消息行。旧分片冻结为只读。compact 只在它的 `first-kept-entry-id` 位于当前 active path 时适用；window 只在 window entry 自身位于 active path 时适用。retry 使用 as-of-target 读取，目标之后的 checkpoint 不会污染新分支。
 
 ### 10.2 核心决策矩阵
 
@@ -1164,10 +1164,10 @@ custom                | 否        | 扩展状态（预留）
 
 **规则**：
 1. 每个 JSONL 条目有 `id`（8 位 hex）和 `parentId`（前一条的 id）
-2. `leaf` 条目记录当前活跃分支末端（`targetId` 指向末端 entryId）
+2. `leaf` 条目记录当前活跃分支末端（`targetId` 指向末端 entryId）；它只有仍是最后一条物理条目时才有效
 3. 分支 = 在某个已有 entry 下追加新的子节点
-4. 活跃路径 = 从 leaf targetId 沿 parentId 回溯到根
-5. 不在活跃路径上的条目仍然存在于 JSONL 中，但不参与 LLM 上下文构建
+4. 活跃路径 = 从 currentLeaf（最后物理 entry，或末尾 leaf 的 targetId）沿 parentId 回溯到根
+5. 不在活跃路径上的条目仍然存在于 JSONL 中，但不参与 LLM 上下文构建；retry 只追加新 branch，不物理删除旧 branch
 
 ### 10.5 路径回溯算法
 
@@ -1202,8 +1202,8 @@ compact 条目与 leaf 条目在**同一锁内**追加，保证原子性。compa
 ### 10.7 上下文构建
 
 `buildContextEntries()` 处理流程：
-1. 从 leaf 回溯活跃路径
-2. 遇到 compact → 用 summary 替代 firstKeptEntryId 之前的所有消息
+1. 从 currentLeaf（最后物理 entry／末尾 leaf）回溯活跃路径
+2. 只在 firstKeptEntryId 位于 active path 时应用 compact；window 同理
 3. 遇到 branch_summary → 以 UserMessage 角色注入摘要
 4. event 条目跳过（不传入 LLM）
 

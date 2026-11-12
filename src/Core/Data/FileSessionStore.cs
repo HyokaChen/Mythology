@@ -57,6 +57,36 @@ public sealed class FileSessionStore
     }
 
     /// <summary>
+    /// 保守 GC：只清理崩溃残留的失效临时文件，不删除任何会话消息/分支。
+    /// 历史分支的保留/清理策略是产品决策，不能由后台定时器默认证伪删除。
+    /// </summary>
+    public Task<int> CollectGarbageAsync(CancellationToken ct = default)
+    {
+        if (!Directory.Exists(_sessionsDir))
+            return Task.FromResult(0);
+
+        var removed = 0;
+        var cutoff = DateTime.UtcNow - TimeSpan.FromHours(1);
+        foreach (
+            var path in Directory.EnumerateFiles(_sessionsDir, "*.tmp", SearchOption.AllDirectories)
+        )
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.GetLastWriteTimeUtc(path) > cutoff)
+                    continue;
+                File.Delete(path);
+                removed++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        return Task.FromResult(removed);
+    }
+
+    /// <summary>
     /// 设为 true 时跳过 AtomicFile.EnsureUnchangedAsync 冲突校验。
     /// 人类用户通过 TUI 写入前设为 true，写入后恢复 false。
     /// </summary>
@@ -500,7 +530,13 @@ public sealed class FileSessionStore
             RegisterSessionIndex(sessionId, novelId, path);
 
             // 更新 MANIFEST
-            UpdateManifestSegment(mgr, lines.Count, lines.Count, lastEntryId);
+            UpdateManifestSegment(
+                mgr,
+                lines.Count,
+                lines.Count,
+                lastEntryId,
+                startOrder + lines.Count - 1
+            );
 
             return lastEntryId;
         }
@@ -731,21 +767,54 @@ public sealed class FileSessionStore
     /// <summary>
     /// 读取会话当前页边界；无 window 条目时返回首页 ("w0", null, "w0", 0)。
     /// </summary>
+    /// <summary>
+    /// 读取当前 active path 的页边界；asOfEntryId 非空时按该虚拟 leaf 读取，
+    /// 供 retry/编辑使用，避免旧页/旧分支的 window 污染新基准。
+    /// </summary>
     public async Task<ContextWindowState> GetWindowBoundaryAsync(
         string sessionId,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? asOfEntryId = null
     )
     {
-        var windows = await ListWindowsCoreAsync(sessionId, ct);
-        var current = windows[^1];
+        ct.ThrowIfCancellationRequested();
+
+        List<ParsedEntry> entries;
+        string? leafTargetId;
+        var mgr = GetSegmentManager(sessionId);
+        if (mgr is not null && mgr.ActiveFileExists)
+        {
+            (entries, leafTargetId) = await MergeEntriesAcrossSegments(mgr, sessionId);
+        }
+        else
+        {
+            var sessionPath = ResolveSessionDir(sessionId);
+            if (sessionPath is null || !File.Exists(sessionPath))
+                return ContextWindowState.First;
+            (entries, leafTargetId, _) = await ReadAndParseJsonlAsync(sessionPath, sessionId);
+        }
+
+        var activeIds = ResolveActiveIds(entries, asOfEntryId ?? leafTargetId);
+        var window = entries
+            .Where(e =>
+                e.Type == JsonlEntryType.Window
+                && !string.IsNullOrEmpty(e.WindowId)
+                && (activeIds is null || (e.EntryId is not null && activeIds.Contains(e.EntryId)))
+            )
+            .OrderByDescending(e => e.Order)
+            .FirstOrDefault();
+
+        if (window is null)
+            return ContextWindowState.First;
+
         return new ContextWindowState(
-            current.WindowId,
-            current.PrevWindowId,
+            window.WindowId!,
+            window.PrevWindowId,
             "w0",
-            current.StartOrder,
+            window.Order + 1,
             TaskAnchor: null,
-            RollReason: current.Reason,
-            HandoffNote: current.Note
+            RollReason: window.WindowReason,
+            HandoffNote: window.WindowNote
         );
     }
 
@@ -1097,7 +1166,7 @@ public sealed class FileSessionStore
             );
             InvalidateParseCache(path);
 
-            UpdateManifestSegment(mgr, 1, 0, entryId);
+            UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
         finally
         {
@@ -1120,6 +1189,7 @@ public sealed class FileSessionStore
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
             var entry = new JsonlLeafEntry { TargetId = leaf.TargetId };
+            var leafOrder = mgr.NextOrder;
 
             var json = JsonSerializer.Serialize(entry, JsonOpts);
             await AtomicFile.AppendLinesDurableAsync(
@@ -1129,7 +1199,7 @@ public sealed class FileSessionStore
             );
             InvalidateParseCache(path);
 
-            UpdateManifestSegment(mgr, 1, 0, null);
+            UpdateManifestSegment(mgr, 1, 0, null, leafOrder);
         }
         finally
         {
@@ -1170,7 +1240,7 @@ public sealed class FileSessionStore
             );
             InvalidateParseCache(path);
 
-            UpdateManifestSegment(mgr, 1, 0, entryId);
+            UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
         finally
         {
@@ -1211,7 +1281,7 @@ public sealed class FileSessionStore
             );
             InvalidateParseCache(path);
 
-            UpdateManifestSegment(mgr, 1, 0, entryId);
+            UpdateManifestSegment(mgr, 1, 0, entryId, entry.Order);
         }
         finally
         {
@@ -1235,10 +1305,15 @@ public sealed class FileSessionStore
         Active,
     }
 
+    /// <summary>
+    /// 读取模型上下文。asOfEntryId 非空时以该条目为虚拟 leaf（retry/编辑的 as-of 基准），
+    /// 这样不会先读当前 active 再截断，也不会被目标之后的 window/compact 污染。
+    /// </summary>
     public Task<List<ChatMessage>> GetContextMessages(
         string sessionId,
-        CancellationToken ct = default
-    ) => GetMessagesInternal(sessionId, MessageRenderMode.Context);
+        CancellationToken ct = default,
+        string? asOfEntryId = null
+    ) => GetMessagesInternal(sessionId, MessageRenderMode.Context, asOfEntryId);
 
     public Task<List<ChatMessage>> GetActiveMessages(
         string sessionId,
@@ -1321,7 +1396,8 @@ public sealed class FileSessionStore
     /// </summary>
     private async Task<List<ChatMessage>> GetMessagesInternal(
         string sessionId,
-        MessageRenderMode mode
+        MessageRenderMode mode,
+        string? asOfEntryId = null
     )
     {
         // 优先使用新格式（分片存储）
@@ -1330,7 +1406,7 @@ public sealed class FileSessionStore
         {
             // B5：跨分片合并（EntryId 去重 + Order 排序），分支/compact 后旧分片内容仍可见
             var (entries, leafTargetId) = await MergeEntriesAcrossSegments(mgr, sessionId);
-            return BuildMessagesFromEntries(entries, leafTargetId, mode, sessionId);
+            return BuildMessagesFromEntries(entries, asOfEntryId ?? leafTargetId, mode, sessionId);
         }
 
         // 旧格式兼容
@@ -1342,7 +1418,7 @@ public sealed class FileSessionStore
         if (File.Exists(sessionPath) && Path.GetExtension(sessionPath) == ".jsonl")
         {
             var (entries, leafTargetId, _) = await ReadAndParseJsonlAsync(sessionPath, sessionId);
-            return BuildMessagesFromEntries(entries, leafTargetId, mode, sessionId);
+            return BuildMessagesFromEntries(entries, asOfEntryId ?? leafTargetId, mode, sessionId);
         }
 
         return [];
@@ -1370,23 +1446,21 @@ public sealed class FileSessionStore
                 ? leafEntry.Order
                 : int.MaxValue;
 
-        // 推导 latestCompact：单次遍历找 order 最大的 compact 条目（B5）。
-        // ★ 不按 activeIds 过滤：跨分片合并后，compact 条目是分片头部标记，其 parentId
-        // 链不在 leaf 回溯路径上（回溯沿消息的 parentId 走），activeIds 过滤会误判 compact
-        // 为非活跃 → compactFromOrder 解析失败 → 旧分片被压缩消息泄漏回可见列表。
-        // 取 order 最大者 = 最近一次压缩，其 FirstKeptEntryId 截断点天然覆盖会话前缀；
-        // 分支场景下废弃分支的 compact（order 更小）不会当选，不影响活跃分支。
+        // A2：checkpoint 按当前 active path 作用域选择。
+        // compact 以 first-kept 为 scope；window 以 window 条目自身为 scope。
+        // 旧全局“最后 compact/window”会把 retry 目标前缀或 sibling 分支清空。
         ParsedEntry? latestCompact = null;
-        foreach (
-            var e in entries
-                .Where(e => e.Type == JsonlEntryType.Compact)
-                .Where(e => latestCompact is null || e.Order > latestCompact.Order)
-        )
+        foreach (var e in entries)
         {
-            latestCompact = e;
+            if (e.Type != JsonlEntryType.Compact || e.CompactFirstKeptEntryId is null)
+                continue;
+            if (activeIds is not null && !activeIds.Contains(e.CompactFirstKeptEntryId))
+                continue;
+            if (latestCompact is null || e.Order > latestCompact.Order)
+                latestCompact = e;
         }
 
-        // 确定 compact 截断点
+        // 确定 compact 截断点；scope 命中但 first-kept 解析不到时该 compact 不适用。
         var compactFromOrder = ResolveCompactFromOrder(latestCompact, idMap);
 
         // 页边界：最新 window 条目的 order（无 window 条目 = -1）。
@@ -1398,7 +1472,11 @@ public sealed class FileSessionStore
         {
             foreach (var e in entries)
             {
-                if (e.Type == JsonlEntryType.Window && e.Order > windowFromOrder)
+                if (e.Type != JsonlEntryType.Window || e.EntryId is null)
+                    continue;
+                if (activeIds is not null && !activeIds.Contains(e.EntryId))
+                    continue;
+                if (e.Order > windowFromOrder)
                     windowFromOrder = e.Order;
             }
         }
@@ -1451,11 +1529,10 @@ public sealed class FileSessionStore
                 // compact 条目：根据渲染模式差异化输出
                 // 新格式分片存储中，compact 条目始终在活跃路径上（它是分片的头部标记）。
                 // 旧格式兼容：如果 compact 不在活跃路径上，检查其 parentId 链。
-                // B5：跨分片合并后所有 compact 条目都在 entries 中，但只渲染最新一个
-                // （previousSummary 链已把历史摘要并入最新摘要，避免上下文 token 随压缩次数累积）。
-                // 历史 block 仍可通过 decompress(ListCompactBlocksAsync) 枚举定位。
+                // A2：只渲染当前 active path 适用的最新 compact；没有适用项时全部隐藏，
+                // 不能用旧分支的全局摘要。
                 case JsonlEntryType.Compact
-                    when latestCompact is not null && entry.EntryId != latestCompact.EntryId:
+                    when latestCompact is null || entry.EntryId != latestCompact.EntryId:
                 // ★ B5：compact 是全局摘要（覆盖会话前缀，分支间共享），不做 activeIds/
                 // parentId 链检查——分支切换后挂载点（压缩时最后一条消息）不在新活跃路径，
                 // 但摘要内容对当前分支仍有效（被压缩的早期消息已从可见列表移除，
@@ -2177,6 +2254,7 @@ public sealed class FileSessionStore
         var labelMap = new Dictionary<string, List<string>>();
         string? leafTargetId = null;
         string? lastEntryId = null;
+        var leafIsLast = false;
 
         foreach (var line in lines)
         {
@@ -2202,7 +2280,10 @@ public sealed class FileSessionStore
                         {
                             var dto = JsonSerializer.Deserialize<JsonlLeafEntry>(segment, JsonOpts);
                             if (dto is not null)
+                            {
                                 leafTargetId = dto.TargetId;
+                                leafIsLast = true;
+                            }
                             break;
                         }
                         case JsonlEntryType.Window:
@@ -2295,6 +2376,9 @@ public sealed class FileSessionStore
                         }
                         // type=session / entity_change 等其他类型跳过
                     }
+
+                    if (probe.Type != JsonlEntryType.Leaf)
+                        leafIsLast = false;
                 }
                 catch
                 {
@@ -2303,11 +2387,18 @@ public sealed class FileSessionStore
             }
         }
 
-        // 始终以最后一条非 leaf 条目的 ID 作为 leafTargetId。
-        // 活跃路径从最后消息的 parentId 链回溯，无需依赖 leaf 条目。
-        // leaf 条目仅作为 TreeSelector 的分支参考，不参与活跃路径计算。
-        if (lastEntryId is not null)
+        // Pi 语义：leaf 只有仍是最后一条物理条目时才有效；一旦后面又追加了消息，
+        // 最后消息就是当前 cursor。旧 leaf 仅保留为历史分支标记。
+        if (
+            !leafIsLast
+            || leafTargetId is null
+            || !entries.Exists(entry =>
+                string.Equals(entry.EntryId, leafTargetId, StringComparison.Ordinal)
+            )
+        )
+        {
             leafTargetId = lastEntryId;
+        }
 
         return (entries, leafTargetId, labelMap);
     }
@@ -2730,10 +2821,16 @@ public sealed class FileSessionStore
                 .ToList();
 
         /// <summary>下次 append 写入的起始 order（= 当前 activeSegment 的 endOrder + 1，或 0）。</summary>
-        public int NextOrder =>
-            _manifest.Segments.Count == 0
-                ? 0
-                : _manifest.Segments[_manifest.ActiveSegment].EndOrder + 1;
+        public int NextOrder
+        {
+            get
+            {
+                var active = _manifest.Segments.FirstOrDefault(s =>
+                    s.Seq == _manifest.ActiveSegment
+                );
+                return active is null ? 0 : active.EndOrder + 1;
+            }
+        }
 
         /// <summary>当前活跃分片的最后一条 entryId（用于追加 parentId 链）。</summary>
         public string? ActiveLastEntryId { get; set; }
@@ -3091,17 +3188,25 @@ public sealed class FileSessionStore
         SessionSegmentManager mgr,
         int newEntryCount,
         int newMessageCount,
-        string? lastEntryId
+        string? lastEntryId,
+        int lastOrder
     )
     {
-        var seg = mgr.Manifest.Segments[mgr.ActiveSeq];
+        var activeIndex = mgr.Manifest.Segments.FindIndex(s => s.Seq == mgr.ActiveSeq);
+        if (activeIndex < 0)
+            throw new InvalidOperationException(
+                $"ActiveSegment {mgr.ActiveSeq} not found in manifest"
+            );
+        var seg = mgr.Manifest.Segments[activeIndex];
         // ★ with 表达式：增量更新只改计数，其余字段（含 WindowId/HasWindow）原样保留——
         // 逐字段重建会在新增字段时静默丢数据。
+        // EndOrder 不能由 StartOrder+EntryCount-1 推导：leaf/compact/event 的 order
+        // 不保证连续；直接取实际写入的 lastOrder 和现有值的最大值。
         var segments = new List<ManifestSegmentRecord>(mgr.Manifest.Segments)
         {
-            [mgr.ActiveSeq] = seg with
+            [activeIndex] = seg with
             {
-                EndOrder = seg.StartOrder + seg.EntryCount + newEntryCount - 1,
+                EndOrder = Math.Max(seg.EndOrder, lastOrder),
                 MessageCount = seg.MessageCount + newMessageCount,
                 EntryCount = seg.EntryCount + newEntryCount,
             },

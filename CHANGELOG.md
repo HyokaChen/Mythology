@@ -34,6 +34,18 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **retry/编辑重发改回 append-only 分支（A2-lite）**：目标之后不再物理清理/延迟 prune，
+  新 user/assistant 以锚点为 parent 追加到 JSONL 末尾；旧分支保留为 inactive sibling，
+  可随时切回。retry 不再写新 leaf，active 由最后一条物理 entry 决定。`GetContextMessages`
+  新增 as-of-target 读取，retry prefix 不会被目标之后的 window/compact 先截断。
+- **compact/window 改为按 active path 作用域**：compact 以 `first-kept-entry-id`、window
+  以 window entry 自身是否在当前 active path 判断；不再使用全局最后 checkpoint 污染
+  retry 目标前缀或 sibling 分支。leaf 只有仍是最后一条物理 entry 时才有效。
+- **会话 order 与 torn append**：MANIFEST 的 `EndOrder` 改用实际 last order（含 leaf），
+  不再用 `StartOrder + EntryCount - 1`；append 前补齐末尾换行，避免崩溃残行粘住下一条消息。
+- **会话存储后台 GC**：新增 Desktop 长生命周期 `SessionStorageGcScheduler`（启动 2 分钟后、
+  每 6 小时），当前保守清理崩溃残留的 `*.tmp`；不自动删除用户消息/分支。
+  回归：`SessionA2CheckpointTests`、`RetryFromUserMessage_LeavesOldBranchOnDisk`。
 - **会话恢复时 provider 错误不再直接展示 JSON**：历史 `error` 事件此前经
   `FileSessionStore` 拼成 `❌ 429 {"error":...}`，Desktop/TUI 恢复时原样显示成
   「系统」行，出现 `⚠️ ❌ 429 {...}` 双层图标和整段 JSON。新增共享

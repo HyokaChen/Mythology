@@ -249,6 +249,10 @@ public static class AtomicFile
             }
         }
 
+        // 崩溃可能留下半行：下一次 append 若直接拼接，会把新行接到残行后面，
+        // 解析器会永久跳过这条新消息。先确保文件末尾是换行；这不删除任何已有内容。
+        await EnsureTrailingNewlineAsync(path, ct);
+
         // lines may be single-pass; do not pre-enumerate merely to estimate capacity.
         // ★ 统一 LF（与 AppendLinesLockedAsync 一致）：StringBuilder.AppendLine 使用
         // Environment.NewLine，在 Windows 产出 \r\n——JSONL 格式平台相关且与既有 LF 内容混合。
@@ -274,6 +278,35 @@ public static class AtomicFile
             persisted.LastWriteTimeUtc
         );
         TrackedFiles.TryRemove(path, out _);
+    }
+
+    /// <summary>
+    /// 若文件末尾不是 LF，补一个 LF；不截断/不删除残留内容。
+    /// 半行本身仍会被解析器忽略，但下一条 append 不会再与它粘成一行。
+    /// </summary>
+    private static async Task EnsureTrailingNewlineAsync(string path, CancellationToken ct)
+    {
+        if (!File.Exists(path) || new FileInfo(path).Length == 0)
+            return;
+
+        await using (
+            var fs = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite,
+                1,
+                useAsync: true
+            )
+        )
+        {
+            fs.Seek(-1, SeekOrigin.End);
+            var last = fs.ReadByte();
+            if (last == '\n')
+                return;
+        }
+
+        await File.AppendAllTextAsync(path, "\n", Encoding.UTF8, ct);
     }
 
     /// <summary>

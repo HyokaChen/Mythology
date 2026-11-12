@@ -1266,14 +1266,14 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             startOrder: 5
         );
 
-        // B5 核心价值：compact 后追加的分支消息跨分片可见——其 parent-id 链
-        // 指向旧分片（分片 0）的 A助手，合并后回溯链完整。
+        // A2：compact 以 first-kept 为 scope。A 分支不包含 first-kept（B用户），
+        // 因此 compact 不能作用于 A；A 的旧消息必须重新可见，不能拿全局最新 compact 截断。
         var afterSwitch = await _store.GetActiveMessages(TestSessionId);
         Assert.Contains(afterSwitch, m => m.Content == "A分支新消息");
-        // 压缩语义：A 早期消息（order < compactFromOrder）仍被截断，仅摘要可见
-        Assert.DoesNotContain(afterSwitch, m => m is { Content: "A用户", EventType: null });
-        Assert.DoesNotContain(afterSwitch, m => m.Content == "B助手"); // 分支切换：B 不在新活跃路径
-        Assert.Contains(afterSwitch, m => m.EventType == SessionEventType.Compact); // 摘要保留
+        Assert.Contains(afterSwitch, m => m.Content == "A用户");
+        Assert.Contains(afterSwitch, m => m.Content == "A助手");
+        Assert.DoesNotContain(afterSwitch, m => m.Content == "B助手");
+        Assert.DoesNotContain(afterSwitch, m => m.EventType == SessionEventType.Compact);
     }
 
     [Fact]

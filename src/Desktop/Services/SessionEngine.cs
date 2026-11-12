@@ -587,7 +587,8 @@ public sealed class SessionEngine(
         {
             var restored = await RestoreContextToEntryAsync(
                 target.EntryId,
-                includeEntry: editedText is null
+                includeEntry: editedText is null,
+                ct
             );
             if (!restored)
             {
@@ -633,9 +634,14 @@ public sealed class SessionEngine(
     /// 把模型上下文裁到指定 entry：用于重试/编辑后重发。
     /// 与 <see cref="RestoreContextFromDbAsync"/> 不同，这里按 entryId 截断，而不是按 leaf。
     /// </summary>
-    private async Task<bool> RestoreContextToEntryAsync(string entryId, bool includeEntry)
+    private async Task<bool> RestoreContextToEntryAsync(
+        string entryId,
+        bool includeEntry,
+        CancellationToken ct
+    )
     {
-        var context = await store.GetContextMessages(_sessionId);
+        // as-of target：目标之后的 window/compact 不能先截断上下文再截取前缀。
+        var context = await store.GetContextMessages(_sessionId, ct, asOfEntryId: entryId);
         var index = context.FindIndex(message =>
             string.Equals(message.EntryId, entryId, StringComparison.Ordinal)
         );
@@ -648,7 +654,7 @@ public sealed class SessionEngine(
             prefix[i] = MapDbMessageToChatMessage(context[i]);
 
         agent.ReplaceMessages(prefix);
-        var boundary = await store.GetWindowBoundaryAsync(_sessionId);
+        var boundary = await store.GetWindowBoundaryAsync(_sessionId, ct, asOfEntryId: entryId);
         agent.SetContextWindowState(boundary);
         return true;
     }

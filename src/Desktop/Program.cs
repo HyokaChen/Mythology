@@ -652,6 +652,7 @@ public static class Program
         ));
         services.AddSingleton<UpdateState>();
         services.AddSingleton<UpdateCheckScheduler>();
+        services.AddSingleton<Desktop.Services.SessionStorageGcScheduler>();
     }
 
     /// <summary>

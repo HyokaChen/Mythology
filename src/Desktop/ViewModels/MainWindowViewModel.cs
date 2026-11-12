@@ -56,8 +56,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>更新检查调度器（Desktop 无 IHost，由 InitializeAsync 手动启动循环）。</summary>
     private readonly UpdateCheckScheduler? _updateScheduler;
+    private readonly SessionStorageGcScheduler? _storageGcScheduler;
 
     private Task? _updateLoop;
+    private Task? _storageGcLoop;
     private Task? _cloudInitTask;
     private long _totalTokens;
     private bool _hasContextMeasure;
@@ -328,6 +330,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         // 自动更新：解析共享状态并注入忙探针（有任务在跑时不弹、只亮红点，回合结束补弹）
         _updateState = services.GetService<UpdateState>();
         _updateScheduler = services.GetService<UpdateCheckScheduler>();
+        _storageGcScheduler = services.GetService<SessionStorageGcScheduler>();
         if (_updateState is not null)
             _updateState.IsBusyProbe = () => IsBusy;
 
@@ -527,6 +530,9 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             // 自动更新：启动检查循环（启动 +20s 首查、此后每日东八区 03:00；进程退出即终止）
             _updateLoop = _updateScheduler?.RunAsync();
+
+            // 会话存储 GC：长生命周期定时器；保守清理崩溃残留，不删历史分支。
+            _storageGcLoop = _storageGcScheduler?.RunAsync();
 
             // 恢复小说最新会话（含 --session 直达）；无小说则留新会话
             await RestoreLatestSessionForNovelAsync(SelectedNovel?.Id ?? "");

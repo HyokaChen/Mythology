@@ -921,6 +921,25 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
+    public async Task RetryFromUserMessage_LeavesOldBranchOnDisk()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        await h.Engine.RetryFromUserMessageAsync(0, null, CancellationToken.None);
+
+        var raw = string.Join(
+            "\n",
+            Directory
+                .GetFiles(h.StoreDir, "*.jsonl", SearchOption.AllDirectories)
+                .Select(File.ReadAllText)
+        );
+        Assert.Contains("第一答", raw, StringComparison.Ordinal);
+        var active = await h.Engine.GetUiMessagesAsync();
+        Assert.DoesNotContain(active, m => m.Content == "第一答");
+    }
+
+    [Fact]
     public async Task RetryFromUserMessage_KeepsEarlierTurns_WhenTargetingSecondUser()
     {
         using var h = new Harness();
@@ -1044,6 +1063,7 @@ public sealed class ConversationVmContractTests
         private readonly FileNovelStore _novelStore;
         private readonly SessionEngine _engine;
         private readonly DesktopAgentBridge _bridge;
+        private readonly FileSessionStore _store;
 
         public ConfigStore ConfigStore { get; }
 
@@ -1060,9 +1080,11 @@ public sealed class ConversationVmContractTests
             _bridge = new DesktopAgentBridge(Agent);
             _novelStore = new FileNovelStore(root, storeDir);
             ConfigStore = new ConfigStore(storeDir);
+            StoreDir = Path.Combine(root, "sessions");
+            _store = new FileSessionStore(storeDir, root);
             _engine = new SessionEngine(
                 _bridge,
-                new FileSessionStore(storeDir, root),
+                _store,
                 _novelStore,
                 new TodoStore(),
                 new ContextTokenCalibrator(),
@@ -1076,6 +1098,8 @@ public sealed class ConversationVmContractTests
         public ToolRegistry Registry { get; }
 
         public INovelStore NovelStore => _novelStore;
+        public FileSessionStore Store => _store;
+        public string StoreDir { get; }
 
         public string NovelsRoot { get; }
 
