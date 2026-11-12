@@ -34,6 +34,13 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **底部慢速上滚不再被吸附回底**：触控板每次只移动 0.1~0.5px 时，旧逻辑
+  用 1px/0.5px 阈值和“接近底部即恢复”判断，滚轮事件尚未落地就被当成回底，
+  并在 80ms 回弹定时器后再次贴底，表现为闪烁、滚不上去。现在方向只认
+  ScrollViewer 的实际 offset 变化（阈值 0.01px），任何向上位移立即进入 Reading；
+  向上/向下都必须在事件落地后按真实位移判断，不再因“滚轮发生了”或
+  `IsNearBottom` 吸附。回归：`BottomSubPixelUp_StopsFollowWithoutSnap`、
+  `BottomSlowTrackpadUp_DoesNotSnapToBottom`、`BottomSmallWheelUp_DoesNotSnapToBottom`。
 - **retry/编辑重发改回 append-only 分支（A2-lite）**：目标之后不再物理清理/延迟 prune，
   新 user/assistant 以锚点为 parent 追加到 JSONL 末尾；旧分支保留为 inactive sibling，
   可随时切回。retry 不再写新 leaf，active 由最后一条物理 entry 决定。`GetContextMessages`

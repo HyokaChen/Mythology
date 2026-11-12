@@ -215,7 +215,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
-    public void Hash_PopupStartsAtFirstSuggestion_AndArrowKeysDoNotMoveCaret()
+    public void Hash_PopupWrapsSelection_AndArrowKeysDoNotMoveCaret()
     {
         RunWithInput(
             "第一行\n第二行 #",
@@ -230,13 +230,27 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.Equal(0, list!.SelectedIndex);
 
                 var caret = input.CaretIndex;
+                var last = _vm.Suggestions.Count - 1;
+                Assert.True(last > 0, "需要至少两个候选才能验证首尾循环");
+
+                // 首项再向上 → 末项
                 input.RaiseEvent(
                     new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
                 );
                 // 多行输入里 Up 必须先被弹窗消费，不能把光标移到上一行
                 Assert.Equal(caret, input.CaretIndex);
-                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+                Assert.Equal(last, _vm.SelectedSuggestionIndex);
+                Assert.Equal(last, list.SelectedIndex);
 
+                // 末项再向下 → 首项
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(caret, input.CaretIndex);
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+                Assert.Equal(0, list.SelectedIndex);
+
+                // 首项向下 → 第二项（普通前进仍正常）
                 input.RaiseEvent(
                     new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
                 );
@@ -244,6 +258,49 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.Equal(1, _vm.SelectedSuggestionIndex);
             },
             () => _vm.Suggestions.Count > 0
+        );
+    }
+
+    [Fact]
+    public void At_PopupWrapsSelection_AtBothEnds()
+    {
+        RunWithInput(
+            "@",
+            (view, input) =>
+            {
+                input.Focus();
+                Assert.True(_vm.IsSuggestionPopupVisible, "@ 未打开补全弹窗");
+
+                var list = view.FindControl<ListBox>("SuggestionList");
+                Assert.NotNull(list);
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+
+                var last = _vm.Suggestions.Count - 1;
+                Assert.True(last > 0, "需要至少两个候选才能验证首尾循环");
+
+                // 列表重建瞬间索引可能为 -1：Down 应选首项而不是跳过
+                _vm.SelectedSuggestionIndex = -1;
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+                Assert.Equal(0, list.SelectedIndex);
+
+                // 首项再向上 → 末项
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+                );
+                Assert.Equal(last, _vm.SelectedSuggestionIndex);
+                Assert.Equal(last, list!.SelectedIndex);
+
+                // 末项再向下 → 首项
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(0, _vm.SelectedSuggestionIndex);
+                Assert.Equal(0, list.SelectedIndex);
+            },
+            () => _vm.Suggestions.Count > 1
         );
     }
 
@@ -1072,6 +1129,56 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 触控板慢滚会连续产生亚像素/极小 delta；任何一次向上位移都必须
+    /// 先退出跟随，不能等累积超过阈值后才判断。
+    /// </summary>
+    [Fact]
+    public void BottomSlowTrackpadUp_DoesNotSnapToBottom()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(150);
+            var (window, _, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始底部跟随");
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+
+                // 每次只滚很小一格，模拟触控板慢速上推。
+                for (var i = 0; i < 8; i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, 0.1));
+                    for (var j = 0; j < 4; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(2);
+                    }
+                }
+
+                for (var i = 0; i < 20; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(2);
+                }
+
+                var max = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                Assert.False(list.IsFollowing, "慢速上滚必须停止跟随");
+                Assert.True(
+                    sv.Offset.Y < max - 0.01,
+                    $"慢速上滚被吸附回底部：offset={sv.Offset.Y:0.00} max={max:0.00}"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 快速滚到底后可能停在 maxOffset-20；用户再向下滚时应吸附到底，
     /// 不能要求再滚一次。
     /// </summary>
@@ -1137,47 +1244,22 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
-    /// macOS overscroll 在底部会产生负 offset；这不能被当成“用户上滚”
-    /// 而关闭跟随，否则快速滚到底会回弹并停在离底部一小段。
+    /// 小于 1px 的向上位移也表达“用户要阅读历史”的意图。旧的 -0.5px
+    /// 阈值会漏掉这种触控板慢滚，并在下一帧按接近底部重新吸附。
     /// </summary>
     [Fact]
-    public void BottomOverscroll_DoesNotStopFollowing()
+    public void BottomSubPixelUp_StopsFollowWithoutSnap()
     {
         Ui.Run(() =>
         {
-            for (var i = 0; i < 200; i++)
-            {
-                var message = new Desktop.Models.ChatMessage(
-                    i % 2 == 0
-                        ? Desktop.Models.MessageSender.User
-                        : Desktop.Models.MessageSender.Agent
-                );
-                message.AppendContent(
-                    $"历史 {i} " + string.Join(" ", Enumerable.Repeat("正文", 10))
-                );
-                _vm.Messages.Add(message);
-            }
-            _vm.HasMessages = true;
-
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 900,
-                Height = 700,
-                Content = view,
-            };
-            window.Show();
+            SeedHistory(200);
+            var (window, _, list, sv) = ShowConversation();
             try
             {
-                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                    "MessageList"
-                )!;
-                var sv = FindMessageScroll(view);
                 PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始底部跟随");
 
-                // 模拟底部回弹 10px；extent/offset 都是真实的 ScrollViewer 变化。
-                var max = sv.Extent.Height - sv.Viewport.Height;
-                sv.Offset = sv.Offset.WithY(Math.Max(0, max - 10));
+                var max = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                sv.Offset = sv.Offset.WithY(max - 0.4);
                 for (var i = 0; i < 20; i++)
                 {
                     Dispatcher.UIThread.RunJobs();
@@ -1185,8 +1267,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     Thread.Sleep(5);
                 }
 
-                Assert.True(list.IsFollowing, "底部 overscroll 不应关闭跟随");
-                Assert.True(AtBottom(sv), "回弹后应重新贴底");
+                Assert.False(list.IsFollowing, "亚像素上滚也必须停止跟随");
+                Assert.True(
+                    sv.Offset.Y < max - 0.01,
+                    $"亚像素上滚被吸附回底部：offset={sv.Offset.Y:0.00} max={max:0.00}"
+                );
             }
             finally
             {
@@ -2673,7 +2758,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
-    public void Slash_PopupStartsAtFirstCommand_AndArrowKeysNavigate()
+    public void Slash_PopupStartsAtFirstCommand_AndArrowKeysWrap()
     {
         RunWithInput(
             "/",
@@ -2690,11 +2775,30 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.Equal(0, _vm.SelectedCommandIndex);
                 Assert.Equal(0, list!.SelectedIndex);
 
+                var last = _vm.CommandSuggestions.Count - 1;
+                Assert.True(last > 0, "需要至少两个命令才能验证首尾循环");
+
+                // 首项再向上 → 末项
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+                );
+                Assert.Equal(last, _vm.SelectedCommandIndex);
+                Assert.Equal(last, list.SelectedIndex);
+
+                // 末项再向下 → 首项
+                input.RaiseEvent(
+                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+                );
+                Assert.Equal(0, _vm.SelectedCommandIndex);
+                Assert.Equal(0, list.SelectedIndex);
+
+                // 首项向下 → 第二项（普通前进仍正常）
                 input.RaiseEvent(
                     new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
                 );
                 Assert.Equal(1, _vm.SelectedCommandIndex);
 
+                // 第二项向上 → 首项
                 input.RaiseEvent(
                     new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
                 );
