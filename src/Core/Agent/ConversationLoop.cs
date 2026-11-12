@@ -1957,10 +1957,9 @@ public sealed class ConversationLoop(
             // Token 预算耗尽：与 ContextOverflow 同等处理——触发 auto-compact + retry。
             // BudgetExhaustedException 来自 StabilityMonitor.RecordStep（OnUsageReceived 回调），
             // 不是 LLM API 返回的 400 错误，但本质相同：上下文太长，需要压缩。
-            // 若本轮还没执行任何工具，丢弃未完成的 assistant/tool-call 半成品，
-            // 避免压缩后带着一个没有 tool result 的截断 assistant 继续请求。
-            if (toolCallsCollected.Count == 0)
-                TrimConversationTo(messagesBeforeCall);
+            // 异常可能发生在工具已执行之后、SyncNewMessagesFromConversation 之前：
+            // 必须先把已完成的 tool result 从 Conversation 提交到持久化消息，再压缩/继续。
+            CommitCompletedToolResultsForRecovery(messagesBeforeCall, reasoningText.ToString());
             await SafelyPersistAsync();
             await emit(
                 new AgentError(ex.Message, null, IsContextOverflow: true, Recoverable: true),
@@ -1971,10 +1970,9 @@ public sealed class ConversationLoop(
         catch (ContextOverflowException)
         {
             // ★ 上下文溢出：落盘后传递，Desktop/Tui 负责 compact + continue。
-            // 本轮没有已执行工具时，丢弃未完成的 assistant/tool-call 半成品；
-            // 已执行的工具结果必须保留，压缩后继续同一轮，不能重放工具。
-            if (toolCallsCollected.Count == 0)
-                TrimConversationTo(messagesBeforeCall);
+            // 已完成的工具结果先提交；没有 tool result 的截断 assistant/tool-call 半成品丢弃，
+            // 避免压缩后带着一个没有 tool result 的 assistant 继续请求。
+            CommitCompletedToolResultsForRecovery(messagesBeforeCall, reasoningText.ToString());
             await SafelyPersistAsync();
             throw;
         }
@@ -1991,8 +1989,10 @@ public sealed class ConversationLoop(
                 || httpStatusCode == 429
                 || IsTransientNetworkError(ex);
 
-            // ★ 错误路径：尽力落盘已就绪消息（含本轮之前 inject/steer + 上一轮 turn），
-            // 避免进程崩溃或重试时丢失已确认的数据
+            // ★ 错误路径：先收口本次 attempt 已完成的 tool result（或丢弃半成品），
+            // 再尽力落盘已就绪消息（含本轮之前 inject/steer + 上一轮 turn），
+            // 避免进程崩溃或重试时丢失已确认的数据。
+            CommitCompletedToolResultsForRecovery(messagesBeforeCall, reasoningText.ToString());
             await SafelyPersistAsync();
 
             // 发射错误事件（ct 可能已部分取消，用 CancellationToken.None 确保事件送达）
@@ -2002,16 +2002,53 @@ public sealed class ConversationLoop(
             );
 
             // Context overflow 包装为专用异常，供 Desktop/Tui 触发 auto-compact + continue。
-            // 无工具执行时先丢弃截断的 assistant/tool-call 半成品；有工具结果则保留。
+            // 已完成 tool result 已在上面提交；没有 tool result 的半成品已丢弃。
             if (isContextOverflow)
-            {
-                if (toolCallsCollected.Count == 0)
-                    TrimConversationTo(messagesBeforeCall);
                 throw new ContextOverflowException(rawMessage, ex, httpStatusCode);
-            }
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// 异常路径收口本次 attempt：
+    /// - 有完整 tool result → 把 assistant/tool-call/tool-result 提交到持久化消息，
+    ///   供 compact 后继续同一任务，且不重放工具；
+    /// - 没有 tool result → 丢弃截断的 assistant/tool-call 半成品，避免污染下一轮请求。
+    /// 只提交到最后一个 tool result，防止工具执行后又挂上半截 assistant。
+    /// </summary>
+    internal bool CommitCompletedToolResultsForRecovery(
+        int messagesBeforeCall,
+        string reasoningText
+    )
+    {
+        var appended = SyncNewMessagesFromConversation(messagesBeforeCall);
+        if (appended.Count == 0)
+            return false;
+
+        var lastToolResult = appended.FindLastIndex(m => m.Role == ChatMessageRoles.Tool);
+        if (lastToolResult < 0)
+        {
+            TrimConversationTo(messagesBeforeCall);
+            return false;
+        }
+
+        if (lastToolResult < appended.Count - 1)
+        {
+            appended.RemoveRange(lastToolResult + 1, appended.Count - lastToolResult - 1);
+            TrimConversationTo(messagesBeforeCall + appended.Count);
+        }
+
+        foreach (var msg in appended)
+        {
+            if (msg is { Role: ChatMessageRoles.Assistant, ToolCalls.Count: > 0 })
+                msg.Content = null;
+        }
+
+        PatchReasoningContent(appended, reasoningText);
+        _persistedMessages.AddRange(appended);
+        RefreshLiveContextTokens();
+        return true;
     }
 
     /// <summary>
