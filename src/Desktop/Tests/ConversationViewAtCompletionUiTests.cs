@@ -1692,7 +1692,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var pointer = new Point(450, 350);
                 window.MouseMove(pointer);
                 window.MouseWheel(pointer, new Vector(0, 5));
-                PumpUntil(() => !AtBottom(sv), "滚轮上滚");
+                PumpUntil(() => !AtBottom(sv) && !list.IsFollowing, "滚轮上滚并进入阅读态");
 
                 var beforeOffset = sv.Offset.Y;
                 var beforeExtent = sv.Extent.Height;
