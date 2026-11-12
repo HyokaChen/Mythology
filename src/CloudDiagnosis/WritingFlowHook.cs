@@ -603,6 +603,14 @@ public sealed class WritingFlowHook(
             && _decisionBridge is { } bridge
         )
         {
+            // 已授权作品：低阈值裁决不再创建问题
+            ct.ThrowIfCancellationRequested();
+            if (bridge.TryAutoContinue(decisionOutcome, input.NovelId) is { } autoVerdict)
+            {
+                agent.InjectQueue.Enqueue(new LlmChatMessage(ChatMessageRoles.User, autoVerdict));
+                return true; // 不是人工介入，不 NotifyIntervention
+            }
+
             // P3 DECISION 前置过滤（§16.2）：角色完整性 + 小说早期（阈值可配，U-3）
             var skipReason = HumanDecisionBridge.ShouldSkipDecision(
                 decisionOutcome,

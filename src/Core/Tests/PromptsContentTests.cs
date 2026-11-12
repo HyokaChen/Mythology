@@ -393,6 +393,18 @@ public sealed class PromptsContentTests
     }
 
     [Fact]
+    public void Prompts_ContainAuthorizationContract_AndDoNotStopOnDecision()
+    {
+        Assert.Contains("低阈值场景规划", RoleDefinitionPrompt.Full);
+        Assert.Contains("不再逐次询问", PlanningLoopPrompt.Full);
+        Assert.Contains("低阈值裁决", WritingProcessPrompt.Full);
+        Assert.Contains("检查/诊断请求默认包含修复", OutputZonesPrompt.Full);
+        Assert.DoesNotContain("human_decision_required 必须停", RoleDefinitionPrompt.Full);
+        Assert.DoesNotContain("必须等待用户回答", WritingProcessPrompt.Full);
+        Assert.DoesNotContain("否则停等", WritingProcessPrompt.Full);
+    }
+
+    [Fact]
     public void ContextUnderstandingPrompt_ContainsCloudCanonBoundary()
     {
         Assert.Contains("云端 Harness 的评分", ContextUnderstandingPrompt.Full);

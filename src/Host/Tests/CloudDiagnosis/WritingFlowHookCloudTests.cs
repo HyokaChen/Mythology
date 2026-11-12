@@ -15,8 +15,8 @@ namespace Host.Tests.CloudDiagnosis;
 
 /// <summary>
 /// HARNESS-CLOUD §10 P1-G0 WritingFlowHook 集成验收：
-/// ① scene.plan human_decision_required → GetPending 出现问题；
-/// ② 回答后 InjectQueue 出现 [人工裁决] 前缀；
+/// ① Manual：scene.plan human_decision_required → GetPending 问题；Auto 授权后 → 不再创建问题；
+/// ② 回答后 InjectQueue 出现 [人工裁决] 前缀 / 授权句；
 /// ⑤ ThrowingHarness（CloudApiException）→ 降级本地信号，Loop 不中断；
 /// 幂等：同章二次写入仅调一次 harness；取消：OCE 透传出 Hook。
 /// </summary>
@@ -168,6 +168,90 @@ public sealed class WritingFlowHookCloudTests
         var injected = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
         Assert.StartsWith("[人工裁决]", injected.Content);
         Assert.Equal(1, calls); // 每章幂等 ≤1 次
+    }
+
+    [Fact]
+    public async Task DecisionOutcome_AfterAuthorization_NoSecondQuestion()
+    {
+        var store = new MockNovelStore();
+        var questions = new DecisionTestStore();
+        var agent = NewAgent();
+        var calls = 0;
+        var harness = new StubHarness(_ =>
+        {
+            Interlocked.Increment(ref calls);
+            return new HarnessResult
+            {
+                Capability = "fiction.scene.plan",
+                Result = JsonSerializer.Deserialize<JsonElement>(DecisionJson),
+            };
+        });
+        await store.SaveNovel(
+            new Novel
+            {
+                Id = NovelId,
+                Title = "测试小说",
+                AutoDiagnose = true,
+                Characters =
+                [
+                    new Character { Name = "主角", Role = CharacterRole.Protagonist },
+                    new Character { Name = "配角甲", Role = CharacterRole.Supporting },
+                    new Character { Name = "配角乙", Role = CharacterRole.Supporting },
+                ],
+            }
+        );
+        store.AddChapters(
+            NovelId,
+            new Chapter
+            {
+                Id = "ch_1",
+                Title = "第五章",
+                Order = 5,
+                Content = "少年在山巅睁开眼。",
+            }
+        );
+        var options = new CloudDiagnosisOptions { OntologyHarnessEnabled = false };
+        var hook = new WritingFlowHook(
+            agent,
+            store,
+            new DiagnosisScheduler(harness, options),
+            new HumanDecisionBridge(questions, decisionTimeoutSeconds: 120),
+            options
+        );
+
+        var firstTask = hook.AfterToolCallAsync(WriteContext("ch_1"), CancellationToken.None);
+        for (var i = 0; i < 100 && questions.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        var pending = questions.GetPending();
+        Assert.Single(pending);
+        questions.Answer(pending[0].Id, ["按建议继续自动迭代"]);
+        await firstTask;
+
+        Assert.True(agent.InjectQueue.HasPending);
+        var firstInjected = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
+        Assert.Contains("[人工裁决]", firstInjected.Content);
+        Assert.Contains("不再逐次询问", firstInjected.Content);
+
+        // 新增的 ch_2 Order=8：L1-1 距离 3 命中，确保第二轮仍走云端。
+        store.AddChapters(
+            NovelId,
+            new Chapter
+            {
+                Id = "ch_2",
+                Title = "第八章",
+                Order = 8,
+                Content = "少年在山巅睁开眼。",
+            }
+        );
+
+        await hook.AfterToolCallAsync(WriteContext("ch_2"), CancellationToken.None);
+
+        Assert.Empty(questions.GetPending());
+        Assert.True(agent.InjectQueue.HasPending);
+        var secondInjected = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
+        Assert.Contains("沿用上次 [人工裁决]", secondInjected.Content);
+        Assert.Contains("已按建议继续自动迭代", secondInjected.Content);
+        Assert.Equal(2, calls);
     }
 
     [Fact]

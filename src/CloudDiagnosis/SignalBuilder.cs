@@ -380,7 +380,7 @@ public static class SignalBuilder
         sb.AppendLine(
             outcome.PassNumber >= 2
                 ? "这是复审；仍有问题，交付时说明，不再自动循环。不要贴完整报告。"
-                : "请先自动修 1–3 处再交付；人物对话/作者风格命中则保留并说明；不要贴完整报告。"
+                : "请先自动修 A/B 级 1–3 处再交付；F/H/X 只报告；人物对话/作者风格命中则保留并说明；不要贴完整报告。"
         );
         return sb.ToString().TrimEnd();
     }

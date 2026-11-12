@@ -18,23 +18,33 @@ public static class AutoSelectBest
     /// <param name="profile">写作配置</param>
     /// <param name="dimension">维度名称（用于 humanizer 特殊规则）</param>
     /// <param name="subType">问题子类型（用于 humanizer 特殊规则）</param>
+    /// <param name="level">humanizer 分层（A/B/C/F/X/H；非 humanizer 可空）</param>
     /// <returns>选中的变体，null 表示无法选择</returns>
     public static EnhancementCandidate? Select(
         List<EnhancementCandidate> candidates,
         WritingProfile profile,
         string dimension = "",
-        string? subType = null
+        string? subType = null,
+        string? level = null
     )
     {
         if (candidates.Count == 0)
             return null;
 
+        // humanizer：只有显式 A/B 级、full 模式、且存在保守版时才自动改；
+        // F/X/H/空级别（指纹/不改/人审/旧服务端）一律不自动写。
+        if (dimension == DimensionKeys.Humanizer && subType != "fawning_tone")
+        {
+            if (
+                !string.Equals(profile.AutoEnhance, "full", StringComparison.Ordinal)
+                || level is not ("A" or "B")
+            )
+                return null;
+            return candidates.FirstOrDefault(c => c.Label == "保守版");
+        }
+
         if (candidates.Count == 1)
             return candidates[0];
-
-        // humanizer 特殊规则：仅对明确协作残留（fawning_tone）允许自动选择
-        if (dimension == DimensionKeys.Humanizer && subType != "fawning_tone")
-            return null;
 
         return profile.EnhancementProfile switch
         {

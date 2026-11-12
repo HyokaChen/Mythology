@@ -341,7 +341,7 @@ public sealed class AskUserTool(InteractionHub hub) : AgentTool<AskUserParams, A
     public override string Name => "ask_user";
     public override string Label => "询问用户";
     public override string Description =>
-        "向用户提出结构化问题（用于不清晰或多方案情况）。TUI 会弹出交互面板，等待用户回复后返回答案";
+        "仅在不可逆/高代价且无法从上下文推断时使用；不要用来确认是否继续或选择已有推荐项。TUI 会弹出交互面板，等待用户回复后返回答案";
 
     public override ToolCategory Category => ToolCategory.Generic;
     public override ToolExecutionMode ExecutionMode => ToolExecutionMode.Sequential; // 写入问题存储+阻塞等待用户：强制串行

@@ -58,6 +58,8 @@ public enum DecisionProfileKind
 /// 人工裁决回路（HARNESS-CLOUD §5 组件 C）。
 /// DECISION（scene.plan 的 human_decision_required）→ QuestionDef → InteractionHub
 /// → WaitForQuestionAnswerAsync（链接超时 CTS）→ 答案回注文本 / 超时挂起文本。
+/// 首次对低阈值裁决选择“按建议继续自动迭代”后，本作品在当前进程内获得持续授权；
+/// 后续低阈值裁决直接自动继续，不再创建问题（授权句复用既有 [人工裁决] 信号）。
 /// UI 弹窗由宿主从 <see cref="InteractionHub.Changed"/> claim/render；本组件不持有任何 UI 类型。
 /// P2/P3：DecisionHistory 持久化（SQLite vectors.db decision_history 表）+ 决策模式统计。
 /// </summary>
@@ -72,6 +74,9 @@ public sealed class HumanDecisionBridge
     private readonly ILogger? _logger;
 
     private readonly List<DecisionHistoryEntry> _decisions;
+
+    /// <summary>已对低阈值裁决授权“按建议继续自动迭代”的作品；进程会话级。</summary>
+    private readonly HashSet<string> _authorizedNovels = new(StringComparer.Ordinal);
 
     /// <summary>已知英文 reason 的本地转述表（Q1 定案：云端 reason 为英文，需转中文）。</summary>
     private static readonly Dictionary<string, string> KnownReasons = new(
@@ -97,6 +102,14 @@ public sealed class HumanDecisionBridge
 
     /// <summary>默认模板兜底次项（§5.2）：语义 = 自行指定方向。</summary>
     private const string OwnDirectionOption = "我来指定方向";
+
+    /// <summary>首次授权后的持续授权句；追加到既有 [人工裁决] 文本里，不新增信号类型。</summary>
+    private const string AuthorizationSentence =
+        "本作品后续低阈值场景规划裁决按建议继续自动迭代，不再逐次询问。"
+        + "仅覆盖可回退的写作推进；删除/覆盖/改结局等不可逆动作仍需确认。";
+
+    /// <summary>TUI 走答案追加链路时，bridge 只补这一条带 [人工裁决] 前缀的授权块。</summary>
+    private const string AuthorizationBlock = "[人工裁决] " + AuthorizationSentence;
 
     /// <summary>
     /// U-2 存量回退：旧行（无 answer_code）按 Answer 文本一次性归类；
@@ -155,6 +168,36 @@ public sealed class HumanDecisionBridge
 
         // 频率上限由调度器的 TryConsumeDecisionSlot() 处理（会话级）。
         return null;
+    }
+
+    /// <summary>是否为低阈值场景规划裁决（稳定 reason-code 优先，存量英文 reason 兜底）。</summary>
+    private static bool IsThresholdReason(ScenePlanOutcome outcome) =>
+        string.Equals(
+            outcome.ReasonCode,
+            "quality-below-threshold",
+            StringComparison.OrdinalIgnoreCase
+        ) || (outcome.Reason is not null && KnownReasons.ContainsKey(outcome.Reason));
+
+    /// <summary>
+    /// 已授权作品的低阈值裁决：返回自动继续文本；null = 仍需人工问题。
+    /// 自动继续不是人工决策，不写 decision_history，避免污染 DecisionProfile。
+    /// </summary>
+    public string? TryAutoContinue(ScenePlanOutcome outcome, string? novelId = null)
+    {
+        if (
+            string.IsNullOrEmpty(novelId)
+            || !IsThresholdReason(outcome)
+            || !_authorizedNovels.Contains(novelId)
+        )
+            return null;
+
+        var score = outcome.OverallScore.ToString("0.#", CultureInfo.InvariantCulture);
+        var direction =
+            outcome.FocusAreas.Count > 0
+                ? $"修复方向：{string.Join("、", outcome.FocusAreas)}"
+                : "按现有细纲继续推进下一章";
+        return $"{SignalBuilder.Prefix} 场景规划综合={score}（沿用上次 [人工裁决] 的授权），"
+            + $"已按建议继续自动迭代；{direction}。不要停下来等待用户确认。";
     }
 
     /// <summary>
@@ -233,7 +276,11 @@ public sealed class HumanDecisionBridge
         string? novelId = null
     )
     {
-        var (question, firstOptionKind) = BuildQuestion(outcome);
+        ct.ThrowIfCancellationRequested();
+        if (TryAutoContinue(outcome, novelId) is { } autoVerdict)
+            return autoVerdict;
+
+        var question = BuildQuestion(outcome);
         var created = _hub.CreateQuestionSet(_hub.CurrentContext, [question]);
         var pending = created.Questions!.Items[0].Question;
 
@@ -269,8 +316,13 @@ public sealed class HumanDecisionBridge
         var answerKind =
             answers.Length == 1
             && string.Equals(answers[0], question.Options[0], StringComparison.Ordinal)
-                ? firstOptionKind
+                ? DecisionAnswerKind.FollowSuggestion
                 : DecisionAnswerKind.OwnDirection;
+        var authorizedNow =
+            answerKind == DecisionAnswerKind.FollowSuggestion
+            && IsThresholdReason(outcome)
+            && !string.IsNullOrEmpty(novelId)
+            && _authorizedNovels.Add(novelId);
         RecordDecision(
             novelId ?? "",
             question.Question,
@@ -280,23 +332,23 @@ public sealed class HumanDecisionBridge
         );
 
         // 双通道去重（P2）：宿主复用 ask_user 渲染链路时会自动把答案追加为 user 消息，
-        // 此时 bridge 不再经 InjectQueue 重复注入；无追加能力的宿主保持注入。
+        // 此时 bridge 不再重复注入答案；首次授权仍需补一条授权块，否则模型看不到持续授权。
         if (_skipAnswerInjection)
-            return "";
+            return authorizedNow ? AuthorizationBlock : "";
 
-        return $"[人工裁决] 就\"{question.Question}\"你选择了\"{string.Join("、", answers)}\"。"
+        var verdict =
+            $"[人工裁决] 就\"{question.Question}\"你选择了\"{string.Join("、", answers)}\"。"
             + $"证据背景：repairIntent.action={outcome.RepairAction ?? "n/a"}。"
             + "请严格按此执行，不得擅自更改方向。";
+        return authorizedNow ? verdict + "\n" + AuthorizationSentence : verdict;
     }
 
     /// <summary>
     /// 组装 QuestionDef（§5.2）：Question 优先按 reasonCode 本地转述（U-1），
     /// 其次按 reason 文本匹配转述（存量服务端）；未知一律用兜底模板。
-    /// Options 由 focusAreas 映射，缺省兜底两项。返回首选项语义 kind（U-2：判分不依赖文本）。
+    /// 第一项恒为“按建议继续自动迭代”（授权入口），focusAreas 追加为后续选项。
     /// </summary>
-    private static (QuestionDef Question, DecisionAnswerKind FirstOptionKind) BuildQuestion(
-        ScenePlanOutcome outcome
-    )
+    private static QuestionDef BuildQuestion(ScenePlanOutcome outcome)
     {
         var reason = outcome.Reason;
         var questionText =
@@ -307,22 +359,18 @@ public sealed class HumanDecisionBridge
             : reason is not null ? $"云端诊断建议征求你的方向（原因：{reason}）"
             : "云端诊断建议就当前场景规划征求你的方向";
 
-        var usesFocusAreas = outcome.FocusAreas.Count > 0;
-        var options = usesFocusAreas
-            ? outcome.FocusAreas.Select(a => $"聚焦 {a} 修复").ToArray()
-            : [ContinueOption, OwnDirectionOption];
+        string[] options =
+            outcome.FocusAreas.Count > 0
+                ? [ContinueOption, .. outcome.FocusAreas.Take(3).Select(a => $"聚焦 {a} 修复")]
+                : [ContinueOption, OwnDirectionOption];
 
-        return (
-            new QuestionDef
-            {
-                Header = "创作决策",
-                Question = questionText,
-                Options = options,
-                MultiSelect = false,
-            },
-            // 聚焦选项 = 用户自定方向；默认模板首项 = 采纳建议
-            usesFocusAreas ? DecisionAnswerKind.OwnDirection : DecisionAnswerKind.FollowSuggestion
-        );
+        return new QuestionDef
+        {
+            Header = "创作决策",
+            Question = questionText,
+            Options = options,
+            MultiSelect = false,
+        };
     }
 
     // ── DecisionHistory 持久化（vectors.db decision_history 表；读写失败告警降级、不动已有表）──

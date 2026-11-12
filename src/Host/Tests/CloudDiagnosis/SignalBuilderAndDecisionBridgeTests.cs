@@ -175,7 +175,7 @@ public sealed class HumanDecisionBridgeTests
         Assert.Equal("创作决策", pending[0].Header);
         // Q1 定案：reason 转述为 Question；focusAreas 映射为 Options
         Assert.Contains("低于自动推进阈值", pending[0].Question);
-        Assert.Equal(["聚焦 代入感 修复"], pending[0].Options);
+        Assert.Equal(["按建议继续自动迭代", "聚焦 代入感 修复"], pending[0].Options);
         // §5.4 触发桥：宿主经 store 事件收到通知
         Assert.NotNull(notified);
         Assert.NotEmpty(notified);
@@ -547,6 +547,103 @@ public sealed class HumanDecisionBridgeTests
     }
 
     [Fact]
+    public async Task DecideAsync_FirstThresholdFollowSuggestion_InjectsAuthorization()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
+        var outcome = Decision with { FocusAreas = [] };
+
+        var task = bridge.DecideAsync(outcome, CancellationToken.None, novelId: "novel_x");
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        store.Answer(store.GetPending()[0].Id, ["按建议继续自动迭代"]);
+
+        var verdict = await task;
+
+        Assert.Contains("[人工裁决]", verdict);
+        Assert.Contains("不再逐次询问", verdict);
+        Assert.Single(bridge.DecisionHistory);
+        Assert.Equal(DecisionAnswerKind.FollowSuggestion, bridge.DecisionHistory[0].AnswerKind);
+    }
+
+    [Fact]
+    public async Task DecideAsync_SecondThresholdDecision_AutoContinuesWithoutQuestion()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
+        var first = Decision with { FocusAreas = [] };
+
+        var firstTask = bridge.DecideAsync(first, CancellationToken.None, novelId: "novel_x");
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        store.Answer(store.GetPending()[0].Id, ["按建议继续自动迭代"]);
+        await firstTask;
+
+        var verdict = await bridge.DecideAsync(
+            Decision,
+            CancellationToken.None,
+            novelId: "novel_x"
+        );
+
+        Assert.Empty(store.GetPending());
+        Assert.Contains("沿用上次 [人工裁决]", verdict);
+        Assert.Contains("已按建议继续自动迭代", verdict);
+        Assert.Single(bridge.DecisionHistory);
+    }
+
+    [Fact]
+    public async Task DecideAsync_OwnDirection_DoesNotAuthorize()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
+
+        var firstTask = bridge.DecideAsync(Decision, CancellationToken.None, novelId: "novel_x");
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        store.Answer(store.GetPending()[0].Id, ["聚焦 代入感 修复"]);
+        await firstTask;
+
+        var secondTask = bridge.DecideAsync(
+            Decision with
+            {
+                FocusAreas = [],
+            },
+            CancellationToken.None,
+            novelId: "novel_x"
+        );
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+
+        var pending = store.GetPending();
+        Assert.Single(pending);
+        store.Answer(pending[0].Id, ["按建议继续自动迭代"]);
+        await secondTask;
+    }
+
+    [Fact]
+    public async Task DecideAsync_Authorization_IsPerNovel()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
+        var outcome = Decision with { FocusAreas = [] };
+
+        var firstTask = bridge.DecideAsync(outcome, CancellationToken.None, novelId: "novel_a");
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        store.Answer(store.GetPending()[0].Id, ["按建议继续自动迭代"]);
+        await firstTask;
+
+        var secondTask = bridge.DecideAsync(outcome, CancellationToken.None, novelId: "novel_b");
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+
+        var pending = store.GetPending();
+        Assert.Single(pending);
+        store.Answer(pending[0].Id, ["按建议继续自动迭代"]);
+        await secondTask;
+    }
+
+    [Fact]
     public async Task DecideAsync_RecordsDecisionWithNovelId()
     {
         var store = new DecisionTestStore();
@@ -566,8 +663,9 @@ public sealed class HumanDecisionBridgeTests
 }
 
 /// <summary>
-/// HumanDecisionBridge 边界补充：skipAnswerInjection 双通道去重 / ShouldSkipDecision
-/// 历史稳定性三条件 / 信任型 0.35 下沿 / DecideAsync 超时留题记录 wasSkipped 不落库（超时不 RecordDecision）。
+/// HumanDecisionBridge 边界补充：skipAnswerInjection 双通道去重（首次授权仍补授权块） /
+/// ShouldSkipDecision 历史稳定性三条件 / 信任型 0.35 下沿 /
+/// DecideAsync 超时留题记录 wasSkipped 不落库（超时不 RecordDecision）。
 /// </summary>
 public sealed class HumanDecisionBridgeEdgeTests
 {
@@ -600,6 +698,35 @@ public sealed class HumanDecisionBridgeEdgeTests
 
         Assert.Equal("", verdict);
         // 但 DECISION 历史仍记录（宿主侧渲染不替代决策历史）
+        Assert.Single(bridge.DecisionHistory);
+    }
+
+    [Fact]
+    public async Task SkipAnswerInjection_ReturnsAuthorizationBlock_WhenAuthorized()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(
+            store,
+            decisionTimeoutSeconds: 120,
+            skipAnswerInjection: true
+        );
+
+        var task = bridge.DecideAsync(
+            Decision with
+            {
+                FocusAreas = [],
+            },
+            CancellationToken.None,
+            novelId: "novel_x"
+        );
+        for (var i = 0; i < 50 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        store.Answer(store.GetPending()[0].Id, ["按建议继续自动迭代"]);
+
+        var verdict = await task;
+
+        Assert.Contains("[人工裁决]", verdict);
+        Assert.Contains("不再逐次询问", verdict);
         Assert.Single(bridge.DecisionHistory);
     }
 

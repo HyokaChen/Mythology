@@ -279,6 +279,34 @@ public sealed class HumanizerAuditServiceTests
     }
 
     [Fact]
+    public void BuildHumanizerSignal_Pass1_ScopesAutoFixToAB()
+    {
+        var outcome = new HumanizerAuditOutcome(
+            "high",
+            [
+                new HumanizerFinding(
+                    "formulaic_pattern",
+                    "A",
+                    "high",
+                    "公式化句式",
+                    "不是A而是B",
+                    "直接陈述",
+                    0,
+                    80
+                ),
+            ],
+            0,
+            1
+        );
+
+        var signal = SignalBuilder.BuildHumanizerSignal(outcome);
+
+        Assert.Contains("A/B 级", signal);
+        Assert.Contains("F/H/X 只报告", signal);
+        Assert.DoesNotContain("请先自动修 1–3 处再交付", signal);
+    }
+
+    [Fact]
     public async Task WritingFlowHook_HumanizerFailure_InjectsLocalSelfCheck()
     {
         const string novelId = "novel_hook_fail";

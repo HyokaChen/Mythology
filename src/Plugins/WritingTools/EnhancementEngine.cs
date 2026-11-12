@@ -40,6 +40,9 @@ public sealed record EnhancementLocation
     /// <summary>问题子类型（如 humanizer 的 formulaic_pattern）。</summary>
     public string? SubType { get; init; }
 
+    /// <summary>humanizer 分层（A/B/C/F/X/H；非 humanizer 为 null）。</summary>
+    public string? Level { get; init; }
+
     /// <summary>问题描述</summary>
     public string IssueDescription { get; init; } = "";
 
@@ -261,6 +264,7 @@ public sealed class EnhancementEngine
                     AfterContext = afterContext,
                     Dimension = issue.Dimension,
                     SubType = issue.SubType,
+                    Level = issue.Level,
                     IssueDescription = issue.Description,
                 }
             );
@@ -441,7 +445,8 @@ public sealed class EnhancementEngine
                 candidates,
                 profile,
                 location.Dimension,
-                location.SubType
+                location.SubType,
+                location.Level
             );
             if (selected is null)
                 continue;
@@ -458,14 +463,14 @@ public sealed class EnhancementEngine
         if (enhanced.Count == 0)
         {
             return dimension == DimensionKeys.Humanizer
-                ? "检测到机器化写作风险，但叙述/台词类风险需人工确认。仅协作残留可自动清理。"
+                ? "检测到机器化写作风险；本轮未生成可安全自动应用的保守改写，风险已列出，继续写作即可，不阻塞。"
                 : "自动增强未产生有效改写";
         }
 
         chapter.Content = originalContent;
         await _store.SaveChapter(chapter, ct);
 
-        var prefix = dimension == DimensionKeys.Humanizer ? "🤖 已清理协作残留" : "已自动增强";
+        var prefix = dimension == DimensionKeys.Humanizer ? "🤖 已自动去 AI 味" : "已自动增强";
         return $"{prefix} {enhanced.Count} 处：{string.Join("、", enhanced)}。可通过 Steer \"撤回\" 还原。";
     }
 
