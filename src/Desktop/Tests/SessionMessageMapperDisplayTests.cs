@@ -598,6 +598,27 @@ public sealed class SessionMessageMapperDisplayTests
     }
 
     [Fact]
+    public void MapUi_CompactEntry_RendersShortFirstLineSystemNotice()
+    {
+        var compact = new Core.Data.ChatMessage
+        {
+            Role = MessageRole.Unknown,
+            EventType = SessionEventType.Compact,
+            Content = "## 压缩概览\n" + new string('文', 4000),
+        };
+
+        var notice = Assert.Single(SessionMessageMapper.MapUi([compact]));
+
+        Assert.Equal(MessageSender.System, notice.Sender);
+        Assert.StartsWith(
+            SessionInternalMessages.CompactSummaryPrefix,
+            notice.Content.ToString(),
+            StringComparison.Ordinal
+        );
+        Assert.True(notice.Content.Length < 200, $"compact 系统行仍过长：{notice.Content.Length}");
+    }
+
+    [Fact]
     public void MapUi_OrphanToolResult_UsesFriendlyLabelAndSummary()
     {
         var result = new Core.Data.ChatMessage

@@ -56,8 +56,7 @@ public static class SessionMessageMapper
                 {
                     // compact 摘要：dim 系统行（Active 模式渲染为 Unknown+EventType）
                     var msg = new ChatMessage(MessageSender.System);
-                    var firstLine = FirstLine(text, 120);
-                    msg.Content.Append($"🗜 上下文摘要：{firstLine}");
+                    msg.Content.Append(SessionInternalMessages.FormatCompactSummaryPreview(text));
                     result.Add(msg);
                     break;
                 }
@@ -313,11 +312,5 @@ public static class SessionMessageMapper
         {
             return [];
         }
-    }
-
-    private static string FirstLine(string text, int max)
-    {
-        var line = text.Split('\n')[0].Trim();
-        return line.Length <= max ? line : line[..max] + "…";
     }
 }

@@ -444,7 +444,7 @@ public sealed partial class TuiApp
             var dbMessages = await _sessionStore.GetActiveMessages(sessionId);
             return dbMessages.Count == 0
                 ? null
-                : dbMessages.Select(MapDbMessageToChatMessage).ToArray();
+                : dbMessages.Select(m => MapDbMessageToChatMessage(m, forDisplay: true)).ToArray();
         }
         catch (Exception ex)
         {
@@ -472,7 +472,9 @@ public sealed partial class TuiApp
                 return;
             }
 
-            var messages = dbMessages.Select(MapDbMessageToChatMessage).ToArray();
+            var messages = dbMessages
+                .Select(m => MapDbMessageToChatMessage(m, forDisplay: false))
+                .ToArray();
             _agent.ReplaceMessages(messages);
             _agent.SetContextWindowState(boundary);
         }
@@ -487,10 +489,16 @@ public sealed partial class TuiApp
     /// 将数据库消息记录映射为 LlmChatMessage。
     /// 从 toolCallsJson 字段恢复 ToolCalls。
     /// </summary>
-    private static LlmChatMessage MapDbMessageToChatMessage(ChatMessage m)
+    internal static LlmChatMessage MapDbMessageToChatMessage(ChatMessage m, bool forDisplay = false)
     {
-        var role = MessageRoleMapping.ToChatMessageRoles(m.Role);
-        var msg = new LlmChatMessage(role, m.Content)
+        var compact = forDisplay && m.EventType == SessionEventType.Compact;
+        var role = compact
+            ? LlmTornado.Code.ChatMessageRoles.Unknown
+            : MessageRoleMapping.ToChatMessageRoles(m.Role);
+        var content = compact
+            ? SessionInternalMessages.FormatCompactSummaryPreview(m.Content)
+            : m.Content;
+        var msg = new LlmChatMessage(role, content)
         {
             Name = m.ToolName,
             ToolCallId = m.ToolCallId,

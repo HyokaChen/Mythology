@@ -77,6 +77,14 @@ public sealed class MessageRestorer
                 case ChatMessageRoles.User:
                 // ── 用户消息：渲染为蓝色气泡 ──
                 {
+                    // 运行时 compact 在 _agent.State.Messages 里是 User 角色
+                    // "[上下文摘要 bN]\n<全文>"；主题重建走这条路径，必须仍渲染短系统行。
+                    if (Core.Data.SessionInternalMessages.IsCompactSummary(text))
+                    {
+                        AddCompactBlock(text);
+                        break;
+                    }
+
                     // 跳过 ask_user 回复消息（新 OMP 格式或历史 "**用户回复:**"），
                     // 因为 tool result 的 Q&A 卡片已经展示了完整信息
                     var isAskUserAnswer = Core.Data.SessionInternalMessages.IsAskUserReply(text);
@@ -155,8 +163,14 @@ public sealed class MessageRestorer
                 case ChatMessageRoles.Unknown:
                 // ── Unknown 消息：变体选择 / 错误 / 中断 ──
                 {
+                    // compact 摘要只显示首行预览，绝不能把整段摘要当 interrupt
+                    // 气泡铺进 DocumentFlow（长块会让历史滚动在分片边界失去锚点）。
+                    if (Core.Data.SessionInternalMessages.IsCompactSummary(text))
+                    {
+                        AddCompactBlock(text);
+                    }
                     // 变体选择事件：内容格式 "选择变体 #N: label"
-                    if (text.StartsWith("选择变体", StringComparison.Ordinal))
+                    else if (text.StartsWith("选择变体", StringComparison.Ordinal))
                     {
                         var variantBlock = new TextBlock($"✅ {text}")
                             .TextAlignment(TextAlignment.Left)
@@ -303,5 +317,33 @@ public sealed class MessageRestorer
                 }
             }
         }
+    }
+
+    private void AddCompactBlock(string text)
+    {
+        var preview = Core.Data.SessionInternalMessages.FormatCompactSummaryPreview(text);
+        var compactBlock = new TextBlock(preview)
+            .TextAlignment(TextAlignment.Left)
+            .Wrap(true)
+            .HorizontalAlignment(Align.Stretch)
+            .Style(
+                new TextBlockStyle
+                {
+                    Foreground = _colors.ThinkingBubbleFg,
+                    Background = _colors.ThinkingBubbleBg,
+                    FillBackground = true,
+                }
+            );
+        _flow.Items.Add(
+            new DocumentFlowItem
+            {
+                Content = new FlowDocument().Add(compactBlock),
+                Alignment = DocumentFlowAlignment.Stretch,
+                BackgroundStyle = Style
+                    .None.WithBackground(_colors.ThinkingBubbleBg)
+                    .WithForeground(_colors.ThinkingBubbleFg),
+                Padding = new Thickness(3, 1, 3, 1),
+            }
+        );
     }
 }

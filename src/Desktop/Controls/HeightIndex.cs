@@ -36,6 +36,9 @@ public sealed class HeightIndex<T>
         }
     }
 
+    /// <summary>Index of known item, or -1. O(1), mirrors the item order.</summary>
+    public int IndexOf(T item) => _index.TryGetValue(item, out var index) ? index : -1;
+
     /// <summary>Update one known item; returns false when it is not in the index.</summary>
     public bool Update(T item, double height)
     {

@@ -121,6 +121,7 @@ public partial class ConversationView : UserControl
     private void OnHostWindowDeactivated(object? sender, EventArgs e)
     {
         SetHoveredMessage(null);
+        _hostWindowActive = false;
         _restoreAnchor = MessageList.IsFollowing ? null : CaptureAnchor(MessageScroll.Offset.Y);
         InvalidatePendingReveal();
         MessageList.SetWindowActive(false);
@@ -128,6 +129,7 @@ public partial class ConversationView : UserControl
 
     private void OnHostWindowActivated(object? sender, EventArgs e)
     {
+        _hostWindowActive = true;
         MessageList.SetWindowActive(true);
         if (MessageList.IsFollowing || _restoreAnchor is not { } anchor)
         {
@@ -146,8 +148,19 @@ public partial class ConversationView : UserControl
         );
     }
 
-    private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e) =>
+    /// <summary>记住程序化高度变化前的阅读位置；用户下一次手势会清掉。</summary>
+    private void RememberReadingAnchor()
+    {
+        if (!MessageList.IsFollowing)
+            _readingAnchor ??= CaptureAnchor(MessageScroll.Offset.Y);
+    }
+
+    private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e)
+    {
+        // 真正的用户手势：程序化展开/高度回写的临时锚点到此结束。
+        _readingAnchor = null;
         InvalidatePendingReveal();
+    }
 
     /// <summary>
     /// 消息级 hover：指针在同一消息的不同行之间移动时不闪断，只有真正换消息才切换。
@@ -221,10 +234,29 @@ public partial class ConversationView : UserControl
     private bool _forceWindowSync;
     private bool _syncingWindow;
 
-    private readonly record struct ScrollAnchor(ConversationRow Row, double Delta);
+    /// <summary>
+    /// 阅读锚点：<see cref="Row"/> 是视口中心所在行，<see cref="Delta"/> 是中心点相对该行顶部的
+    /// 内容偏移，<see cref="ViewportHeight"/> 是捕获时的真实视口高度（窗口失焦后可能改变）。
+    /// 恢复时优先用该行已实现的真实顶部，而不是 HeightIndex 对未实测行的估算；
+    /// 否则窗口换页时估算误差会把视口反向拽回。
+    /// </summary>
+    private readonly record struct ScrollAnchor(
+        ConversationRow Row,
+        double Delta,
+        double ViewportHeight
+    );
+
+    private readonly record struct RealizedRow(ConversationRow Row, double Top, double Height);
 
     private Window? _hostWindow;
+    private bool _hostWindowActive = true;
     private ScrollAnchor? _restoreAnchor;
+    private ScrollAnchor? _pendingAnchor;
+    private ScrollAnchor? _readingAnchor;
+    private bool _anchorRestoreScheduled;
+    private readonly List<RealizedRow> _realizedRows = [];
+    private readonly Dictionary<ConversationRow, ContentPresenter> _rowPresenters = [];
+    private double _contentOriginY;
     private int _revealVersion;
     private bool _captureScheduled;
     private bool _restoringOffset;
@@ -283,11 +315,16 @@ public partial class ConversationView : UserControl
                     RebuildHeightIndex();
 
                     // 跟随尾部时窗口滚到最新；阅读历史时只把新行计入底部 spacer，
-                    // 用户当前视口不动。
+                    // 用户当前视口不动。失焦期间 ScrollViewer 可能在 extent 增长时
+                    // 自动贴底，必须把离开前的阅读锚点再压回去。
                     if (MessageList.IsFollowing)
                         SyncWindowToTail();
                     else
+                    {
                         UpdateWindowSpacers();
+                        if (!_hostWindowActive && _restoreAnchor is { } readingAnchor)
+                            RestoreAnchor(readingAnchor);
+                    }
                 }
                 else
                 {
@@ -365,7 +402,7 @@ public partial class ConversationView : UserControl
 
     private void OnMessageScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (_syncingWindow || _restoringOffset)
+        if (_syncingWindow || _restoringOffset || !_hostWindowActive)
             return;
 
         // 流式正文/spacer 只改变 extent 时 offset 不变；不要因此重算窗口并
@@ -417,7 +454,7 @@ public partial class ConversationView : UserControl
 
     private void SyncWindowForCurrentState()
     {
-        if (_syncingWindow)
+        if (_syncingWindow || !_hostWindowActive)
             return;
         if (_rows.Count == 0)
         {
@@ -453,15 +490,22 @@ public partial class ConversationView : UserControl
             return;
         }
 
-        var viewport = ViewportHeight();
         var offset = MessageScroll.Offset.Y;
-        var anchor = CaptureAnchor(offset);
-        var focus = _heightIndex.IndexAtOffset(offset + viewport * 0.5);
+        // 优先用已实现行定位视口中心。高度索引只用于完全拿不到实测行时的兜底；
+        // 若拿估算行当 focus，窗口可能围着一条用户根本看不见的行换页。
+        // 程序化展开会先改变行高；原生 ScrollViewer 可能在布局时保持“贴底”。
+        // 在它把 offset 拉走之前记住的锚点，必须优先于当前 offset 的重新采样。
+        var anchor = !MessageList.IsFollowing ? _readingAnchor ?? CaptureAnchor(offset) : null;
+        var focus = anchor is { } current
+            ? _heightIndex.IndexOf(current.Row)
+            : HeightIndexAtContentOffset(offset + AnchorViewportHeight() * 0.5);
+        if (focus < 0)
+            focus = HeightIndexAtContentOffset(offset + AnchorViewportHeight() * 0.5);
 
         // 阅读历史时保留当前窗口，只有焦点接近窗口边缘才换页。
         // 每滚一个像素就 Remove/Insert + RestoreAnchor，会让高度估算误差
         // 变成持续的“往下滚反而被拉回上方”。
-        var currentStart = _windowRows.Count > 0 ? _rows.IndexOf(_windowRows[0]) : -1;
+        var currentStart = _windowRows.Count > 0 ? _heightIndex.IndexOf(_windowRows[0]) : -1;
         var currentEnd = currentStart < 0 ? -1 : currentStart + _windowRows.Count;
         if (!_forceWindowSync && currentStart >= 0 && currentEnd <= _rows.Count)
         {
@@ -554,7 +598,7 @@ public partial class ConversationView : UserControl
                 return;
             }
 
-            var start = _rows.IndexOf(_windowRows[0]);
+            var start = _heightIndex.IndexOf(_windowRows[0]);
             if (start < 0)
                 return;
             var end = Math.Min(_rows.Count, start + _windowRows.Count);
@@ -607,6 +651,17 @@ public partial class ConversationView : UserControl
     private const double NoticeChrome = LabelLineHeight + UserRowSpacing; // eyebrow + gap
 
     private double ViewportHeight() => Math.Max(FallbackViewport, MessageScroll.Viewport.Height);
+
+    /// <summary>
+    /// 阅读锚点的中心点必须用 ScrollViewer 的真实视口高度；<see cref="ViewportHeight"/>
+    /// 的 600 下限只用于窗口行数估算，不能拿来算“视口中心”，否则在矮窗口里
+    /// 每次恢复都会把视口多推半个 fallback 差值。
+    /// </summary>
+    private double AnchorViewportHeight()
+    {
+        var height = MessageScroll.Viewport.Height;
+        return double.IsFinite(height) && height > 0 ? height : FallbackViewport;
+    }
 
     private double RowHeight(ConversationRow row)
     {
@@ -853,34 +908,29 @@ public partial class ConversationView : UserControl
     private void RebuildHeightIndex() => _heightIndex.Rebuild(_rows, RowHeight);
 
     /// <summary>
-    /// 从已安排的行容器读回真实高度。只取 DataContext 为行、视觉层级最浅的
-    /// ContentPresenter，避免把 Markdown 内部同 DataContext 的控件误当成整行。
+    /// 从已安排的行容器读回真实高度。GetVisualDescendants 父先子后，同一行
+    /// 第一次出现的 ContentPresenter 就是行容器；同一次遍历顺手缓存行在
+    /// 内容坐标中的顶部，供锚点使用。
     /// </summary>
     private void CaptureMeasuredRows()
     {
         if (_windowRows.Count == 0)
+        {
+            _realizedRows.Clear();
             return;
+        }
 
-        var candidates = MessageList
-            .GetVisualDescendants()
-            .OfType<ContentPresenter>()
-            .Where(p => p.DataContext is ConversationRow && p.Bounds.Height > 0.5)
-            .Select(p => new
-            {
-                Row = (ConversationRow)p.DataContext!,
-                Height = p.Bounds.Height,
-                Depth = p.GetVisualAncestors().Count(),
-            })
-            .GroupBy(x => x.Row)
-            .Select(g => g.OrderBy(x => x.Depth).First())
-            .ToList();
-        if (candidates.Count == 0)
+        UpdateRealizedRows();
+        if (_realizedRows.Count == 0)
             return;
 
         var following = MessageList.IsFollowing;
-        var anchor = following ? null : CaptureAnchor(MessageScroll.Offset.Y);
+        var anchor =
+            following || !_hostWindowActive
+                ? null
+                : _readingAnchor ?? CaptureAnchor(MessageScroll.Offset.Y);
         var changed = false;
-        foreach (var candidate in candidates)
+        foreach (var candidate in _realizedRows)
         {
             if (
                 _measuredHeights.TryGetValue(candidate.Row, out var old)
@@ -903,25 +953,159 @@ public partial class ConversationView : UserControl
             RestoreAnchor(value);
     }
 
+    /// <summary>
+    /// 缓存窗口内已实现行的真实顶部/高度。只扫描一次视觉树；父先子后，
+    /// 同一行首次出现的 ContentPresenter 就是行容器。
+    /// </summary>
+    private void UpdateRealizedRows()
+    {
+        // ScrollViewer.Padding 会把 MessageList 推离 content 原点；Offset 却是
+        // content 坐标。先把 MessageList 原点换算到 content 坐标，再把行顶部
+        // 从 MessageList 坐标平移过去，避免固定 padding 误差污染锚点。
+        var listOriginContent = ContentOriginY();
+        _rowPresenters.Clear();
+        foreach (var presenter in MessageList.GetVisualDescendants().OfType<ContentPresenter>())
+        {
+            if (presenter.DataContext is not ConversationRow row || presenter.Bounds.Height <= 0.5)
+                continue;
+            // GetVisualDescendants 父先子后；同一行第一次出现的容器就是行容器。
+            _rowPresenters.TryAdd(row, presenter);
+        }
+
+        _realizedRows.Clear();
+        foreach (var row in _windowRows)
+        {
+            if (!_rowPresenters.TryGetValue(row, out var presenter))
+                continue;
+            if (
+                presenter.TranslatePoint(new Point(0, 0), MessageList) is not { } top
+                || !double.IsFinite(top.Y)
+            )
+                continue;
+            _realizedRows.Add(
+                new RealizedRow(row, listOriginContent + top.Y, presenter.Bounds.Height)
+            );
+        }
+    }
+
+    /// <summary>
+    /// MessageList 顶部在 ScrollViewer content 坐标中的位置。ScrollViewer.Padding
+    /// 会把 MessageList 推离原点；缓存 content 坐标时只加这一次。
+    /// </summary>
+    private double ContentOriginY()
+    {
+        if (
+            MessageList.TranslatePoint(new Point(0, 0), MessageScroll) is { } origin
+            && double.IsFinite(origin.Y)
+        )
+            _contentOriginY = origin.Y + MessageScroll.Offset.Y;
+        return _contentOriginY;
+    }
+
+    private int HeightIndexAtContentOffset(double contentOffset) =>
+        _heightIndex.IndexAtOffset(contentOffset - ContentOriginY());
+
+    /// <summary>
+    /// 以视口中心为锚点。窗口内已实现行的顶部是真实坐标；只有完全没有实测行时
+    /// 才退回 HeightIndex 的估算，保证锚点不会比视口本身更“会算”。
+    /// </summary>
     private ScrollAnchor? CaptureAnchor(double offset)
     {
         if (_rows.Count == 0)
             return null;
 
-        var index = _heightIndex.IndexAtOffset(offset);
+        var viewportHeight = AnchorViewportHeight();
+        var anchorPoint = offset + viewportHeight * 0.5;
+        // 滚动条可直接跳到窗口外；此时缓存的行顶部属于旧窗口，不能拿它
+        // 当焦点。视口中心不在已实现范围内就退回高度索引，触发换页。
+        var cacheCoversViewport =
+            _realizedRows.Count > 0
+            && anchorPoint >= _realizedRows[0].Top - 0.5
+            && anchorPoint <= _realizedRows[^1].Top + _realizedRows[^1].Height + 0.5;
+        if (cacheCoversViewport)
+        {
+            var best = _realizedRows[0];
+            var bestDistance = double.PositiveInfinity;
+            foreach (var candidate in _realizedRows)
+            {
+                var bottom = candidate.Top + candidate.Height;
+                if (anchorPoint >= candidate.Top && anchorPoint < bottom)
+                    return new ScrollAnchor(
+                        candidate.Row,
+                        anchorPoint - candidate.Top,
+                        viewportHeight
+                    );
+
+                var distance =
+                    anchorPoint < candidate.Top
+                        ? candidate.Top - anchorPoint
+                        : anchorPoint - bottom;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = candidate;
+                }
+            }
+            return new ScrollAnchor(best.Row, anchorPoint - best.Top, viewportHeight);
+        }
+
+        var index = HeightIndexAtContentOffset(anchorPoint);
         var row = _rows[index];
-        var top = _heightIndex.OffsetOf(index);
-        return new ScrollAnchor(row, Math.Max(0, offset - top));
+        var top = ContentOriginY() + _heightIndex.OffsetOf(index);
+        return new ScrollAnchor(row, anchorPoint - top, viewportHeight);
     }
 
+    /// <summary>
+    /// 恢复阅读锚点。窗口换页/高度回写后，行的真实顶部要等下一次布局才可靠，
+    /// 因此把落点投递到布局之后；同一帧的多次请求只保留最新锚点。
+    /// </summary>
     private void RestoreAnchor(ScrollAnchor anchor)
     {
-        var index = _rows.IndexOf(anchor.Row);
+        _pendingAnchor = anchor;
+        if (_anchorRestoreScheduled)
+            return;
+        _anchorRestoreScheduled = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _anchorRestoreScheduled = false;
+                var pending = _pendingAnchor;
+                _pendingAnchor = null;
+                if (pending is { } value && !MessageList.IsFollowing)
+                    ApplyAnchor(value);
+            },
+            DispatcherPriority.Loaded
+        );
+    }
+
+    private void ApplyAnchor(ScrollAnchor anchor)
+    {
+        var index = _heightIndex.IndexOf(anchor.Row);
         if (index < 0)
             return;
+        _readingAnchor = null;
 
-        var target = TopOf(index) + anchor.Delta;
-        var max = Math.Max(0, TotalHeight() - ViewportHeight());
+        // 锚点行已经不在当前 live window：这是尾部追加导致的 offset 变化，
+        // 不是换页后的恢复目标。绝不拿 HeightIndex 的 TopOf 把视口拖到未实现行。
+        if (!_windowRows.Contains(anchor.Row))
+            return;
+
+        // 换页后的真实行顶部必须从当前视觉树重新取；HeightIndex 里窗口内
+        // 未实测行的值仍是估算，不能拿去算滚动落点。
+        UpdateRealizedRows();
+        var rowTop = ContentOriginY() + TopOf(index);
+        foreach (var candidate in _realizedRows)
+        {
+            if (!ReferenceEquals(candidate.Row, anchor.Row))
+                continue;
+            rowTop = candidate.Top;
+            break;
+        }
+
+        var target = rowTop + anchor.Delta - anchor.ViewportHeight * 0.5;
+        // ScrollViewer extent 包含上下 padding；从它取上限，避免底部差一个
+        // padding 高度时锚点永远差几像素、随后又被布局校正。
+        var max = Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height);
         target = Math.Clamp(target, 0, max);
         if (Math.Abs(MessageScroll.Offset.Y - target) <= 0.5)
             return;
@@ -955,6 +1139,9 @@ public partial class ConversationView : UserControl
 
     private void RemoveRowsForMessage(ChatMessage message)
     {
+        RememberReadingAnchor();
+        _realizedRows.Clear();
+        _rowPresenters.Clear();
         if (_rowsByMessage.Remove(message, out var rows))
         {
             foreach (var row in rows)
@@ -972,6 +1159,11 @@ public partial class ConversationView : UserControl
         _rows.Clear();
         _windowRows.Clear();
         _measuredHeights.Clear();
+        _realizedRows.Clear();
+        _rowPresenters.Clear();
+        _pendingAnchor = null;
+        _readingAnchor = null;
+        _contentOriginY = 0;
         _heightIndex.Rebuild([], RowHeight);
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
@@ -990,6 +1182,9 @@ public partial class ConversationView : UserControl
     /// </summary>
     private void ReplaceRowsForMessage(ChatMessage message)
     {
+        RememberReadingAnchor();
+        _realizedRows.Clear();
+        _rowPresenters.Clear();
         var messages = _messagesVm?.Messages;
         var messageIndex = messages?.IndexOf(message) ?? -1;
         if (messages is null || messageIndex < 0)
@@ -1200,8 +1395,10 @@ public partial class ConversationView : UserControl
             )
         )
             return;
-        // 自动折叠会让步骤详情一起消失；不能留下一个已经无目标的延迟 reveal。
+        // 自动折叠会让步骤详情一起消失；不能留下一个已无目标的延迟 reveal。
         InvalidatePendingReveal();
+        if (!MessageList.IsFollowing)
+            RememberReadingAnchor();
         message.IsProcessExpanded = false;
     }
 
@@ -1388,6 +1585,7 @@ public partial class ConversationView : UserControl
             // 展开历史过程会改变行高；先退出尾部跟随，避免把视口拉回最后一条。
             InvalidatePendingReveal();
             MessageList.PauseFollow();
+            RememberReadingAnchor();
             message.ProcessTouchedByUser = true;
             CancelProcessFold();
             message.IsProcessExpanded = true;
@@ -1405,7 +1603,10 @@ public partial class ConversationView : UserControl
             var expand = !step.IsDetailsExpanded;
             InvalidatePendingReveal();
             if (expand)
+            {
                 MessageList.PauseFollow();
+                RememberReadingAnchor();
+            }
             step.IsDetailsExpanded = expand;
             if (expand)
             {

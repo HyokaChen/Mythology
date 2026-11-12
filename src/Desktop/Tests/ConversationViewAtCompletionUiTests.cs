@@ -903,6 +903,143 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// compact 系统行位于历史中段时，阅读到该边界再向下滚，窗口换页必须
+    /// 以已实现行顶部为锚点；否则估算高度会把视口拉回 compact 上方。
+    /// </summary>
+    [Fact]
+    public void CompactBoundary_WheelDownAfterReading_DoesNotJumpUp()
+    {
+        Ui.Run(() =>
+        {
+            for (var i = 0; i < 240; i++)
+            {
+                if (i == 120)
+                {
+                    var compact = new Desktop.Models.ChatMessage(
+                        Desktop.Models.MessageSender.System
+                    );
+                    compact.Content.Append(
+                        Core.Data.SessionInternalMessages.FormatCompactSummaryPreview(
+                            "## 压缩概览\n压缩前 1234 条消息，保留最近 20 条"
+                        )
+                    );
+                    _vm.Messages.Add(compact);
+                }
+
+                if (i % 2 == 0)
+                {
+                    var user = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+                    user.AppendContent($"历史问题 {i}：继续写这一章");
+                    _vm.Messages.Add(user);
+                    continue;
+                }
+
+                // collapsed Process 行的真实高度与估算有明显差异，正好放大
+                // compact 边界换页时的锚点误差。
+                var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                for (var s = 0; s < 4; s++)
+                    agent.AgentSteps.Add(
+                        new Desktop.Models.AgentStep
+                        {
+                            Kind = Desktop.Models.StepKind.ToolCall,
+                            Title = $"工具 {i}-{s}",
+                            Status = Desktop.Models.AgentStepStatus.Completed,
+                            ArgumentsSummary = "参数",
+                            ResultSummary = "结果",
+                        }
+                    );
+                agent.IsProcessExpanded = false;
+                _vm.Messages.Add(agent);
+            }
+            _vm.HasMessages = true;
+
+            var (window, view, list, sv) = ShowConversation(height: 900);
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+                var pointer = new Point(450, 450);
+                window.MouseMove(pointer);
+                window.MouseWheel(pointer, new Vector(0, 5));
+                PumpUntil(() => !AtBottom(sv), "停止跟随");
+
+                var rows =
+                    (System.Collections.ObjectModel.ObservableCollection<Desktop.Models.ConversationRow>)
+                        typeof(Desktop.Views.ConversationView)
+                            .GetField(
+                                "_rows",
+                                System.Reflection.BindingFlags.Instance
+                                    | System.Reflection.BindingFlags.NonPublic
+                            )!
+                            .GetValue(view)!;
+                var heightIndex = (Desktop.Controls.HeightIndex<Desktop.Models.ConversationRow>)
+                    typeof(Desktop.Views.ConversationView)
+                        .GetField(
+                            "_heightIndex",
+                            System.Reflection.BindingFlags.Instance
+                                | System.Reflection.BindingFlags.NonPublic
+                        )!
+                        .GetValue(view)!;
+                var compactRow = Assert.Single(
+                    rows,
+                    row =>
+                        row.Message.Content?.ToString()
+                            .StartsWith(
+                                Core.Data.SessionInternalMessages.CompactSummaryPrefix,
+                                StringComparison.Ordinal
+                            ) == true
+                );
+                var compactIndex = rows.IndexOf(compactRow);
+                sv.Offset = sv.Offset.WithY(
+                    Math.Max(0, heightIndex.OffsetOf(compactIndex) - sv.Viewport.Height * 0.5)
+                );
+                PumpUntil(
+                    () => list.TopSpacerHeight > 0.5 && list.BottomSpacerHeight > 0.5,
+                    "compact 中段窗口"
+                );
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p =>
+                                ReferenceEquals(
+                                    (p.DataContext as Desktop.Models.ConversationRow)?.Message,
+                                    compactRow.Message
+                                )
+                            ),
+                    "compact 行已进入 live window"
+                );
+
+                var before = sv.Offset.Y;
+                for (var i = 0; i < 24; i++)
+                {
+                    if (AtBottom(sv))
+                        break;
+                    window.MouseWheel(pointer, new Vector(0, -2));
+                    for (var j = 0; j < 12; j++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        Thread.Sleep(5);
+                    }
+                    Assert.False(
+                        list.IsFollowing && !AtBottom(sv),
+                        $"compact 边界下滚在未到底时恢复跟随：offset={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    Assert.True(
+                        sv.Offset.Y >= before - 3,
+                        $"compact 边界下滚被拉回上方：before={before}, now={sv.Offset.Y}, extent={sv.Extent.Height}"
+                    );
+                    before = sv.Offset.Y;
+                }
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 点击思考「展开」后立刻快速下滚：延迟的 BringStepDetailsIntoView
     /// 不能因为详情已跑到视口上方而把视口反向拽回。
     /// </summary>

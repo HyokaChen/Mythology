@@ -8,6 +8,9 @@ namespace Core.Data;
 /// </summary>
 public static class SessionInternalMessages
 {
+    /// <summary>compact 摘要在 UI 系统行中的前缀；Desktop/TUI 历史恢复共用。</summary>
+    public const string CompactSummaryPrefix = "🗜 上下文摘要：";
+
     /// <summary>系统注入的 user 消息首行前缀（按注入点维护）。</summary>
     private static readonly string[] UserPrefixes =
     [
@@ -61,6 +64,39 @@ public static class SessionInternalMessages
         if (trimmed.StartsWith("[系统]", StringComparison.Ordinal))
             return trimmed["[系统]".Length..].TrimStart();
         return trimmed;
+    }
+
+    /// <summary>
+    /// compact 摘要的系统行预览：只取首行并限长，避免历史恢复时把整段
+    /// 摘要当成一条巨大的消息控件重建。
+    /// </summary>
+    public static bool IsCompactSummary(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+        var trimmed = content.TrimStart();
+        return trimmed.StartsWith(CompactSummaryPrefix, StringComparison.Ordinal)
+            || trimmed.StartsWith("[上下文摘要", StringComparison.Ordinal);
+    }
+
+    public static string FormatCompactSummaryPreview(string? content, int maxLength = 120)
+    {
+        var text = (content ?? "").TrimStart();
+        if (text.StartsWith(CompactSummaryPrefix, StringComparison.Ordinal))
+            text = text[CompactSummaryPrefix.Length..];
+        else if (text.StartsWith("[上下文摘要", StringComparison.Ordinal))
+        {
+            // 运行时 LLM 消息把 compact 存成 "[上下文摘要 bN]\n<全文>"；
+            // 预览必须跳过这行标记，取摘要正文的第一行。
+            var headerEnd = text.IndexOf('\n');
+            text = headerEnd >= 0 ? text[(headerEnd + 1)..] : "";
+        }
+
+        var lineEnd = text.IndexOf('\n');
+        var line = (lineEnd >= 0 ? text[..lineEnd] : text).Trim();
+        if (line.Length > maxLength)
+            line = line[..maxLength] + "…";
+        return CompactSummaryPrefix + line;
     }
 
     /// <summary>
