@@ -855,6 +855,30 @@ public sealed class ConversationLoop(
             _stopAfterTool = false;
             _stoppedByExternalControl = false;
 
+            // ★ 工具结果/注入消息落盘后、下一次 LLM 请求前，用真实消息估算再做一次 pre-flight。
+            // Pi 等 agent 的同类边界：工具跑完后立刻检查 projected context；
+            // 超了就中止当前回合，交给外层 compact，然后 continue 同一上下文（不重发用户消息）。
+            var contextWindow = _modelProfile.ContextWindowTokens;
+            if (
+                contextWindow > 0
+                && _liveContextTokens >= contextWindow * _modelProfile.PreflightThresholdPercent
+            )
+            {
+                var livePreflightMsg =
+                    $"上下文估算接近上限（{_liveContextTokens:N0}/{contextWindow:N0}），需要压缩上下文";
+                await SafelyPersistAsync();
+                await emit(
+                    new AgentError(
+                        livePreflightMsg,
+                        null,
+                        IsContextOverflow: true,
+                        Recoverable: true
+                    ),
+                    CancellationToken.None
+                );
+                throw new ContextOverflowException(livePreflightMsg);
+            }
+
             // ★ Pre-flight budget check：如果 token 已接近预算上限，提前触发 compact
             // 避免在 StreamOneTurnAsync 中途耗尽预算（此时工具结果已塞入 Conversation，
             // compact 代价更高）。阈值通过 ModelContextProfile 动态计算，
@@ -1933,6 +1957,10 @@ public sealed class ConversationLoop(
             // Token 预算耗尽：与 ContextOverflow 同等处理——触发 auto-compact + retry。
             // BudgetExhaustedException 来自 StabilityMonitor.RecordStep（OnUsageReceived 回调），
             // 不是 LLM API 返回的 400 错误，但本质相同：上下文太长，需要压缩。
+            // 若本轮还没执行任何工具，丢弃未完成的 assistant/tool-call 半成品，
+            // 避免压缩后带着一个没有 tool result 的截断 assistant 继续请求。
+            if (toolCallsCollected.Count == 0)
+                TrimConversationTo(messagesBeforeCall);
             await SafelyPersistAsync();
             await emit(
                 new AgentError(ex.Message, null, IsContextOverflow: true, Recoverable: true),
@@ -1942,7 +1970,11 @@ public sealed class ConversationLoop(
         }
         catch (ContextOverflowException)
         {
-            // ★ 上下文溢出：落盘后传递，TuiApp 负责 compact + retry
+            // ★ 上下文溢出：落盘后传递，Desktop/Tui 负责 compact + continue。
+            // 本轮没有已执行工具时，丢弃未完成的 assistant/tool-call 半成品；
+            // 已执行的工具结果必须保留，压缩后继续同一轮，不能重放工具。
+            if (toolCallsCollected.Count == 0)
+                TrimConversationTo(messagesBeforeCall);
             await SafelyPersistAsync();
             throw;
         }
@@ -1969,12 +2001,29 @@ public sealed class ConversationLoop(
                 CancellationToken.None
             );
 
-            // Context overflow 包装为专用异常，供 TuiApp 触发 auto-compact + retry
+            // Context overflow 包装为专用异常，供 Desktop/Tui 触发 auto-compact + continue。
+            // 无工具执行时先丢弃截断的 assistant/tool-call 半成品；有工具结果则保留。
             if (isContextOverflow)
+            {
+                if (toolCallsCollected.Count == 0)
+                    TrimConversationTo(messagesBeforeCall);
                 throw new ContextOverflowException(rawMessage, ex, httpStatusCode);
+            }
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// 丢弃失败的 LLM attempt 在 Conversation 尾部留下的半成品消息。
+    /// 仅在没有任何工具实际执行时调用，避免误删已完成的 tool result。
+    /// </summary>
+    private void TrimConversationTo(int count)
+    {
+        if (_conversation is null)
+            return;
+        while (_conversation.Messages.Count > count)
+            _conversation.RemoveMessage(_conversation.Messages[^1]);
     }
 
     /// <summary>

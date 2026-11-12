@@ -525,7 +525,9 @@ public sealed class SessionEngine(
                 _lastRollReason = null;
             },
             send: token => bridge.SendAsync(text, token),
-            retryAfterOverflow: (count, token) => RunPromptAsync(text, token, count),
+            // 溢出发生在已提交的 turn 内：用户消息/工具结果已在上下文里。
+            // 压缩后必须“继续”同一上下文，绝不能重新 Prompt(text) 再追加一次用户消息。
+            retryAfterOverflow: (count, token) => RunContinuationAsync(token, count),
             captureNotes: true,
             ct: ct,
             overflowRetryCount: overflowRetryCount
@@ -1102,36 +1104,59 @@ public sealed class SessionEngine(
             }
 
             var tokensBefore = EstimateContextTokens(messages);
-            var result = await PrepareAndCompactAsync(
-                messages,
-                keepRecent,
-                "overflow",
-                willRetry: true,
-                ct: ct
-            );
-
-            // 两种拒绝语义分开：已有压缩进行中 → true 交上层重试；模式互斥 → false 停止重试
-            // （接续模式下什么都不做，重试永远无用；此路径仅在未来新增触发源漏判模式时才可达）。
-            if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
+            OnCompactStart?.Invoke();
+            var endMessage = "上下文溢出压缩失败";
+            try
             {
-                log.LogDebug(
-                    "compact after context overflow: rejected ({Reason})",
-                    result == CompactResult.RejectedInProgress ? "in progress" : "wrong mode"
+                var result = await PrepareAndCompactAsync(
+                    messages,
+                    keepRecent,
+                    "overflow",
+                    willRetry: true,
+                    ct: ct
                 );
-                return result == CompactResult.RejectedInProgress;
+
+                // 两种拒绝语义分开：已有压缩进行中 → true 交上层重试；模式互斥 → false 停止重试
+                // （接续模式下什么都不做，重试永远无用；此路径仅在未来新增触发源漏判模式时才可达）。
+                if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
+                {
+                    log.LogDebug(
+                        "compact after context overflow: rejected ({Reason})",
+                        result == CompactResult.RejectedInProgress ? "in progress" : "wrong mode"
+                    );
+                    endMessage = DescribeRejection(result);
+                    return result == CompactResult.RejectedInProgress;
+                }
+
+                var tokensAfter = EstimateContextTokens(agent.State.Messages);
+                if (tokensAfter >= tokensBefore)
+                {
+                    log.LogWarning(
+                        "compact after context overflow: token count did not decrease (before={Before}, after={After})",
+                        tokensBefore,
+                        tokensAfter
+                    );
+                    endMessage = "上下文溢出压缩未降低 token";
+                    return false;
+                }
+                endMessage =
+                    $"上下文溢出压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条";
+                return true;
             }
-
-            var tokensAfter = EstimateContextTokens(agent.State.Messages);
-            if (tokensAfter >= tokensBefore)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                log.LogWarning(
-                    "compact after context overflow: token count did not decrease (before={Before}, after={After})",
-                    tokensBefore,
-                    tokensAfter
-                );
+                endMessage = "上下文溢出压缩已取消";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "compact after context overflow failed");
                 return false;
             }
-            return true;
+            finally
+            {
+                OnCompactEnd?.Invoke(endMessage);
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

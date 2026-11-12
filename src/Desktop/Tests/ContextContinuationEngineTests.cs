@@ -412,6 +412,21 @@ public sealed class ContextContinuationEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task RelieveOverflow_CompactMode_FiresCompactLifecycle()
+    {
+        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+        var started = 0;
+        var ended = new List<string>();
+        _engine.OnCompactStart += () => started++;
+        _engine.OnCompactEnd += ended.Add;
+
+        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+
+        Assert.Equal(1, started);
+        Assert.Contains("上下文溢出压缩完成", Assert.Single(ended));
+    }
+
+    [Fact]
     public async Task RelieveOverflow_CompactMode_CompactsWithoutRolling()
     {
         // 长消息才产生「有效压缩」（短消息压完反而更长，会走无效压缩分支返回 false）

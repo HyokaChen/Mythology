@@ -1384,9 +1384,10 @@ public sealed class ConversationViewModel : ViewModelBase
     /// </summary>
     private void EnsureCompactWatch()
     {
+        // 不能用 Background：Agent 流式输出期间渲染/输入任务持续抢占，后台计时器可能长期不触发。
         _compactWatch ??= new DispatcherTimer(
             TimeSpan.FromSeconds(2),
-            DispatcherPriority.Background,
+            DispatcherPriority.Normal,
             (_, _) => ReconcileCompactState()
         );
         if (!_compactWatch.IsEnabled)
