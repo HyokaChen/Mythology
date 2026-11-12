@@ -118,8 +118,10 @@ public sealed class ConversationLoop(
     // 上次 API 调用的 PromptTokens。用于计算稳定性监控的本轮增量消耗：
     // 每次调用的 PromptTokens 都包含全部历史上下文，直接累加会把同一段上下文重复计数
     // （实测 8 轮对话累计 201K 撞破 200K 预算，而实际上下文仅 26.5K）。
-    // 模型切换/compact 后 prompt 可能缩小，增量允许为负，使 TotalTokens 自然回落。
-    private int? _lastPromptTokens;
+    // 上一轮调用结束后的完整上下文（prompt + completion）。
+    // 稳定性计数按这个绝对值的差计算，不能拿 prompt 差再加 completion：
+    // 上一轮 completion 已经进入本轮 prompt，再加一次会每轮重复累计。
+    private long? _lastStabilityContextTokens;
 
     // ── B3: ref 稳定（EntryId 锚定）──
     // entryIdProvider 从消息提取稳定身份（TuiApp 提供：LlmChatMessage.NativeObject 存 EntryId）。
@@ -464,14 +466,13 @@ public sealed class ConversationLoop(
     }
 
     /// <summary>
-    /// 重置 prompt token 基线（compact 后调用）。
+    /// 重置稳定性计数基线（compact / 模型切换后调用）。
     ///
-    /// B6 修复：compact 后 prompt 大幅缩小，但 _lastPromptTokens 仍是压缩前旧值，
-    /// 下一轮 ComputeTurnIncrement = prompt_new − prompt_old 会算出大幅负增量，
-    /// 把 stabilityMonitor.TotalTokens 拉低到错误水平，导致 pre-flight 低估漏检。
-    /// 置 null 后下一轮增量走 seeded 分支（增量 = completion 或 full），从新基线起步。
+    /// compact 后上下文大幅缩小，旧基线已不代表当前上下文。
+    /// 清空后下一次 usage 以 stabilityMonitor 的 seed（压缩后上下文估算）为起点，
+    /// 增量 = 当前完整上下文 − seed，而不是 prompt 差 + completion。
     /// </summary>
-    public void ResetPromptBaseline() => _lastPromptTokens = null;
+    public void ResetPromptBaseline() => _lastStabilityContextTokens = null;
 
     /// <summary>
     /// 更新模型上下文 profile 并同步所有稳定器阈值。
@@ -1745,16 +1746,19 @@ public sealed class ConversationLoop(
                 var thinkingTokens = usage.CompletionTokensDetails?.ReasoningTokens ?? 0;
                 _lastContextTokens = usage.PromptTokens + usage.CompletionTokens;
 
-                // ★ 稳定性监控使用"本轮增量"而非全量 prompt+completion：
-                // 全量会重复累计（每轮都含全部历史），导致 TotalTokens 虚高撞破预算。
-                // 增量 = 上下文增长 + 本轮输出，TotalTokens = seed + Σ增量 ≈ 当前上下文占用。
+                // ★ 稳定性监控按“调用结束后的完整上下文”做绝对差分：
+                //   当前上下文 = prompt + completion。
+                // 错误写法 prompt_new − prompt_old + completion 会把上一轮 completion
+                // 再算一次（它已经包含在本轮 prompt 里），连续写章节时累计会虚高数倍。
+                var currentContextTokens = (long)usage.PromptTokens + usage.CompletionTokens;
+                var previousContextTokens = _lastStabilityContextTokens;
+                if (previousContextTokens is null && stabilityMonitor is { TotalTokens: > 0 })
+                    previousContextTokens = stabilityMonitor.TotalTokens;
                 var incrementalTokens = ComputeTurnIncrement(
-                    _lastPromptTokens,
-                    usage.PromptTokens,
-                    usage.CompletionTokens,
-                    seeded: stabilityMonitor is not null && stabilityMonitor.TotalTokens > 0
+                    previousContextTokens,
+                    currentContextTokens
                 );
-                _lastPromptTokens = usage.PromptTokens;
+                _lastStabilityContextTokens = currentContextTokens;
                 stabilityMonitor?.RecordStep(incrementalTokens, thinkingTokens);
                 _ = emit(new TokenUsageEvent(usage.PromptTokens, usage.CompletionTokens), ct);
                 return ValueTask.CompletedTask;
@@ -2782,22 +2786,18 @@ public sealed class ConversationLoop(
 
     /// <summary>
     /// 计算稳定性监控的本轮增量 token 消耗。
-    /// 全量 prompt 会重复累计（每轮都含全部历史），增量 = 上下文增长 + 本轮输出。
-    /// - 首次调用且有 seed（会话恢复）：seed 已代表调用前上下文，增量 = 本轮输出
-    /// - 首次调用无 seed（新会话）：增量 = 完整 prompt + 输出（从 0 建立基线）
-    /// - 后续调用：增量 = prompt 差 + 输出；compact/模型切换后 prompt 缩小，
-    ///   增量为负，TotalTokens 自然回落（增长检测对负值安全，不会误触发）。
+    /// 以“调用结束后的完整上下文”为绝对量做差分：
+    /// 当前 = prompt + completion，增量 = 当前 − 上一轮完整上下文。
+    /// 不能写成 prompt 差 + completion：上一轮 completion 已进入本轮 prompt，
+    /// 再加一次会按轮重复累计，连续写长章节时 TotalTokens 会虚高数倍。
+    /// 首次无 seed 时从 0 建立基线；compact 后为负时 TotalTokens 自然回落。
     /// </summary>
-    internal static int ComputeTurnIncrement(
-        int? lastPromptTokens,
-        int promptTokens,
-        int completionTokens,
-        bool seeded
-    )
+    internal static int ComputeTurnIncrement(long? lastContextTokens, long currentContextTokens)
     {
-        if (lastPromptTokens is null)
-            return seeded ? completionTokens : promptTokens + completionTokens;
-        return promptTokens - lastPromptTokens.Value + completionTokens;
+        var delta = lastContextTokens is { } last
+            ? currentContextTokens - last
+            : currentContextTokens;
+        return (int)Math.Clamp(delta, int.MinValue, int.MaxValue);
     }
 
     /// <summary>

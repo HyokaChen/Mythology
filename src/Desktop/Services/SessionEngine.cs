@@ -820,8 +820,9 @@ public sealed class SessionEngine(
             {
                 var (httpStatusCode, _, isContextOverflow) =
                     Core.Infrastructure.LlmErrorHelper.Extract(ex);
-                var errorCode = isContextOverflow
-                    ? "context_overflow"
+                var errorCode =
+                    ex is StabilityHarness.Lyapunov.StabilityViolationException ? "stability"
+                    : isContextOverflow ? "context_overflow"
                     : httpStatusCode?.ToString() ?? "network";
                 await store.SaveSessionEvent(
                     _sessionId,

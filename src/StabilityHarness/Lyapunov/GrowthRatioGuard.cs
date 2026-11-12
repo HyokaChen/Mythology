@@ -48,7 +48,7 @@ public sealed class GrowthRatioGuard(StabilityConfig config) : IGrowthRatioGuard
         get
         {
             if (_baseline is > 0 && _turnTokens.Count > 0)
-                return _turnTokens[^1] / _baseline.Value;
+                return _turnTokens[^1] / EffectiveBaseline;
             return null;
         }
     }
@@ -56,6 +56,24 @@ public sealed class GrowthRatioGuard(StabilityConfig config) : IGrowthRatioGuard
 
     /// <summary>实际使用的 RatioThreshold：自适应阈值优先，否则用配置值。</summary>
     private double EffectiveThreshold => _adaptiveThreshold ?? Config.EffectiveRatioThreshold;
+
+    /// <summary>
+    /// 实际参与 ratio 计算的 baseline。
+    /// 下限为 BudgetGate / WarmupTurns：warmup 阶段可能全是小工具调用，
+    /// 随后进入连续写章节（每轮 4–7K token），raw baseline 1K 会被误判成 5× 增长。
+    /// 这不是放宽失控检测：累计 token 仍受 BudgetGate 和窗口预算约束。
+    /// </summary>
+    private double EffectiveBaseline
+    {
+        get
+        {
+            if (_baseline is not > 0)
+                return 1.0;
+            var floor =
+                (double)Config.EffectiveBudgetGate / Math.Max(1, Config.EffectiveWarmupTurns);
+            return Math.Max(_baseline.Value, floor);
+        }
+    }
 
     public StabilityConfig Config { get; } =
         config ?? throw new ArgumentNullException(nameof(config));
@@ -126,18 +144,18 @@ public sealed class GrowthRatioGuard(StabilityConfig config) : IGrowthRatioGuard
                 // EffectiveThreshold 回退到 Config.EffectiveRatioThreshold（已由 ApplyProfile 设置）
             }
 
-            _energyHistory.Add(_baseline is > 0 ? nonThinkingTokens / _baseline.Value : 1.0);
+            _energyHistory.Add(_baseline is > 0 ? nonThinkingTokens / EffectiveBaseline : 1.0);
             return StabilityStatus.Stable;
         }
 
         if (_turnTokens.Count <= Config.EffectiveWarmupTurns)
         {
-            _energyHistory.Add(_baseline > 0 ? nonThinkingTokens / _baseline.Value : 1.0);
+            _energyHistory.Add(_baseline > 0 ? nonThinkingTokens / EffectiveBaseline : 1.0);
             return StabilityStatus.Stable;
         }
 
-        // Compute growth ratio（基于 non-thinking tokens）
-        var ratio = _baseline > 0 ? nonThinkingTokens / _baseline.Value : 1.0;
+        // Compute growth ratio（基于 non-thinking tokens 与有效 baseline）
+        var ratio = _baseline > 0 ? nonThinkingTokens / EffectiveBaseline : 1.0;
         _energyHistory.Add(ratio);
 
         // ★ 使用 EffectiveThreshold（自适应优先，配置兜底）
@@ -150,7 +168,7 @@ public sealed class GrowthRatioGuard(StabilityConfig config) : IGrowthRatioGuard
         {
             _tripped = true;
             throw new StabilityViolationException(
-                $"Growth ratio violation: {ratio:F1}× baseline for {ConsecutiveEscalating} consecutive turns (threshold: {EffectiveThreshold:F1}×, window: {Config.EffectiveWindow}). Baseline: {_baseline:F0} tokens/turn. Cumulative: {TotalTokens} tokens (thinking: {TotalThinkingTokens}).",
+                $"Growth ratio violation: {ratio:F1}× baseline for {ConsecutiveEscalating} consecutive turns (threshold: {EffectiveThreshold:F1}×, window: {Config.EffectiveWindow}). Baseline: {EffectiveBaseline:F0} tokens/turn. Cumulative: {TotalTokens} tokens (thinking: {TotalThinkingTokens}).",
                 ConsecutiveEscalating,
                 ratio
             );

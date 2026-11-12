@@ -273,53 +273,45 @@ public sealed class ConversationLoopStaticTests
     //  实际上下文仅 26.5K。增量 = 上下文增长 + 本轮输出。
 
     [Fact]
-    public void ComputeTurnIncrement_FirstCallNoSeed_ReturnsFullPromptPlusCompletion()
+    public void ComputeTurnIncrement_FirstCallNoSeed_ReturnsFullContext()
     {
-        // 新会话首次调用：TotalTokens 从 0 建立，增量 = 完整上下文 + 输出
+        // 新会话首次调用：没有上一轮上下文，增量 = 当前 prompt + completion
         var result = ConversationLoop.ComputeTurnIncrement(
-            lastPromptTokens: null,
-            promptTokens: 22_693,
-            completionTokens: 137,
-            seeded: false
+            lastContextTokens: null,
+            currentContextTokens: 22_693 + 137
         );
         Assert.Equal(22_830, result);
     }
 
     [Fact]
-    public void ComputeTurnIncrement_FirstCallWithSeed_ReturnsCompletionOnly()
+    public void ComputeTurnIncrement_FirstCallWithSeed_ReturnsContextGrowth()
     {
-        // 会话恢复（seed 已代表调用前上下文）：首次增量 = 本轮输出
+        // seed 已代表调用前上下文：增量 = 当前完整上下文 − seed
         var result = ConversationLoop.ComputeTurnIncrement(
-            lastPromptTokens: null,
-            promptTokens: 22_693,
-            completionTokens: 137,
-            seeded: true
+            lastContextTokens: 22_693,
+            currentContextTokens: 22_693 + 137
         );
         Assert.Equal(137, result);
     }
 
     [Fact]
-    public void ComputeTurnIncrement_SubsequentCall_ReturnsPromptDeltaPlusCompletion()
+    public void ComputeTurnIncrement_SubsequentCall_ReturnsAbsoluteContextDelta()
     {
-        // 后续调用：prompt 从 22,693 增长到 24,004，加本轮输出 98
+        // 上一轮结束于 22,693 + 137；本轮 prompt 24,004 + completion 98
         var result = ConversationLoop.ComputeTurnIncrement(
-            lastPromptTokens: 22_693,
-            promptTokens: 24_004,
-            completionTokens: 98,
-            seeded: true
+            lastContextTokens: 22_830,
+            currentContextTokens: 24_004 + 98
         );
-        Assert.Equal(1_409, result);
+        Assert.Equal(1_272, result);
     }
 
     [Fact]
     public void ComputeTurnIncrement_CompactShrink_AllowsNegative()
     {
-        // compact 后 prompt 缩小：增量为负，TotalTokens 自然回落（增长检测对负值安全）
+        // compact 后上下文缩小：增量为负，TotalTokens 自然回落到新上下文
         var result = ConversationLoop.ComputeTurnIncrement(
-            lastPromptTokens: 26_533,
-            promptTokens: 20_000,
-            completionTokens: 1_200,
-            seeded: true
+            lastContextTokens: 26_533,
+            currentContextTokens: 20_000 + 1_200
         );
         Assert.Equal(-5_333, result);
     }
@@ -327,9 +319,9 @@ public sealed class ConversationLoopStaticTests
     [Fact]
     public void ComputeTurnIncrement_NoDoubleCounting_ReplayOfSessionStaysUnderBudget()
     {
-        // 回归防护：复现真实会话的 8 次调用序列，验证累计不再虚高撞破 200K 预算
-        // （bug 复现：全量累计 174,684 + 26.7K ≈ 201K ≥ 200K 触发 BudgetExhausted；
-        //  增量口径累计应 ≈ 当前上下文 ~27K）
+        // 回归防护：复现真实会话的 8 次调用序列，验证累计 ≈ 最后一轮完整上下文。
+        // 旧公式 promptDelta + completion 会重复计入上一轮 completion；
+        // 连续写章节（completion 4–7K）时累计会虚高数倍，触发假 ratio/Budget 错误。
         var calls = new (int Prompt, int Completion)[]
         {
             (22_693, 137), // call1
@@ -339,25 +331,44 @@ public sealed class ConversationLoopStaticTests
             (26_327, 200), // call5
             (26_117, 127), // call6
             (26_269, 264), // call7
-            (26_600, 500), // call8（溢出轮）
+            (26_600, 500), // call8
         };
 
         long total = 0;
-        int? lastPrompt = null;
+        long? lastContext = null;
         foreach (var (prompt, completion) in calls)
         {
-            total += ConversationLoop.ComputeTurnIncrement(
-                lastPrompt,
-                prompt,
-                completion,
-                seeded: total > 0
-            );
-            lastPrompt = prompt;
+            total += ConversationLoop.ComputeTurnIncrement(lastContext, prompt + completion);
+            lastContext = prompt + completion;
         }
 
-        // 增量口径：TotalTokens ≈ 首次全量 + 后续增量 ≈ 当前上下文 + 累计输出，远低于预算
-        Assert.True(total < 40_000, $"增量口径累计应 ≈ 当前上下文，实际 {total}");
-        Assert.True(total >= 26_000, $"增量口径累计应接近真实上下文 ~27K，实际 {total}");
+        // 绝对差分应精确落在最后一轮完整上下文（26,600 + 500）。
+        Assert.Equal(27_100, total);
+    }
+
+    [Fact]
+    public void ComputeTurnIncrement_BurstyChapterWrites_DoNotAccumulatePreviousCompletion()
+    {
+        // 连续写章节：每轮 completion 约 5K，prompt 每轮吸收上一轮章节。
+        var calls = new (int Prompt, int Completion)[]
+        {
+            (45_993, 0), // seed
+            (70_131, 100), // 继续
+            (71_000, 5_000), // 写第 3 章
+            (81_000, 5_000), // 写第 4 章
+            (91_000, 5_000), // 写第 5 章
+            (101_000, 5_000), // 写第 6 章
+        };
+
+        long total = calls[0].Prompt;
+        long? lastContext = total;
+        foreach (var (prompt, completion) in calls.Skip(1))
+        {
+            total += ConversationLoop.ComputeTurnIncrement(lastContext, prompt + completion);
+            lastContext = prompt + completion;
+        }
+
+        Assert.Equal(106_000, total);
     }
 
     // ══════════════════════════════════════════════════════

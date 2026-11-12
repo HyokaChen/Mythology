@@ -50,6 +50,56 @@ public class CompositeStabilityMonitorTests
     }
 
     [Fact]
+    public void RecordStep_ChapterSizedTurnsAfterSmallWarmup_DoNotTrip()
+    {
+        // 回归：warmup 全是小工具调用（baseline=100），随后连续写 5K token 的章节。
+        // BudgetGate=20K、Warmup=5 → 有效 baseline 下限=4K，5K/4K < 5×，不应误报。
+        var config = new StabilityConfig
+        {
+            TokenBudget = 1_000_000,
+            BudgetGate = 20_000,
+            WarmupTurns = 5,
+            Window = 4,
+            RatioThreshold = 5.0,
+            Adaptive = false,
+        };
+        var monitor = new GrowthRatioGuard(config);
+
+        for (var i = 0; i < 5; i++)
+            monitor.RecordStep(100);
+
+        for (var i = 0; i < 4; i++)
+            monitor.RecordStep(5_000);
+
+        Assert.False(monitor.IsTripped);
+    }
+
+    [Fact]
+    public void RecordStep_TrueRunawayStillTrips_WithLowBaseline()
+    {
+        var config = new StabilityConfig
+        {
+            TokenBudget = 1_000_000,
+            BudgetGate = 20_000,
+            WarmupTurns = 5,
+            Window = 4,
+            RatioThreshold = 5.0,
+            Adaptive = false,
+        };
+        var monitor = new GrowthRatioGuard(config);
+
+        for (var i = 0; i < 5; i++)
+            monitor.RecordStep(100);
+
+        Assert.Throws<StabilityViolationException>(() =>
+        {
+            for (var i = 0; i < 4; i++)
+                monitor.RecordStep(25_000);
+        });
+        Assert.True(monitor.IsTripped);
+    }
+
+    [Fact]
     public void RecordStep_FrozenWhenBudgetExhausted()
     {
         var config = new StabilityConfig { TokenBudget = 500 };

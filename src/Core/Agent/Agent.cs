@@ -137,9 +137,9 @@ public sealed class Agent : IAsyncDisposable
     internal ConversationLoop EnsureConversationLoop() => GetOrCreateConversationLoop();
 
     /// <summary>
-    /// 重置 prompt token 基线（compact 后调用）。
-    /// 委托到 ConversationLoop.ResetPromptBaseline：使下一轮增量计算从新基线起步，
-    /// 避免 compact 后旧 _lastPromptTokens 导致大幅负增量压低监控器 TotalTokens。
+    /// 重置稳定性上下文基线（compact / 模型切换后调用）。
+    /// 委托到 ConversationLoop.ResetPromptBaseline：使下一轮绝对差分从 seed 起步，
+    /// 避免 compact 后旧上下文基线导致增量失真。
     /// </summary>
     public void ResetPromptBaseline() => _conversationLoop?.ResetPromptBaseline();
 
