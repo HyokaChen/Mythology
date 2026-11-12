@@ -940,6 +940,33 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
+    public async Task RetryFromUserMessage_DoesNotRewriteExistingJsonl()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        var before = Directory
+            .GetFiles(h.StoreDir, "*.jsonl", SearchOption.AllDirectories)
+            .ToDictionary(path => path, File.ReadAllBytes, StringComparer.Ordinal);
+
+        await h.Engine.RetryFromUserMessageAsync(0, null, CancellationToken.None);
+
+        foreach (var (path, original) in before)
+        {
+            Assert.True(File.Exists(path), $"retry removed {Path.GetFileName(path)}");
+            var current = File.ReadAllBytes(path);
+            Assert.True(
+                current.Length >= original.Length,
+                $"retry truncated {Path.GetFileName(path)}: {original.Length} -> {current.Length}"
+            );
+            Assert.True(
+                current.AsSpan(0, original.Length).SequenceEqual(original),
+                $"retry rewrote the existing prefix of {Path.GetFileName(path)}"
+            );
+        }
+    }
+
+    [Fact]
     public async Task RetryFromUserMessage_KeepsEarlierTurns_WhenTargetingSecondUser()
     {
         using var h = new Harness();
