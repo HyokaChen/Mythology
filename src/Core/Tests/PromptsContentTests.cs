@@ -22,7 +22,7 @@ public sealed class PromptsContentTests
         Assert.Contains("角色定义", RoleDefinitionPrompt.Full);
         Assert.Contains("作者的明确裁决", RoleDefinitionPrompt.Full);
         Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
-        Assert.Contains("云端 Harness 的结构化状态", RoleDefinitionPrompt.Full);
+        Assert.Contains("云端诊断的结构化状态", RoleDefinitionPrompt.Full);
         Assert.Contains("read_chapter", RoleDefinitionPrompt.Full);
         Assert.Contains("Agent 记忆", RoleDefinitionPrompt.Full);
     }
@@ -449,7 +449,7 @@ public sealed class PromptsContentTests
     [Fact]
     public void ContextUnderstandingPrompt_ContainsCloudCanonBoundary()
     {
-        Assert.Contains("云端 Harness 的评分", ContextUnderstandingPrompt.Full);
+        Assert.Contains("云端诊断的评分", ContextUnderstandingPrompt.Full);
         Assert.Contains("检索边界", ContextUnderstandingPrompt.Full);
     }
 
