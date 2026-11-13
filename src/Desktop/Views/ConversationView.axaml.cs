@@ -390,9 +390,9 @@ public partial class ConversationView : UserControl
     // ── 可见窗口：全量行模型 + 上下 spacer 虚拟化 ─────────────────────────
 
     private const double FallbackViewport = 600;
-    private const int MinLiveRows = 48;
-    private const int MaxLiveRows = 200;
-    private const int LiveBufferRows = 20;
+    private const int MinLiveRows = 16;
+    private const int MaxLiveRows = 80;
+    private const int LiveBufferRows = 8;
     private readonly HeightIndex<ConversationRow> _heightIndex = new();
     private readonly Dictionary<
         ChatMessage,
@@ -416,6 +416,18 @@ public partial class ConversationView : UserControl
 
     private void OnMessageListLayoutUpdated(object? sender, EventArgs e)
     {
+        // 布局完成、下一帧绘制前先贴底。流式正文/步骤让 extent 增长时，
+        // 若等 Background 再追底，最新一帧会先画在旧 offset 上（大用户气泡
+        // 会整块闪一下），所以这里必须在布局回调内同步修正 offset。
+        if (
+            MessageList.IsFollowing
+            && MessageScroll.Offset.Y
+                < Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height) - 0.5
+        )
+            MessageList.ScrollToEndImmediate();
+
+        // 视觉树扫描仍放到 Background 合并执行；它只回写实测高度/spacer，
+        // 不负责当帧贴底。
         if (_captureScheduled)
             return;
         _captureScheduled = true;
@@ -425,13 +437,6 @@ public partial class ConversationView : UserControl
                 _captureScheduled = false;
                 UpdateEstimateWidth();
                 CaptureMeasuredRows();
-                if (
-                    MessageList.IsFollowing
-                    && MessageScroll.Offset.Y
-                        < Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height)
-                            - 0.5
-                )
-                    MessageList.ScrollToEndImmediate();
             },
             DispatcherPriority.Background
         );
@@ -448,7 +453,7 @@ public partial class ConversationView : UserControl
                 _windowSyncScheduled = false;
                 SyncWindowForCurrentState();
             },
-            DispatcherPriority.Background
+            DispatcherPriority.Normal
         );
     }
 
@@ -648,8 +653,7 @@ public partial class ConversationView : UserControl
     private const double NoticeLineHeight = 20; // SystemNoticeText LineHeight
     private const double RowSpacing = 2; // RowContent/RowStep StackPanel Spacing
     private const double UserRowSpacing = 3; // RowUser StackPanel Spacing
-    private const double StepHeaderHeight = 21; // details button 20 + margin top 1
-    private const double StepHeaderCompactHeight = 17; // title line 16 + margin top 1
+    private const double StepHeaderLineHeight = 16; // 单行步骤头 TextBlock.LineHeight
     private const double NoticeChrome = LabelLineHeight + UserRowSpacing; // eyebrow + gap
 
     private double ViewportHeight() => Math.Max(FallbackViewport, MessageScroll.Viewport.Height);
@@ -766,8 +770,7 @@ public partial class ConversationView : UserControl
         var width = Math.Max(160, _estimateWidth);
         var bodyWidth = Math.Max(160, width - 18);
         var height = 0.0;
-        var headerHeight =
-            step.IsStepHeader && !step.HasDetails ? StepHeaderCompactHeight : StepHeaderHeight;
+        var headerHeight = StepHeaderLineHeight;
 
         if (step.IsContentStep)
         {
@@ -807,15 +810,10 @@ public partial class ConversationView : UserControl
         else if (step.IsStepHeader)
         {
             height += headerHeight;
+            // 结果摘要与参数摘要都是单行省略：固定 16px 行高，
+            // 不再按宽度估算换行，避免窗口换页时高度反复修正。
             if (step.HasResult)
-                height +=
-                    RowSpacing
-                    + MarkdownHeightEstimator.EstimatePlainText(
-                        step.ResultSummary ?? "",
-                        bodyWidth,
-                        11,
-                        16
-                    );
+                height += RowSpacing + 16;
             if (step.ShowStreamingPreview)
                 height += RowSpacing + 40; // StreamingReasoningPreview 固定 40
             if (step.IsDetailsExpanded)
@@ -903,7 +901,9 @@ public partial class ConversationView : UserControl
         if (_heightIndex.Count == 0)
             return MinLiveRows;
         var average = Math.Max(24, _heightIndex.Total / _heightIndex.Count);
-        var target = (int)Math.Ceiling(ViewportHeight() * 3 / average);
+        // 窗口保持约两屏 + 缓冲，而不是三屏：过程行控件重，缩小窗口能显著
+        // 降低每次换窗的测量成本；缓冲仍保证滚动时不会看到空白。
+        var target = (int)Math.Ceiling(ViewportHeight() * 2 / average);
         return Math.Clamp(target, MinLiveRows, MaxLiveRows);
     }
 
@@ -1202,17 +1202,18 @@ public partial class ConversationView : UserControl
         var oldRows = _rowsByMessage.TryGetValue(message, out var existing) ? existing : [];
         var desired = BuildRows(message);
         var selected = new List<ConversationRow>(desired.Count);
-        var available = new Dictionary<(ConversationRowKind, AgentStep?), Queue<ConversationRow>>();
+        var available =
+            new Dictionary<(ConversationRowKind, AgentStep?, bool, bool), Queue<ConversationRow>>();
         foreach (var row in oldRows)
         {
-            var key = (row.Kind, row.Step);
+            var key = RowTemplateKey(row);
             if (!available.TryGetValue(key, out var queue))
                 available[key] = queue = new Queue<ConversationRow>();
             queue.Enqueue(row);
         }
         foreach (var template in desired)
         {
-            var key = (template.Kind, template.Step);
+            var key = RowTemplateKey(template);
             selected.Add(
                 available.TryGetValue(key, out var queue) && queue.Count > 0
                     ? queue.Dequeue()
@@ -1250,6 +1251,14 @@ public partial class ConversationView : UserControl
         _forceWindowSync = true;
         RequestWindowSync();
     }
+
+    /// <summary>
+    /// 行模板由步骤状态决定（运行中/完成/展开/收起）。复用旧行对象时容器不会
+    /// 重新选模板，因此状态变化必须换新行对象，让 ItemsControl 重建该行。
+    /// </summary>
+    private static (ConversationRowKind, AgentStep?, bool, bool) RowTemplateKey(
+        ConversationRow row
+    ) => (row.Kind, row.Step, row.Step?.IsProcessing == true, row.Step?.IsDetailsExpanded == true);
 
     private void SubscribeMessage(ChatMessage message)
     {
@@ -1342,7 +1351,14 @@ public partial class ConversationView : UserControl
     {
         if (sender is not AgentStep step || !_stepOwners.TryGetValue(step, out var message))
             return;
-        if (e.PropertyName is not (nameof(AgentStep.Status) or nameof(AgentStep.IsProcessing)))
+        if (
+            e.PropertyName
+            is not (
+                nameof(AgentStep.Status)
+                or nameof(AgentStep.IsProcessing)
+                or nameof(AgentStep.IsDetailsExpanded)
+            )
+        )
             return;
 
         // 失败/审批需要决定：自动展开过程，不再自动收。
@@ -1434,7 +1450,7 @@ public partial class ConversationView : UserControl
                 foreach (var item in dirty)
                     ReplaceRowsForMessage(item);
             },
-            DispatcherPriority.Background
+            DispatcherPriority.Normal
         );
     }
 
@@ -1599,6 +1615,12 @@ public partial class ConversationView : UserControl
     {
         if (sender is Control { DataContext: ConversationRow { Step: { } step } row })
         {
+            if (!step.HasDetails)
+            {
+                e.Handled = true;
+                return;
+            }
+
             // 展开步骤详情会让当前行长高。若仍在尾部跟随，AutoScroll 会把视口
             // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
             // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
@@ -1613,9 +1635,11 @@ public partial class ConversationView : UserControl
             if (expand)
             {
                 var revealVersion = _revealVersion;
+                // 模板切换会替换行对象，窗口同步/新容器布局都在 Background 阶段；
+                // reveal 放到 ContextIdle，确保详情控件已经实例化且锚点恢复已结束。
                 Dispatcher.UIThread.Post(
                     () => BringStepDetailsIntoView(row, revealVersion),
-                    DispatcherPriority.Loaded
+                    DispatcherPriority.ContextIdle
                 );
             }
         }
@@ -1628,21 +1652,24 @@ public partial class ConversationView : UserControl
             return;
         if (_revealVersion != revealVersion || MessageList.IsFollowing)
             return;
+        // 模板切换会替换 ConversationRow 对象；详情面板的 DataContext 是
+        // AgentStep，按步骤匹配，不能拿点击时捕获的旧行对象比较。
         var details = this.GetVisualDescendants()
             .OfType<StackPanel>()
             .FirstOrDefault(panel =>
-                panel.Classes.Contains("StepDetails") && ReferenceEquals(panel.DataContext, row)
+                panel.Classes.Contains("StepDetails")
+                && ReferenceEquals(panel.DataContext, row.Step)
             );
         if (details is not { IsVisible: true })
             return;
         if (details.TranslatePoint(new Point(0, 0), MessageScroll) is not { } top)
             return;
 
-        // 详情顶部已经在视口上部（或完整可见）时不打扰用户；只有贴近/越过底边
-        // 或已经跑到视口上方时，才把它拉回可读位置。用户点击后自己滚动过则
-        // 由上面的 scrollEpoch 直接放弃，避免快速下滚时被延迟 reveal 反向拽回。
-        var viewport = MessageScroll.Viewport.Height;
-        if (top.Y >= 8 && top.Y < viewport - 24)
+        // 展开动作发生在尾部时，ScrollViewer 可能仍保持贴底：详情顶部虽然
+        // 落在视口内，但下半截被截掉，阅读位置也还停在底部。这里始终把详情
+        // 顶部对齐到视口上方留白，保证点击后从第一行开始读；用户随后的滚动
+        // 会通过 revealVersion 让这次延迟定位失效。
+        if (top.Y >= 8 && top.Y <= 8.5)
             return;
 
         // 把详情顶部放到视口上方留白处。BringIntoView 对“比视口还高”的控件只保证

@@ -30,13 +30,11 @@ public sealed class MessageActionsStructureTests
         Assert.Equal("TextBox", editor.Name.LocalName);
         Assert.Contains("Message.EditDraft", Attr(editor, "Text"), StringComparison.Ordinal);
 
-        var cancel = Assert.Single(
-            row.Descendants(),
-            e => e.Name.LocalName == "Button" && Attr(e, "Click") == "CancelUserEdit_OnClick"
+        var cancel = Assert.Single(row.Descendants(), e =>
+            e.Name.LocalName == "Button" && Attr(e, "Click") == "CancelUserEdit_OnClick"
         );
-        var send = Assert.Single(
-            row.Descendants(),
-            e => e.Name.LocalName == "Button" && Attr(e, "Click") == "SubmitUserEdit_OnClick"
+        var send = Assert.Single(row.Descendants(), e =>
+            e.Name.LocalName == "Button" && Attr(e, "Click") == "SubmitUserEdit_OnClick"
         );
         Assert.Contains(cancel.Descendants(), e => e.Name.LocalName == "LucideIcon");
         Assert.Contains(send.Descendants(), e => e.Name.LocalName == "LucideIcon");
@@ -55,23 +53,19 @@ public sealed class MessageActionsStructureTests
         var row = Template("RowStep");
 
         Assert.DoesNotContain(row.Descendants(), e => e.Name.LocalName == "MessageActionBar");
-        Assert.DoesNotContain(
-            row.Descendants(),
-            e =>
-                e.Name.LocalName == "Button"
-                && Attr(e, "Classes").Contains("StepHeaderAction", StringComparison.Ordinal)
+        Assert.DoesNotContain(row.Descendants(), e =>
+            e.Name.LocalName == "Button"
+            && Attr(e, "Classes").Contains("StepHeaderAction", StringComparison.Ordinal)
         );
         Assert.DoesNotContain(row.Descendants(), e => Attr(e, "Click") == "StepCopy_OnClick");
-        Assert.DoesNotContain(
-            row.Descendants(),
-            e => e.Name.LocalName == "LucideIcon" && Attr(e, "Kind") == "Copy"
+        Assert.DoesNotContain(row.Descendants(), e =>
+            e.Name.LocalName == "LucideIcon" && Attr(e, "Kind") == "Copy"
         );
 
-        var details = Assert.Single(
-            row.Descendants(),
-            e => Attr(e, "Click") == "StepDetails_OnClick"
+        var details = Assert.Single(row.Descendants(), e =>
+            Attr(e, "PointerPressed") == "StepDetails_OnClick"
         );
-        Assert.Equal("3", Attr(details, "Grid.Column"));
+        Assert.Equal("StackPanel", details.Name.LocalName);
     }
 
     [Fact]
@@ -96,32 +90,24 @@ public sealed class MessageActionsStructureTests
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         var styles = root.Descendants().Where(e => e.Name.LocalName == "Style").ToList();
 
-        var hidden = Assert.Single(
-            styles,
-            s => Attr(s, "Selector") == "controls|MessageActionBar.MessageActions"
+        var hidden = Assert.Single(styles, s =>
+            Attr(s, "Selector") == "controls|MessageActionBar.MessageActions"
         );
-        Assert.Contains(
-            hidden.Descendants(),
-            setter => Attr(setter, "Property") == "Opacity" && Attr(setter, "Value") == "0"
+        Assert.Contains(hidden.Descendants(), setter =>
+            Attr(setter, "Property") == "Opacity" && Attr(setter, "Value") == "0"
         );
-        Assert.Contains(
-            hidden.Descendants(),
-            setter =>
-                Attr(setter, "Property") == "IsHitTestVisible" && Attr(setter, "Value") == "False"
+        Assert.Contains(hidden.Descendants(), setter =>
+            Attr(setter, "Property") == "IsHitTestVisible" && Attr(setter, "Value") == "False"
         );
 
-        var shown = Assert.Single(
-            styles,
-            s => Attr(s, "Selector") == "controls|MessageActionBar.MessageActions.Hovered"
+        var shown = Assert.Single(styles, s =>
+            Attr(s, "Selector") == "controls|MessageActionBar.MessageActions.Hovered"
         );
-        Assert.Contains(
-            shown.Descendants(),
-            setter => Attr(setter, "Property") == "Opacity" && Attr(setter, "Value") == "1"
+        Assert.Contains(shown.Descendants(), setter =>
+            Attr(setter, "Property") == "Opacity" && Attr(setter, "Value") == "1"
         );
-        Assert.Contains(
-            shown.Descendants(),
-            setter =>
-                Attr(setter, "Property") == "IsHitTestVisible" && Attr(setter, "Value") == "True"
+        Assert.Contains(shown.Descendants(), setter =>
+            Attr(setter, "Property") == "IsHitTestVisible" && Attr(setter, "Value") == "True"
         );
     }
 

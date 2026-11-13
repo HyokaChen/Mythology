@@ -77,12 +77,16 @@ public sealed class MotionWiringTests
     [Fact]
     public void ConversationMessageTemplate_IsAnimationFree()
     {
-        var template = Single(
-            Load("Views/ConversationView.axaml"),
-            e => e.Name.LocalName == "DataTemplate" && AttrPlain(e, "Key") == "ConversationRowRoot"
-        );
-        var animated = template
+        var templates = Load("Views/ConversationView.axaml")
             .Descendants()
+            .Where(e =>
+                e.Name.LocalName == "DataTemplate"
+                && AttrPlain(e, "Key").StartsWith("Row", StringComparison.Ordinal)
+            )
+            .ToList();
+        Assert.NotEmpty(templates);
+        var animated = templates
+            .SelectMany(template => template.Descendants())
             .Where(e => e.Attributes().Any(a => a.Name.NamespaceName == MotionNamespace))
             .Select(e => e.Name.LocalName)
             .ToList();
@@ -106,11 +110,9 @@ public sealed class MotionWiringTests
     public void ConversationPopups_PlayEnterOnOpen(string popupName)
     {
         var root = Load("Views/ConversationView.axaml");
-        var popup = Single(
-            root,
-            e =>
-                e.Name.LocalName == "Popup"
-                && e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == popupName)
+        var popup = Single(root, e =>
+            e.Name.LocalName == "Popup"
+            && e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == popupName)
         );
 
         Assert.Equal("True", Attr(popup, "Motion.PopupEnter"));
@@ -120,9 +122,8 @@ public sealed class MotionWiringTests
     public void SetUpPanelTabPane_DoesNotAttachEnterAnimation()
     {
         // 翻页由 SetUpPanelView.AnimateTabChange 统一负责；模板再挂 Enter 会让 Opacity 双动画打架
-        var owner = Single(
-            Load("Views/SetUpPanelView.axaml"),
-            e => e.Name.LocalName == "TabControl.ContentTemplate"
+        var owner = Single(Load("Views/SetUpPanelView.axaml"), e =>
+            e.Name.LocalName == "TabControl.ContentTemplate"
         );
         var template = owner.Elements().First(e => e.Name.LocalName == "DataTemplate");
         var pane = template.Elements().First();
@@ -132,12 +133,10 @@ public sealed class MotionWiringTests
     [Fact]
     public void TodoPanelItem_PlaysEnterWithSmallRise()
     {
-        var itemTemplate = Single(
-            Load("Views/TodoPanelView.axaml"),
-            e =>
-                e.Name.LocalName == "DataTemplate"
-                && e.Attributes()
-                    .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("TodoItemRow"))
+        var itemTemplate = Single(Load("Views/TodoPanelView.axaml"), e =>
+            e.Name.LocalName == "DataTemplate"
+            && e.Attributes()
+                .Any(a => a.Name.LocalName == "DataType" && a.Value.Contains("TodoItemRow"))
         );
         var item = itemTemplate.Elements().First();
 
@@ -158,15 +157,13 @@ public sealed class MotionWiringTests
     public void MainWindowBanner_SlidesDownFromAbove()
     {
         var root = Load("Views/MainWindow.axaml");
-        var banner = Single(
-            root,
-            e =>
-                e.Name.LocalName == "Border"
-                && e.Attributes()
-                    .Any(a =>
-                        a.Name.LocalName == "IsVisible"
-                        && a.Value.Contains("IsCloudInvalidBannerVisible")
-                    )
+        var banner = Single(root, e =>
+            e.Name.LocalName == "Border"
+            && e.Attributes()
+                .Any(a =>
+                    a.Name.LocalName == "IsVisible"
+                    && a.Value.Contains("IsCloudInvalidBannerVisible")
+                )
         );
 
         Assert.Equal("True", Attr(banner, "Motion.Enter"));
@@ -177,11 +174,9 @@ public sealed class MotionWiringTests
     public void UpdatePromptOverlay_FadesWithoutRise()
     {
         var root = Load("Controls/UpdatePromptDialog.axaml");
-        var panel = Single(
-            root,
-            e =>
-                e.Name.LocalName == "Panel"
-                && e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == "RootPanel")
+        var panel = Single(root, e =>
+            e.Name.LocalName == "Panel"
+            && e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == "RootPanel")
         );
 
         Assert.Equal("True", Attr(panel, "Motion.Enter"));
@@ -271,13 +266,11 @@ public sealed class MotionWiringTests
             );
 
         Assert.True(item is not null, "MythologyStyles.axaml 缺少 ListBoxItem 样式");
-        Assert.Contains(
-            item.Elements(),
-            s => AttrPlain(s, "Property") == "Padding" && AttrPlain(s, "Value") == "0"
+        Assert.Contains(item.Elements(), s =>
+            AttrPlain(s, "Property") == "Padding" && AttrPlain(s, "Value") == "0"
         );
-        Assert.Contains(
-            item.Elements(),
-            s => AttrPlain(s, "Property") == "CornerRadius" && AttrPlain(s, "Value") == "0"
+        Assert.Contains(item.Elements(), s =>
+            AttrPlain(s, "Property") == "CornerRadius" && AttrPlain(s, "Value") == "0"
         );
     }
 
@@ -341,23 +334,19 @@ public sealed class MotionWiringTests
     [Fact]
     public void RowContainerTheme_IsFlatWithHairlineDividerAndNoRowBorder()
     {
-        var theme = Single(
-            Load("Styles/MythologyTheme.axaml"),
-            e =>
-                e.Name.LocalName == "ControlTheme"
-                && e.Attributes()
-                    .Any(a => a.Name.LocalName == "Key" && a.Value == "AdalineRowContainer")
+        var theme = Single(Load("Styles/MythologyTheme.axaml"), e =>
+            e.Name.LocalName == "ControlTheme"
+            && e.Attributes()
+                .Any(a => a.Name.LocalName == "Key" && a.Value == "AdalineRowContainer")
         );
 
         // 行无内边距、无圆角：内边距由行模板出，圆角由外层 Card 出
-        Assert.Contains(
-            theme.Descendants().Where(e => e.Name.LocalName == "Setter"),
-            s => AttrPlain(s, "Property") == "Padding" && AttrPlain(s, "Value") == "0"
+        Assert.Contains(theme.Descendants().Where(e => e.Name.LocalName == "Setter"), s =>
+            AttrPlain(s, "Property") == "Padding" && AttrPlain(s, "Value") == "0"
         );
         // 分隔线：仅底边 1px Mist（DESIGN.md §Code Block Panel "inner rows separated by 1px dividers"）
-        Assert.Contains(
-            theme.Descendants().Where(e => e.Name.LocalName == "Setter"),
-            s => AttrPlain(s, "Property") == "BorderThickness" && AttrPlain(s, "Value") == "0,0,0,1"
+        Assert.Contains(theme.Descendants().Where(e => e.Name.LocalName == "Setter"), s =>
+            AttrPlain(s, "Property") == "BorderThickness" && AttrPlain(s, "Value") == "0,0,0,1"
         );
         // 状态雾用 Sage Mist 系（DESIGN.md §Components Pill Tab "subtle Sage Mist wash"）
         var text = theme.ToString();
@@ -417,9 +406,8 @@ public sealed class MotionWiringTests
         var root = Load("Views/ConversationView.axaml");
         foreach (var name in new[] { "StopButton", "SendButton" })
         {
-            var button = Single(
-                root,
-                e => e.Name.LocalName == "Button" && AttrPlain(e, "Name") == name
+            var button = Single(root, e =>
+                e.Name.LocalName == "Button" && AttrPlain(e, "Name") == name
             );
             Assert.Equal("True", Attr(button, "Motion.Fade"));
         }
@@ -428,12 +416,10 @@ public sealed class MotionWiringTests
     [Fact]
     public void MainWindowUpdateBadge_PopsIn()
     {
-        var dot = Single(
-            Load("Views/MainWindow.axaml"),
-            e =>
-                e.Name.LocalName == "Ellipse"
-                && AttrPlain(e, "IsVisible")
-                    .Contains("UpdatePrompt.HasPendingUpdate", StringComparison.Ordinal)
+        var dot = Single(Load("Views/MainWindow.axaml"), e =>
+            e.Name.LocalName == "Ellipse"
+            && AttrPlain(e, "IsVisible")
+                .Contains("UpdatePrompt.HasPendingUpdate", StringComparison.Ordinal)
         );
 
         Assert.Equal("True", Attr(dot, "Motion.Pop"));
@@ -445,9 +431,8 @@ public sealed class MotionWiringTests
         var root = Load("Controls/UpdatePromptDialog.axaml");
         foreach (var content in new[] { "重试", "开始安装" })
         {
-            var button = Single(
-                root,
-                e => e.Name.LocalName == "Button" && AttrPlain(e, "Content") == content
+            var button = Single(root, e =>
+                e.Name.LocalName == "Button" && AttrPlain(e, "Content") == content
             );
             Assert.Equal("True", Attr(button, "Motion.Fade"));
         }
@@ -457,9 +442,8 @@ public sealed class MotionWiringTests
     public void SettingsTabUnderline_GrowsOnSelection()
     {
         var root = Load("Views/SettingsView.axaml");
-        var underline = Single(
-            root,
-            e => e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "PART_Underline"
+        var underline = Single(root, e =>
+            e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "PART_Underline"
         );
         Assert.True(
             underline
@@ -471,11 +455,9 @@ public sealed class MotionWiringTests
             "PART_Underline 缺少 RenderTransform 过渡"
         );
 
-        var selected = Single(
-            root,
-            e =>
-                e.Name.LocalName == "Style"
-                && AttrPlain(e, "Selector") == "^:selected /template/ Border#PART_Underline"
+        var selected = Single(root, e =>
+            e.Name.LocalName == "Style"
+            && AttrPlain(e, "Selector") == "^:selected /template/ Border#PART_Underline"
         );
         Assert.True(
             selected
@@ -501,11 +483,8 @@ public sealed class MotionWiringTests
             }
         )
         {
-            var text = Single(
-                root,
-                e =>
-                    e.Name.LocalName == "TextBlock"
-                    && AttrPlain(e, "Text") == $"{{Binding {binding}}}"
+            var text = Single(root, e =>
+                e.Name.LocalName == "TextBlock" && AttrPlain(e, "Text") == $"{{Binding {binding}}}"
             );
             Assert.Equal("True", Attr(text, "Motion.Fade"));
         }
@@ -515,31 +494,25 @@ public sealed class MotionWiringTests
     public void SetupCheckRunButton_HasBusySpinnerAndFade()
     {
         var root = Load("Controls/SetupCheckWindow.axaml");
-        var button = Single(
-            root,
-            e => e.Name.LocalName == "Button" && AttrPlain(e, "Name") == "RunCheckButton"
+        var button = Single(root, e =>
+            e.Name.LocalName == "Button" && AttrPlain(e, "Name") == "RunCheckButton"
         );
         Assert.Contains("IsChecking", AttrPlain(button, "IsEnabled"), StringComparison.Ordinal);
 
-        var spinner = Single(
-            button,
-            e =>
-                e.Name.LocalName == "BusySpinner"
-                && AttrPlain(e, "IsActive").Contains("IsChecking", StringComparison.Ordinal)
+        var spinner = Single(button, e =>
+            e.Name.LocalName == "BusySpinner"
+            && AttrPlain(e, "IsActive").Contains("IsChecking", StringComparison.Ordinal)
         );
         Assert.NotNull(spinner);
 
-        var idle = Single(
-            button,
-            e => e.Name.LocalName == "TextBlock" && AttrPlain(e, "Text") == "运行检查"
+        var idle = Single(button, e =>
+            e.Name.LocalName == "TextBlock" && AttrPlain(e, "Text") == "运行检查"
         );
         Assert.Equal("True", Attr(idle, "Motion.Fade"));
 
-        var busy = Single(
-            button,
-            e =>
-                e.Name.LocalName == "StackPanel"
-                && AttrPlain(e, "IsVisible").Contains("IsChecking", StringComparison.Ordinal)
+        var busy = Single(button, e =>
+            e.Name.LocalName == "StackPanel"
+            && AttrPlain(e, "IsVisible").Contains("IsChecking", StringComparison.Ordinal)
         );
         Assert.Equal("True", Attr(busy, "Motion.Fade"));
     }
@@ -547,9 +520,8 @@ public sealed class MotionWiringTests
     [Fact]
     public void AskUserCustomPanel_PlaysEnterWithSmallRise()
     {
-        var panel = Single(
-            Load("Controls/AskUserWindow.axaml"),
-            e => e.Name.LocalName == "StackPanel" && AttrPlain(e, "Name") == "CustomPanel"
+        var panel = Single(Load("Controls/AskUserWindow.axaml"), e =>
+            e.Name.LocalName == "StackPanel" && AttrPlain(e, "Name") == "CustomPanel"
         );
 
         Assert.Equal("True", Attr(panel, "Motion.Enter"));
@@ -559,11 +531,9 @@ public sealed class MotionWiringTests
     [Fact]
     public void TodoCompletedLabel_FadesIn()
     {
-        var text = Single(
-            Load("Views/TodoPanelView.axaml"),
-            e =>
-                e.Name.LocalName == "TextBlock"
-                && AttrPlain(e, "IsVisible").Contains("IsCompleted", StringComparison.Ordinal)
+        var text = Single(Load("Views/TodoPanelView.axaml"), e =>
+            e.Name.LocalName == "TextBlock"
+            && AttrPlain(e, "IsVisible").Contains("IsCompleted", StringComparison.Ordinal)
         );
 
         Assert.Equal("True", Attr(text, "Motion.Fade"));
@@ -582,9 +552,8 @@ public sealed class MotionWiringTests
     [Fact]
     public void ToolTip_FadesIn_WithoutRenderTransformAnimation()
     {
-        var style = Single(
-            Load("Styles/MythologyStyles.axaml"),
-            e => e.Name.LocalName == "Style" && AttrPlain(e, "Selector") == "ToolTip"
+        var style = Single(Load("Styles/MythologyStyles.axaml"), e =>
+            e.Name.LocalName == "Style" && AttrPlain(e, "Selector") == "ToolTip"
         );
         var animation = Single(style, e => e.Name.LocalName == "Animation");
         Assert.Contains("Motion.Fast", AttrPlain(animation, "Duration"), StringComparison.Ordinal);
@@ -594,17 +563,15 @@ public sealed class MotionWiringTests
             .Where(e => e.Name.LocalName == "Setter")
             .Select(e => (Property: AttrPlain(e, "Property"), Value: AttrPlain(e, "Value")))
             .ToList();
-        Assert.DoesNotContain(
-            setters,
-            s => s.Property.Contains("RenderTransform", StringComparison.Ordinal)
+        Assert.DoesNotContain(setters, s =>
+            s.Property.Contains("RenderTransform", StringComparison.Ordinal)
         );
         Assert.Equal(
             new[] { ("Opacity", "0"), ("Opacity", "1") },
             setters.Select(s => (s.Property, s.Value)).ToArray()
         );
-        Assert.DoesNotContain(
-            style.Elements(),
-            e => e.Name.LocalName == "Setter" && AttrPlain(e, "Property") == "RenderTransform"
+        Assert.DoesNotContain(style.Elements(), e =>
+            e.Name.LocalName == "Setter" && AttrPlain(e, "Property") == "RenderTransform"
         );
     }
 

@@ -58,9 +58,8 @@ public sealed class TuiInteractionParityTests
         Assert.DoesNotContain(spinners, s => Attr(s, "IsActive").Contains("{Binding Loading}"));
         Assert.Contains(Descendants(root, "TextBlock"), t => Attr(t, "Text") == "执行中");
         Assert.DoesNotContain(Descendants(root, "TextBlock"), t => Attr(t, "Text") == "写作中");
-        Assert.DoesNotContain(
-            Descendants(root, "TextBlock"),
-            t => Attr(t, "Text") == "{Binding WaitingText}"
+        Assert.DoesNotContain(Descendants(root, "TextBlock"), t =>
+            Attr(t, "Text") == "{Binding WaitingText}"
         );
         // 旧加载条已移除（TUI 为纯字符 dots,不再有进度条）
         Assert.Empty(Descendants(root, "ProgressBar"));
@@ -87,15 +86,16 @@ public sealed class TuiInteractionParityTests
     public void ConversationView_StepContent_UsesFullWidth()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        var arguments = Descendants(root, "TextBlock")
-            .Single(t => Attr(t, "Text") == "{Binding Step.ArgumentsSummary}");
+        var header = Descendants(root, "TextBlock")
+            .Single(t =>
+                Attr(t, "Text") == "{Binding Step.HeaderText}"
+                && t.Ancestors().Any(a => Attr(a, "IsVisible") == "{Binding Step.IsStepHeader}")
+            );
         var details = Descendants(root, "StackPanel")
             .Single(s => Attr(s, "Classes") == "StepDetails");
 
-        Assert.Equal("2", Attr(arguments, "Grid.Column"));
-        Assert.Equal("Wrap", Attr(arguments, "TextWrapping"));
-        Assert.Equal("", Attr(arguments, "MaxWidth"));
-        Assert.Equal("", Attr(arguments, "TextTrimming"));
+        Assert.Equal("", Attr(header, "MaxWidth"));
+        Assert.Equal("NoWrap", Attr(header, "TextWrapping"));
         Assert.Equal("", Attr(details, "MaxWidth"));
         Assert.Equal("Stretch", Attr(details, "HorizontalAlignment"));
     }
@@ -114,15 +114,19 @@ public sealed class TuiInteractionParityTests
     }
 
     [Fact]
-    public void ConversationView_StepRow_FallsBackToStaticGlyphWhenDone()
+    public void ConversationView_StepRow_UsesSingleHeaderTextWithoutPerRowIcon()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
-        // 静态回退图标 = LucideIcon（Kind 绑定 StatusIcon），不再是 emoji 文本
-        var icon = Descendants(root, "LucideIcon")
-            .Single(t => Attr(t, "Kind") == "{Binding Step.StatusIcon}");
+        var header = Descendants(root, "TextBlock")
+            .Single(t =>
+                Attr(t, "Text") == "{Binding Step.HeaderText}"
+                && t.Ancestors().Any(a => Attr(a, "IsVisible") == "{Binding Step.IsStepHeader}")
+            );
 
-        Assert.Contains("IsProcessing", Attr(icon, "IsVisible"));
-        Assert.Contains("InvertedBoolToVisibility", Attr(icon, "IsVisible"));
+        Assert.Equal("", Attr(header, "MaxWidth"));
+        Assert.DoesNotContain(Descendants(root, "LucideIcon"), icon =>
+            Attr(icon, "Kind") == "{Binding Step.StatusIcon}"
+        );
     }
 
     [Fact]
@@ -205,16 +209,14 @@ public sealed class TuiInteractionParityTests
     public void MainWindow_StatusBar_ShowsSpinnerAndStatusText()
     {
         var root = Load("src", "Desktop", "Views", "MainWindow.axaml");
-        var statusSpinner = Assert.Single(
-            Descendants(root, "BusySpinner"),
-            s => Attr(s, "Name") == "StatusSpinner"
+        var statusSpinner = Assert.Single(Descendants(root, "BusySpinner"), s =>
+            Attr(s, "Name") == "StatusSpinner"
         );
 
         Assert.Equal("{Binding IsBusy}", Attr(statusSpinner, "IsActive"));
         Assert.Equal("{Binding IsBusy}", Attr(statusSpinner, "IsVisible"));
-        Assert.Contains(
-            Descendants(root, "TextBlock"),
-            t => Attr(t, "Text") == "{Binding StatusText}"
+        Assert.Contains(Descendants(root, "TextBlock"), t =>
+            Attr(t, "Text") == "{Binding StatusText}"
         );
     }
 

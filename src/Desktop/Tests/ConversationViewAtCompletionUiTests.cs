@@ -182,17 +182,14 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     [Fact]
     public void NonPathText_NoEntityFallback_PopupStaysClosed()
     {
-        RunWithInput(
-            "@张三",
-            (view, _) =>
-            {
-                // 语义契约：@ 不再回退实体提及（引用实体请用 #）
-                Assert.False(_vm.IsSuggestionPopupVisible);
-                Assert.Empty(_vm.Suggestions);
-                var popup = view.FindControl<Popup>("SuggestionPopup");
-                Assert.False(popup!.IsOpen, "无候选时弹窗必须关闭");
-            }
-        );
+        RunWithInput("@张三", (view, _) =>
+        {
+            // 语义契约：@ 不再回退实体提及（引用实体请用 #）
+            Assert.False(_vm.IsSuggestionPopupVisible);
+            Assert.Empty(_vm.Suggestions);
+            var popup = view.FindControl<Popup>("SuggestionPopup");
+            Assert.False(popup!.IsOpen, "无候选时弹窗必须关闭");
+        });
     }
 
     [Fact]
@@ -505,9 +502,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     $"滚动条应覆盖全量历史：extent={sv.Extent.Height}, viewport={sv.Viewport.Height}"
                 );
                 Assert.Equal(2000, _vm.Messages.Count);
-                Assert.DoesNotContain(
-                    list.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text?.Contains("##") == true
+                Assert.DoesNotContain(list.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("##") == true
                 );
 
                 // 跟随状态下追加：仍贴底，窗口不随全量历史膨胀
@@ -528,13 +524,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     () => list.TopSpacerHeight <= 0.5 && list.Items.Count > 0,
                     "滚到顶部应实例化最早的行"
                 );
-                Assert.Contains(
-                    list.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text?.Contains("历史 0") == true
+                Assert.Contains(list.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("历史 0") == true
                 );
-                Assert.DoesNotContain(
-                    list.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text?.Contains("##") == true
+                Assert.DoesNotContain(list.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("##") == true
                 );
 
                 sv.Offset = sv.Offset.WithY(Math.Max(0, sv.Extent.Height - sv.Viewport.Height));
@@ -979,14 +973,12 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                                 | System.Reflection.BindingFlags.NonPublic
                         )!
                         .GetValue(view)!;
-                var compactRow = Assert.Single(
-                    rows,
-                    row =>
-                        row.Message.Content?.ToString()
-                            .StartsWith(
-                                Core.Data.SessionInternalMessages.CompactSummaryPrefix,
-                                StringComparison.Ordinal
-                            ) == true
+                var compactRow = Assert.Single(rows, row =>
+                    row.Message.Content?.ToString()
+                        .StartsWith(
+                            Core.Data.SessionInternalMessages.CompactSummaryPrefix,
+                            StringComparison.Ordinal
+                        ) == true
                 );
                 var compactIndex = rows.IndexOf(compactRow);
                 sv.Offset = sv.Offset.WithY(
@@ -1095,31 +1087,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     Thread.Sleep(5);
                 }
 
-                var detailButton = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext
-                            is Desktop.Models.ConversationRow
-                            {
-                                Step: { Kind: Desktop.Models.StepKind.Thinking },
-                            }
-                        && Equals(b.Content, "展开")
-                    )
-                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
-                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
-                    .FirstOrDefault();
-                Assert.NotNull(detailButton);
-                var click = detailButton!.Button.TranslatePoint(
-                    new Point(
-                        detailButton.Button.Bounds.Width / 2,
-                        detailButton.Button.Bounds.Height / 2
-                    ),
-                    window
-                );
-                Assert.NotNull(click);
-                window.MouseMove(click!.Value);
-                window.MouseDown(click.Value, MouseButton.Left);
-                window.MouseUp(click.Value, MouseButton.Left);
+                var detailHeader = FindVisibleExpandHeader(view, window, sv);
+                Assert.NotNull(detailHeader);
+                window.MouseMove(detailHeader.Value.Point);
+                window.MouseDown(detailHeader.Value.Point, MouseButton.Left);
+                window.MouseUp(detailHeader.Value.Point, MouseButton.Left);
 
                 // 不等延迟 reveal 执行，立刻快速下滚。
                 window.MouseMove(pointer);
@@ -1606,24 +1578,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             {
                 PumpUntil(() => AtBottom(sv), "初始贴底");
 
-                var button = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext is Desktop.Models.ConversationRow { Step: { } rowStep }
-                        && ReferenceEquals(rowStep, step)
-                        && Equals(b.Content, "展开")
-                    )
-                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
-                    .FirstOrDefault(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height);
-                Assert.NotNull(button);
-                var click = button!.Button.TranslatePoint(
-                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
-                    window
-                );
-                Assert.NotNull(click);
-                window.MouseMove(click!.Value);
-                window.MouseDown(click.Value, MouseButton.Left);
-                window.MouseUp(click.Value, MouseButton.Left);
+                var header = FindVisibleExpandHeader(view, window, sv, step);
+                Assert.NotNull(header);
+                window.MouseMove(header.Value.Point);
+                window.MouseDown(header.Value.Point, MouseButton.Left);
+                window.MouseUp(header.Value.Point, MouseButton.Left);
                 PumpUntil(() => step.IsDetailsExpanded, "详情展开");
                 for (var i = 0; i < 20; i++)
                 {
@@ -1633,7 +1592,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 }
 
                 Assert.False(list.IsFollowing, "展开详情必须中断自动跟随");
-                Assert.False(AtBottom(sv));
+                // 最后一条消息的详情展开后内容仍可能填不满视口，此时 offset 恰好
+                // 等于 max 不算回底；关键是跟随已关闭，后续新增内容不会改变位置。
                 var expandedOffset = sv.Offset.Y;
 
                 RaiseWindowEvent(window, "Deactivated");
@@ -1986,6 +1946,90 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             }
             finally
             {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 超长用户输入之后开始流式步骤：新步骤行与贴底必须在下一帧绘制前完成。
+    /// 若行重建/追底留在 Background（绘制之后），大用户气泡会先按旧 offset
+    /// 闪一整帧。这里只执行 Normal + Render，故意不跑 Background。
+    /// </summary>
+    [Fact]
+    public void LargeUserMessage_StreamingStep_RebuildsAndPinsBeforeNextPaint()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(20);
+            var user = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+            user.AppendContent(
+                string.Join(
+                    "\n\n",
+                    Enumerable.Repeat(
+                        string.Concat(Enumerable.Repeat("这是一段很长的用户输入。", 8)),
+                        60
+                    )
+                )
+            );
+            _vm.Messages.Add(user);
+            var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsWaiting = true,
+            };
+            _vm.Messages.Add(agent);
+            _vm.HasMessages = true;
+
+            var (window, view, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始贴底");
+
+                agent.IsWaiting = false;
+                agent.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "流式首块",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                        ArgumentsSummary = "参数",
+                        ResultSummary = "结果",
+                    }
+                );
+
+                // 真实帧顺序：Normal（事件/行更新）→ Render（布局/绘制）→
+                // Background（旧的测量/追底）。这里故意只跑到 Render。
+                Dispatcher.UIThread.RunJobs(DispatcherPriority.Normal);
+                using var stepFrame = window.CaptureRenderedFrame();
+
+                Assert.Contains(list.Items.OfType<Desktop.Models.ConversationRow>(), row =>
+                    row.Step?.Title == "流式首块"
+                );
+                Assert.True(
+                    AtBottom(sv),
+                    $"流式步骤后下一帧必须已贴底：offset={sv.Offset.Y}, "
+                        + $"extent={sv.Extent.Height}, viewport={sv.Viewport.Height}"
+                );
+
+                // 正文块同样不能等 Background 才挂载/贴底。
+                Dispatcher.UIThread.RunJobs();
+                agent.AppendContent("第一段流式正文。");
+                Dispatcher.UIThread.RunJobs(DispatcherPriority.Normal);
+                using var contentFrame = window.CaptureRenderedFrame();
+
+                Assert.Contains(list.Items.OfType<Desktop.Models.ConversationRow>(), row =>
+                    row.Kind == Desktop.Models.ConversationRowKind.Content
+                    && ReferenceEquals(row.Message, agent)
+                );
+                Assert.True(
+                    AtBottom(sv),
+                    $"流式正文后下一帧必须已贴底：offset={sv.Offset.Y}, "
+                        + $"extent={sv.Extent.Height}, viewport={sv.Viewport.Height}"
+                );
+            }
+            finally
+            {
+                Dispatcher.UIThread.RunJobs();
                 window.Close();
             }
         });
@@ -2523,7 +2567,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 var title = view.GetVisualDescendants()
                     .OfType<TextBlock>()
                     .FirstOrDefault(text =>
-                        ReferenceEquals(text.DataContext, stepRow) && text.Text == "工具 0"
+                        ReferenceEquals(text.DataContext, stepRow)
+                        && text.Text?.Contains("工具 0", StringComparison.Ordinal) == true
                     );
                 Assert.NotNull(title);
                 var titlePoint = title!.TranslatePoint(new Point(0, 0), scroll);
@@ -2665,9 +2710,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     Desktop.Models.ChatMessage message,
                     Desktop.Models.ConversationRowKind kind
                 ) =>
-                    Assert.Single(
-                        actualRows.Keys,
-                        r => ReferenceEquals(r.Message, message) && r.Kind == kind
+                    Assert.Single(actualRows.Keys, r =>
+                        ReferenceEquals(r.Message, message) && r.Kind == kind
                     );
 
                 AssertRow(FindRow(user, Desktop.Models.ConversationRowKind.User), 102, "user");
@@ -2769,6 +2813,40 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         Assert.NotNull(handler);
         handler(window, EventArgs.Empty);
         Dispatcher.UIThread.RunJobs();
+    }
+
+    private static (TextBlock Header, Point Point)? FindVisibleExpandHeader(
+        Desktop.Views.ConversationView view,
+        Window window,
+        ScrollViewer scroll,
+        Desktop.Models.AgentStep? target = null
+    )
+    {
+        return view.GetVisualDescendants()
+            .OfType<TextBlock>()
+            .Where(text =>
+                text.DataContext is Desktop.Models.ConversationRow { Step: { } step }
+                && (target is null || ReferenceEquals(step, target))
+                && text.Text?.Contains("展开", StringComparison.Ordinal) == true
+                && text.IsEffectivelyVisible
+            )
+            .Select(text => new
+            {
+                Text = text,
+                Point = text.TranslatePoint(
+                    new Point(text.Bounds.Width / 2, text.Bounds.Height / 2),
+                    window
+                ),
+                Top = text.TranslatePoint(new Point(0, 0), scroll),
+            })
+            .Where(item =>
+                item.Point is { } point
+                && item.Top is { } top
+                && top.Y >= 0
+                && top.Y < scroll.Viewport.Height
+            )
+            .Select(item => (item.Text, item.Point!.Value))
+            .LastOrDefault();
     }
 
     private static ScrollViewer FindMessageScroll(Desktop.Views.ConversationView view) =>
@@ -2954,9 +3032,8 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                             .Any(),
                     "历史正文 LiveMarkdown"
                 );
-                Assert.DoesNotContain(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text?.Contains("## 历史标题") == true
+                Assert.DoesNotContain(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("## 历史标题") == true
                 );
             }
             finally
@@ -2969,50 +3046,47 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     [Fact]
     public void Slash_PopupStartsAtFirstCommand_AndArrowKeysWrap()
     {
-        RunWithInput(
-            "/",
-            (view, input) =>
-            {
-                input.Focus();
-                PumpUntil(
-                    () => _vm.IsCommandPopupVisible && _vm.CommandSuggestions.Count > 0,
-                    "斜杠命令弹窗"
-                );
+        RunWithInput("/", (view, input) =>
+        {
+            input.Focus();
+            PumpUntil(
+                () => _vm.IsCommandPopupVisible && _vm.CommandSuggestions.Count > 0,
+                "斜杠命令弹窗"
+            );
 
-                var list = view.FindControl<ListBox>("CommandList");
-                Assert.NotNull(list);
-                Assert.Equal(0, _vm.SelectedCommandIndex);
-                Assert.Equal(0, list!.SelectedIndex);
+            var list = view.FindControl<ListBox>("CommandList");
+            Assert.NotNull(list);
+            Assert.Equal(0, _vm.SelectedCommandIndex);
+            Assert.Equal(0, list!.SelectedIndex);
 
-                var last = _vm.CommandSuggestions.Count - 1;
-                Assert.True(last > 0, "需要至少两个命令才能验证首尾循环");
+            var last = _vm.CommandSuggestions.Count - 1;
+            Assert.True(last > 0, "需要至少两个命令才能验证首尾循环");
 
-                // 首项再向上 → 末项
-                input.RaiseEvent(
-                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
-                );
-                Assert.Equal(last, _vm.SelectedCommandIndex);
-                Assert.Equal(last, list.SelectedIndex);
+            // 首项再向上 → 末项
+            input.RaiseEvent(
+                new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+            );
+            Assert.Equal(last, _vm.SelectedCommandIndex);
+            Assert.Equal(last, list.SelectedIndex);
 
-                // 末项再向下 → 首项
-                input.RaiseEvent(
-                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
-                );
-                Assert.Equal(0, _vm.SelectedCommandIndex);
-                Assert.Equal(0, list.SelectedIndex);
+            // 末项再向下 → 首项
+            input.RaiseEvent(
+                new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+            );
+            Assert.Equal(0, _vm.SelectedCommandIndex);
+            Assert.Equal(0, list.SelectedIndex);
 
-                // 首项向下 → 第二项（普通前进仍正常）
-                input.RaiseEvent(
-                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
-                );
-                Assert.Equal(1, _vm.SelectedCommandIndex);
+            // 首项向下 → 第二项（普通前进仍正常）
+            input.RaiseEvent(
+                new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Down }
+            );
+            Assert.Equal(1, _vm.SelectedCommandIndex);
 
-                // 第二项向上 → 首项
-                input.RaiseEvent(
-                    new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
-                );
-                Assert.Equal(0, _vm.SelectedCommandIndex);
-            }
-        );
+            // 第二项向上 → 首项
+            input.RaiseEvent(
+                new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Up }
+            );
+            Assert.Equal(0, _vm.SelectedCommandIndex);
+        });
     }
 }

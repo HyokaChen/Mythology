@@ -36,6 +36,7 @@ public class AutoScrollItemsControl : ItemsControl
     private FollowMode _followMode = FollowMode.Following;
     private bool _followPostPending;
     private bool _scrollbarDragging;
+    private bool _programmaticScroll;
     private int _wheelInputVersion;
     private bool _wheelInputPending;
     private int _layoutUpdateDepth;
@@ -340,7 +341,26 @@ public class AutoScrollItemsControl : ItemsControl
     {
         if (_wheelInputPending)
             return;
-        _scrollViewer?.ScrollToEnd();
+        ScrollToEndCore();
+    }
+
+    /// <summary>
+    /// 程序化贴底会同步触发 ScrollChanged；内容变矮时 offset 的负增量不能被
+    /// 当成用户上滚，否则跟随会被静默关闭，视口停在大用户气泡上。
+    /// </summary>
+    private void ScrollToEndCore()
+    {
+        if (_scrollViewer is null)
+            return;
+        _programmaticScroll = true;
+        try
+        {
+            _scrollViewer.ScrollToEnd();
+        }
+        finally
+        {
+            _programmaticScroll = false;
+        }
     }
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
@@ -351,10 +371,11 @@ public class AutoScrollItemsControl : ItemsControl
 
         var maxOffset = Math.Max(0, scrollViewer.Extent.Height - scrollViewer.Viewport.Height);
 
-        // 跟随只由状态驱动，与焦点无关；extent 增长时继续贴底。
-        // 滚轮手势落地前不追底，否则慢速上滚会被 LayoutUpdated 抢先拉回。
+        // 跟随只由状态驱动，与焦点无关；extent 增长时立即贴底。这里必须同步，
+        // 不能只投递 Background：流式 block 增长后若先按旧 offset 绘制一帧，
+        // 超长用户气泡会整块闪一下。滚轮手势落地前不追底，避免慢速上滚被抢回。
         if (IsFollowing && !_wheelInputPending && e.ExtentDelta.Y > 0)
-            ScheduleFollowTail();
+            FollowTailIfEnabled();
 
         if (_windowActive)
             ApplyUserScrollIntent(scrollViewer, e, maxOffset);
@@ -370,7 +391,7 @@ public class AutoScrollItemsControl : ItemsControl
         double maxOffset
     )
     {
-        if (_layoutUpdateDepth != 0)
+        if (_layoutUpdateDepth != 0 || _programmaticScroll)
             return;
 
         // 任何可观测的向上内容位移都停止跟随，包括底部 64px 内的慢速
@@ -409,7 +430,7 @@ public class AutoScrollItemsControl : ItemsControl
                 _followPostPending = false;
                 FollowTailIfEnabled();
             },
-            DispatcherPriority.Background
+            DispatcherPriority.Normal
         );
     }
 
@@ -424,7 +445,7 @@ public class AutoScrollItemsControl : ItemsControl
             return;
 
         // StackPanel 的 Extent 是真实高度：ScrollToEnd 精确贴底，不做 ScrollIntoView。
-        _scrollViewer.ScrollToEnd();
+        ScrollToEndCore();
     }
 
     private void DisableFollow()

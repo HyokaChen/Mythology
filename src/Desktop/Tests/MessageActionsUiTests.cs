@@ -44,19 +44,16 @@ public sealed class MessageActionsUiTests
                     .Single(border => border.Classes.Contains("UserBubble"));
                 Assert.False(bubble.IsEffectivelyVisible);
 
-                var send = Assert.Single(
-                    view.GetVisualDescendants().OfType<Button>(),
-                    button =>
-                        button.DataContext is ConversationRow
-                        && button
-                            .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(text => text.Text == "发送")
+                var send = Assert.Single(view.GetVisualDescendants().OfType<Button>(), button =>
+                    button.DataContext is ConversationRow
+                    && button
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Any(text => text.Text == "发送")
                 );
                 Assert.True(send.IsEffectivelyVisible);
-                Assert.Contains(
-                    send.GetVisualDescendants(),
-                    visual => visual is Lucide.Avalonia.LucideIcon
+                Assert.Contains(send.GetVisualDescendants(), visual =>
+                    visual is Lucide.Avalonia.LucideIcon
                 );
             }
             finally
@@ -296,7 +293,9 @@ public sealed class MessageActionsUiTests
 
                 var title = view.GetVisualDescendants()
                     .OfType<TextBlock>()
-                    .Single(text => text.Text == "思考过程");
+                    .Single(text =>
+                        text.Text?.Contains("思考过程", StringComparison.Ordinal) == true
+                    );
                 var point = title.TranslatePoint(
                     new Point(title.Bounds.Width / 2, title.Bounds.Height / 2),
                     window

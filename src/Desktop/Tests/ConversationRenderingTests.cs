@@ -136,9 +136,8 @@ public class ConversationRenderingTests
 
                 Assert.True(code.Bounds.Height > 0);
                 Assert.Equal("diff", code.Language);
-                Assert.Contains(
-                    code.GetVisualDescendants().OfType<TextBlock>(),
-                    block => block.Text == "diff"
+                Assert.Contains(code.GetVisualDescendants().OfType<TextBlock>(), block =>
+                    block.Text == "diff"
                 );
                 Assert.Contains("-旧句子", rendered);
                 Assert.Contains("+新句子", rendered);
@@ -167,13 +166,11 @@ public class ConversationRenderingTests
             try
             {
                 var code = Assert.Single(renderer.GetVisualDescendants().OfType<CodeBlock>());
-                var panel = Assert.Single(
-                    code.GetVisualDescendants().OfType<Border>(),
-                    border => border.Name == "PART_CodePanel"
+                var panel = Assert.Single(code.GetVisualDescendants().OfType<Border>(), border =>
+                    border.Name == "PART_CodePanel"
                 );
-                var header = Assert.Single(
-                    code.GetVisualDescendants().OfType<Border>(),
-                    border => border.Name == "PART_CodeHeader"
+                var header = Assert.Single(code.GetVisualDescendants().OfType<Border>(), border =>
+                    border.Name == "PART_CodeHeader"
                 );
                 var body = Assert.IsType<MarkdownTextBlock>(code.CodeTextBlock);
 
@@ -444,42 +441,46 @@ public class ConversationRenderingTests
                 Pump();
                 Assert.True(list.IsFollowing, "初始应处于尾部跟随");
 
-                var button = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext is ConversationRow { Step: { Kind: StepKind.Thinking } }
-                        && Equals(b.Content, "展开")
+                var header = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Where(text =>
+                        text.DataContext is ConversationRow { Step: { Kind: StepKind.Thinking } }
+                        && text.Text?.Contains("展开", StringComparison.Ordinal) == true
                     )
-                    .Select(b => new
+                    .Select(text => new
                     {
-                        Button = b,
-                        Point = b.TranslatePoint(new Point(0, 0), scroll),
+                        Text = text,
+                        Click = text.TranslatePoint(
+                            new Point(text.Bounds.Width / 2, text.Bounds.Height / 2),
+                            window
+                        ),
+                        Top = text.TranslatePoint(new Point(0, 0), scroll),
                     })
-                    .Where(x =>
-                        x.Point is { } point && point.Y >= 0 && point.Y < scroll.Viewport.Height
+                    .Where(item =>
+                        item.Click is { } click
+                        && item.Top is { } top
+                        && top.Y >= 0
+                        && top.Y < scroll.Viewport.Height
                     )
-                    .OrderByDescending(x => x.Point!.Value.Y)
+                    .OrderByDescending(item => item.Top!.Value.Y)
                     .FirstOrDefault();
-                Assert.NotNull(button);
+                Assert.NotNull(header.Text);
 
-                var click = button!.Button.TranslatePoint(
-                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
-                    window
-                );
-                Assert.NotNull(click);
-                window.MouseMove(click!.Value);
-                window.MouseDown(click.Value, MouseButton.Left);
-                window.MouseUp(click.Value, MouseButton.Left);
+                window.MouseMove(header.Click!.Value);
+                window.MouseDown(header.Click.Value, MouseButton.Left);
+                window.MouseUp(header.Click.Value, MouseButton.Left);
                 Pump();
 
-                var row = (ConversationRow)button.Button.DataContext!;
+                var row = list
+                    .Items.OfType<ConversationRow>()
+                    .First(r => r.Step is { IsDetailsExpanded: true });
                 Assert.True(row.Step!.IsDetailsExpanded);
                 Assert.False(list.IsFollowing, "手动展开后必须暂停尾部跟随");
                 var details = view.GetVisualDescendants()
                     .OfType<StackPanel>()
                     .SingleOrDefault(panel =>
                         panel.Classes.Contains("StepDetails")
-                        && ReferenceEquals(panel.DataContext, row)
+                        && ReferenceEquals(panel.DataContext, row.Step)
                     );
                 Assert.NotNull(details);
                 var detailText = details!
@@ -606,7 +607,9 @@ public class ConversationRenderingTests
                 _output.WriteLine(string.Join("\n", texts));
 
                 var contentIndex = texts.IndexOf("I'll start with the first search now.");
-                var toolIndex = texts.IndexOf("搜索工具");
+                var toolIndex = texts.FindIndex(t =>
+                    t.Contains("搜索工具", StringComparison.Ordinal)
+                );
                 Assert.True(contentIndex >= 0, "中间正文未渲染");
                 Assert.True(toolIndex >= 0, "工具步骤未渲染");
                 Assert.True(
@@ -628,20 +631,18 @@ public class ConversationRenderingTests
                 Assert.Equal(24, body.LineHeight);
                 Assert.Equal(new Thickness(0, 0, 0, 8), body.Margin);
 
-                var contentCard = Assert.Single(
-                    body.GetVisualAncestors().OfType<Border>(),
-                    b => b.Classes.Contains("AgentBubble")
+                var contentCard = Assert.Single(body.GetVisualAncestors().OfType<Border>(), b =>
+                    b.Classes.Contains("AgentBubble")
                 );
                 var cardBackground = Assert.IsType<SolidColorBrush>(contentCard.Background);
                 Assert.Equal(Color.Parse("#EFF2E8"), cardBackground.Color);
                 Assert.Equal(new Thickness(0, 4, 0, 4), contentCard.Margin);
 
-                var toolTitle = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text == "搜索工具"
+                var toolTitle = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("搜索工具", StringComparison.Ordinal) == true
                 );
-                var bodyBottom =
-                    body.TranslatePoint(new Point(0, body.Bounds.Height), view)?.Y ?? 0;
+                var bodyBottom = body.TranslatePoint(new Point(0, body.Bounds.Height), view)?.Y
+                    ?? 0;
                 var toolTop = toolTitle.TranslatePoint(new Point(0, 0), view)?.Y ?? 0;
                 Assert.True(
                     toolTop - bodyBottom >= 10,
@@ -695,20 +696,17 @@ public class ConversationRenderingTests
             {
                 Pump();
                 Pump();
-                var firstTitle = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text == "情节线管理 A"
+                var firstTitle = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text?.Contains("情节线管理 A", StringComparison.Ordinal) == true
                 );
-                var noticeText = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t =>
-                        t.Text == "📝 修改情节线「卷一」"
-                        && t.IsEffectivelyVisible
-                        && t.Classes.Contains("AgentStepNoticeText")
+                var noticeText = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text == "📝 修改情节线「卷一」"
+                    && t.IsEffectivelyVisible
+                    && t.Classes.Contains("AgentStepNoticeText")
                 );
                 var secondTitle = Assert.Single(
                     view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text == "情节线管理 B"
+                    t => t.Text?.Contains("情节线管理 B", StringComparison.Ordinal) == true
                 );
 
                 var firstY = firstTitle.TranslatePoint(new Point(0, 0), view);
@@ -806,9 +804,8 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
-                var quote = Assert.Single(
-                    view.GetVisualDescendants().OfType<Border>(),
-                    b => b.Classes.Contains("QuoteBlock")
+                var quote = Assert.Single(view.GetVisualDescendants().OfType<Border>(), b =>
+                    b.Classes.Contains("QuoteBlock")
                 );
                 var quoteText = Assert.Single(
                     quote.GetVisualDescendants().OfType<MarkdownTextBlock>()
@@ -863,14 +860,12 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
-                Assert.DoesNotContain(
-                    view.GetVisualDescendants().OfType<Border>(),
-                    b => b.Classes.Contains("QuoteBlock") || b.Classes.Contains("InterruptedNote")
+                Assert.DoesNotContain(view.GetVisualDescendants().OfType<Border>(), b =>
+                    b.Classes.Contains("QuoteBlock") || b.Classes.Contains("InterruptedNote")
                 );
 
-                var text = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text == "⏹ 中断生成"
+                var text = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text == "⏹ 中断生成"
                 );
                 Assert.Contains("SystemNoticeText", text.Classes);
                 Assert.Equal(13, text.FontSize);
@@ -911,9 +906,8 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
-                var text = Assert.Single(
-                    view.GetVisualDescendants().OfType<TextBlock>(),
-                    t => t.Text == "📝 新建角色「测试」" && t.Classes.Contains("SystemNoticeText")
+                var text = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), t =>
+                    t.Text == "📝 新建角色「测试」" && t.Classes.Contains("SystemNoticeText")
                 );
                 Assert.True(text.IsEffectivelyVisible);
                 Assert.Equal(13, text.FontSize);
@@ -956,11 +950,8 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
-                var card = Assert.Single(
-                    view.GetVisualDescendants().OfType<Border>(),
-                    border =>
-                        border.Classes.Contains("SystemNoticeCard")
-                        && border.Classes.Contains("Error")
+                var card = Assert.Single(view.GetVisualDescendants().OfType<Border>(), border =>
+                    border.Classes.Contains("SystemNoticeCard") && border.Classes.Contains("Error")
                 );
                 var background = Assert.IsType<SolidColorBrush>(card.Background);
                 Assert.Equal(Color.Parse("#80581C"), background.Color);
@@ -1326,9 +1317,8 @@ public class ConversationRenderingTests
                 // 两个选项 + 单选模式下的「自定义输入」
                 var radios = window.GetVisualDescendants().OfType<RadioButton>().ToList();
                 Assert.Equal(3, radios.Count);
-                Assert.All(
-                    radios,
-                    r => Assert.Equal(14, Assert.IsType<TextBlock>(r.Content).FontSize)
+                Assert.All(radios, r =>
+                    Assert.Equal(14, Assert.IsType<TextBlock>(r.Content).FontSize)
                 );
                 var question = window.FindControl<TextBlock>("QuestionText")!;
                 Assert.Equal(16, question.FontSize);
@@ -1565,7 +1555,8 @@ public class ConversationRenderingTests
                     .Single(text =>
                         text.DataContext is Desktop.Models.ConversationRow { Step: var rowStep }
                         && ReferenceEquals(rowStep, step)
-                        && text.Text == step.ArgumentsSummary
+                        && text.Text?.Contains(step.Title, StringComparison.Ordinal) == true
+                        && text.Text.Contains(step.ArgumentsSummary!, StringComparison.Ordinal)
                     );
                 _output.WriteLine($"步骤参数摘要宽度={arguments.Bounds.Width:F1}");
                 Assert.True(
@@ -1595,6 +1586,81 @@ public class ConversationRenderingTests
                 Assert.Contains("结果", expanded);
                 Assert.Contains("oldText", expanded);
                 Assert.Contains("-旧句子", expanded);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 已完成过程行是滚动密集区：每一行只允许一个标题 TextBlock + 一个结果
+    /// TextBlock，不得再为每行创建 Button / ScrollViewer / 思考预览。否则
+    /// 换窗时会为几十行重复实例化整棵详情控件树，滚动明显掉帧。
+    /// </summary>
+    [Fact]
+    public void SettledProcessRows_UseLeanHeaderWithoutPerRowDetailsChrome()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new ChatMessage(MessageSender.Agent);
+            for (var i = 0; i < 12; i++)
+            {
+                message.AgentSteps.Add(
+                    new AgentStep
+                    {
+                        Kind = StepKind.ToolCall,
+                        Title = $"工具 {i}",
+                        Status = AgentStepStatus.Completed,
+                        ArgumentsSummary = "chapter.md",
+                        ResultSummary = "完成",
+                    }
+                );
+            }
+            message.IsProcessExpanded = true;
+
+            var view = new ConversationView();
+            var list = view.FindControl<AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new ConversationRowCollection(message);
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                Pump();
+
+                var stepRows = list
+                    .Items.OfType<ConversationRow>()
+                    .Where(row => row.Kind == ConversationRowKind.Step)
+                    .ToList();
+                Assert.Equal(12, stepRows.Count);
+                Assert.Equal(
+                    24,
+                    view.GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Count(text =>
+                            text.DataContext is ConversationRow { Kind: ConversationRowKind.Step }
+                        )
+                );
+                Assert.DoesNotContain(view.GetVisualDescendants().OfType<Button>(), button =>
+                    button.DataContext is ConversationRow { Kind: ConversationRowKind.Step }
+                );
+                Assert.DoesNotContain(view.GetVisualDescendants().OfType<ScrollViewer>(), scroll =>
+                    scroll.DataContext is AgentStep
+                );
+                Assert.DoesNotContain(
+                    view.GetVisualDescendants()
+                        .OfType<Desktop.Controls.StreamingReasoningPreview>(),
+                    preview => preview.DataContext is ConversationRow
+                );
             }
             finally
             {

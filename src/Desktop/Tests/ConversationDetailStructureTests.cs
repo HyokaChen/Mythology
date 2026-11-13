@@ -38,7 +38,7 @@ public sealed class ConversationDetailStructureTests
             .Single(e =>
                 e.Name.LocalName == "StackPanel"
                 && Attr(e, "Classes") == "StepDetails"
-                && Attr(e, "IsVisible") == "{Binding Step.IsDetailsExpanded}"
+                && Attr(e, "IsVisible") == "{Binding IsDetailsExpanded}"
             );
     }
 
@@ -72,22 +72,22 @@ public sealed class ConversationDetailStructureTests
 
         Assert.Contains("参数", textual);
         Assert.Contains("结果", textual);
-        Assert.Contains("{Binding Step.ThinkingText}", textual);
+        Assert.Contains("{Binding ThinkingText}", textual);
         Assert.DoesNotContain("思考", textual);
 
-        var thinkingBody = TextBlockWithText(details, "{Binding Step.ThinkingText}");
+        var thinkingBody = TextBlockWithText(details, "{Binding ThinkingText}");
         var thinkingScroll = thinkingBody
             .Ancestors()
             .Single(e => e.Name.LocalName == "ScrollViewer");
-        Assert.Equal("{Binding Step.HasThinking}", Attr(thinkingScroll, "IsVisible"));
+        Assert.Equal("{Binding HasThinking}", Attr(thinkingScroll, "IsVisible"));
 
         // 工具详情的两个标题只在各自内容存在时出现。
         Assert.Equal(
-            "{Binding Step.HasDetailArguments}",
+            "{Binding HasDetailArguments}",
             Attr(TextBlockWithText(details, "参数"), "IsVisible")
         );
         Assert.Equal(
-            "{Binding Step.HasResultDetail}",
+            "{Binding HasResultDetail}",
             Attr(TextBlockWithText(details, "结果"), "IsVisible")
         );
     }
@@ -96,18 +96,14 @@ public sealed class ConversationDetailStructureTests
     public void ThinkingBody_IsVisibleOnlyWithThinkingContent_AndInsideCollapsibleDetails()
     {
         var root = LoadConversationView();
-        var thinking = TextBlockWithText(root, "{Binding Step.ThinkingText}");
+        var thinking = TextBlockWithText(root, "{Binding ThinkingText}");
 
-        Assert.Contains(
-            thinking.Ancestors(),
-            e =>
-                e.Name.LocalName == "ScrollViewer"
-                && Attr(e, "IsVisible") == "{Binding Step.HasThinking}"
+        Assert.Contains(thinking.Ancestors(), e =>
+            e.Name.LocalName == "ScrollViewer" && Attr(e, "IsVisible") == "{Binding HasThinking}"
         );
         Assert.Contains("TextWrapping", thinking.Attributes().Select(a => a.Name.LocalName));
-        Assert.Contains(
-            thinking.Ancestors(),
-            e => e.Name.LocalName == "StackPanel" && Attr(e, "Classes") == "StepDetails"
+        Assert.Contains(thinking.Ancestors(), e =>
+            e.Name.LocalName == "StackPanel" && Attr(e, "Classes") == "StepDetails"
         );
     }
 
@@ -130,11 +126,9 @@ public sealed class ConversationDetailStructureTests
         var card = host.Ancestors()
             .Single(e => e.Name.LocalName == "Border" && Attr(e, "Classes") == "AgentBubble");
         Assert.Equal("{Binding Step.IsContentStep}", Attr(card, "IsVisible"));
-        Assert.Contains(
-            root.Descendants(),
-            e =>
-                e.Name.LocalName == "StackPanel"
-                && Attr(e, "IsVisible") == "{Binding Step.IsStepHeader}"
+        Assert.Contains(root.Descendants(), e =>
+            e.Name.LocalName == "StackPanel"
+            && Attr(e, "IsVisible") == "{Binding Step.IsStepHeader}"
         );
     }
 
@@ -159,40 +153,34 @@ public sealed class ConversationDetailStructureTests
         var details = DetailsBlock();
 
         // 原始结果文本只在没有结构化 diff 时回退显示（外层限高滚动）。
-        var rawResult = TextBlockWithText(details, "{Binding Step.DetailResult}");
+        var rawResult = TextBlockWithText(details, "{Binding DetailResult}");
         var rawResultScroll = rawResult.Ancestors().First(e => e.Name.LocalName == "ScrollViewer");
-        Assert.Equal("{Binding Step.ShowRawResultDetail}", Attr(rawResultScroll, "IsVisible"));
+        Assert.Equal("{Binding ShowRawResultDetail}", Attr(rawResultScroll, "IsVisible"));
 
         var items = details
             .Descendants()
             .Single(e =>
                 e.Name.LocalName == "ItemsControl"
-                && Attr(e, "ItemsSource") == "{Binding Step.DiffLines}"
+                && Attr(e, "ItemsSource") == "{Binding DiffLines}"
             );
-        Assert.Contains(
-            items.Ancestors(),
-            e =>
-                e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding Step.HasDiff}"
+        Assert.Contains(items.Ancestors(), e =>
+            e.Name.LocalName == "StackPanel" && Attr(e, "IsVisible") == "{Binding HasDiff}"
         );
 
         var template = items.Descendants().Single(e => e.Name.LocalName == "DataTemplate");
         Assert.Equal("models:DiffLineView", Attr(template, "DataType"));
 
         var rows = template.Descendants().Where(e => e.Name.LocalName == "Border").ToList();
-        Assert.Contains(
-            rows,
-            e =>
-                Attr(e, "Classes") == "DiffRow"
-                && Attr(e, "Classes.DiffDelete") == "{Binding IsDelete}"
-                && Attr(e, "Classes.DiffInsert") == "{Binding IsInsert}"
+        Assert.Contains(rows, e =>
+            Attr(e, "Classes") == "DiffRow"
+            && Attr(e, "Classes.DiffDelete") == "{Binding IsDelete}"
+            && Attr(e, "Classes.DiffInsert") == "{Binding IsInsert}"
         );
-        Assert.Contains(
-            template.Descendants().Where(e => e.Name.LocalName == "TextBlock"),
-            e =>
-                Attr(e, "Classes") == "DiffText"
-                && Attr(e, "Classes.DiffDelete") == "{Binding IsDelete}"
-                && Attr(e, "Classes.DiffInsert") == "{Binding IsInsert}"
-                && Attr(e, "Text") == "{Binding Text}"
+        Assert.Contains(template.Descendants().Where(e => e.Name.LocalName == "TextBlock"), e =>
+            Attr(e, "Classes") == "DiffText"
+            && Attr(e, "Classes.DiffDelete") == "{Binding IsDelete}"
+            && Attr(e, "Classes.DiffInsert") == "{Binding IsInsert}"
+            && Attr(e, "Text") == "{Binding Text}"
         );
     }
 
@@ -200,12 +188,10 @@ public sealed class ConversationDetailStructureTests
     public void SystemEventStep_RendersSystemLabelAndText()
     {
         var root = LoadConversationView();
-        var card = Assert.Single(
-            root.Descendants(),
-            e =>
-                e.Name.LocalName == "Border"
-                && Attr(e, "Classes") == "SystemNoticeCard"
-                && Attr(e, "IsVisible") == "{Binding Step.IsSystemEvent}"
+        var card = Assert.Single(root.Descendants(), e =>
+            e.Name.LocalName == "Border"
+            && Attr(e, "Classes") == "SystemNoticeCard"
+            && Attr(e, "IsVisible") == "{Binding Step.IsSystemEvent}"
         );
         Assert.Equal("{Binding Step.IsError}", Attr(card, "Classes.Error"));
 
@@ -215,16 +201,24 @@ public sealed class ConversationDetailStructureTests
     }
 
     [Fact]
-    public void DetailsToggleButton_BindsStateLabel_AndClickHandler()
+    public void DetailsToggle_IsPartOfClickableHeader()
     {
-        var button = LoadConversationView()
-            .Descendants()
+        var root = LoadConversationView();
+        var header = root.Descendants()
             .Single(e =>
-                e.Name.LocalName == "Button"
-                && Attr(e, "Content") == "{Binding Step.DetailsToggleLabel}"
+                e.Name.LocalName == "TextBlock"
+                && Attr(e, "Text") == "{Binding Step.HeaderText}"
+                && e.Ancestors()
+                    .Any(a =>
+                        a.Name.LocalName == "StackPanel"
+                        && Attr(a, "IsVisible") == "{Binding Step.IsStepHeader}"
+                    )
             );
 
-        Assert.Equal("StepDetails_OnClick", Attr(button, "Click"));
-        Assert.Equal("{Binding Step.HasDetails}", Attr(button, "IsVisible"));
+        Assert.Contains(header.Ancestors(), e =>
+            e.Name.LocalName == "StackPanel"
+            && Attr(e, "PointerPressed") == "StepDetails_OnClick"
+            && Attr(e, "IsVisible") == "{Binding Step.IsStepHeader}"
+        );
     }
 }

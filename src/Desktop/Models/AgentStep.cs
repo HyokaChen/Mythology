@@ -48,6 +48,7 @@ public sealed class AgentStep : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusIcon)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProcessing)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Title)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
@@ -139,6 +140,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         {
             _argumentsSummary = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArgumentsSummary)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             NotifyDetailsChanged();
         }
     }
@@ -203,6 +205,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDiff)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowRawResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetails)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
     }
 
     /// <summary>详情中的参数文本：优先完整参数，历史数据回退摘要。</summary>
@@ -239,7 +242,9 @@ public sealed class AgentStep : INotifyPropertyChanged
                 return;
             _isDetailsExpanded = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDetailsExpanded)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailsView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailsToggleLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
@@ -251,6 +256,32 @@ public sealed class AgentStep : INotifyPropertyChanged
         IsDetailsExpanded ? "收起"
         : Kind == StepKind.Thinking ? "展开"
         : "详情";
+
+    /// <summary>
+    /// 单行步骤头：状态字形 + 标题 + 参数摘要 + 详情开关。用单个字符串
+    /// 交给一个 TextBlock，避免每行多个 TextBlock/Run 的文本布局开销。
+    /// </summary>
+    public string HeaderText
+    {
+        get
+        {
+            var glyph = Status switch
+            {
+                AgentStepStatus.Completed => "✓ ",
+                AgentStepStatus.Failed => "✕ ",
+                _ => "",
+            };
+            var args = string.IsNullOrWhiteSpace(_argumentsSummary) ? "" : "  " + _argumentsSummary;
+            var toggle = HasDetails ? "  " + DetailsToggleLabel : "";
+            return glyph + Title + args + toggle;
+        }
+    }
+
+    /// <summary>
+    /// 展开时才非 null，供详情模板懒创建。收起状态没有内容，避免每条步骤行
+    /// 预先实例化多个 ScrollViewer/SelectableTextBlock，换窗时拖慢滚动。
+    /// </summary>
+    public AgentStep? DetailsView => IsDetailsExpanded ? this : null;
 
     /// <summary>是否错误。</summary>
     public bool IsError { get; set; }
@@ -322,6 +353,7 @@ public sealed class AgentStep : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowRawResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetails)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

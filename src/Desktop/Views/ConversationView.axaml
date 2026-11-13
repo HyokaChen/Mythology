@@ -157,210 +157,33 @@
     </DataTemplate>
 
     <DataTemplate x:Key="RowStep" x:DataType="models:ConversationRow">
-      <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
-        <StackPanel Spacing="2">
-          <Border Classes="AgentBubble" IsVisible="{Binding Step.IsContentStep}" Margin="0,4,0,4">
-            <ContentControl
-              Content="{Binding Step}"
-              ContentTemplate="{StaticResource StepContentMarkdown}"
-            />
-          </Border>
-
-          <Border
-            Classes="SystemNoticeCard"
-            Classes.Error="{Binding Step.IsError}"
-            IsVisible="{Binding Step.IsSystemEvent}"
-            Margin="0,2,0,2"
-            HorizontalAlignment="Stretch"
-          >
-            <StackPanel Spacing="3">
-              <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
-              <SelectableTextBlock
-                Classes="SystemNoticeText"
-                Text="{Binding Step.ContentText}"
-                TextAlignment="Left"
-              />
-            </StackPanel>
-          </Border>
-
-          <SelectableTextBlock
-            Classes="SystemNoticeText AgentStepNoticeText"
-            IsVisible="{Binding Step.IsNoticeStep}"
-            Text="{Binding Step.ContentText}"
-            TextAlignment="Left"
-            Margin="18,1,0,1"
-          />
-
-          <StackPanel Spacing="2" IsVisible="{Binding Step.IsStepHeader}">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6" Margin="0,1,0,0">
-              <Grid Grid.Column="0" Width="12" Height="12" VerticalAlignment="Center">
-                <controls:BusySpinner
-                  IsActive="{Binding Step.IsProcessing}"
-                  IsVisible="{Binding Step.IsProcessing}"
-                  FontSize="12"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                />
-                <lucide:LucideIcon
-                  Kind="{Binding Step.StatusIcon}"
-                  Size="11"
-                  StrokeWidth="1.6"
-                  IsVisible="{Binding Step.IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                />
-              </Grid>
-              <TextBlock
-                Grid.Column="1"
-                Text="{Binding Step.Title}"
-                Classes="Tag"
-                VerticalAlignment="Center"
-              />
-              <TextBlock
-                Grid.Column="2"
-                Text="{Binding Step.ArgumentsSummary}"
-                FontFamily="{StaticResource FontMono}"
-                FontSize="11"
-                Foreground="{DynamicResource BrushSageMist}"
-                TextWrapping="Wrap"
-                VerticalAlignment="Center"
-              />
-              <Button
-                Grid.Column="3"
-                Content="{Binding Step.DetailsToggleLabel}"
-                IsVisible="{Binding Step.HasDetails}"
-                Classes="IconButton"
-                Padding="6,1"
-                FontSize="11"
-                Foreground="{DynamicResource BrushSageLeaf}"
-                VerticalAlignment="Center"
-                Click="StepDetails_OnClick"
-              />
-            </Grid>
-            <SelectableTextBlock
-              Text="{Binding Step.ResultSummary}"
-              IsVisible="{Binding Step.HasResult}"
-              FontSize="11"
-              Foreground="{DynamicResource BrushSageGray}"
-              TextWrapping="Wrap"
-              Margin="18,0,0,0"
-            />
-            <!-- 流式思考只显示固定两行尾部预览：底部对齐 + 裁剪，最新行始终在底部。 -->
-            <controls:StreamingReasoningPreview
-              IsVisible="{Binding Step.ShowStreamingPreview}"
-              Text="{Binding Step.ReasoningPreview}"
-              TextForeground="{DynamicResource BrushSageGray}"
-              Margin="18,0,0,0"
-            />
-            <StackPanel
-              Classes="StepDetails"
-              IsVisible="{Binding Step.IsDetailsExpanded}"
-              Spacing="4"
-              Margin="18,2,0,0"
-              HorizontalAlignment="Stretch"
-            >
-              <ScrollViewer
-                IsVisible="{Binding Step.HasThinking}"
-                MaxHeight="320"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto"
-              >
-                <SelectableTextBlock
-                  Text="{Binding Step.ThinkingText}"
-                  FontSize="12"
-                  Foreground="{DynamicResource BrushSageGray}"
-                  TextWrapping="Wrap"
-                />
-              </ScrollViewer>
-              <TextBlock
-                Text="参数"
-                Classes="Eyebrow"
-                IsVisible="{Binding Step.HasDetailArguments}"
-              />
-              <ScrollViewer
-                IsVisible="{Binding Step.HasDetailArguments}"
-                MaxHeight="240"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto"
-              >
-                <SelectableTextBlock
-                  Text="{Binding Step.DetailArguments}"
-                  FontFamily="{StaticResource FontMono}"
-                  FontSize="11"
-                  Foreground="{DynamicResource BrushSageGray}"
-                  TextWrapping="Wrap"
-                />
-              </ScrollViewer>
-              <TextBlock Text="结果" Classes="Eyebrow" IsVisible="{Binding Step.HasResultDetail}" />
-              <ScrollViewer
-                IsVisible="{Binding Step.ShowRawResultDetail}"
-                MaxHeight="320"
-                HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto"
-              >
-                <SelectableTextBlock
-                  Text="{Binding Step.DetailResult}"
-                  FontFamily="{StaticResource FontMono}"
-                  FontSize="11"
-                  Foreground="{DynamicResource BrushSageGray}"
-                  TextWrapping="Wrap"
-                />
-              </ScrollViewer>
-              <StackPanel IsVisible="{Binding Step.HasDiff}" Spacing="2" Margin="0,2,0,0">
-                <TextBlock Text="{Binding Step.DiffSummary}" Classes="Eyebrow" />
-                <ScrollViewer
-                  MaxHeight="320"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto"
-                >
-                  <ItemsControl ItemsSource="{Binding Step.DiffLines}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="models:DiffLineView">
-                        <Border
-                          Classes="DiffRow"
-                          Classes.DiffDelete="{Binding IsDelete}"
-                          Classes.DiffInsert="{Binding IsInsert}"
-                        >
-                          <Grid ColumnDefinitions="Auto,Auto,*">
-                            <TextBlock
-                              Classes="DiffText DiffPrefix"
-                              Classes.DiffDelete="{Binding IsDelete}"
-                              Classes.DiffInsert="{Binding IsInsert}"
-                              Text="{Binding Prefix}"
-                            />
-                            <TextBlock
-                              Grid.Column="1"
-                              Classes="DiffText DiffLineNumber"
-                              Classes.DiffDelete="{Binding IsDelete}"
-                              Classes.DiffInsert="{Binding IsInsert}"
-                              Text="{Binding LineNumber}"
-                            />
-                            <TextBlock
-                              Grid.Column="2"
-                              Classes="DiffText"
-                              Classes.DiffDelete="{Binding IsDelete}"
-                              Classes.DiffInsert="{Binding IsInsert}"
-                              Text="{Binding Text}"
-                              TextWrapping="Wrap"
-                            />
-                          </Grid>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </ScrollViewer>
-              </StackPanel>
-            </StackPanel>
-          </StackPanel>
-        </StackPanel>
-      </Grid>
-    </DataTemplate>
-
-    <DataTemplate x:Key="ConversationRowRoot" x:DataType="models:ConversationRow">
-      <ContentControl
-        Content="{Binding}"
-        ContentTemplate="{Binding Kind, Converter={StaticResource ConversationRowTemplate}}"
-      />
+      <StackPanel
+        Margin="{Binding Margin}"
+        Spacing="2"
+        Background="Transparent"
+        Cursor="Hand"
+        PointerPressed="StepDetails_OnClick"
+        IsVisible="{Binding Step.IsStepHeader}"
+      >
+        <TextBlock
+          Text="{Binding Step.HeaderText}"
+          FontFamily="{StaticResource FontMono}"
+          FontSize="11"
+          LineHeight="16"
+          TextTrimming="CharacterEllipsis"
+          TextWrapping="NoWrap"
+        />
+        <TextBlock
+          Text="{Binding Step.ResultSummary}"
+          IsVisible="{Binding Step.HasResult}"
+          FontSize="11"
+          LineHeight="16"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextTrimming="CharacterEllipsis"
+          TextWrapping="NoWrap"
+          Margin="18,0,0,0"
+        />
+      </StackPanel>
     </DataTemplate>
 
     <DataTemplate x:Key="StepContentMarkdown" x:DataType="models:AgentStep">
@@ -369,6 +192,251 @@
         MarkdownBuilder="{Binding ContentMarkdown}"
         CodeBlockColorTheme="LightPlus"
       />
+    </DataTemplate>
+
+    <!-- 运行中的步骤才需要 spinner / 思考预览；展开的步骤才需要详情控件。
+         完成后的历史过程行用最轻的两行文本模板，滚动经过密集过程区时
+         不会为每一行创建隐藏的按钮、滚动区和预览控件。 -->
+    <DataTemplate x:Key="RowStepActive" x:DataType="models:ConversationRow">
+      <StackPanel
+        Margin="{Binding Margin}"
+        Spacing="2"
+        Background="Transparent"
+        Cursor="Hand"
+        PointerPressed="StepDetails_OnClick"
+      >
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+          <controls:BusySpinner
+            IsActive="{Binding Step.IsProcessing}"
+            IsVisible="{Binding Step.IsProcessing}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Grid.Column="1"
+            Text="{Binding Step.HeaderText}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            LineHeight="16"
+            TextTrimming="CharacterEllipsis"
+            TextWrapping="NoWrap"
+            VerticalAlignment="Center"
+          />
+        </Grid>
+        <TextBlock
+          Text="{Binding Step.ResultSummary}"
+          IsVisible="{Binding Step.HasResult}"
+          FontSize="11"
+          LineHeight="16"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextTrimming="CharacterEllipsis"
+          TextWrapping="NoWrap"
+          Margin="18,0,0,0"
+        />
+        <controls:StreamingReasoningPreview
+          IsVisible="{Binding Step.ShowStreamingPreview}"
+          Text="{Binding Step.ReasoningPreview}"
+          TextForeground="{DynamicResource BrushSageGray}"
+          Margin="18,0,0,0"
+        />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowStepExpanded" x:DataType="models:ConversationRow">
+      <StackPanel
+        Margin="{Binding Margin}"
+        Spacing="2"
+        Background="Transparent"
+        Cursor="Hand"
+        PointerPressed="StepDetails_OnClick"
+      >
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+          <controls:BusySpinner
+            IsActive="{Binding Step.IsProcessing}"
+            IsVisible="{Binding Step.IsProcessing}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Grid.Column="1"
+            Text="{Binding Step.HeaderText}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            LineHeight="16"
+            TextTrimming="CharacterEllipsis"
+            TextWrapping="NoWrap"
+            VerticalAlignment="Center"
+          />
+        </Grid>
+        <TextBlock
+          Text="{Binding Step.ResultSummary}"
+          IsVisible="{Binding Step.HasResult}"
+          FontSize="11"
+          LineHeight="16"
+          Foreground="{DynamicResource BrushSageGray}"
+          TextTrimming="CharacterEllipsis"
+          TextWrapping="NoWrap"
+          Margin="18,0,0,0"
+        />
+        <controls:StreamingReasoningPreview
+          IsVisible="{Binding Step.ShowStreamingPreview}"
+          Text="{Binding Step.ReasoningPreview}"
+          TextForeground="{DynamicResource BrushSageGray}"
+          Margin="18,0,0,0"
+        />
+        <ContentControl
+          Content="{Binding Step.DetailsView}"
+          ContentTemplate="{StaticResource StepDetails}"
+        />
+      </StackPanel>
+    </DataTemplate>
+
+    <!-- 中间正文 / 提示 / 系统事件各自独立模板：工具和思考步骤不再为这些
+         隐藏分支创建 Border、SelectableTextBlock 等子级。 -->
+    <DataTemplate x:Key="RowStepContent" x:DataType="models:ConversationRow">
+      <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
+        <Border Classes="AgentBubble" IsVisible="{Binding Step.IsContentStep}" Margin="0,4,0,4">
+          <ContentControl
+            Content="{Binding Step}"
+            ContentTemplate="{StaticResource StepContentMarkdown}"
+          />
+        </Border>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowStepNotice" x:DataType="models:ConversationRow">
+      <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
+        <SelectableTextBlock
+          Classes="SystemNoticeText AgentStepNoticeText"
+          Text="{Binding Step.ContentText}"
+          IsVisible="{Binding Step.IsNoticeStep}"
+          TextAlignment="Left"
+          Margin="18,1,0,1"
+        />
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate x:Key="RowStepSystemEvent" x:DataType="models:ConversationRow">
+      <Grid Classes="MessageHoverHost" Margin="{Binding Margin}" Background="Transparent">
+        <Border
+          Classes="SystemNoticeCard"
+          Classes.Error="{Binding Step.IsError}"
+          IsVisible="{Binding Step.IsSystemEvent}"
+          Margin="0,2,0,2"
+          HorizontalAlignment="Stretch"
+        >
+          <StackPanel Spacing="3">
+            <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
+            <SelectableTextBlock
+              Classes="SystemNoticeText"
+              Text="{Binding Step.ContentText}"
+              TextAlignment="Left"
+            />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </DataTemplate>
+
+    <!-- 详情只在展开时由 AgentStep.DetailsView 提供内容；收起状态不创建
+         多个 ScrollViewer/SelectableTextBlock 子级，避免过程行拖慢换窗布局。 -->
+    <DataTemplate x:Key="StepDetails" x:DataType="models:AgentStep">
+      <StackPanel
+        Classes="StepDetails"
+        IsVisible="{Binding IsDetailsExpanded}"
+        Spacing="4"
+        Margin="18,2,0,0"
+        HorizontalAlignment="Stretch"
+      >
+        <ScrollViewer
+          IsVisible="{Binding HasThinking}"
+          MaxHeight="320"
+          HorizontalScrollBarVisibility="Disabled"
+          VerticalScrollBarVisibility="Auto"
+        >
+          <SelectableTextBlock
+            Text="{Binding ThinkingText}"
+            FontSize="12"
+            Foreground="{DynamicResource BrushSageGray}"
+            TextWrapping="Wrap"
+          />
+        </ScrollViewer>
+        <TextBlock Text="参数" Classes="Eyebrow" IsVisible="{Binding HasDetailArguments}" />
+        <ScrollViewer
+          IsVisible="{Binding HasDetailArguments}"
+          MaxHeight="240"
+          HorizontalScrollBarVisibility="Disabled"
+          VerticalScrollBarVisibility="Auto"
+        >
+          <SelectableTextBlock
+            Text="{Binding DetailArguments}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            TextWrapping="Wrap"
+          />
+        </ScrollViewer>
+        <TextBlock Text="结果" Classes="Eyebrow" IsVisible="{Binding HasResultDetail}" />
+        <ScrollViewer
+          IsVisible="{Binding ShowRawResultDetail}"
+          MaxHeight="320"
+          HorizontalScrollBarVisibility="Disabled"
+          VerticalScrollBarVisibility="Auto"
+        >
+          <SelectableTextBlock
+            Text="{Binding DetailResult}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageGray}"
+            TextWrapping="Wrap"
+          />
+        </ScrollViewer>
+        <StackPanel IsVisible="{Binding HasDiff}" Spacing="2" Margin="0,2,0,0">
+          <TextBlock Text="{Binding DiffSummary}" Classes="Eyebrow" />
+          <ScrollViewer
+            MaxHeight="320"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto"
+          >
+            <ItemsControl ItemsSource="{Binding DiffLines}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:DiffLineView">
+                  <Border
+                    Classes="DiffRow"
+                    Classes.DiffDelete="{Binding IsDelete}"
+                    Classes.DiffInsert="{Binding IsInsert}"
+                  >
+                    <Grid ColumnDefinitions="Auto,Auto,*">
+                      <TextBlock
+                        Classes="DiffText DiffPrefix"
+                        Classes.DiffDelete="{Binding IsDelete}"
+                        Classes.DiffInsert="{Binding IsInsert}"
+                        Text="{Binding Prefix}"
+                      />
+                      <TextBlock
+                        Grid.Column="1"
+                        Classes="DiffText DiffLineNumber"
+                        Classes.DiffDelete="{Binding IsDelete}"
+                        Classes.DiffInsert="{Binding IsInsert}"
+                        Text="{Binding LineNumber}"
+                      />
+                      <TextBlock
+                        Grid.Column="2"
+                        Classes="DiffText"
+                        Classes.DiffDelete="{Binding IsDelete}"
+                        Classes.DiffInsert="{Binding IsInsert}"
+                        Text="{Binding Text}"
+                        TextWrapping="Wrap"
+                      />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+      </StackPanel>
     </DataTemplate>
 
     <DataTemplate x:Key="RowContent" x:DataType="models:ConversationRow">
@@ -467,6 +535,11 @@
       SystemTemplate="{StaticResource RowSystem}"
       WaitingTemplate="{StaticResource RowWaiting}"
       StepTemplate="{StaticResource RowStep}"
+      StepActiveTemplate="{StaticResource RowStepActive}"
+      StepExpandedTemplate="{StaticResource RowStepExpanded}"
+      StepContentTemplate="{StaticResource RowStepContent}"
+      StepNoticeTemplate="{StaticResource RowStepNotice}"
+      StepSystemEventTemplate="{StaticResource RowStepSystemEvent}"
       ContentTemplate="{StaticResource RowContent}"
       InterruptedTemplate="{StaticResource RowInterrupted}"
       SourcesTemplate="{StaticResource RowSources}"
@@ -495,7 +568,7 @@
       <Setter Property="Opacity" Value="1" />
       <Setter Property="IsHitTestVisible" Value="True" />
     </Style>
-    <!-- 用户消息内联编辑：原位替换气泡，但不使用用户气泡的深色填充。 -->
+    <!-- 用户消息内联编辑：原位替换用户气泡的深色填充。 -->
     <Style Selector="Border.UserEditCard">
       <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
       <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
@@ -683,7 +756,7 @@
       >
         <controls:AutoScrollItemsControl
           x:Name="MessageList"
-          ItemTemplate="{StaticResource ConversationRowRoot}"
+          ItemTemplate="{StaticResource ConversationRowTemplate}"
         >
           <controls:AutoScrollItemsControl.Template>
             <ControlTemplate TargetType="controls:AutoScrollItemsControl">
