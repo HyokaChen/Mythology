@@ -27,7 +27,7 @@ public sealed class DiagnoseWritingTool(
     public override string Name => "diagnose_writing";
     public override string Label => "写作诊断";
     public override string Description =>
-        "复合诊断写作质量：按深度(quick/standard/deep)分析多维度(代入感/爽感/冲突/节奏/描写/对话/去AI味)，返回段落级问题定位和加权总分；mode=deai 时只返回云端去AI味 1-3 条完整报告/复测（默认自动审查，无需手动调用）";
+        "复合诊断写作质量：按深度(quick/standard/deep)分析多维度(代入感/爽感/冲突/节奏/描写/对话/去AI味)，返回段落级问题定位和加权总分；mode=deai 时只返回云端去AI味 1-3 条完整报告/复测（write_chapter / rewrite_selection 后默认自动审查；edit_text 精修不触发，需手动调用）";
     public override ToolCategory Category => ToolCategory.EntityRead;
 
     /// <summary>
