@@ -3027,7 +3027,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             _vm.Messages.Add(message);
             _vm.HasMessages = true;
 
-            var (window, view, list, _) = ShowConversation();
+            var (window, view, list, sv) = ShowConversation();
             try
             {
                 PumpUntil(
@@ -3056,6 +3056,20 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.True(step.IsDetailsExpanded, "点击详情后不能又被自动折叠");
                 Assert.True(message.IsProcessExpanded, "用户点击详情后过程行必须保留");
                 Assert.True(message.ProcessTouchedByUser);
+
+                // 收起详情后恢复之前被打断的尾部跟随，不需要用户再滚到底部。
+                view.ToggleStepDetails(row, step);
+                PumpUntil(() => list.IsFollowing && AtBottom(sv), "收起详情后恢复自动跟随");
+                Assert.False(step.IsDetailsExpanded);
+
+                // 再打开，然后整树重挂：不得把用户手动展开的过程折叠掉。
+                view.ToggleStepDetails(row, step);
+                view.DataContext = null;
+                PumpUntil(() => list.Items.Count == 0, "清空视图");
+                view.DataContext = _vm;
+                PumpUntil(() => list.Items.Count > 0, "重挂视图");
+                Assert.True(message.IsProcessExpanded, "重建行不得回退用户展开状态");
+                Assert.True(step.IsDetailsExpanded, "重建行不得收起用户详情");
             }
             finally
             {

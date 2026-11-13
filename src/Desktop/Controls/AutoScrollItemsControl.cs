@@ -97,6 +97,16 @@ public class AutoScrollItemsControl : ItemsControl
     }
 
     /// <summary>
+    /// 恢复尾部跟随（通常用于用户收起刚展开的详情）。不会重置阅读锚点；
+    /// 下一次布局/内容增长时按正常跟随逻辑贴底。
+    /// </summary>
+    public void ResumeFollowing()
+    {
+        SetFollow(true);
+        ScheduleFollowTail();
+    }
+
+    /// <summary>
     /// 停止尾部跟随但保留当前视口。用于用户点击历史过程行/步骤详情展开：
     /// 内容高度变化不应把用户拉回底部，更不能把刚展开的内容追到视口外。
     /// </summary>

@@ -157,8 +157,18 @@ public partial class ConversationView : UserControl
 
     private void OnMessageScrollUserInput(object? sender, RoutedEventArgs e)
     {
+        // 点击步骤行的“详情/展开”不是滚动意图；不能在这里清掉
+        // “展开详情后恢复跟随”的状态，否则再点收起也不会恢复跟随。
+        if (
+            e is PointerPressedEventArgs { Source: Visual source }
+            && FindConversationRow(source) is { Step: not null }
+        )
+            return;
+
         // 真正的用户手势：程序化展开/高度回写的临时锚点到此结束。
         _readingAnchor = null;
+        _resumeFollowAfterDetails = false;
+        _detailsFollowPauseDepth = 0;
         InvalidatePendingReveal();
     }
 
@@ -206,6 +216,8 @@ public partial class ConversationView : UserControl
     {
         if (_syncingWindow || !MessageList.IsFollowing)
             return;
+        _resumeFollowAfterDetails = false;
+        _detailsFollowPauseDepth = 0;
         SyncWindowToTail();
     }
 
@@ -268,6 +280,8 @@ public partial class ConversationView : UserControl
     private ChatMessage? _processFoldCandidate;
     private ChatMessage? _hoveredMessage;
     private bool _editWasFollowing;
+    private bool _resumeFollowAfterDetails;
+    private int _detailsFollowPauseDepth;
 
     /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged 并重建全部行。</summary>
     private void AttachMessageSource()
@@ -665,7 +679,9 @@ public partial class ConversationView : UserControl
         {
             var message = _messagesVm.Messages[i];
             // 历史过程默认折叠；最后 4 条消息保留过程展开，当前回合随流式展开。
-            message.IsProcessExpanded = i >= total - 4;
+            // 用户手动展开/折叠过的消息保留其选择，重建行时不得回退。
+            if (!message.ProcessTouchedByUser)
+                message.IsProcessExpanded = i >= total - 4;
             AppendRowsForMessage(message);
         }
         RebuildHeightIndex();
@@ -1206,6 +1222,8 @@ public partial class ConversationView : UserControl
         MessageList.BottomSpacerHeight = 0;
         _lastObservedOffset = double.NaN;
         _restoreAnchor = null;
+        _resumeFollowAfterDetails = false;
+        _detailsFollowPauseDepth = 0;
         CancelProcessFold();
         InvalidatePendingReveal();
     }
@@ -1663,12 +1681,26 @@ public partial class ConversationView : UserControl
         // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
         // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
         var expand = !step.IsDetailsExpanded;
-        InvalidatePendingReveal();
         if (expand)
         {
+            if (MessageList.IsFollowing)
+                _resumeFollowAfterDetails = true;
+            if (_resumeFollowAfterDetails)
+                _detailsFollowPauseDepth++;
             MessageList.PauseFollow();
             RememberReadingAnchor();
         }
+        else if (_detailsFollowPauseDepth > 0)
+        {
+            _detailsFollowPauseDepth--;
+            if (_detailsFollowPauseDepth == 0 && _resumeFollowAfterDetails)
+            {
+                _resumeFollowAfterDetails = false;
+                MessageList.ResumeFollowing();
+            }
+        }
+
+        InvalidatePendingReveal();
         step.IsDetailsExpanded = expand;
         if (expand)
         {
