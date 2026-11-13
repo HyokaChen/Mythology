@@ -371,8 +371,10 @@ public sealed class PromptsContentTests
     public void WritingProcessPrompt_ContainsCloudDiagnosisPrinciples()
     {
         Assert.Contains("云端诊断使用原则", WritingProcessPrompt.Full);
-        Assert.Contains("精修改写交付前必须做一次云端诊断", WritingProcessPrompt.Full);
-        Assert.Contains("edit_text 不触发自动诊断", WritingProcessPrompt.Full);
+        Assert.Contains("按章分批", WritingProcessPrompt.Full);
+        Assert.Contains("同一章全部", WritingProcessPrompt.Full);
+        Assert.Contains("不要每改一句", WritingProcessPrompt.Full);
+        Assert.Contains("每章精修批次结束", WritingProcessPrompt.Full);
         Assert.Contains("diagnose_writing", WritingProcessPrompt.Full);
         Assert.Contains("status=pass", WritingProcessPrompt.Full);
         Assert.Contains("status=action", WritingProcessPrompt.Full);
