@@ -393,6 +393,7 @@ public partial class ConversationView : UserControl
     private const int MinLiveRows = 16;
     private const int MaxLiveRows = 80;
     private const int LiveBufferRows = 8;
+    private const int TailWindowSlackRows = 8;
     private readonly HeightIndex<ConversationRow> _heightIndex = new();
     private readonly Dictionary<
         ChatMessage,
@@ -485,6 +486,20 @@ public partial class ConversationView : UserControl
 
         var maxLive = GetMaxLiveRows();
         var start = Math.Max(0, _rows.Count - maxLive);
+        // 每个 step 都刚好裁掉顶行会让窗口每次都少一个容器。允许尾部窗口
+        // 先长到 maxLive + slack，再批量裁回 maxLive：重叠行容器继续复用，
+        // 只有真正越界的行才销毁。
+        if (_windowRows.Count > 0)
+        {
+            var currentStart = _heightIndex.IndexOf(_windowRows[0]);
+            var currentEnd = currentStart + _windowRows.Count;
+            if (
+                currentStart >= 0
+                && currentEnd <= _rows.Count
+                && _windowRows.Count + (_rows.Count - currentEnd) <= maxLive + TailWindowSlackRows
+            )
+                start = currentStart;
+        }
         SetWindow(start, _rows.Count);
     }
 
@@ -547,7 +562,7 @@ public partial class ConversationView : UserControl
         MessageList.BeginLayoutUpdate();
         try
         {
-            ReconcileWindowRows(desired);
+            ReconcileWindowRows(_windowRows, desired);
             MessageList.TopSpacerHeight = top;
             MessageList.BottomSpacerHeight = bottom;
         }
@@ -563,33 +578,50 @@ public partial class ConversationView : UserControl
     /// MarkdownRenderer。窗口换页不调用 Clear()，否则 AutoScroll 会把 Reset
     /// 当成新会话并强制贴底。
     /// </summary>
-    private void ReconcileWindowRows(List<ConversationRow> desired)
+    internal static void ReconcileWindowRows(
+        ObservableCollection<ConversationRow> old,
+        IReadOnlyList<ConversationRow> desired
+    )
     {
-        var old = _windowRows;
-        var prefix = 0;
-        while (
-            prefix < old.Count
-            && prefix < desired.Count
-            && ReferenceEquals(old[prefix], desired[prefix])
-        )
-            prefix++;
+        // 尾部窗口每来一个 step 就整体前移一行。若按 prefix/suffix 比较，
+        // 首行和末行都不同 → 整个窗口 Remove/Insert，所有容器重建。这里按
+        // 行对象身份做增量 diff：先移除窗口外行，再补插缺口，重叠行原样保留。
+        var desiredSet = new HashSet<ConversationRow>(desired);
+        for (var i = old.Count - 1; i >= 0; i--)
+        {
+            if (!desiredSet.Contains(old[i]))
+                old.RemoveAt(i);
+        }
 
-        var suffix = 0;
-        while (
-            suffix < old.Count - prefix
-            && suffix < desired.Count - prefix
-            && ReferenceEquals(old[old.Count - 1 - suffix], desired[desired.Count - 1 - suffix])
-        )
-            suffix++;
+        var cursor = 0;
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var row = desired[i];
+            if (cursor < old.Count && ReferenceEquals(old[cursor], row))
+            {
+                cursor++;
+                continue;
+            }
 
-        for (var i = old.Count - suffix - 1; i >= prefix; i--)
-            old.RemoveAt(i);
+            // 阅读窗口跳页时可能出现乱序；优先移动已有行，保持容器身份。
+            var existing = -1;
+            for (var j = cursor + 1; j < old.Count; j++)
+            {
+                if (ReferenceEquals(old[j], row))
+                {
+                    existing = j;
+                    break;
+                }
+            }
+            if (existing >= 0)
+                old.Move(existing, cursor);
+            else
+                old.Insert(cursor, row);
+            cursor++;
+        }
 
-        // 差异段必须插回 prefix 与 suffix 之间；用 oldCount 追加会把新增行
-        // 扔到窗口末尾，展开过程后步骤要等到下一次滚动换窗才出现。
-        var insertAt = prefix;
-        for (var i = prefix; i < desired.Count - suffix; i++)
-            old.Insert(insertAt++, desired[i]);
+        while (old.Count > desired.Count)
+            old.RemoveAt(old.Count - 1);
     }
 
     /// <summary>全量行模型变化但窗口对象不需要变化时，重算上下 spacer。</summary>
@@ -1192,14 +1224,12 @@ public partial class ConversationView : UserControl
         if (messages is null || messageIndex < 0)
             return;
 
-        var start = 0;
-        for (var i = 0; i < messageIndex; i++)
-        {
-            if (_rowsByMessage.TryGetValue(messages[i], out var previous))
-                start += previous.Count;
-        }
-
         var oldRows = _rowsByMessage.TryGetValue(message, out var existing) ? existing : [];
+        var start =
+            messageIndex == messages.Count - 1
+                ? _rows.Count - oldRows.Count
+                : RowStartOf(messages, messageIndex);
+
         var desired = BuildRows(message);
         var selected = new List<ConversationRow>(desired.Count);
         var available =
@@ -1221,27 +1251,18 @@ public partial class ConversationView : UserControl
             );
         }
 
-        var keep = new HashSet<ConversationRow>(selected);
-        for (var i = oldRows.Count - 1; i >= 0; i--)
+        // 只改这一条消息所在的连续区间。原先逐行 IndexOf/Move 会在大历史里
+        // 对每个 step 做 O(总行数 × 本消息行数) 的扫描；这里 O(本消息行数)。
+        var common = Math.Min(oldRows.Count, selected.Count);
+        for (var i = 0; i < common; i++)
         {
-            if (!keep.Contains(oldRows[i]))
-                _rows.Remove(oldRows[i]);
+            if (!ReferenceEquals(_rows[start + i], selected[i]))
+                _rows[start + i] = selected[i];
         }
-
-        for (var i = 0; i < selected.Count; i++)
-        {
-            var row = selected[i];
-            var current = _rows.IndexOf(row);
-            if (current >= 0)
-            {
-                if (current != start + i)
-                    _rows.Move(current, start + i);
-            }
-            else
-            {
-                _rows.Insert(start + i, row);
-            }
-        }
+        for (var i = common; i < selected.Count; i++)
+            _rows.Insert(start + i, selected[i]);
+        for (var i = oldRows.Count - 1; i >= selected.Count; i--)
+            _rows.RemoveAt(start + i);
 
         // 最后一行留白标记只影响 Margin，重建失败时也不影响内容行稳定性。
         for (var i = 0; i < selected.Count; i++)
@@ -1250,6 +1271,17 @@ public partial class ConversationView : UserControl
         RebuildHeightIndex();
         _forceWindowSync = true;
         RequestWindowSync();
+    }
+
+    private int RowStartOf(IReadOnlyList<ChatMessage> messages, int messageIndex)
+    {
+        var start = 0;
+        for (var i = 0; i < messageIndex; i++)
+        {
+            if (_rowsByMessage.TryGetValue(messages[i], out var previous))
+                start += previous.Count;
+        }
+        return start;
     }
 
     /// <summary>

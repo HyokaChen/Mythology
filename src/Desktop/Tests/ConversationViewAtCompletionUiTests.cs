@@ -1953,6 +1953,84 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     /// <summary>
+    /// 尾部窗口前移一行时，重叠行必须复用原 ContentPresenter；
+    /// 不能因为窗口首尾变化就把整窗 Remove/Insert，导致模板全部重建。
+    /// </summary>
+    [Fact]
+    public void SlidingTailWindow_ReusesExistingRowContainers()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(30);
+            var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsWaiting = true,
+            };
+            for (var i = 0; i < 8; i++)
+                agent.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = $"历史步骤 {i}",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                        ArgumentsSummary = "参数",
+                        ResultSummary = "结果",
+                    }
+                );
+            _vm.Messages.Add(agent);
+            _vm.HasMessages = true;
+
+            var (window, view, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始贴底");
+
+                Dictionary<Desktop.Models.ConversationRow, ContentPresenter> Snapshot() =>
+                    view.GetVisualDescendants()
+                        .OfType<ContentPresenter>()
+                        .Where(p => p.DataContext is Desktop.Models.ConversationRow)
+                        .GroupBy(p => (Desktop.Models.ConversationRow)p.DataContext!)
+                        .ToDictionary(g => g.Key, g => g.First());
+
+                var before = Snapshot();
+                Assert.True(before.Count >= 4, $"初始窗口行太少：{before.Count}");
+
+                agent.IsWaiting = false;
+                agent.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "新增步骤",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                        ArgumentsSummary = "参数",
+                        ResultSummary = "结果",
+                    }
+                );
+
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p =>
+                                (p.DataContext as Desktop.Models.ConversationRow)?.Step?.Title
+                                == "新增步骤"
+                            ),
+                    "新增步骤进入窗口"
+                );
+                var after = Snapshot();
+                var common = before.Keys.Intersect(after.Keys).ToList();
+
+                Assert.True(common.Count >= 3, $"重叠行太少，窗口被整窗重建：{common.Count}");
+                Assert.All(common, row => Assert.Same(before[row], after[row]));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
     /// 超长用户输入之后开始流式步骤：新步骤行与贴底必须在下一帧绘制前完成。
     /// 若行重建/追底留在 Background（绘制之后），大用户气泡会先按旧 offset
     /// 闪一整帧。这里只执行 Normal + Render，故意不跑 Background。
