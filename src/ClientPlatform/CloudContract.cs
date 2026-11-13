@@ -16,14 +16,14 @@ public static class CloudContract
     /// 客户端实现的契约版本（能力语义基线，与 Cloud.Api CapabilityCatalog.ContractVersion 对齐）。
     /// 探活时与服务端 /v1/capabilities 的 contract-version 比对，不一致只告警不改行为。
     /// </summary>
-    public const string SupportedContractVersion = "1.0";
+    public const string SupportedContractVersion = "2.0";
 
     /// <summary>
     /// 服务端 contract-version 是否与客户端支持基线一致。
-    /// 未知（null，旧服务端未携带）视为容忍——比对仅用于诊断告警，不作为拒绝依据。
+    /// 2.0 是当前唯一基线与数据面信封；1.0/未知版本不再兼容。
     /// </summary>
     public static bool IsContractVersionSupported(string? serverVersion) =>
-        serverVersion is null || serverVersion == SupportedContractVersion;
+        serverVersion == SupportedContractVersion;
 
     /// <summary>
     /// 从 /v1/capabilities 响应体解析 contract-version。缺失 / 非 JSON / 非字符串 → null（不破坏调用方）。

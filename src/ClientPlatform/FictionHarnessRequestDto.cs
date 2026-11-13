@@ -13,6 +13,7 @@ public sealed class FictionHarnessRequestDto
     public string Capability { get; init; } = "";
     public string Depth { get; init; } = "";
     public string Locale { get; init; } = "";
+    public string Output { get; init; } = "";
     public string? SceneGoal { get; init; }
     public string? NovelId { get; init; }
 
@@ -38,6 +39,7 @@ public sealed class FictionHarnessRequestDto
             Capability = request.Capability,
             Depth = request.Depth,
             Locale = request.Locale,
+            Output = request.Output,
             SceneGoal = request.SceneGoal,
             NovelId = request.NovelId,
             Sources = request.Sources,

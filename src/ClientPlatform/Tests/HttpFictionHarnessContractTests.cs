@@ -64,7 +64,7 @@ public sealed class HttpFictionHarnessContractTests
 
     private static HttpResponseMessage CompletedResult() =>
         Json(
-            """{"invocation-id":"inv_1","agent-run-id":"run_1","capability":"fiction.plotline.check","status":"completed","contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","cloud-work-units":3,"result":{"status":"pass"},"warnings":[]}"""
+            """{"invocation-id":"inv_1","agent-run-id":"run_1","capability":"fiction.plotline.check","status":"completed","contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","cloud-work-units":3,"result":{"status":"pass"},"warnings":[]}"""
         );
 
     private static HttpResponseMessage SseCompleted() =>
@@ -72,7 +72,7 @@ public sealed class HttpFictionHarnessContractTests
         {
             Content = new StringContent(
                 "event: completed\ndata: "
-                    + """{"invocation-id":"inv_1","agent-run-id":"run_1","capability":"fiction.plotline.check","status":"completed","contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","cloud-work-units":3,"result":{"status":"pass"},"warnings":[]}"""
+                    + """{"invocation-id":"inv_1","agent-run-id":"run_1","capability":"fiction.plotline.check","status":"completed","contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","cloud-work-units":3,"result":{"status":"pass"},"warnings":[]}"""
                     + "\n\n",
                 Encoding.UTF8,
                 "text/event-stream"
@@ -94,14 +94,14 @@ public sealed class HttpFictionHarnessContractTests
                 {
                     run = await CaptureBody(request);
                     return Json(
-                        """{"run-id":"run_1","status":"queued","contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
+                        """{"run-id":"run_1","status":"queued","contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
                     );
                 }
                 if (request.Method == HttpMethod.Post)
                 {
                     invocation = await CaptureBody(request);
                     return Json(
-                        """{"invocation-id":"inv_1","agent-run-id":"run_1","status":"queued","estimated-units":3,"contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
+                        """{"invocation-id":"inv_1","agent-run-id":"run_1","status":"queued","estimated-units":3,"contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
                     );
                 }
                 return SseCompleted();
@@ -110,10 +110,11 @@ public sealed class HttpFictionHarnessContractTests
             {
                 var request = new HarnessRequest
                 {
-                    ContractVersion = "1.0",
+                    ContractVersion = "2.0",
                     Capability = "fiction.plotline.check",
                     Depth = "standard",
                     Locale = "zh-CN",
+                    Output = "data",
                     Chapters =
                     [
                         new ChapterInput("ch_1", 1, "第一章", "target", "正文内容"),
@@ -162,7 +163,7 @@ public sealed class HttpFictionHarnessContractTests
         // ── POST /v1/agent/runs：contractVersion + goal ──
         Assert.NotNull(run);
         var runBody = JsonDocument.Parse(run!.Body!);
-        Assert.Equal("1.0", runBody.RootElement.GetProperty("contract-version").GetString());
+        Assert.Equal("2.0", runBody.RootElement.GetProperty("contract-version").GetString());
         Assert.True(runBody.RootElement.TryGetProperty("goal", out _));
 
         // ── POST /v1/agent/runs/{runId}/harness-invocations ──
@@ -171,7 +172,7 @@ public sealed class HttpFictionHarnessContractTests
         var root = inv.RootElement;
 
         // backend CreateHarnessInvocationRequest 顶层字段（kebab-case）
-        Assert.Equal("1.0", root.GetProperty("contract-version").GetString());
+        Assert.Equal("2.0", root.GetProperty("contract-version").GetString());
         Assert.Equal("fiction.plotline.check", root.GetProperty("capability").GetString());
         Assert.Equal("standard", root.GetProperty("depth").GetString());
         Assert.Equal("zh-CN", root.GetProperty("locale").GetString());
@@ -269,14 +270,14 @@ public sealed class HttpFictionHarnessContractTests
                 )
                 {
                     return Json(
-                        """{"run-id":"run_1","status":"queued","contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
+                        """{"run-id":"run_1","status":"queued","contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
                     );
                 }
                 if (request.Method == HttpMethod.Post)
                 {
                     invocation = await CaptureBody(request);
                     return Json(
-                        """{"invocation-id":"inv_1","agent-run-id":"run_1","status":"queued","estimated-units":4,"contract-version":"1.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
+                        """{"invocation-id":"inv_1","agent-run-id":"run_1","status":"queued","estimated-units":4,"contract-version":"2.0","engine-version":"2026.08.1","baseline-version":"zh-web-fiction.2026.08","created-at":"2026-08-09T00:00:00Z"}"""
                     );
                 }
                 return SseCompleted();
@@ -325,10 +326,11 @@ public sealed class HttpFictionHarnessContractTests
                 );
                 var request = new HarnessRequest
                 {
-                    ContractVersion = "1.0",
+                    ContractVersion = "2.0",
                     Capability = "fiction.setup.check",
                     Depth = "standard",
                     Locale = "zh-CN",
+                    Output = "data",
                     Chapters = [],
                     Context = new AnalysisContextInput(NovelTitle: "林氏家族", Setup: setup),
                 };
@@ -494,7 +496,9 @@ public sealed class HttpFictionHarnessContractTests
                     invocation = await CaptureBody(request);
                     return Json("""{"invocation-id":"inv_1","status":"queued"}""");
                 }
-                return CompletedResult();
+                return Json(
+                    """{"invocation-id":"inv_1","status":"completed","cloud-work-units":1,"result":{"verdict":"通过","action":"proceed","summary":"未发现需要修改的问题。","score":80,"findings":[],"decision-question":null,"decision-options":null,"snapshot":{"target-chapter-ref":"ch_1","chapter-count":1,"previous-chapter-count":0,"paragraph-count":1,"narrative-entropy":null,"satisfaction-score":null,"trends":null,"absent-characters":null,"material-hint":null},"strengths":null},"warnings":[]}"""
+                );
             },
             async client =>
             {
@@ -538,6 +542,7 @@ public sealed class HttpFictionHarnessContractTests
                         Capability = "fiction.associative.link",
                         Depth = "standard",
                         Locale = "zh-CN",
+                        Output = "data",
                         NovelId = "novel-1",
                         SceneGoal = "雨夜重逢",
                         Sources =
@@ -607,6 +612,7 @@ public sealed class HttpFictionHarnessContractTests
                         Capability = "fiction.story.check",
                         Depth = "standard",
                         Locale = "zh-CN",
+                        Output = "data",
                         Chapters = [new ChapterInput("ch_1", 1, "第一章", "target", "正文内容")],
                         SemanticExtraction = new SemanticExtractionInput([
                             new CharacterInteractionInput("林云", "苏瑶", "冲突", 2),

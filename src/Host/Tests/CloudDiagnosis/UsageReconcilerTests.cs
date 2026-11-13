@@ -286,16 +286,7 @@ public sealed class UsageWarningHookTests
             HarnessRequest request,
             string idempotencyKey,
             CancellationToken ct
-        ) =>
-            Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 1,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.9,"narrative-entropy":1.2}"""
-                    ),
-                }
-            );
+        ) => Task.FromResult(new AgentContextSnapshot { ChapterCount = 1, NarrativeEntropy = 1.2 });
 
         public Task ReportSetupFeedbackAsync(
             IReadOnlyList<(string FindingId, string Decision)> items,

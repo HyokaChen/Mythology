@@ -86,6 +86,7 @@ public abstract class CloudAnalysisTool<TParams, TDetails>(
                 Capability = Capability,
                 Depth = "standard",
                 Locale = "zh-CN",
+                Output = "data",
                 Chapters = chapters
                     .Select(
                         (c, index) =>

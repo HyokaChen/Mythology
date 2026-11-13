@@ -183,6 +183,7 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
             Capability = Capability,
             Depth = depth,
             Locale = "zh-CN",
+            Output = "data",
             Chapters = [],
             Context = new AnalysisContextInput { Setup = setup, NovelTitle = novel.Title },
         };

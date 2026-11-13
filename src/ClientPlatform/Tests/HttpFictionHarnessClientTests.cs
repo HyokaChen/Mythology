@@ -424,7 +424,7 @@ public sealed class HttpFictionHarnessClientTests
             if (request.Method == HttpMethod.Post)
                 return JsonResponse("""{"invocation-id":"inv_1","status":"queued"}""");
             return JsonResponse(
-                """{"invocation-id":"inv_1","status":"completed","cloud-work-units":1,"result":{"status":"pass","context":{"target-chapter":"ch_3","chapter-count":5,"previous-chapter-count":2,"paragraph-count":12},"features":{"mattr":0.7},"material-hints":{"status":"ok","prompt-block":"素材参考A","hints":[]}}}"""
+                """{"invocation-id":"inv_1","status":"completed","cloud-work-units":1,"result":{"verdict":"通过","action":"proceed","summary":"未发现需要修改的问题。","score":80,"findings":[],"decision-question":null,"decision-options":null,"snapshot":{"target-chapter-ref":"ch_3","chapter-count":5,"previous-chapter-count":2,"paragraph-count":12,"narrative-entropy":0.7,"satisfaction-score":70,"trends":null,"absent-characters":null,"material-hint":"素材参考A"},"strengths":null}}"""
             );
         });
 
@@ -444,10 +444,9 @@ public sealed class HttpFictionHarnessClientTests
         Assert.Equal(5, snapshot.ChapterCount);
         Assert.Equal(2, snapshot.PreviousChapterCount);
         Assert.Equal(12, snapshot.ParagraphCount);
-        Assert.NotNull(snapshot.Features);
-        var materialHints = Assert.IsType<System.Text.Json.JsonElement>(snapshot.MaterialHints);
-        Assert.Equal("ok", materialHints.GetProperty("status").GetString());
-        Assert.Equal("素材参考A", materialHints.GetProperty("prompt-block").GetString());
+        Assert.Equal(0.7, snapshot.NarrativeEntropy);
+        Assert.Equal(70, snapshot.SatisfactionScore);
+        Assert.Equal("素材参考A", snapshot.MaterialHint);
     }
 
     [Fact]

@@ -1,36 +1,22 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ClientPlatform;
 using Core.Cloud;
 using Microsoft.Extensions.Logging;
 
 namespace CloudDiagnosis;
-
-/// <summary>单条云端去 AI 味 finding（模型可读，不含阈值/权重）。</summary>
-public sealed record HumanizerFinding(
-    string SubType,
-    string Level,
-    string Severity,
-    string Description,
-    string Evidence,
-    string? Suggestion,
-    int ParagraphIndex,
-    double ImpactScore
-);
 
 /// <summary>
 /// 一次自动去 AI 味审查结果。Skipped=true 表示未调用云端（过短/已达次数/总开关关闭），
 /// 调用方不应把它当成「云端不可用」；null 才表示调用失败/超时。
 /// </summary>
 public sealed record HumanizerAuditOutcome(
-    string RiskLevel,
-    IReadOnlyList<HumanizerFinding> Findings,
-    int SuppressedCount,
+    DiagnosisReport? Report,
     int PassNumber,
     bool CloudAvailable = true,
     bool Skipped = false,
-    string? SkipReason = null,
-    int NoChangeCount = 0
+    string? SkipReason = null
 );
 
 /// <summary>
@@ -86,6 +72,7 @@ public sealed class HumanizerAuditService(
             Capability = "fiction.story.check",
             Depth = "quick",
             Locale = "zh-CN",
+            Output = "report",
             Chapters =
             [
                 new ChapterInput(
@@ -115,13 +102,13 @@ public sealed class HumanizerAuditService(
             if (result.Result is not JsonElement root)
                 return null;
 
-            var outcome = Parse(root, passNumber);
-            if (outcome is null)
+            var report = ParseReport(root);
+            if (report is null)
                 return null;
 
             _passCounts[key] = passNumber;
             _contentHashes[key] = hash;
-            return outcome;
+            return new HumanizerAuditOutcome(report, passNumber);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -144,106 +131,31 @@ public sealed class HumanizerAuditService(
         }
     }
 
-    private HumanizerAuditOutcome Skipped(string reason) =>
-        new("none", [], 0, 0, CloudAvailable: true, Skipped: true, SkipReason: reason);
+    private static HumanizerAuditOutcome Skipped(string reason) =>
+        new(null, 0, CloudAvailable: true, Skipped: true, SkipReason: reason);
 
-    private static HumanizerAuditOutcome? Parse(JsonElement root, int passNumber)
+    private static DiagnosisReport? ParseReport(JsonElement root)
     {
-        if (
-            !root.TryGetProperty("dimensions", out var dimensions)
-            || dimensions.ValueKind != JsonValueKind.Object
-            || !dimensions.TryGetProperty("humanizer", out var humanizer)
-            || humanizer.ValueKind != JsonValueKind.Object
-        )
-            return null;
-
-        var score =
-            humanizer.TryGetProperty("overall-score", out var scoreEl)
-            && scoreEl.ValueKind == JsonValueKind.Number
-                ? scoreEl.GetDouble()
-                : 0;
-
-        var all = new List<HumanizerFinding>();
-        if (
-            humanizer.TryGetProperty("issues", out var issues)
-            && issues.ValueKind == JsonValueKind.Array
-        )
+        try
         {
-            foreach (var issue in issues.EnumerateArray())
-            {
-                if (issue.ValueKind != JsonValueKind.Object)
-                    continue;
-                all.Add(
-                    new HumanizerFinding(
-                        SubType: ReadString(issue, "sub-type") ?? "",
-                        Level: ReadString(issue, "level") ?? "",
-                        Severity: ReadString(issue, "severity") ?? "",
-                        Description: ReadString(issue, "description") ?? "",
-                        Evidence: ReadString(issue, "evidence") ?? "",
-                        Suggestion: ReadString(issue, "suggestion"),
-                        ParagraphIndex: issue.TryGetProperty("paragraph-index", out var para)
-                        && para.ValueKind == JsonValueKind.Number
-                            ? para.GetInt32()
-                            : -1,
-                        ImpactScore: issue.TryGetProperty("impact-score", out var impact)
-                        && impact.ValueKind == JsonValueKind.Number
-                            ? impact.GetDouble()
-                            : 0
-                    )
-                );
-            }
-        }
-
-        var actionable = all.Where(IsActionable).ToList();
-        var sorted = actionable
-            .OrderByDescending(item => SeverityRank(item.Severity))
-            .ThenByDescending(item => item.ImpactScore)
-            .ToList();
-        var findings = sorted
-            .GroupBy(item =>
-                string.IsNullOrWhiteSpace(item.SubType) ? item.Description : item.SubType
+            var report = JsonSerializer.Deserialize<DiagnosisReport>(
+                root.GetRawText(),
+                ClientJsonDefaults.Cloud
+            );
+            if (
+                report is null
+                || string.IsNullOrWhiteSpace(report.Verdict)
+                || string.IsNullOrWhiteSpace(report.Action)
+                || string.IsNullOrWhiteSpace(report.Summary)
             )
-            .Select(group => group.First())
-            .Take(3)
-            .ToList();
-
-        return new HumanizerAuditOutcome(
-            RiskLevel: RiskLevel(score, actionable),
-            Findings: findings,
-            SuppressedCount: Math.Max(0, actionable.Count - findings.Count),
-            PassNumber: passNumber,
-            CloudAvailable: true,
-            NoChangeCount: Math.Max(0, all.Count - actionable.Count)
-        );
-    }
-
-    private static bool IsActionable(HumanizerFinding finding) =>
-        (string.IsNullOrEmpty(finding.Level) || finding.Level is "A" or "B" or "F")
-        && finding.SubType is not ("dash_density_high" or "semicolon_density_high");
-
-    private static string RiskLevel(double score, IReadOnlyList<HumanizerFinding> issues)
-    {
-        if (issues.Any(issue => issue.Severity == "high") || score < 70)
-            return "high";
-        if (issues.Any(issue => issue.Severity == "medium") || score < 90)
-            return "medium";
-        if (issues.Count > 0)
-            return "low";
-        return "none";
-    }
-
-    private static int SeverityRank(string severity) =>
-        severity switch
+                return null;
+            return report with { Findings = report.Findings ?? [] };
+        }
+        catch (JsonException)
         {
-            "high" => 3,
-            "medium" => 2,
-            _ => 1,
-        };
-
-    private static string? ReadString(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+            return null;
+        }
+    }
 
     private static string HashContent(string text) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));

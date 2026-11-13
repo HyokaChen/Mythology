@@ -42,9 +42,13 @@ public sealed class ContextSnapshotCacheTests
                 throw new CloudApiException("analysis_failed", "broken");
             Interlocked.Increment(ref ContextCalls);
 
-            // 直接构造快照（对齐 HttpFictionHarnessClient.ToSnapshot 的产物形态：
-            // context 计数 + features 原始 JsonElement）
-            var features = JsonSerializer.Deserialize<JsonElement>(FeaturesJson);
+            using var document = JsonDocument.Parse(FeaturesJson);
+            var entropy = document.RootElement.TryGetProperty(
+                "narrative-entropy",
+                out var entropyElement
+            )
+                ? entropyElement.GetDouble()
+                : (double?)null;
             return Task.FromResult(
                 new AgentContextSnapshot
                 {
@@ -52,7 +56,7 @@ public sealed class ContextSnapshotCacheTests
                     ChapterCount = 12,
                     PreviousChapterCount = 3,
                     ParagraphCount = 40,
-                    Features = features,
+                    NarrativeEntropy = entropy,
                 }
             );
         }
@@ -145,13 +149,7 @@ public sealed class ContextSnapshotCacheTests
 
         var entry = cache.UpdateFromSnapshot(
             "n1",
-            new AgentContextSnapshot
-            {
-                ChapterCount = 13,
-                Features = JsonSerializer.Deserialize<JsonElement>(
-                    """{"overall-score":0.9,"narrative-entropy":1.8}"""
-                ),
-            },
+            new AgentContextSnapshot { ChapterCount = 13, NarrativeEntropy = 1.8 },
             chapterOrder: 6
         );
 
@@ -264,12 +262,8 @@ public sealed class ContextSnapshotCacheTests
     public void A4_EntropyRising_PrescribesPlant()
     {
         var facts = new LocalFacts { OpenPlotlines = [], EntropyDelta = 0.25 };
-        var action = SignalRules
-            .Evaluate(null, null, null, facts)
-            .Actions.Single(a => a.Code == "A-4");
-        Assert.Contains("埋新线", action.Prescription);
-        Assert.Contains("熵差", action.Evidence);
-        Assert.Contains("减法近似", action.Boundary);
+        var finding = SignalRules.Evaluate(facts).Single(f => f.Trigger == "A-4");
+        Assert.Contains("埋设新线", finding.Suggestion);
     }
 
     /// <summary>MIN-4 修复（2026-08-28）：刷新幂等键基于内容哈希（弃用 cts.GetHashCode）。</summary>
@@ -354,13 +348,7 @@ public sealed class ContextSnapshotCacheTests
             var cache = new ContextSnapshotCache(harness, dbPath);
             cache.UpdateFromSnapshot(
                 "n1",
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 12,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.9,"narrative-entropy":1.7}"""
-                    ),
-                },
+                new AgentContextSnapshot { ChapterCount = 12, NarrativeEntropy = 1.7 },
                 chapterOrder: 12
             );
 
@@ -449,7 +437,10 @@ public sealed class ContextSnapshotCacheTests
                 new AgentContextSnapshot
                 {
                     ChapterCount = 12,
-                    Features = JsonSerializer.Deserialize<JsonElement>(featuresJson),
+                    NarrativeEntropy = JsonDocument
+                        .Parse(featuresJson)
+                        .RootElement.GetProperty("narrative-entropy")
+                        .GetDouble(),
                 }
             );
         }
@@ -631,7 +622,7 @@ public sealed class SnapshotL2_4IntegrationTests
                 {
                     Capability = request.Capability,
                     Result = JsonSerializer.Deserialize<JsonElement>(
-                        """{"capability":"x","status":"pass","features":{"overall-score":0.85}}"""
+                        """{"verdict":"通过","action":"proceed","summary":"本章可按计划推进。","score":85,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}"""
                     ),
                 }
             );
@@ -649,9 +640,7 @@ public sealed class SnapshotL2_4IntegrationTests
                 {
                     TargetChapterRef = "ch_16",
                     ChapterCount = 17,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.86,"narrative-entropy":1.5}"""
-                    ),
+                    NarrativeEntropy = 1.5,
                 }
             );
         }
@@ -675,7 +664,7 @@ public sealed class SnapshotL2_4IntegrationTests
                 {
                     Capability = request.Capability,
                     Result = JsonSerializer.Deserialize<JsonElement>(
-                        """{"capability":"x","status":"pass","features":{"overall-score":0.85}}"""
+                        """{"verdict":"通过","action":"proceed","summary":"本章可按计划推进。","score":85,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}"""
                     ),
                 }
             );

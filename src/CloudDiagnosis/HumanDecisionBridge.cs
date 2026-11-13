@@ -78,25 +78,6 @@ public sealed class HumanDecisionBridge
     /// <summary>已对低阈值裁决授权“按建议继续自动迭代”的作品；进程会话级。</summary>
     private readonly HashSet<string> _authorizedNovels = new(StringComparer.Ordinal);
 
-    /// <summary>已知英文 reason 的本地转述表（Q1 定案：云端 reason 为英文，需转中文）。</summary>
-    private static readonly Dictionary<string, string> KnownReasons = new(
-        StringComparer.OrdinalIgnoreCase
-    )
-    {
-        // 云端 Harness 实现.BuildScenePlan 的 failed 分支固定文案（存量服务端兜底）
-        ["Overall quality score is below the minimum threshold for automated planning."] =
-            "当前场景规划质量低于自动推进阈值，需要你决定下一步方向。",
-    };
-
-    /// <summary>稳定原因码 → 本地转述（U-1：优先于英文 reason 文本匹配，服务端文案改写不再影响本地化）。</summary>
-    private static readonly Dictionary<string, string> KnownReasonCodes = new(
-        StringComparer.OrdinalIgnoreCase
-    )
-    {
-        // 云端 Harness 实现.BuildScenePlan failed 分支（score 低于自动推进阈值）
-        ["quality-below-threshold"] = "当前场景规划质量低于自动推进阈值，需要你决定下一步方向。",
-    };
-
     /// <summary>默认模板兜底首项（§5.2）：语义 = 采纳建议（U-2 结构化分类依据）。</summary>
     private const string ContinueOption = "按建议继续自动迭代";
 
@@ -128,7 +109,7 @@ public sealed class HumanDecisionBridge
     /// 频率上限由调度器 TryConsumeDecisionSlot() 处理（会话级）。
     /// </summary>
     public static string? ShouldSkipDecision(
-        ScenePlanOutcome outcome,
+        DiagnosisReport outcome,
         int characterCount,
         int currentOrder,
         IReadOnlyList<DecisionHistoryEntry>? history = null,
@@ -160,7 +141,7 @@ public sealed class HumanDecisionBridge
             {
                 var lowerBound =
                     ComputeProfile(recent) == DecisionProfileKind.Trusting ? 0.35 : 0.4;
-                var score = outcome.OverallScore / 100.0;
+                var score = (outcome.Score ?? 0) / 100.0;
                 if (score >= lowerBound && score < 0.55)
                     return $"历史 scene.plan 得分连续稳定（≥0.6），当前得分处于临界区，按建议继续自动迭代";
             }
@@ -170,34 +151,21 @@ public sealed class HumanDecisionBridge
         return null;
     }
 
-    /// <summary>是否为低阈值场景规划裁决（稳定 reason-code 优先，存量英文 reason 兜底）。</summary>
-    private static bool IsThresholdReason(ScenePlanOutcome outcome) =>
-        string.Equals(
-            outcome.ReasonCode,
-            "quality-below-threshold",
-            StringComparison.OrdinalIgnoreCase
-        ) || (outcome.Reason is not null && KnownReasons.ContainsKey(outcome.Reason));
-
     /// <summary>
     /// 已授权作品的低阈值裁决：返回自动继续文本；null = 仍需人工问题。
     /// 自动继续不是人工决策，不写 decision_history，避免污染 DecisionProfile。
     /// </summary>
-    public string? TryAutoContinue(ScenePlanOutcome outcome, string? novelId = null)
+    public string? TryAutoContinue(DiagnosisReport outcome, string? novelId = null)
     {
         if (
             string.IsNullOrEmpty(novelId)
-            || !IsThresholdReason(outcome)
+            || outcome.Action != "ask-author"
             || !_authorizedNovels.Contains(novelId)
         )
             return null;
 
-        var score = outcome.OverallScore.ToString("0.#", CultureInfo.InvariantCulture);
-        var direction =
-            outcome.FocusAreas.Count > 0
-                ? $"修复方向：{string.Join("、", outcome.FocusAreas)}"
-                : "按现有细纲继续推进下一章";
-        return $"{SignalBuilder.Prefix} 场景规划综合={score}（沿用上次 [人工裁决] 的授权），"
-            + $"已按建议继续自动迭代；{direction}。不要停下来等待用户确认。";
+        return $"{SignalBuilder.Prefix} 场景规划建议继续（沿用上次 [人工裁决] 的授权），"
+            + $"已按建议继续自动迭代；{outcome.Summary}。不要停下来等待用户确认。";
     }
 
     /// <summary>
@@ -271,7 +239,7 @@ public sealed class HumanDecisionBridge
     /// 用户取消（ct）时 OperationCanceledException 向上抛出（§12 红线 5）。
     /// </summary>
     public async Task<string> DecideAsync(
-        ScenePlanOutcome outcome,
+        DiagnosisReport outcome,
         CancellationToken ct,
         string? novelId = null
     )
@@ -320,14 +288,14 @@ public sealed class HumanDecisionBridge
                 : DecisionAnswerKind.OwnDirection;
         var authorizedNow =
             answerKind == DecisionAnswerKind.FollowSuggestion
-            && IsThresholdReason(outcome)
+            && outcome.Action == "ask-author"
             && !string.IsNullOrEmpty(novelId)
             && _authorizedNovels.Add(novelId);
         RecordDecision(
             novelId ?? "",
             question.Question,
             string.Join("、", answers),
-            outcome.OverallScore,
+            outcome.Score ?? 0,
             answerKind: answerKind
         );
 
@@ -338,31 +306,20 @@ public sealed class HumanDecisionBridge
 
         var verdict =
             $"[人工裁决] 就\"{question.Question}\"你选择了\"{string.Join("、", answers)}\"。"
-            + $"证据背景：repairIntent.action={outcome.RepairAction ?? "n/a"}。"
+            + $"结论：{outcome.Summary}。"
             + "请严格按此执行，不得擅自更改方向。";
         return authorizedNow ? verdict + "\n" + AuthorizationSentence : verdict;
     }
 
-    /// <summary>
-    /// 组装 QuestionDef（§5.2）：Question 优先按 reasonCode 本地转述（U-1），
-    /// 其次按 reason 文本匹配转述（存量服务端）；未知一律用兜底模板。
-    /// 第一项恒为“按建议继续自动迭代”（授权入口），focusAreas 追加为后续选项。
-    /// </summary>
-    private static QuestionDef BuildQuestion(ScenePlanOutcome outcome)
+    /// <summary>组装 QuestionDef：问题与选项直接使用服务端报告，缺省时回退保守模板。</summary>
+    private static QuestionDef BuildQuestion(DiagnosisReport outcome)
     {
-        var reason = outcome.Reason;
-        var questionText =
-            outcome.ReasonCode is not null
-            && KnownReasonCodes.TryGetValue(outcome.ReasonCode, out var knownCode)
-                ? knownCode
-            : reason is not null && KnownReasons.TryGetValue(reason, out var known) ? known
-            : reason is not null ? $"云端诊断建议征求你的方向（原因：{reason}）"
-            : "云端诊断建议就当前场景规划征求你的方向";
-
-        string[] options =
-            outcome.FocusAreas.Count > 0
-                ? [ContinueOption, .. outcome.FocusAreas.Take(3).Select(a => $"聚焦 {a} 修复")]
-                : [ContinueOption, OwnDirectionOption];
+        var questionText = string.IsNullOrWhiteSpace(outcome.DecisionQuestion)
+            ? "云端诊断建议就当前场景规划征求你的方向"
+            : outcome.DecisionQuestion;
+        string[] options = outcome.DecisionOptions is { Count: > 0 } provided
+            ? [.. provided]
+            : [ContinueOption, OwnDirectionOption];
 
         return new QuestionDef
         {

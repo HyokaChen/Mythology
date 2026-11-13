@@ -37,6 +37,7 @@ public sealed class HallucinationScanContractTests(CloudBackendFixture fixture)
             Capability = "fiction.hallucination.scan",
             Depth = "standard",
             Locale = "zh-CN",
+            Output = "data",
             Chapters =
             [
                 new ChapterInput("ch_1", 1, "第一章", "main", "林昭死了。"),

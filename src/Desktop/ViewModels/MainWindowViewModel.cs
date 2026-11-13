@@ -531,7 +531,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             _cloudInitTask = InitializeCloudAsync();
 
             await RefreshNovelsAsync();
-            if (_isShutdown) return;
+            if (_isShutdown)
+                return;
             _log.LogInformation("Novels loaded: {Count}", Novels.Count);
 
             if (Program.StartupNovelId is not null)
@@ -556,12 +557,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             // 恢复小说最新会话（含 --session 直达）；无小说则留新会话
             await RestoreLatestSessionForNovelAsync(SelectedNovel?.Id ?? "");
-            if (_isShutdown) return;
+            if (_isShutdown)
+                return;
 
             StatusText = IdleStatusText;
 
             await SetUpPanel.RefreshAsync();
-            if (_isShutdown) return;
+            if (_isShutdown)
+                return;
 
             // ── 启动引导（云端登录 → LLM 配置 → 新建项目，对齐 TUI） ──
             await ShowStartupGuidanceAsync();
@@ -608,7 +611,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 catch (Exception) { }
             }
 
-            if (_isShutdown) return;
+            if (_isShutdown)
+                return;
 
             // 1. 云端：新用户（无小说+无凭据）或凭据失效 → 登录窗（可跳过）
             var isNewUser = Novels.Count == 0 && _cloudAuth.State == CloudAuthState.SignedOut;

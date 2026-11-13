@@ -453,11 +453,7 @@
       Background="{DynamicResource BrushLinen}"
       IsVisible="{Binding IsInitializing}"
     >
-      <StackPanel
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Spacing="14"
-      >
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
         <TextBlock
           Text="Mythology"
           FontFamily="{StaticResource FontSerif}"

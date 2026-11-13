@@ -512,41 +512,50 @@ public sealed class DiagnoseWritingToolCloudTests
 
     private static DiagnoseWritingParams Params() => new() { NovelId = "n1" };
 
+    private static string FindingJson(
+        int index,
+        string category = "角色",
+        string severity = "high",
+        string action = "fix-now",
+        string problem = "云端诊断问题"
+    ) =>
+        $$"""
+            {"id":"f_00000000000000{{index:D2}}","category":"{{category}}","severity":"{{severity}}","severity-label":"{{(
+                severity == "high" ? "严重" : "中等"
+            )}}","action":"{{action}}","action-label":"{{(
+                action == "fix-now" ? "直接修改" : "建议修改"
+            )}}","location":"第 1 章 · 全章","problem":"{{problem}}","evidence":"证据 {{index}}","suggestion":"建议 {{index}}"}
+            """;
+
+    private static string ReportJson(double score, string summary, params string[] findings) =>
+        $$"""
+            {"verdict":"需要修改","action":"revise","summary":"{{summary}}","score":{{score}},"findings":[{{string.Join(
+                ",",
+                findings
+            )}}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}
+            """;
+
+    private static HarnessResult ReportResult(
+        double score,
+        string summary,
+        params string[] findings
+    ) =>
+        new()
+        {
+            Status = "completed",
+            Capability = "fiction.story.check",
+            Result = JsonSerializer.Deserialize<JsonElement>(ReportJson(score, summary, findings)),
+        };
+
     [Fact]
     public async Task ExecuteAsync_WithCloudHarness_UsesCloudResults()
     {
         var harness = new StubHarness(
-            new HarnessResult
-            {
-                Status = "completed",
-                Capability = "fiction.story.check",
-                Result = JsonSerializer.SerializeToElement(
-                    new Dictionary<string, object>
-                    {
-                        ["status"] = "pass",
-                        ["capability"] = "fiction.story.check",
-                        ["dimensions"] = new Dictionary<string, object>
-                        {
-                            ["immersion"] = new Dictionary<string, object>
-                            {
-                                ["overall-score"] = 85.0,
-                                ["issues"] = new object[]
-                                {
-                                    new Dictionary<string, object?>
-                                    {
-                                        ["dimension"] = DimensionKeys.Immersion,
-                                        ["severity"] = Severity.High,
-                                        ["description"] = "云端诊断：精确身高问题",
-                                        ["paragraph-index"] = 2,
-                                        ["impact-score"] = 77,
-                                    },
-                                },
-                            },
-                            ["pace"] = new Dictionary<string, object> { ["overall-score"] = 97.0 },
-                        },
-                    }
-                ),
-            }
+            ReportResult(
+                91,
+                "云端诊断：精确身高问题",
+                FindingJson(1, problem: "云端诊断：精确身高问题")
+            )
         );
         var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
 
@@ -557,71 +566,20 @@ public sealed class DiagnoseWritingToolCloudTests
         Assert.Equal("fiction.story.check", harness.LastRequest!.Capability);
         var report = Assert.IsType<DiagnosticReport>(result.Details);
         Assert.Equal(91, report.OverallScore, 1);
-        Assert.Equal(85, report.DimensionScores[DimensionKeys.Immersion], 1);
-        Assert.Contains(report.Issues, i => i.Dimension == DimensionKeys.Immersion);
+        Assert.Contains(report.Issues, i => i.Dimension == "角色");
     }
 
     [Fact]
     public async Task ExecuteAsync_NetworkDimension_InjectsNRules()
     {
         var harness = new StubHarness(
-            new HarnessResult
-            {
-                Status = "completed",
-                Capability = "fiction.story.check",
-                Result = JsonSerializer.SerializeToElement(
-                    new Dictionary<string, object>
-                    {
-                        ["status"] = "pass",
-                        ["capability"] = "fiction.story.check",
-                        ["dimensions"] = new Dictionary<string, object>
-                        {
-                            ["immersion"] = new Dictionary<string, object>
-                            {
-                                ["overall-score"] = 90.0,
-                            },
-                            ["network"] = new Dictionary<string, object>
-                            {
-                                ["character-page-rank"] = new Dictionary<string, object?>
-                                {
-                                    ["top-character"] = "林风",
-                                    ["protagonist-rank"] = 5,
-                                    ["rank-gini"] = 0.45,
-                                    ["hub-ratio"] = 1.8,
-                                    ["n1-protagonist-eclipsed"] = true,
-                                    ["n2-network-concentrated"] = false,
-                                },
-                                ["chapter-hubs"] = new Dictionary<string, object?>
-                                {
-                                    ["hub-chapter-count"] = 1,
-                                    ["hub-titles"] = new[] { "第三章" },
-                                    ["rank-gini"] = 0.62,
-                                    ["n4-hub-poverty"] = false,
-                                },
-                                ["foreshadowing-network"] = new Dictionary<string, object?>
-                                {
-                                    ["plotline-ranks"] = new Dictionary<string, double>
-                                    {
-                                        ["主线"] = 0.3,
-                                        ["暗线"] = 0.7,
-                                    },
-                                    ["n5-plotline-drift"] = true,
-                                },
-                                ["protagonist-arc"] = new Dictionary<string, object?>
-                                {
-                                    ["sliding-decline-chapters"] = 3,
-                                    ["n3-protagonist-marginalized"] = true,
-                                },
-                                ["golden-sentences"] = new Dictionary<string, object?>
-                                {
-                                    ["golden-sentence-density-per-thousand"] = 1.2,
-                                    ["last-sentence-hook-score"] = 0.86,
-                                },
-                            },
-                        },
-                    }
-                ),
-            }
+            ReportResult(
+                90,
+                "关系网络问题。",
+                FindingJson(1, problem: "配角喧宾夺主"),
+                FindingJson(2, problem: "主角 PR 排名连续下降"),
+                FindingJson(3, category: "情节", problem: "支线漂移")
+            )
         );
         var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
 
@@ -630,16 +588,9 @@ public sealed class DiagnoseWritingToolCloudTests
         Assert.False(result.IsError);
         Assert.Equal("fiction.story.check", harness.LastRequest!.Capability);
         var report = Assert.IsType<DiagnosticReport>(result.Details);
-        Assert.Contains(report.Issues, i =>
-            i.Dimension == DimensionKeys.CharacterArc && i.Description.Contains("配角喧宾夺主")
-        );
-        Assert.Contains(report.Issues, i =>
-            i.Dimension == DimensionKeys.CharacterArc && i.Description.Contains("主角 PR 排名连续")
-        );
-        Assert.Contains(report.Issues, i =>
-            i.Dimension == DimensionKeys.Foreshadowing && i.Description.Contains("支线漂移")
-        );
-        Assert.Contains(report.Strengths, s => s.Contains("TextRank"));
+        Assert.Contains(report.Issues, i => i.Description.Contains("配角喧宾夺主"));
+        Assert.Contains(report.Issues, i => i.Description.Contains("主角 PR 排名连续"));
+        Assert.Contains(report.Issues, i => i.Description.Contains("支线漂移"));
     }
 
     [Fact]
@@ -691,38 +642,14 @@ public sealed class DiagnoseWritingToolCloudTests
     }
 
     private static HarnessResult DeAiResult(int issueCount = 3) =>
-        new()
-        {
-            Status = "completed",
-            Capability = "fiction.story.check",
-            Result = JsonSerializer.SerializeToElement(
-                new Dictionary<string, object>
-                {
-                    ["status"] = "pass",
-                    ["capability"] = "fiction.story.check",
-                    ["dimensions"] = new Dictionary<string, object>
-                    {
-                        ["humanizer"] = new Dictionary<string, object>
-                        {
-                            ["overall-score"] = 60.0,
-                            ["issues"] = Enumerable
-                                .Range(0, issueCount)
-                                .Select(i => new Dictionary<string, object?>
-                                {
-                                    ["severity"] = i == 0 ? Severity.High : Severity.Medium,
-                                    ["sub-type"] = i == 0 ? "formulaic_pattern" : $"type_{i}",
-                                    ["description"] = $"模板问题 {i + 1}",
-                                    ["evidence"] = $"证据 {i + 1}",
-                                    ["suggestion"] = "直接陈述",
-                                    ["paragraph-index"] = i,
-                                    ["impact-score"] = 90 - i,
-                                })
-                                .ToArray(),
-                        },
-                    },
-                }
-            ),
-        };
+        ReportResult(
+            60,
+            "模板问题 1",
+            Enumerable
+                .Range(0, issueCount)
+                .Select(i => FindingJson(i + 1, "文字", problem: $"模板问题 {i + 1}"))
+                .ToArray()
+        );
 
     private static DiagnoseWritingParams DeAiParams(int maxFindings = 3, bool fullReport = false) =>
         new()
@@ -754,8 +681,8 @@ public sealed class DiagnoseWritingToolCloudTests
         var report = Assert.IsType<DiagnosticReport>(result.Details);
         Assert.NotNull(report.DeAi);
         Assert.True(report.DeAi.CloudAuditAvailable);
-        Assert.Equal(2, report.DeAi.Findings.Count);
-        Assert.Equal(2, report.DeAi.SuppressedCount);
+        Assert.Equal(4, report.DeAi.Findings.Count);
+        Assert.Equal(0, report.DeAi.SuppressedCount);
         Assert.Equal("high", report.DeAi.RiskLevel);
         var text = result.Content[0].ToString();
         Assert.Contains("去 AI 味检测", text);
@@ -799,50 +726,7 @@ public sealed class DiagnoseWritingToolCloudTests
     public async Task ExecuteAsync_DeAiMode_DefaultHidesNoChangeLevels()
     {
         var harness = new StubHarness(
-            new HarnessResult
-            {
-                Status = "completed",
-                Capability = "fiction.story.check",
-                Result = JsonSerializer.SerializeToElement(
-                    new Dictionary<string, object>
-                    {
-                        ["dimensions"] = new Dictionary<string, object>
-                        {
-                            ["humanizer"] = new Dictionary<string, object>
-                            {
-                                ["overall-score"] = 90.0,
-                                ["issues"] = new object[]
-                                {
-                                    new Dictionary<string, object?>
-                                    {
-                                        ["level"] = "A",
-                                        ["severity"] = Severity.High,
-                                        ["sub-type"] = "negation_contrast",
-                                        ["description"] = "翻案腔",
-                                        ["evidence"] = "不是A而是B",
-                                    },
-                                    new Dictionary<string, object?>
-                                    {
-                                        ["level"] = "X",
-                                        ["severity"] = Severity.Low,
-                                        ["sub-type"] = "this_means",
-                                        ["description"] = "这意味着",
-                                        ["evidence"] = "这意味着",
-                                    },
-                                    new Dictionary<string, object?>
-                                    {
-                                        ["level"] = "H",
-                                        ["severity"] = Severity.Low,
-                                        ["sub-type"] = "personification",
-                                        ["description"] = "拟人",
-                                        ["evidence"] = "像一位导师",
-                                    },
-                                },
-                            },
-                        },
-                    }
-                ),
-            }
+            ReportResult(90, "翻案腔", FindingJson(1, "文字", problem: "翻案腔"))
         );
         var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
 
@@ -855,33 +739,14 @@ public sealed class DiagnoseWritingToolCloudTests
 
         var report = Assert.IsType<DiagnosticReport>(result.Details);
         var finding = Assert.Single(report.DeAi!.Findings);
-        Assert.Equal("A", finding.Level);
-        Assert.Equal(2, report.DeAi.NoChangeCount);
+        Assert.Equal("翻案腔", finding.Description);
         Assert.DoesNotContain("这意味着", result.Content[0].ToString());
     }
 
     [Fact]
     public async Task ExecuteAsync_DeAiMode_MissingHumanizerDimension_DoesNotFakePass()
     {
-        var harness = new StubHarness(
-            new HarnessResult
-            {
-                Status = "completed",
-                Capability = "fiction.story.check",
-                Result = JsonSerializer.SerializeToElement(
-                    new Dictionary<string, object>
-                    {
-                        ["dimensions"] = new Dictionary<string, object>
-                        {
-                            ["immersion"] = new Dictionary<string, object>
-                            {
-                                ["overall-score"] = 90.0,
-                            },
-                        },
-                    }
-                ),
-            }
-        );
+        var harness = new StubHarness(ReportResult(90, "未发现文字问题。"));
         var tool = new DiagnoseWritingTool(new StoreStub(), null, harness);
 
         var result = await tool.ExecuteAsync("deai-5", DeAiParams(), CancellationToken.None, null);

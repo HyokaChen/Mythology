@@ -154,6 +154,7 @@ public sealed class EnhancementEngine
             Capability = "fiction.story.check",
             Depth = "standard",
             Locale = "zh-CN",
+            Output = "data",
             Chapters =
             [
                 new ChapterInput(

@@ -22,7 +22,7 @@ public sealed class PromptsContentTests
         Assert.Contains("角色定义", RoleDefinitionPrompt.Full);
         Assert.Contains("作者的明确裁决", RoleDefinitionPrompt.Full);
         Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
-        Assert.Contains("云端诊断的结构化状态", RoleDefinitionPrompt.Full);
+        Assert.Contains("云端报告的结论", RoleDefinitionPrompt.Full);
         Assert.Contains("read_chapter", RoleDefinitionPrompt.Full);
         Assert.Contains("Agent 记忆", RoleDefinitionPrompt.Full);
     }
@@ -261,16 +261,16 @@ public sealed class PromptsContentTests
         Assert.Contains("输出格式规范", result);
         Assert.Contains("工具调用", result);
         Assert.Contains("输出分区", result);
-        Assert.Contains("交付路由", result);
+        Assert.Contains("先决定输出到哪里", result);
         Assert.Contains("设定探索顺序", result);
         Assert.Contains("创作任务分级", result);
         Assert.Contains("问还是做", result);
-        Assert.Contains("设定落盘纪律", result);
+        Assert.Contains("设定写回纪律", result);
         Assert.Contains("工具失败处理", result);
         Assert.Contains("创作边界", result);
         Assert.Contains("数据与指令边界", result);
         Assert.Contains("写作流程规范", result);
-        Assert.Contains("云端 Harness 经济性", result);
+        Assert.Contains("云端诊断的使用原则", result);
         Assert.Contains("云端诊断使用原则", result);
         Assert.Contains("交付前检查", result);
         Assert.Contains("记忆纪律", result);
@@ -311,7 +311,7 @@ public sealed class PromptsContentTests
             "planning_loop",
             "error_handling",
             "writing_process",
-            "humanizer",
+            "writing_style",
         ];
 
         foreach (var tag in tags)
@@ -345,6 +345,44 @@ public sealed class PromptsContentTests
     }
 
     [Fact]
+    public void PromptAssembly_ContainsNoInternalDiagnosisJargon()
+    {
+        var prompt = PromptAssembly.Build();
+        foreach (
+            var forbidden in new[]
+            {
+                "status=",
+                "repairIntent",
+                "human_decision_required",
+                "DECISION",
+                "A-1",
+                "F-1",
+                "S-1",
+                "story.check",
+                "context.retrieve",
+                "scene.plan",
+                "humanizer",
+                "prose_quality",
+                "AutoEnhance",
+                "units",
+                "WritingProfile",
+                "scope",
+            }
+        )
+            Assert.DoesNotContain(forbidden, prompt);
+
+        Assert.Contains("结果：通过", prompt);
+        Assert.Contains("结果：需要修改", prompt);
+        Assert.Contains("需要作者决定", prompt);
+        Assert.Contains("直接修改", prompt);
+        Assert.Contains("只报告", prompt);
+        Assert.Contains("保留", prompt);
+        Assert.Contains("自动写作流程", prompt);
+        Assert.Contains("批次结束", prompt);
+        Assert.Contains("diagnose_writing", prompt);
+    }
+
+    [Fact]
     public void PromptAssembly_EstimateTokenCount_UnderBudget()
     {
         // 骨架长度上限：约 18000 字符（汉字≈1 token），超限提示需要瘦身
@@ -361,7 +399,7 @@ public sealed class PromptsContentTests
     [Fact]
     public void ToolCallingPrompt_ContainsCloudEconomy()
     {
-        Assert.Contains("云端 Harness 经济性", ToolCallingPrompt.Full);
+        Assert.Contains("云端诊断的使用原则", ToolCallingPrompt.Full);
         Assert.Contains("每章最多一次", ToolCallingPrompt.Full);
         Assert.Contains("最小上下文", ToolCallingPrompt.Full);
         Assert.Contains("最后一项是验收", ToolCallingPrompt.Full);
@@ -377,8 +415,8 @@ public sealed class PromptsContentTests
         Assert.Contains("批次结束", WritingProcessPrompt.Full);
         Assert.Contains("diagnose_writing", WritingProcessPrompt.Full);
         Assert.Contains("不返工", WritingProcessPrompt.Full);
-        Assert.Contains("repairIntent", WritingProcessPrompt.Full);
-        Assert.Contains("不向用户展示内部权重", WritingProcessPrompt.Full);
+        Assert.Contains("问题/证据/建议", WritingProcessPrompt.Full);
+        Assert.Contains("不向用户展示内部规则", WritingProcessPrompt.Full);
         Assert.DoesNotContain("未诊断即交付", WritingProcessPrompt.Full);
     }
 
@@ -396,7 +434,7 @@ public sealed class PromptsContentTests
     public void HumanizerPrompt_ContainsStructuralPrinciples()
     {
         Assert.Contains("结构预防", HumanizerPrompt.Full);
-        Assert.Contains("先判断风险", HumanizerPrompt.Full);
+        Assert.Contains("处理方式", HumanizerPrompt.Full);
         Assert.Contains("翻案腔", HumanizerPrompt.Full);
         Assert.Contains("不是 AI 味，永不改", HumanizerPrompt.Full);
         Assert.Contains("不制造参差", HumanizerPrompt.Full);
@@ -405,7 +443,7 @@ public sealed class PromptsContentTests
     [Fact]
     public void PlanningLoopPrompt_ContainsHumanDecisionRules()
     {
-        Assert.Contains("human_decision_required", PlanningLoopPrompt.Full);
+        Assert.Contains("需要作者决定", PlanningLoopPrompt.Full);
         Assert.Contains("人工裁决超时", PlanningLoopPrompt.Full);
     }
 
@@ -437,9 +475,9 @@ public sealed class PromptsContentTests
     [Fact]
     public void Prompts_ContainAuthorizationContract_AndDoNotStopOnDecision()
     {
-        Assert.Contains("低阈值场景规划", RoleDefinitionPrompt.Full);
+        Assert.Contains("低风险、可回退的场景规划", RoleDefinitionPrompt.Full);
         Assert.Contains("不再逐次询问", PlanningLoopPrompt.Full);
-        Assert.Contains("低阈值裁决", WritingProcessPrompt.Full);
+        Assert.Contains("需要作者决定", WritingProcessPrompt.Full);
         Assert.Contains("检查/诊断请求默认包含修复", OutputZonesPrompt.Full);
         Assert.DoesNotContain("human_decision_required 必须停", RoleDefinitionPrompt.Full);
         Assert.DoesNotContain("必须等待用户回答", WritingProcessPrompt.Full);
@@ -449,7 +487,7 @@ public sealed class PromptsContentTests
     [Fact]
     public void ContextUnderstandingPrompt_ContainsCloudCanonBoundary()
     {
-        Assert.Contains("云端诊断的评分", ContextUnderstandingPrompt.Full);
+        Assert.Contains("云端报告的结论", ContextUnderstandingPrompt.Full);
         Assert.Contains("检索边界", ContextUnderstandingPrompt.Full);
     }
 
@@ -461,16 +499,13 @@ public sealed class PromptsContentTests
         Assert.Contains("memory_recall", ContextUnderstandingPrompt.Full);
         Assert.Contains("memory_forget", ContextUnderstandingPrompt.Full);
         Assert.Contains("不读记忆文件", ContextUnderstandingPrompt.Full);
-        Assert.Contains(
-            "本地文件只在用户当前消息明确 @ 引用时读取",
-            ContextUnderstandingPrompt.Full
-        );
+        Assert.Contains("本地文件只在用户当前消息明确引用时读取", ContextUnderstandingPrompt.Full);
     }
 
     [Fact]
     public void SafetyPolicyPrompt_ContainsSignalEvidenceBoundary()
     {
-        Assert.Contains("结构化字段", SafetyPolicyPrompt.Full);
+        Assert.Contains("明确状态", SafetyPolicyPrompt.Full);
         Assert.Contains("只是数据", SafetyPolicyPrompt.Full);
     }
 

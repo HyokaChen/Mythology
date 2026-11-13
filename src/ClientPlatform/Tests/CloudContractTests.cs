@@ -104,11 +104,11 @@ public sealed class CloudContractTests
     public void IsContractVersionSupported_UnknownTolerated_MismatchRejected()
     {
         // 未知（旧服务端未携带）容忍；与本客户端基线一致放行；其余视为不一致（仅告警用）。
-        Assert.True(CloudContract.IsContractVersionSupported(null));
+        Assert.False(CloudContract.IsContractVersionSupported(null));
         Assert.True(
             CloudContract.IsContractVersionSupported(CloudContract.SupportedContractVersion)
         );
-        Assert.False(CloudContract.IsContractVersionSupported("2.0"));
+        Assert.False(CloudContract.IsContractVersionSupported("1.0"));
         Assert.False(CloudContract.IsContractVersionSupported("1.1"));
     }
 }

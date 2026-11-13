@@ -221,6 +221,7 @@ public sealed class DiagnoseWritingTool(
                     _ => "standard",
                 },
                 Locale = "zh-CN",
+                Output = "report",
                 Chapters = chapters
                     .Select(
                         (c, index) =>
@@ -244,9 +245,15 @@ public sealed class DiagnoseWritingTool(
                 ct
             );
 
-            return result.Result is not JsonElement element
+            if (result.Result is not JsonElement element)
+                return CloudUnavailableReport(depth);
+            var report = JsonSerializer.Deserialize<DiagnosisReport>(
+                element.GetRawText(),
+                ClientJsonDefaults.Cloud
+            );
+            return report is null
                 ? CloudUnavailableReport(depth)
-                : StoryCheckResultMapper.Map(element, depth);
+                : StoryCheckResultMapper.Map(report, depth);
         }
         catch (CloudApiException ex)
         {
@@ -287,6 +294,7 @@ public sealed class DiagnoseWritingTool(
                 Capability = "fiction.story.check",
                 Depth = "quick",
                 Locale = "zh-CN",
+                Output = "report",
                 NovelId = novelId,
                 Chapters =
                 [
@@ -309,8 +317,39 @@ public sealed class DiagnoseWritingTool(
 
             if (result.Result is not JsonElement element)
                 return BuildDeAiFallbackReport("云端未返回可解析的去AI味结果。");
-
-            return StoryCheckResultMapper.Map(element, DiagnosticDepth.Quick);
+            var report = JsonSerializer.Deserialize<DiagnosisReport>(
+                element.GetRawText(),
+                ClientJsonDefaults.Cloud
+            );
+            if (report is null)
+                return BuildDeAiFallbackReport("云端未返回可解析的去AI味结果。");
+            var mapped = StoryCheckResultMapper.Map(report, DiagnosticDepth.Quick);
+            var textFindings = mapped
+                .Issues.Where(issue => issue.Dimension == DimensionKeys.Humanizer)
+                .ToList();
+            if (textFindings.Count == 0)
+                return BuildDeAiFallbackReport("云端未返回去AI味问题；本次未完成检测。");
+            return mapped with
+            {
+                DeAi = new DeAiAudit
+                {
+                    Findings = textFindings
+                        .Select(issue => new DeAiFinding
+                        {
+                            Severity = issue.Severity,
+                            Description = issue.Description,
+                            Evidence = issue.Evidence,
+                            Suggestion = issue.Suggestion,
+                        })
+                        .ToList(),
+                    CloudAuditAvailable = true,
+                    RiskLevel =
+                        textFindings.Any(i => i.Severity == Severity.High) ? "high"
+                        : textFindings.Any(i => i.Severity == Severity.Medium) ? "medium"
+                        : "low",
+                    Notes = ["这是云端规则审计，不是 AI 作者判定；比喻/声音需人审。"],
+                },
+            };
         }
         catch (CloudApiException ex)
         {

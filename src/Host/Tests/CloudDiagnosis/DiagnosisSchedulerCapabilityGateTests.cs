@@ -107,7 +107,7 @@ public sealed class DiagnosisSchedulerCapabilityGateTests
                 new AgentContextSnapshot
                 {
                     TargetChapterRef = request.Chapters.FirstOrDefault()?.ClientChapterRef ?? "",
-                    Features = JsonSerializer.Deserialize<JsonElement>(ContextFeaturesJson),
+                    NarrativeEntropy = 1.2,
                 }
             );
         }

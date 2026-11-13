@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Cloud;
 using Core.Shared;
 
 namespace Plugins.WritingTools;
@@ -26,6 +27,40 @@ internal static class StoryCheckResultMapper
         ("excitement", DimensionKeys.Excitement, "excitement-score"),
         ("engagement", DimensionKeys.ReaderEngagement, "overall-engagement"),
     ];
+
+    /// <summary>把服务端公开报告映射为工具详情；不再读取原始 dimensions。</summary>
+    public static DiagnosticReport Map(DiagnosisReport report, DiagnosticDepth depth)
+    {
+        var issues = report
+            .Findings.Select(finding => new DiagnosticIssue
+            {
+                Dimension = finding.Category == "文字" ? DimensionKeys.Humanizer : finding.Category,
+                Severity = finding.Severity switch
+                {
+                    "high" => Severity.High,
+                    "medium" => Severity.Medium,
+                    _ => Severity.Low,
+                },
+                Description = finding.Problem,
+                Evidence = finding.Evidence ?? "",
+                Suggestion = finding.Suggestion,
+            })
+            .ToList();
+        var scores = new Dictionary<string, double>(StringComparer.Ordinal);
+        if (report.Score is { } score)
+            scores["综合"] = score;
+        if (depth == DiagnosticDepth.Quick && issues.Count > 0)
+            scores[DimensionKeys.Humanizer] = 0;
+
+        return new DiagnosticReport
+        {
+            Depth = depth,
+            OverallScore = report.Score ?? 0,
+            DimensionScores = scores,
+            Issues = issues,
+            Strengths = report.Strengths?.ToList() ?? [],
+        };
+    }
 
     public static DiagnosticReport Map(JsonElement root, DiagnosticDepth depth)
     {

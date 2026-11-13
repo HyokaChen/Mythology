@@ -25,7 +25,7 @@ public sealed class DiagnosisSchedulerTests
         """{"capability":"fiction.scene.plan","status":"pass","features":{"overall-score":0.88}}""";
 
     private static readonly string ContextJson =
-        """{"features":{"overall-score":0.88,"narrative-entropy":1.4},"signals":[],"dimension-scores":{"节奏":80}}""";
+        """{"verdict":"通过","action":"proceed","summary":"未发现需要修改的问题。","score":88,"findings":[],"decision-question":null,"decision-options":null,"snapshot":{"target-chapter-ref":"ch_x","chapter-count":12,"previous-chapter-count":3,"paragraph-count":40,"narrative-entropy":1.4,"satisfaction-score":80,"trends":null,"absent-characters":null,"material-hint":null},"strengths":null}""";
 
     private static Novel NewNovel() =>
         new()
@@ -118,13 +118,7 @@ public sealed class DiagnosisSchedulerTests
         {
             Counts["context.retrieve"] = Counts.GetValueOrDefault("context.retrieve") + 1;
             return Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    TargetChapterRef = inputRef,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.88,"word-count":1000,"paragraph-count":5,"dialogue-ratio":0.2,"narrative-entropy":1.4,"mattr":0.7,"yule-k":120,"sentence-cv":0.4,"paragraph-gini":0.3,"r-indicator":0.17}"""
-                    ),
-                }
+                new AgentContextSnapshot { TargetChapterRef = inputRef, NarrativeEntropy = 1.4 }
             );
         }
 
@@ -188,7 +182,7 @@ public sealed class DiagnosisSchedulerTests
             cap => new HarnessResult
             {
                 Capability = cap,
-                Result = JsonSerializer.Deserialize<JsonElement>(DeepStubJson),
+                Result = JsonSerializer.Deserialize<JsonElement>(ContextJson),
             },
             counts: counts
         );
@@ -224,7 +218,7 @@ public sealed class DiagnosisSchedulerTests
             cap => new HarnessResult
             {
                 Capability = cap,
-                Result = JsonSerializer.Deserialize<JsonElement>(DeepStubJson),
+                Result = JsonSerializer.Deserialize<JsonElement>(ContextJson),
             },
             counts: counts
         );
@@ -435,13 +429,7 @@ public sealed class DiagnosisSchedulerTests
             if (attempt == 1)
                 throw new CloudApiException("unavailable", "模拟首次失败");
             return Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 10,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.88,"narrative-entropy":1.4}"""
-                    ),
-                }
+                new AgentContextSnapshot { ChapterCount = 10, NarrativeEntropy = 1.4 }
             );
         }
 
@@ -532,13 +520,7 @@ public sealed class DiagnosisSchedulerTests
         {
             Calls.Add((request.Capability, idempotencyKey));
             return Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 10,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.88,"narrative-entropy":1.4}"""
-                    ),
-                }
+                new AgentContextSnapshot { ChapterCount = 10, NarrativeEntropy = 1.4 }
             );
         }
 
@@ -567,7 +549,8 @@ public sealed class DiagnosisSchedulerTests
         var quiet = new DiagnosisScheduler(new SilentEmptyHarness(), options);
         var quietInput = NewInput(NewChapters(), "ch_10");
         var quietDecision = quiet.Decide(quietInput);
-        Assert.Null(await quiet.RunAsync(quietInput, quietDecision, CancellationToken.None));
+        var quietRound = await quiet.RunAsync(quietInput, quietDecision, CancellationToken.None);
+        Assert.NotNull(quietRound); // 默认报告模式成功返回空结论
         Assert.Null(quiet.LastDegradeCode);
     }
 
@@ -962,21 +945,52 @@ public sealed class DiagnosisSchedulerTests
                     ChapterCount = 3,
                     PreviousChapterCount = 1,
                     ParagraphCount = 10,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        FormattableString.Invariant(
-                            $"{{\"overallScore\":{score},\"wordCount\":1000}}"
-                        )
-                    ),
-                    // §16.1 双重条件（2026-08-28 恢复）：低分 + high severity ≥ 2 才升级深度档。
-                    // 中文 severity（"严重"）由客户端 NormalizeSeverity 归一为 high。
-                    Signals = JsonSerializer.Deserialize<JsonElement>(
-                        """
-                        [{"dimension":"代入感","severity":"严重","description":"主角行为不可理喻","impact-score":90},
-                         {"dimension":"节奏","severity":"严重","description":"节奏混乱","impact-score":85}]
-                        """
-                    ),
+                    NarrativeEntropy = 1.4,
+                    SatisfactionScore = score * 100,
+                    AbsentCharacters = ["冷月"],
                 }
             );
+
+        public Task<DiagnosisReport> GetContextReportAsync(
+            HarnessRequest request,
+            string idempotencyKey,
+            CancellationToken cancellationToken
+        )
+        {
+            var finding = new DiagnosisFinding(
+                "f_1111111111111111",
+                "角色",
+                "high",
+                "严重",
+                "fix-now",
+                "直接修改",
+                "全章",
+                "主角行为不可理喻。",
+                null,
+                null
+            );
+            return Task.FromResult(
+                new DiagnosisReport(
+                    "需要修改",
+                    "revise",
+                    "主角行为不可理喻。",
+                    score * 100,
+                    [
+                        finding,
+                        finding with
+                        {
+                            Id = "f_2222222222222222",
+                            Category = "节奏",
+                            Problem = "节奏混乱。",
+                        },
+                    ],
+                    null,
+                    null,
+                    null,
+                    null
+                )
+            );
+        }
 
         public Task ReportSetupFeedbackAsync(
             IReadOnlyList<(string FindingId, string Decision)> items,
@@ -985,13 +999,10 @@ public sealed class DiagnosisSchedulerTests
     }
 
     private static readonly string LowScoreContextJson =
-        "{\"features\":{\"overallScore\":0.3},\"signals\":["
-        + "{\"dimension\":\"代入感\",\"severity\":\"high\",\"description\":\"主角行为不可理喻\",\"impactScore\":90},"
-        + "{\"dimension\":\"节奏\",\"severity\":\"high\",\"description\":\"节奏混乱\",\"impactScore\":85}"
-        + "]}";
+        """{"verdict":"需要修改","action":"revise","summary":"主角行为不可理喻。","score":30,"findings":[{"id":"f_1111111111111111","category":"角色","severity":"high","severity-label":"严重","action":"fix-now","action-label":"直接修改","location":"全章","problem":"主角行为不可理喻。","evidence":null,"suggestion":null},{"id":"f_2222222222222222","category":"节奏","severity":"high","severity-label":"严重","action":"fix-now","action-label":"直接修改","location":"全章","problem":"节奏混乱。","evidence":null,"suggestion":null}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     private static readonly string DeepStubJson =
-        "{\"dimensions\":{\"pace\":{\"overallScore\":72}},\"network\":{\"characterPageRank\":{\"topCharacter\":\"林云\"}}}";
+        """{"verdict":"需要修改","action":"revise","summary":"中段节奏偏慢。","score":72,"findings":[{"id":"f_3333333333333333","category":"节奏","severity":"medium","severity-label":"中等","action":"suggest","action-label":"建议修改","location":"全章","problem":"中段节奏偏慢。","evidence":null,"suggestion":null}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     /// <summary>
     /// 深度档 story.check 成功但 network.characterPageRank 缺失（单章数据可为 null，
@@ -1031,9 +1042,7 @@ public sealed class DiagnosisSchedulerTests
                     new HarnessResult
                     {
                         Capability = "fiction.story.check",
-                        Result = JsonSerializer.Deserialize<JsonElement>(
-                            """{"dimensions":{"pace":{"overall-score":72}}}"""
-                        ),
+                        Result = JsonSerializer.Deserialize<JsonElement>(DeepStubJson),
                     }
                 )
                 : throw new CloudApiException("unavailable", "基础档不可用");
@@ -1192,13 +1201,7 @@ public sealed class DiagnosisSchedulerTests
         {
             sink.Add(request);
             return Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 12,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.88,"narrative-entropy":1.4}"""
-                    ),
-                }
+                new AgentContextSnapshot { ChapterCount = 12, NarrativeEntropy = 1.4 }
             );
         }
 
@@ -1292,15 +1295,7 @@ public sealed class DiagnosisSchedulerTests
 
         Assert.NotNull(round);
         Assert.NotNull(round.ContextRetrieve);
-        // 维度分：16 中文键已透传（F-1 节奏 45 < 55 → 命中）
-        Assert.True(
-            round.ContextRetrieve.DimensionScores.TryGetValue("节奏", out var pace) && pace < 55,
-            "dimensionScores 应包含 节奏 键"
-        );
-        // signals：high severity 信号已透传（S-1 判定输入）
-        Assert.Contains(round.ContextRetrieve.Signals, s =>
-            s.Severity == "high" && s.Dimension == "节奏"
-        );
+        Assert.Equal(60, round.ContextRetrieve.Score);
     }
 
     /// <summary>携带 signals + dimensionScores 的快照 stub（§6.1 契约）。</summary>
@@ -1325,15 +1320,6 @@ public sealed class DiagnosisSchedulerTests
             CancellationToken ct
         )
         {
-            var features = JsonSerializer.Deserialize<JsonElement>(
-                """{"overall-score":0.5,"word-count":1000,"paragraph-count":5,"dialogue-ratio":0.2,"narrative-entropy":1.4}"""
-            );
-            var signals = JsonSerializer.Deserialize<JsonElement>(
-                """[{"dimension":"节奏","severity":"high","description":"节奏混乱","impact-score":85}]"""
-            );
-            var dimensionScores = JsonSerializer.Deserialize<JsonElement>(
-                """{"代入感":70,"爽感":60,"节奏":45,"冲突":65,"描写":80,"对话":50,"伏笔":55,"角色弧":60,"开篇":70,"常识错误":90,"高潮":55,"读者参与":60,"去AI味":75,"文笔质量":70,"章末钩子":50,"信息差":60}"""
-            );
             return Task.FromResult(
                 new AgentContextSnapshot
                 {
@@ -1341,9 +1327,8 @@ public sealed class DiagnosisSchedulerTests
                     ChapterCount = 12,
                     PreviousChapterCount = 3,
                     ParagraphCount = 40,
-                    Features = features,
-                    Signals = signals,
-                    DimensionScores = dimensionScores,
+                    NarrativeEntropy = 1.4,
+                    SatisfactionScore = 60,
                 }
             );
         }
@@ -1363,7 +1348,7 @@ public sealed class DiagnosisSchedulerTests
             cap => new HarnessResult
             {
                 Capability = cap,
-                Result = JsonSerializer.Deserialize<JsonElement>(LowScoreContextJson),
+                Result = JsonSerializer.Deserialize<JsonElement>(ContextJson),
             },
             () =>
                 new HarnessResult
@@ -1409,14 +1394,44 @@ public sealed class DiagnosisSchedulerTests
                 {
                     TargetChapterRef = "ch_8",
                     ChapterCount = 3,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        "{\"overallScore\":0.3,\"wordCount\":1000}"
-                    ),
-                    Signals = JsonSerializer.Deserialize<JsonElement>(
-                        """[{"dimension":"节奏","severity":"严重","description":"节奏混乱","impact-score":85}]"""
-                    ),
+                    NarrativeEntropy = 1.1,
+                    SatisfactionScore = 30,
+                    AbsentCharacters = ["冷月"],
                 }
             );
+
+        public Task<DiagnosisReport> GetContextReportAsync(
+            HarnessRequest request,
+            string idempotencyKey,
+            CancellationToken cancellationToken
+        )
+        {
+            var finding = new DiagnosisFinding(
+                "f_aaaaaaaaaaaaaaaa",
+                "节奏",
+                "high",
+                "严重",
+                "fix-now",
+                "直接修改",
+                "全章",
+                "节奏混乱。",
+                null,
+                null
+            );
+            return Task.FromResult(
+                new DiagnosisReport(
+                    "需要修改",
+                    "revise",
+                    "节奏混乱。",
+                    30,
+                    [finding],
+                    null,
+                    null,
+                    null,
+                    null
+                )
+            );
+        }
 
         public Task ReportSetupFeedbackAsync(
             IReadOnlyList<(string FindingId, string Decision)> items,
@@ -1504,7 +1519,7 @@ public sealed class LateNovelForceDeepTests
                     Capability = request.Capability,
                     Result = JsonSerializer.Deserialize<JsonElement>(
                         request.Capability == "fiction.story.check"
-                            ? """{"dimensions":{"pace":{"overall-score":72}}}"""
+                            ? """{"verdict":"需要修改","action":"revise","summary":"中段节奏偏慢。","score":72,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}"""
                             : """{"features":{"overall-score":0.88}}"""
                     ),
                 }
@@ -1516,15 +1531,7 @@ public sealed class LateNovelForceDeepTests
             string idempotencyKey,
             CancellationToken ct
         ) =>
-            Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    ChapterCount = 30,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.88,"narrative-entropy":1.4}"""
-                    ),
-                }
-            );
+            Task.FromResult(new AgentContextSnapshot { ChapterCount = 30, NarrativeEntropy = 1.4 });
 
         public Task ReportSetupFeedbackAsync(
             IReadOnlyList<(string FindingId, string Decision)> items,

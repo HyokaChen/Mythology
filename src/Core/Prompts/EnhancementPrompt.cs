@@ -43,10 +43,10 @@ public static class EnhancementPrompt
 ## 问题
 <issue>{issueDescription}</issue>
 
-## 维度指导：{dimension}
+## 改写方向：{dimension}
 {dimensionGuide}
 
-## 配置指导
+## 类型要求
 {profileGuide}
 
 ## 要求

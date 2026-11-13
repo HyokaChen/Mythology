@@ -36,6 +36,7 @@ public static class AssociativeLinkClient
             Capability = Capability,
             Depth = depth,
             Locale = "zh-CN",
+            Output = "data",
             NovelId = novelId,
             SceneGoal = query,
             Sources = sources,

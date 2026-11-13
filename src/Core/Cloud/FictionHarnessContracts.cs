@@ -8,10 +8,11 @@ namespace Core.Cloud;
 /// </summary>
 public sealed record HarnessRequest
 {
-    public string ContractVersion { get; init; } = "1.0";
+    public string ContractVersion { get; init; } = "2.0";
     public string Capability { get; init; } = "";
     public string Depth { get; init; } = "standard";
     public string Locale { get; init; } = "zh-CN";
+    public string Output { get; init; } = "";
     public IReadOnlyList<ChapterInput> Chapters { get; init; } = [];
 
     /// <summary>
@@ -429,26 +430,46 @@ public sealed record AgentContextSnapshot
     public int ChapterCount { get; init; }
     public int PreviousChapterCount { get; init; }
     public int ParagraphCount { get; init; }
-    public object? Features { get; init; }
+    public double? NarrativeEntropy { get; init; }
+    public double? SatisfactionScore { get; init; }
+    public IReadOnlyList<string>? Trends { get; init; }
+    public IReadOnlyList<string>? AbsentCharacters { get; init; }
+    public string? MaterialHint { get; init; }
+}
 
-    /// <summary>
-    /// 云端 context.retrieve 的 signals[]（JsonElement 数组；HARNESS-CLOUD §6.1）。
-    /// 跨仓库缺口 1.5：ToSnapshot 之前丢弃此字段，基础档维度规则（F-1~F-5）
-    /// 依赖 dimensionScores、S-1 依赖 signals——现补齐透传。
-    /// </summary>
-    public object? Signals { get; init; }
+/// <summary>
+/// 云端诊断报告 — 面向作者与模型的唯一公开形状。
+/// 内部规则码、权重、阈值、分析器名只保留在服务端。
+/// </summary>
+public sealed record DiagnosisReport(
+    string Verdict,
+    string Action,
+    string Summary,
+    double? Score,
+    IReadOnlyList<DiagnosisFinding> Findings,
+    string? DecisionQuestion,
+    IReadOnlyList<string>? DecisionOptions,
+    AgentContextSnapshot? Snapshot,
+    IReadOnlyList<string>? Strengths
+);
 
-    /// <summary>
-    /// 云端 context.retrieve 的 dimensionScores（JsonElement 对象，16 中文键；
-    /// HARNESS-CLOUD §6.1/Q3）。基础档维度预警（F-1~F-5）数据源。
-    /// </summary>
-    public object? DimensionScores { get; init; }
-
-    /// <summary>
-    /// 云端 context.retrieve 的 material-hints 对象（status / prompt-block / hints）。
-    /// 仅在请求 options.include-material-hints=true 时出现；缺失 = 未开启或无可召回。
-    /// </summary>
-    public object? MaterialHints { get; init; }
+/// <summary>报告中的单条问题；<see cref="Id"/> 为不透明追踪号。</summary>
+public sealed record DiagnosisFinding(
+    string Id,
+    string Category,
+    string Severity,
+    string SeverityLabel,
+    string Action,
+    string ActionLabel,
+    string Location,
+    string Problem,
+    string? Evidence,
+    string? Suggestion
+)
+{
+    /// <summary>本地规则触发键，仅供 TacticLedger；不进入 wire 或 Prompt。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? Trigger { get; init; }
 }
 
 /// <summary>

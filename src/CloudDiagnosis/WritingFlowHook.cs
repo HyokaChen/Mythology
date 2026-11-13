@@ -333,17 +333,16 @@ public sealed class WritingFlowHook(
                 {
                     // 规则评估提前到本轮注入前一次完成：既有诊断注入与双速自进化
                     // （结算/记录/战术注入）共用同一结论，避免二次评估（BuildLocalFacts 含章节扫描）。
-                    var ruleOutcome = SignalRules.Evaluate(
-                        round.ScenePlan,
-                        round.ContextRetrieve,
-                        round.StoryCheck,
-                        BuildLocalFacts(round, input)
-                    );
+                    var cloudAction = PickReport(round)?.Action ?? "proceed";
+                    var localFindings =
+                        cloudAction == "revise"
+                            ? SignalRules.Evaluate(BuildLocalFacts(round, input))
+                            : [];
 
                     var hadActionOrDecision = await InjectCloudRoundAsync(
                         round,
                         input,
-                        ruleOutcome,
+                        localFindings,
                         ct
                     );
 
@@ -354,7 +353,7 @@ public sealed class WritingFlowHook(
                         input.ChapterOrder,
                         profile.Genre,
                         round,
-                        ruleOutcome,
+                        localFindings,
                         ct
                     );
 
@@ -365,7 +364,7 @@ public sealed class WritingFlowHook(
                             novelId,
                             novel,
                             chapters,
-                            round.ContextRetrieve?.AbsentCharacters,
+                            round.ContextRetrieve?.Snapshot?.AbsentCharacters,
                             ct
                         );
                     }
@@ -420,9 +419,10 @@ public sealed class WritingFlowHook(
         if (outcome.Skipped)
             return;
 
-        agent.InjectQueue.Enqueue(
-            new LlmChatMessage(ChatMessageRoles.User, SignalBuilder.BuildHumanizerSignal(outcome))
-        );
+        if (outcome.Report is { } report)
+            agent.InjectQueue.Enqueue(
+                new LlmChatMessage(ChatMessageRoles.User, SignalBuilder.Format(report, []))
+            );
     }
 
     /// <summary>
@@ -597,12 +597,12 @@ public sealed class WritingFlowHook(
     private async Task<bool> InjectCloudRoundAsync(
         CloudRound round,
         DiagnosisInput input,
-        RuleOutcome ruleOutcome,
+        IReadOnlyList<DiagnosisFinding> localFindings,
         CancellationToken ct
     )
     {
         if (
-            round.ScenePlan is { RequiresHumanDecision: true } decisionOutcome
+            round.ScenePlan is { Action: "ask-author" } decisionOutcome
             && _decisionBridge is { } bridge
         )
         {
@@ -642,7 +642,7 @@ public sealed class WritingFlowHook(
                 agent.InjectQueue.Enqueue(
                     new LlmChatMessage(
                         ChatMessageRoles.User,
-                        $"{SignalBuilder.Prefix} 本轮DECISION已达会话上限（{_scheduler.GetType().Name}），按建议继续自动迭代"
+                        $"{SignalBuilder.Prefix} 本轮需要作者决定的问题已达会话上限，按建议继续自动迭代"
                     )
                 );
                 _monotony?.NotifyIntervention();
@@ -656,12 +656,12 @@ public sealed class WritingFlowHook(
             return true;
         }
 
-        if (round.ScenePlan is { RequiresHumanDecision: true })
+        if (round.ScenePlan is { Action: "ask-author" })
             return true; // 无 bridge 可用：保守视为已介入，不触发灵感
 
         // 层 1 采样门槛（跨仓库）：引擎/能力层判定样本不可测（实质字符不足）→ 不产出评分，
         // 不触发修复/人工裁决；注入一行跳过说明，避免落入 PASS 文案（“综合=0 可按计划推进”）。
-        if (round.ScenePlan is { RepairAction: CloudContractLiterals.RepairInsufficientData })
+        if (round.ScenePlan is { Verdict: "内容不足" })
         {
             agent.InjectQueue.Enqueue(
                 new LlmChatMessage(
@@ -673,26 +673,21 @@ public sealed class WritingFlowHook(
         }
 
         // I4 M-3（P2 云端增强）：喂入「爽感」维度分供单调递减判定
-        if (_monotony is not null && round.ContextRetrieve is not null)
-        {
-            var has = round.ContextRetrieve.DimensionScores.TryGetValue(
-                "爽感",
-                out var satisfaction
-            );
-            _monotony.RecordSatisfactionScore(has ? satisfaction : null);
-        }
+        if (_monotony is not null && round.ContextRetrieve?.Snapshot is { } snapshot)
+            _monotony.RecordSatisfactionScore(snapshot.SatisfactionScore);
 
-        var hasAction = ruleOutcome.Actions.Count > 0;
-        var text = hasAction
-            ? SignalBuilder.FormatAction(round.OverallScore, ruleOutcome)
-            : $"{SignalBuilder.Prefix} status=pass 综合={round.OverallScore} 可按计划推进（本轮免重复诊断）";
+        var report = PickReport(round);
+        var text = report is not null
+            ? SignalBuilder.Format(report, localFindings)
+            : $"{SignalBuilder.Prefix} 结果：通过\n结论：本轮未发现需要修改的问题。";
+        var hasAction = report is { Action: not "proceed" };
 
         if (round.DeepDenied)
             text += "\n备注: 深度诊断被拒（凭据/权限问题），本轮仅基础信号";
         if (round.BudgetOverrun)
-            text += "\n备注: 预算超额——后半段强制深度检查，本次超出会话预算配额（§16.5 方案 A）";
+            text += "\n备注: 本轮深度检查次数已用完，但为后半段质量保护已执行一次深度检查。";
         if (round.DeepUnits > 0)
-            text += $"\n云端消耗: {round.DeepUnits} units（story.check 实际结算）";
+            text += "\n本轮已完成深度检查。";
 
         // R-3：快照数据年龄可见化——刷新失败静默沿用旧值时，信号边界声明数据年龄（§6.2）
         if (
@@ -709,21 +704,31 @@ public sealed class WritingFlowHook(
         var hintKey = $"{input.NovelId}#{input.ChapterOrder}";
         if (
             _hintInjectedChapter != hintKey
-            && round.ContextRetrieve?.MaterialHints is { Status: "ok" } materialHints
-            && !string.IsNullOrWhiteSpace(materialHints.PromptBlock)
+            && round.ContextRetrieve?.Snapshot?.MaterialHint is { } materialHint
+            && !string.IsNullOrWhiteSpace(materialHint)
         )
         {
-            text +=
-                "\n\n"
-                + SignalBuilder.Prefix
-                + " 素材参考（可改写，可忽略）\n"
-                + materialHints.PromptBlock;
+            text += "\n\n" + SignalBuilder.Prefix + " 素材参考（可改写，可忽略）\n" + materialHint;
             _hintInjectedChapter = hintKey;
         }
 
         agent.InjectQueue.Enqueue(new LlmChatMessage(ChatMessageRoles.User, text));
         return hasAction;
     }
+
+    private static DiagnosisReport? PickReport(CloudRound round) =>
+        new[] { round.StoryCheck, round.ScenePlan, round.ContextRetrieve }
+            .Where(report => report is not null)
+            .OrderByDescending(report => ActionRank(report!.Action))
+            .FirstOrDefault();
+
+    private static int ActionRank(string? action) =>
+        action switch
+        {
+            "ask-author" => 2,
+            "revise" => 1,
+            _ => 0,
+        };
 
     /// <summary>历史验证战术块字符预算（含首行；至少保留 1 条战术行）。</summary>
     private const int TacticBlockCharBudget = 1200;
@@ -741,7 +746,7 @@ public sealed class WritingFlowHook(
         int chapterOrder,
         string genre,
         CloudRound round,
-        RuleOutcome ruleOutcome,
+        IReadOnlyList<DiagnosisFinding> localFindings,
         CancellationToken ct
     )
     {
@@ -751,27 +756,29 @@ public sealed class WritingFlowHook(
 
         try
         {
-            // verdict 优先级：Decision > Action > Pass；insufficient_data 轮无判定（不写）。
+            // verdict 优先级：需要作者决定 > 需要修改 > 通过；内容不足轮无判定（不写）。
             string? verdict =
-                round.ScenePlan is { RequiresHumanDecision: true } ? "decision"
-                : round.ScenePlan is { RepairAction: CloudContractLiterals.RepairInsufficientData }
-                    ? null
-                : ruleOutcome.Actions.Count > 0 ? "action"
+                round.ScenePlan is { Action: "ask-author" } ? "decision"
+                : round.ScenePlan is { Verdict: "内容不足" } ? null
+                : localFindings.Count > 0 ? "action"
                 : "pass";
 
-            // ── 1. 种子：首次见到的行动项写入 learn（处方取首次观测文本，后续不再写） ──
-            foreach (var action in ruleOutcome.Actions)
+            // ── 1. 种子：首次见到的本地问题写入 learn（处方取首次观测文本，后续不再写） ──
+            foreach (var finding in localFindings)
             {
-                var tacticId = TacticLedger.IdFor(action.Code, genre);
+                var trigger = finding.Trigger ?? "";
+                if (trigger.Length == 0)
+                    continue;
+                var tacticId = TacticLedger.IdFor(trigger, genre);
                 if (ledger.Find(tacticId) is not null)
                     continue;
                 await ledger.LearnAsync(
                     new TacticStat(
                         tacticId,
-                        action.Code,
+                        trigger,
                         genre,
-                        action.Prescription,
-                        action.Boundary
+                        finding.Suggestion ?? finding.Problem,
+                        finding.Evidence ?? ""
                     ),
                     ct
                 );
@@ -787,7 +794,7 @@ public sealed class WritingFlowHook(
             {
                 if (ledger.Find(pending.TacticId) is { } tactic)
                 {
-                    if (ruleOutcome.Actions.Any(a => a.Code == pending.Trigger))
+                    if (localFindings.Any(f => f.Trigger == pending.Trigger))
                         await ledger.VerdictAsync(novelId, chapterOrder, tactic, pass: false, ct);
                     else if (verdict == "pass")
                         await ledger.VerdictAsync(novelId, chapterOrder, tactic, pass: true, ct);
@@ -803,8 +810,12 @@ public sealed class WritingFlowHook(
                     chapterOrder,
                     genre,
                     verdict,
-                    ruleOutcome.Actions.Select(a => a.Code).ToList(),
-                    CollectDimensions(round),
+                    localFindings
+                        .Select(f => f.Trigger)
+                        .Where(t => !string.IsNullOrWhiteSpace(t))
+                        .Select(t => t!)
+                        .ToList(),
+                    CollectDimensions(round, localFindings),
                     ct
                 );
             }
@@ -814,7 +825,14 @@ public sealed class WritingFlowHook(
                 return;
             if (_sessionInjects >= (_options?.MaxInjectPerSession ?? 20))
                 return;
-            var picks = ledger.Select(ruleOutcome.Actions.Select(a => a.Code), genre, novelId);
+            var picks = ledger.Select(
+                localFindings
+                    .Select(f => f.Trigger)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Select(t => t!),
+                genre,
+                novelId
+            );
             if (picks.Count == 0)
                 return;
 
@@ -840,20 +858,21 @@ public sealed class WritingFlowHook(
     /// diagnose 事件的维度集合：context.retrieve 高危信号维度 ∪ story.check 规则发现维度，
     /// 去重取前 3（两者均为 CloudRound 上现成数据；缺失写空表）。
     /// </summary>
-    private static List<string> CollectDimensions(CloudRound round)
+    private static List<string> CollectDimensions(
+        CloudRound round,
+        IReadOnlyList<DiagnosisFinding> localFindings
+    )
     {
         var dims = new List<string>();
         if (round.ContextRetrieve is { } contextRetrieve)
             dims.AddRange(
                 contextRetrieve
-                    .Signals.Where(s =>
-                        SignalRules.NormalizeSeverity(s.Severity)
-                        == CloudContractLiterals.SeverityHigh
-                    )
-                    .Select(s => s.Dimension)
+                    .Findings.Where(f => f.Severity is "high" or "medium")
+                    .Select(f => f.Category)
             );
         if (round.StoryCheck is { } storyCheck)
-            dims.AddRange(storyCheck.RuleFindings.Select(f => f.Dimension));
+            dims.AddRange(storyCheck.Findings.Select(f => f.Category));
+        dims.AddRange(localFindings.Select(f => f.Category));
         return dims.Where(d => !string.IsNullOrWhiteSpace(d))
             .Distinct(StringComparer.Ordinal)
             .Take(3)
@@ -955,16 +974,10 @@ public sealed class WritingFlowHook(
     /// <summary>从输入组装规则引擎本地事实（§4.2 A-3/A-4/A-5 数据源）。internal 供熵差接线测试。</summary>
     internal LocalFacts BuildLocalFacts(CloudRound round, DiagnosisInput input)
     {
-        var protagonist = input
-            .Novel.Characters.FirstOrDefault(c => c.Role == CharacterRole.Protagonist)
-            ?.Name
-            ?? "";
         var orderById = input.Chapters.ToDictionary(c => c.Id, c => c.Order);
         var orderedChapters = input.Chapters.OrderBy(c => c.Order).ToList();
         return new LocalFacts
         {
-            ProtagonistName = protagonist,
-            CurrentOrder = input.ChapterOrder,
             MaxChapterOrder = input.Chapters.Count == 0 ? 0 : input.Chapters.Max(c => c.Order),
             OpenPlotlines = input
                 .Novel.Plotlines.Where(p => p.ResolvedAtChapterId is null)

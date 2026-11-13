@@ -51,7 +51,7 @@ public sealed class ContextSnapshotCache(
     private readonly int _requestTimeoutSeconds = Math.Max(1, requestTimeoutSeconds);
 
     /// <summary>持久化载荷版本：结构升级时旧版本行直接丢弃、下次刷新重建（派生数据可重取）。</summary>
-    private const int PersistedPayloadVersion = 1;
+    private const int PersistedPayloadVersion = 2;
 
     /// <summary>持久化载荷封装（版本 + 快照）——替代裸快照 JSON，供结构演进时安全丢弃。</summary>
     private sealed record PersistedSnapshot(int Version, AgentContextSnapshot? Snapshot);
@@ -175,18 +175,9 @@ public sealed class ContextSnapshotCache(
         return $"snap:{novelId}:{chapterOrder}:{hash}";
     }
 
-    /// <summary>从 Features JsonElement 提取 narrativeEntropy（缺省 null）。</summary>
-    private static double? ExtractEntropy(AgentContextSnapshot snapshot)
-    {
-        if (
-            snapshot.Features is JsonElement features
-            && features.ValueKind == JsonValueKind.Object
-            && features.TryGetProperty("narrative-entropy", out var el)
-            && el.ValueKind == JsonValueKind.Number
-        )
-            return el.GetDouble();
-        return null;
-    }
+    /// <summary>快照已由服务端投影为强类型字段，直接读取叙事熵。</summary>
+    private static double? ExtractEntropy(AgentContextSnapshot snapshot) =>
+        snapshot.NarrativeEntropy;
 
     // ── P2 持久化（vectors.db context_snapshots 表；派生数据可重建，读写失败告警降级、不动已有表）──
 

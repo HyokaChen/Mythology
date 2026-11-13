@@ -24,23 +24,15 @@ public sealed class WritingFlowHookCloudTests
 {
     private const string NovelId = "novel_test";
 
-    private static readonly string DecisionJson = """
-        {"capability":"fiction.scene.plan","status":"failed",
-         "features":{"overall-score":0.38},
-         "repair-intent":{"action":"human_decision_required","requires-human-decision":true,
-           "reason":"Overall quality score is below the minimum threshold for automated planning."}}
-        """;
+    private static readonly string DecisionJson =
+        """{"verdict":"需要作者决定","action":"ask-author","summary":"本章质量低于自动规划阈值。","score":38,"findings":[],"decision-question":"要按建议继续，还是先修改本章？","decision-options":["按建议继续","先修改本章"],"snapshot":null,"strengths":null}""";
 
     private static readonly string PassJson =
-        """{"capability":"fiction.scene.plan","status":"pass","features":{"overall-score":0.88}}""";
+        """{"verdict":"通过","action":"proceed","summary":"本章可按计划推进。","score":88,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     /// <summary>层 1 采样门槛：样本不可测（无评分、无人工裁决）。</summary>
-    private static readonly string InsufficientJson = """
-        {"capability":"fiction.scene.plan","status":"warning","features":{},
-         "repair-intent":{"action":"insufficient_data","requires-human-decision":false,
-           "reason-code":"insufficient-evidence",
-           "reason":"Target chapter lacks sufficient substantive content for a reliable scene-plan verdict."}}
-        """;
+    private static readonly string InsufficientJson =
+        """{"verdict":"内容不足","action":"revise","summary":"本章实质内容不足，暂不评分。","score":null,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     private static Agent NewAgent()
     {
@@ -160,7 +152,7 @@ public sealed class WritingFlowHookCloudTests
         var pending = questions.GetPending();
         Assert.Single(pending);
 
-        questions.Answer(pending[0].Id, ["按建议继续自动迭代"]);
+        questions.Answer(pending[0].Id, ["按建议继续"]);
         await hookTask;
 
         // 验收②：InjectQueue 出现 [人工裁决] 前缀消息；云端成功不注入本地信号
@@ -224,7 +216,7 @@ public sealed class WritingFlowHookCloudTests
             await Task.Delay(10);
         var pending = questions.GetPending();
         Assert.Single(pending);
-        questions.Answer(pending[0].Id, ["按建议继续自动迭代"]);
+        questions.Answer(pending[0].Id, ["按建议继续"]);
         await firstTask;
 
         Assert.True(agent.InjectQueue.HasPending);
@@ -303,7 +295,7 @@ public sealed class WritingFlowHookCloudTests
 
         Assert.True(agent.InjectQueue.HasPending);
         var injected = agent.InjectQueue.DequeueAllWithIds()[0].Message;
-        Assert.StartsWith("[云端诊断] status=pass", ((LlmChatMessage)injected).Content);
+        Assert.StartsWith("[云端诊断] 结果：通过", ((LlmChatMessage)injected).Content);
     }
 
     [Fact]
@@ -793,22 +785,8 @@ public sealed class WritingFlowHookCloudTests
     }
 
     /// <summary>story.check 带 review 三段（continuity conflict + 规则 finding + 计划符合度）。</summary>
-    private static readonly string ReviewCheckJson = """
-        {"capability":"fiction.story.check","status":"warning",
-         "dimensions":{"pace":{"overall-score":50}},
-         "rule-findings":[
-           {"dimension":"narrative.state-entropy","severity":"high",
-            "description":"纯灌水章节：叙事熵 0.21 低于阈值",
-            "suggestion":"删除灌水段，压缩为事件推进","impact-score":88.5}],
-         "continuity-audit":{
-           "findings":[
-             {"kind":"conflict","rule":"continuity.setup-drift","severity":"medium",
-              "chapters":["ch_1"],"description":"主角在第 1 章被杀，但设定状态仍为 active",
-              "evidence":"第 1 章正文","suggestion":"修订第 1 章死亡描写或同步设定状态",
-              "impact-score":60}],
-           "revision-candidates":[{"chapter":"ch_1","reasons":["continuity.setup-drift"],"impact-score":60}]},
-         "plan-conformance":{"planned-beat-count":2,"missed-beat-count":1,"findings":[]}}
-        """;
+    private static readonly string ReviewCheckJson =
+        """{"verdict":"需要修改","action":"revise","summary":"主角在第 1 章被杀，但设定状态仍为 active。","score":50,"findings":[{"id":"f_4444444444444444","category":"一致性","severity":"medium","severity-label":"中等","action":"suggest","action-label":"建议修改","location":"第 1 章 · 全章","problem":"主角在第 1 章被杀，但设定状态仍为 active。","evidence":"第 1 章正文","suggestion":"修订第 1 章死亡描写或同步设定状态。"}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     /// <summary>
     /// review 段消费端到端（2026-10-18）：story.check 顶层 continuity-audit / rule-findings /
@@ -868,21 +846,18 @@ public sealed class WritingFlowHookCloudTests
 
         Assert.True(agent.InjectQueue.HasPending);
         var injected = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
-        Assert.StartsWith("[云端诊断] status=action", injected.Content);
-        Assert.Contains("证据[C-1(continuity.setup-drift)]", injected.Content);
-        Assert.Contains("候选修订章：ch_1", injected.Content);
-        Assert.Contains("处方:", injected.Content);
+        Assert.StartsWith("[云端诊断] 结果：需要修改", injected.Content);
+        Assert.Contains("主角在第 1 章被杀", injected.Content);
+        Assert.Contains("建议：", injected.Content);
     }
 
     // ══════════════════════════════════════════════════════════
     //  双速自进化（单账本折叠架构）— Step 2 接线验收
     // ══════════════════════════════════════════════════════════
 
-    /// <summary>含 high severity signal 的假云端响应 → 规则引擎产出 S-1(节奏) 行动项。</summary>
-    private static readonly string EvolutionSignalsJson = """
-        [{"dimension":"节奏","severity":"high","description":"节奏拖沓",
-          "suggestion":"建议引入对抗或加速事件"}]
-        """;
+    /// <summary>含公开问题的报告 → 本地规则评估与战术账本走 action 分支。</summary>
+    private static readonly string EvolutionActionJson =
+        """{"verdict":"需要修改","action":"revise","summary":"节奏拖沓。","score":70,"findings":[{"id":"f_5555555555555555","category":"节奏","severity":"medium","severity-label":"中等","action":"suggest","action-label":"建议修改","location":"全章","problem":"节奏拖沓。","evidence":null,"suggestion":"建议引入对抗或加速事件。"}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
 
     /// <summary>
     /// 双速自进化专用桩：基础档 context.retrieve 走 GetContextAsync（快照路径，
@@ -903,7 +878,11 @@ public sealed class WritingFlowHookCloudTests
                 new HarnessResult
                 {
                     Capability = request.Capability,
-                    Result = JsonSerializer.Deserialize<JsonElement>(PassJson),
+                    Result = JsonSerializer.Deserialize<JsonElement>(
+                        request.Capability is "fiction.scene.plan" or "fiction.story.check"
+                            ? EvolutionActionJson
+                            : PassJson
+                    ),
                 }
             );
         }
@@ -914,11 +893,7 @@ public sealed class WritingFlowHookCloudTests
             CancellationToken cancellationToken
         ) =>
             Task.FromResult(
-                new AgentContextSnapshot
-                {
-                    Features = JsonSerializer.Deserialize<JsonElement>("""{"overall-score":0.7}"""),
-                    Signals = JsonSerializer.Deserialize<JsonElement>(EvolutionSignalsJson),
-                }
+                new AgentContextSnapshot { NarrativeEntropy = 1.2, SatisfactionScore = 70 }
             );
 
         public Task ReportSetupFeedbackAsync(
@@ -995,7 +970,7 @@ public sealed class WritingFlowHookCloudTests
                 .InjectQueue.DequeueAllWithIds()
                 .Select(m => ((LlmChatMessage)m.Message).Content)
                 .ToList();
-            Assert.Contains(messages, m => m.StartsWith("[云端诊断] status=action"));
+            Assert.Contains(messages, m => m.StartsWith("[云端诊断] 结果：需要修改"));
             Assert.DoesNotContain(messages, m => m.Contains("[写作战术"));
             Assert.False(File.Exists(LedgerPathOf(dir))); // 默认关 ⇒ 零账本写入
         }
@@ -1058,7 +1033,7 @@ public sealed class WritingFlowHookCloudTests
                 .Select(m => ((LlmChatMessage)m.Message).Content)
                 .ToList();
             var block = Assert.Single(firstMessages, m => m.StartsWith("[写作战术 · 历史验证]"));
-            Assert.Contains("S-1(节奏)", block);
+            Assert.Contains("A-4", block);
             Assert.Contains("胜率 50% · 0 次", block); // 首次观测：Laplace 0.5 / 0 次使用
 
             var firstRows = ReadLedgerRows(dir);
@@ -1066,16 +1041,15 @@ public sealed class WritingFlowHookCloudTests
                 KindOf(r) == "diagnose" && r.GetProperty("verdict").GetString() == "action"
             );
             Assert.Contains(firstRows, r => KindOf(r) == "learn");
-            // A-4（本地事实）与 S-1(节奏)（云端高危信号）各注入一条
             var injectRows = firstRows.Where(r => KindOf(r) == "inject").ToList();
-            Assert.Equal(2, injectRows.Count);
-            Assert.All(injectRows, r => Assert.Equal(1, r.GetProperty("chapter").GetInt32()));
-            Assert.Contains(injectRows, r => r.GetProperty("trigger").GetString() == "S-1(节奏)");
+            Assert.Single(injectRows);
+            Assert.Equal(1, injectRows[0].GetProperty("chapter").GetInt32());
+            Assert.Equal("A-4", injectRows[0].GetProperty("trigger").GetString());
             var diagnoseRow = firstRows.First(r => KindOf(r) == "diagnose");
             Assert.Equal("都市爽文", diagnoseRow.GetProperty("genre").GetString());
             Assert.Equal("节奏", diagnoseRow.GetProperty("dims")[0].GetString());
             Assert.Contains(
-                "S-1(节奏)",
+                "A-4",
                 diagnoseRow.GetProperty("codes").EnumerateArray().Select(c => c.GetString() ?? "")
             );
 
@@ -1083,9 +1057,9 @@ public sealed class WritingFlowHookCloudTests
             await hook.AfterToolCallAsync(WriteContext("ch_2"), CancellationToken.None);
 
             var secondRows = ReadLedgerRows(dir);
-            // A-4 与 S-1(节奏) 的待结算项均一次结清为 fail（第二章复现同 code）
+            // A-4 的待结算项一次结清为 fail（第二章复现同 code）
             var verdictRows = secondRows.Where(r => KindOf(r) == "verdict").ToList();
-            Assert.Equal(2, verdictRows.Count);
+            Assert.Single(verdictRows);
             Assert.All(verdictRows, r =>
                 Assert.Equal("fail", r.GetProperty("outcome").GetString())
             );
@@ -1388,7 +1362,7 @@ public sealed class WritingFlowHookCloudTests
 
         // 对账透出：深度档实际结算消耗随诊断信号进对话流（DeepUnits > 0 → 追加云端消耗行）
         var injectedA = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
-        Assert.Contains("云端消耗: 4 units", injectedA.Content);
+        Assert.Contains("本轮已完成深度检查。", injectedA.Content);
 
         // 切换到 B 再写：不触发 A 的结算（会话边界 = 宿主进程，非小说切换）
         agent.CurrentNovelId = "novel_b";
@@ -1431,9 +1405,8 @@ public sealed class WritingFlowHookCloudTests
                 new AgentContextSnapshot
                 {
                     ChapterCount = 99,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.9,"narrative-entropy":1.6}"""
-                    ),
+                    NarrativeEntropy = 1.6,
+                    SatisfactionScore = 70,
                 }
             );
 

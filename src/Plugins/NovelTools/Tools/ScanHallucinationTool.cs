@@ -173,6 +173,7 @@ public sealed class ScanHallucinationTool(
             Capability = Capability,
             Depth = depth,
             Locale = "zh-CN",
+            Output = "data",
             Chapters = window
                 .Select(c => new ChapterInput(
                     c.Order > 0 ? $"ch_{c.Order}" : c.Id, // 云端 ChapterRefResolver 只认 ch_N/第N章

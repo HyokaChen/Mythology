@@ -19,7 +19,7 @@ public static class PromptAssembly
         ("planning", "planning_loop", PlanningLoopPrompt.Full),
         ("errors", "error_handling", ErrorHandlingPrompt.Full),
         ("writing", "writing_process", WritingProcessPrompt.Full),
-        ("humanizer", "humanizer", HumanizerPrompt.Full),
+        ("humanizer", "writing_style", HumanizerPrompt.Full),
     ];
 
     /// <summary>全部段 Key（有序），用于测试与文档。</summary>

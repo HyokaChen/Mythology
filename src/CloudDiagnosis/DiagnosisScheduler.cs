@@ -63,9 +63,9 @@ public sealed record DiagnosisDecision(
 /// </summary>
 /// <param name="DeepUnits">深度档实际结算消耗（story.check 的 cloud-work-units；基础档/未跑深度档为 0）。</param>
 public sealed record CloudRound(
-    ScenePlanOutcome? ScenePlan,
-    ContextRetrieveOutcome? ContextRetrieve,
-    StoryCheckOutcome? StoryCheck,
+    DiagnosisReport? ScenePlan,
+    DiagnosisReport? ContextRetrieve,
+    DiagnosisReport? StoryCheck,
     bool DeepDenied,
     double OverallScore,
     bool BudgetOverrun = false,
@@ -335,9 +335,9 @@ public sealed class DiagnosisScheduler(
         var orderedChapters = input.Chapters.OrderBy(c => c.Order).ToList();
 
         LastDegradeCode = null; // C-5：降级码每轮重置（防上一轮陈旧码在静默失败轮误报）
-        ScenePlanOutcome? scenePlan = null;
-        ContextRetrieveOutcome? contextRetrieve = null;
-        StoryCheckOutcome? storyCheck = null;
+        DiagnosisReport? scenePlan = null;
+        DiagnosisReport? contextRetrieve = null;
+        DiagnosisReport? storyCheck = null;
         // 基础档原始快照：成功后直接更新缓存，免二次 context.retrieve；失败走下方兜底刷新
         AgentContextSnapshot? baseSnapshot = null;
         var deepDenied = false;
@@ -355,13 +355,13 @@ public sealed class DiagnosisScheduler(
             {
                 using var cts = Linked(ct);
                 var request = BuildRequest("fiction.context.retrieve", input, orderedChapters);
-                var snapshot = await client.GetContextAsync(
+                var report = await client.GetContextReportAsync(
                     request,
                     BuildIdempotencyKey("ctx", input, request),
                     cts.Token
                 );
-                baseSnapshot = snapshot;
-                contextRetrieve = ParseContextRetrieveFromSnapshot(snapshot);
+                baseSnapshot = report.Snapshot;
+                contextRetrieve = report;
                 anySuccess |= contextRetrieve is not null;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -382,9 +382,8 @@ public sealed class DiagnosisScheduler(
         var upgradeBecauseOfLowScore = false;
         if (
             contextRetrieve is not null
-            && contextRetrieve.OverallScore < options.UpgradeScoreThreshold
-            && contextRetrieve.Signals.Count(s => s.Severity == CloudContractLiterals.SeverityHigh)
-                >= 2
+            && (contextRetrieve.Score ?? 0) < options.UpgradeScoreThreshold
+            && contextRetrieve.Findings.Count(f => f.Severity is "high" or "medium") >= 2
             && !_deepDeniedSticky
             && !_deepCheckedChapters.Contains(input.ChapterId)
             && (
@@ -418,7 +417,7 @@ public sealed class DiagnosisScheduler(
                     BuildIdempotencyKey("plan", input, request),
                     cts.Token
                 );
-                scenePlan = SignalBuilder.ParseScenePlan(result, options.PassScoreThreshold);
+                scenePlan = ParseReport(result);
                 anySuccess |= scenePlan is not null;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -435,7 +434,10 @@ public sealed class DiagnosisScheduler(
 
         // ── 深度档：fiction.story.check（DeepCheck/LateNovelForceDeep/Upgrade 且预算/幂等放行时）──
         var shouldDeepCheck =
-            decision.DeepCheck || decision.LateNovelForceDeep || upgradeBecauseOfLowScore;
+            decision.DeepCheck
+            || decision.LateNovelForceDeep
+            || upgradeBecauseOfLowScore
+            || scenePlan?.Action == "revise";
         if (
             shouldDeepCheck
             && !_deepDeniedSticky
@@ -471,7 +473,7 @@ public sealed class DiagnosisScheduler(
                         BuildIdempotencyKey("check", input, request),
                         cts.Token
                     );
-                    storyCheck = SignalBuilder.ParseStoryCheck(result);
+                    storyCheck = ParseReport(result);
                     _deepCheckedChapters.Add(input.ChapterId);
                     _deepUsed++;
                     deepUnits = result.CloudWorkUnits; // 对账展示：本轮深度档实际结算消耗
@@ -530,7 +532,7 @@ public sealed class DiagnosisScheduler(
                 );
         }
 
-        var score = contextRetrieve?.OverallScore ?? scenePlan?.OverallScore ?? 0;
+        var score = contextRetrieve?.Score ?? scenePlan?.Score ?? 0;
         return new CloudRound(
             scenePlan,
             contextRetrieve,
@@ -711,6 +713,7 @@ public sealed class DiagnosisScheduler(
                 NovelId = input.NovelId,
                 Capability = capability,
                 Locale = "zh-CN",
+                Output = "report",
                 Chapters = [],
                 Context = context,
                 Profile = Core.Cloud.WritingProfileInput.FromProfile(
@@ -741,6 +744,7 @@ public sealed class DiagnosisScheduler(
                     ? CloudContractLiterals.DepthStandard
                     : CloudContractLiterals.DepthQuick,
             Locale = "zh-CN",
+            Output = "report",
             SceneGoal = capability == "fiction.scene.plan" ? input.SceneGoal : null,
             Chapters =
             [
@@ -814,150 +818,30 @@ public sealed class DiagnosisScheduler(
         return $"{stage}:{input.NovelId}:{input.ChapterId}:{hash}";
     }
 
-    /// <summary>从 GetContextAsync 的快照恢复基础档解析产物（features/signals/dimensionScores）。</summary>
-    private static ContextRetrieveOutcome? ParseContextRetrieveFromSnapshot(
-        AgentContextSnapshot snapshot
-    )
+    /// <summary>从 HarnessResult.Result 反序列化服务端报告；结构不符 → null（调用方降级）。</summary>
+    private static DiagnosisReport? ParseReport(HarnessResult result)
     {
-        if (
-            snapshot.Features is not JsonElement features
-            || features.ValueKind != JsonValueKind.Object
-        )
+        if (result.Result is not JsonElement element || element.ValueKind != JsonValueKind.Object)
             return null;
-
-        double score = 0;
-        if (
-            features.TryGetProperty("overall-score", out var scoreEl)
-            && scoreEl.ValueKind == JsonValueKind.Number
-        )
-            score = Math.Round(scoreEl.GetDouble() * 100, 1); // 云端 0-1 → 百分制
-
-        // 跨仓库缺口 1.5 修复：快照现已透传 signals[] + dimensionScores（§6.1），
-        // 基础档 S-1（high severity signals）与 F-1~F-5（16 中文键维度分）可据此判定。
-        var signals = ParseSignals(snapshot.Signals);
-        var dimensionScores = ParseDimensionScores(snapshot.DimensionScores);
-        var trends =
-            snapshot.Features is JsonElement fe && fe.ValueKind == JsonValueKind.Object
-                ? ParseTrends(fe)
-                : null;
-        // Q13：快照 features.absentCharacters（云端推导的最近 K 章未出场角色）透传，
-        // 供灵感方向①候选优先消费（缺失时客户端回退本地扫描）。
-        var absentCharacters = SignalBuilder.ParseAbsentCharactersFromFeatures(features);
-        return new ContextRetrieveOutcome(
-            score,
-            signals,
-            dimensionScores,
-            trends,
-            absentCharacters,
-            ParseMaterialHints(snapshot.MaterialHints)
-        );
-    }
-
-    /// <summary>解析 context.retrieve 的 material-hints（缺失/空 prompt-block → null）。</summary>
-    private static MaterialHintsOutcome? ParseMaterialHints(object? value)
-    {
-        if (value is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+        try
         {
-            return null;
-        }
-        var status = element.TryGetProperty("status", out var statusEl)
-            ? statusEl.GetString() ?? ""
-            : "";
-        var promptBlock = element.TryGetProperty("prompt-block", out var promptEl)
-            ? promptEl.GetString() ?? ""
-            : "";
-        return string.IsNullOrWhiteSpace(promptBlock)
-            ? null
-            : new MaterialHintsOutcome(status, promptBlock);
-    }
-
-    /// <summary>从快照 signals[] 解析统一信号形状（severity=high 供 S-1）。</summary>
-    private static IReadOnlyList<CloudSignalItem> ParseSignals(object? signals)
-    {
-        if (signals is not JsonElement el || el.ValueKind != JsonValueKind.Array)
-            return [];
-        var list = new List<CloudSignalItem>();
-        foreach (var item in el.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object)
-                continue;
-            var dimension = item.TryGetProperty("dimension", out var d) ? d.GetString() : null;
-            var severity = SignalRules.NormalizeSeverity(
-                item.TryGetProperty("severity", out var se) ? se.GetString() : null
+            var report = JsonSerializer.Deserialize<DiagnosisReport>(
+                element.GetRawText(),
+                ClientJsonDefaults.Cloud
             );
-            var description = item.TryGetProperty("description", out var desc)
-                ? desc.GetString()
-                : null;
-            var suggestion = item.TryGetProperty("suggestion", out var sug)
-                ? sug.GetString()
-                : null;
-            var impact =
-                item.TryGetProperty("impact-score", out var imp)
-                && imp.ValueKind == JsonValueKind.Number
-                    ? imp.GetDouble()
-                    : 0;
-            var confidence =
-                item.TryGetProperty("confidence", out var conf)
-                && conf.ValueKind == JsonValueKind.Number
-                    ? conf.GetDouble()
-                    : 1.0;
-            var suggestedAction = item.TryGetProperty("suggested-action", out var sa)
-                ? sa.GetString()
-                : null;
-            list.Add(
-                new CloudSignalItem(
-                    dimension ?? "unknown",
-                    severity ?? CloudContractLiterals.SeverityLow,
-                    description ?? "",
-                    suggestion,
-                    impact,
-                    confidence,
-                    suggestedAction
-                )
-            );
+            if (
+                report is null
+                || string.IsNullOrWhiteSpace(report.Verdict)
+                || string.IsNullOrWhiteSpace(report.Action)
+                || string.IsNullOrWhiteSpace(report.Summary)
+            )
+                return null;
+            return report with { Findings = report.Findings ?? [] };
         }
-        return list;
-    }
-
-    /// <summary>从快照 dimensionScores 解析 16 中文键维度分（F-1~F-5 数据源）。</summary>
-    private static IReadOnlyDictionary<string, double> ParseDimensionScores(object? dimensionScores)
-    {
-        if (dimensionScores is not JsonElement el || el.ValueKind != JsonValueKind.Object)
-            return new Dictionary<string, double>();
-        var map = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var prop in el.EnumerateObject())
+        catch (JsonException)
         {
-            if (prop.Value.ValueKind == JsonValueKind.Number)
-                map[prop.Name] = prop.Value.GetDouble();
-        }
-        return map;
-    }
-
-    /// <summary>从 features 解析跨章趋势摘要（§15.1，信息性透传）。</summary>
-    private static IReadOnlyList<string>? ParseTrends(JsonElement features)
-    {
-        if (
-            !features.TryGetProperty("trends", out var trends)
-            || trends.ValueKind != JsonValueKind.Object
-        )
             return null;
-        var list = new List<string>();
-        foreach (var prop in trends.EnumerateObject())
-        {
-            if (prop.Value.ValueKind != JsonValueKind.Object)
-                continue;
-            var direction = prop.Value.TryGetProperty("direction", out var dir)
-                ? dir.GetString()
-                : null;
-            var slope =
-                prop.Value.TryGetProperty("slope", out var sl)
-                && sl.ValueKind == JsonValueKind.Number
-                    ? sl.GetDouble()
-                    : 0;
-            if (!string.IsNullOrEmpty(direction))
-                list.Add($"[趋势] {prop.Name}:{direction}（slope={slope:F3}）");
         }
-        return list.Count == 0 ? null : list;
     }
 
     /// <summary>

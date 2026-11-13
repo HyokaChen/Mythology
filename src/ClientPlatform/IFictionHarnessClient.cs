@@ -147,9 +147,27 @@ public sealed class HttpFictionHarnessClient : IFictionHarnessClient
         CancellationToken cancellationToken
     )
     {
-        var withCapability = request with { Capability = "fiction.context.retrieve" };
+        var report = await GetContextReportAsync(request, idempotencyKey, cancellationToken);
+        return report.Snapshot ?? new AgentContextSnapshot();
+    }
+
+    public async Task<DiagnosisReport> GetContextReportAsync(
+        HarnessRequest request,
+        string idempotencyKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var withCapability = request with
+        {
+            Capability = "fiction.context.retrieve",
+            Output = "report",
+        };
         var result = await ExecuteAsync(withCapability, idempotencyKey, cancellationToken);
-        return ToSnapshot(result);
+        return ParseReport(result)
+            ?? throw new CloudApiException(
+                "invalid_response",
+                "云端 context.retrieve 未返回可解析的诊断报告。"
+            );
     }
 
     /// <summary>上报设定检查 finding 反馈（CHANGE_10 §4.3）。批量，最多 200 条。</summary>
@@ -517,45 +535,32 @@ public sealed class HttpFictionHarnessClient : IFictionHarnessClient
         }
     }
 
-    private static AgentContextSnapshot ToSnapshot(HarnessResult result)
+    private DiagnosisReport? ParseReport(HarnessResult result)
     {
-        var snapshot = new AgentContextSnapshot();
-        if (result.Result is not JsonElement element)
-            return snapshot;
-
-        if (
-            element.TryGetProperty("context", out var context)
-            && context.ValueKind == JsonValueKind.Object
-        )
+        if (result.Result is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+            return null;
+        try
         {
-            snapshot = snapshot with
-            {
-                TargetChapterRef = context.TryGetProperty("target-chapter", out var refProp)
-                    ? refProp.GetString() ?? ""
-                    : "",
-                ChapterCount = context.TryGetProperty("chapter-count", out var cc)
-                    ? cc.GetInt32()
-                    : 0,
-                PreviousChapterCount = context.TryGetProperty("previous-chapter-count", out var pc)
-                    ? pc.GetInt32()
-                    : 0,
-                ParagraphCount = context.TryGetProperty("paragraph-count", out var para)
-                    ? para.GetInt32()
-                    : 0,
-            };
+            var report = JsonSerializer.Deserialize<DiagnosisReport>(element.GetRawText(), _json);
+            if (
+                report is null
+                || string.IsNullOrWhiteSpace(report.Verdict)
+                || string.IsNullOrWhiteSpace(report.Action)
+                || string.IsNullOrWhiteSpace(report.Summary)
+            )
+                return null;
+            return report with { Findings = report.Findings ?? [] };
         }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
-        if (element.TryGetProperty("features", out var features))
-            snapshot = snapshot with { Features = features };
-        // 跨仓库缺口 1.5：透传 signals[] + dimensionScores（§6.1），
-        // 供基础档 S-1/F-1~F-5 规则与 M-3 爽感单调判定消费。
-        if (element.TryGetProperty("signals", out var signals))
-            snapshot = snapshot with { Signals = signals };
-        if (element.TryGetProperty("dimension-scores", out var dimensionScores))
-            snapshot = snapshot with { DimensionScores = dimensionScores };
-        if (element.TryGetProperty("material-hints", out var materialHints))
-            snapshot = snapshot with { MaterialHints = materialHints };
-        return snapshot;
+    private AgentContextSnapshot ParseSnapshot(HarnessResult result)
+    {
+        var report = ParseReport(result);
+        return report?.Snapshot ?? new AgentContextSnapshot();
     }
 
     private sealed record RunEnvelope(

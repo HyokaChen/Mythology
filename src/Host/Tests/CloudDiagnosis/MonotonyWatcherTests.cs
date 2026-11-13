@@ -424,9 +424,8 @@ public sealed class MonotonyHookIntegrationTests
                 new AgentContextSnapshot
                 {
                     ChapterCount = 99,
-                    Features = JsonSerializer.Deserialize<JsonElement>(
-                        """{"overall-score":0.9,"narrative-entropy":1.6}"""
-                    ),
+                    NarrativeEntropy = 1.6,
+                    SatisfactionScore = 70,
                 }
             );
 
@@ -447,8 +446,8 @@ public sealed class MonotonyHookIntegrationTests
         {
             var json =
                 request.Capability == "fiction.scene.plan"
-                    ? """{"features":{"overall-score":0.6},"repair-intent":{"action":"choose_focus","focus-areas":["冲突"],"requires-human-decision":false}}"""
-                    : """{"features":{"overall-score":0.6},"signals":[]}""";
+                    ? """{"verdict":"需要修改","action":"revise","summary":"冲突不足。","score":60,"findings":[{"id":"f_6666666666666666","category":"情节","severity":"medium","severity-label":"中等","action":"suggest","action-label":"建议修改","location":"全章","problem":"冲突不足。","evidence":null,"suggestion":"引入对抗或两难。"}],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}"""
+                    : """{"verdict":"通过","action":"proceed","summary":"未发现需要修改的问题。","score":60,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
             return Task.FromResult(
                 new HarnessResult
                 {
