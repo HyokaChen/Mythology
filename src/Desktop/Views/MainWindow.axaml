@@ -34,7 +34,10 @@
           VerticalAlignment="Center"
         />
 
-        <!-- 中间：当前小说 + 对话（按钮形式，点击打开对应选择器；对齐 TUI Ctrl+O / Ctrl+E） -->
+        <!-- 中间：当前小说 + 对话（按钮形式，点击打开对应选择器；对齐 TUI Ctrl+O / Ctrl+E）。
+             长标题截断：SukiUI 的 Button 模板把内容包在水平 StackPanel 里（按无限宽测量子项），
+             TextTrimming 只有给 TextBlock 自己的 MaxWidth 才会生效——
+             210/240（胶囊上限）− 24 内边距 − 38 图标与间距 = 148/178。 -->
         <StackPanel
           Grid.Column="1"
           Orientation="Horizontal"
@@ -59,6 +62,8 @@
                 VerticalAlignment="Center"
               />
               <TextBlock
+                x:Name="NovelTitleText"
+                MaxWidth="148"
                 Text="{Binding CurrentNovelLabel}"
                 VerticalAlignment="Center"
                 TextTrimming="CharacterEllipsis"
@@ -88,6 +93,8 @@
                 VerticalAlignment="Center"
               />
               <TextBlock
+                x:Name="SessionTitleText"
+                MaxWidth="178"
                 Text="{Binding ConversationTitle}"
                 VerticalAlignment="Center"
                 TextTrimming="CharacterEllipsis"
