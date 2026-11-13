@@ -83,7 +83,7 @@ public static class WritingProcessPrompt
 
 诊断→增强→复诊：批次结束 → `diagnose_writing` 复诊 → `enhance_*` 生成变体 → `full` 自动采用保守版；`semi` 报告候选；`none` 等作者 → 复诊；未提升回退。改写前 `read_chapter`。
 
-失败分级：Hard fail 修复/阻塞；Soft fail 修 2 轮后提交标记；云端/预算失败本地继续，不伪造 pass。
+失败处理：安全、设定、时间线、必写情节必须修复，仍失败才问作者；文笔、节奏、AI味、风格漂移修两轮，仍低就提交标记、卷末再审；云端失败本地继续，不伪造通过。
 
 ### 商业写作十二铁律（必须遵守）
 
