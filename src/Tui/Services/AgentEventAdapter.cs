@@ -112,6 +112,10 @@ public sealed class AgentEventAdapter
             case AgentInterrupted:
                 Enqueue(() => OnInterrupted?.Invoke());
                 break;
+            // 429/TPM 自动退避：提示等待，但不按错误收口
+            case LlmRateLimitWait rl:
+                Enqueue(() => OnRateLimitWait?.Invoke(rl.Attempt, rl.MaxAttempts, rl.Delay));
+                break;
             // LLM 调用错误
             case AgentError ae:
                 Enqueue(() =>
@@ -214,6 +218,9 @@ public sealed class AgentEventAdapter
 
     /// <summary>用户中断事件。</summary>
     public event Action? OnInterrupted;
+
+    /// <summary>429/TPM 自动退避等待事件。参数：attempt, maxAttempts, delay。</summary>
+    public event Action<int, int, TimeSpan>? OnRateLimitWait;
 
     /// <summary>LLM 错误事件。参数：原始消息, HTTP 状态码, 是否上下文溢出, 是否可恢复。</summary>
     public event Action<string, int?, bool, bool>? OnError;

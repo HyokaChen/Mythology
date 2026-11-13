@@ -1748,9 +1748,10 @@ public sealed class ConversationLoop(
         try
         {
             // 调用 StreamResponseRich 进行流式 LLM 调用。
-            // 有界瞬态重试（429/5xx/网络瞬断）：仅当本轮尚未产出任何文本/推理/工具调用
-            // （幂等保护，避免重复输出/重复工具调用）且未超过总窗口时重试；指数退避 + jitter
-            // （LlmTornado 异常不带响应头 → 拿不到 Retry-After，用 LlmRetryDelay 近似）。
+            // 有界瞬态重试：429/TPM 最多 8 次尝试、总窗口 5min、退避 1s→60s；
+            // 5xx/网络瞬断最多 3 次、总窗口 30s、退避 1s→8s。仅当本轮尚未产出
+            // 任何文本/推理/工具调用时重试（幂等保护，避免重复输出/重复工具调用）。
+            // （LlmTornado 异常不带响应头 → 拿不到 Retry-After，用指数退避近似。）
             // ★ finally 包裹整个 while：无论成功/重试耗尽/异常，还原 ref 标签 + 移除 nudge
             // 都发生在 SyncNewMessagesFromConversation 之前，标签与 nudge 不会进入持久化消息。
             try
@@ -1791,20 +1792,31 @@ public sealed class ConversationLoop(
                     }
                     catch (Exception ex)
                         when (!ct.IsCancellationRequested
-                            && llmAttempt < MaxLlmTurnRetryAttempts
-                            && retryWatch.Elapsed < LlmTurnRetryBudget
+                            && retryWatch.Elapsed < LlmRetryBudgetFor(ex)
                             && CanRetryLlmTurn(
                                 ex,
                                 llmAttempt,
-                                MaxLlmTurnRetryAttempts,
                                 fullText.Length > 0
                                     || reasoningText.Length > 0
                                     || toolCallsCollected.Count > 0
                             )
                         )
                     {
-                        var delay = LlmRetryDelay(llmAttempt);
                         var (httpStatusCode, _, _) = ExtractLlmError(ex);
+                        var rateLimited = httpStatusCode == 429;
+                        var delay = LlmRetryDelay(llmAttempt, rateLimited);
+                        if (rateLimited)
+                        {
+                            await emit(
+                                new LlmRateLimitWait(
+                                    llmAttempt,
+                                    RetryAttemptLimitFor(ex),
+                                    delay,
+                                    httpStatusCode
+                                ),
+                                ct
+                            );
+                        }
                         CoreLogger.LlmTurnTransientRetry(
                             logger.Safe(),
                             llmAttempt,
@@ -2559,41 +2571,66 @@ public sealed class ConversationLoop(
         return false;
     }
 
-    /// <summary>单轮 LLM 调用最大尝试次数（1 次原始 + 2 次重试）。</summary>
+    /// <summary>单轮 5xx/网络瞬断最大尝试次数（1 次原始 + 2 次重试）。</summary>
     private const int MaxLlmTurnRetryAttempts = 3;
 
-    /// <summary>LLM 瞬态重试总窗口（含退避等待），超时即放弃继续重试。</summary>
+    /// <summary>429（含 TPM）最大尝试次数：1 次原始 + 7 次重试，覆盖常见的 60s 配额窗口。</summary>
+    private const int MaxLlmRateLimitRetryAttempts = 8;
+
+    /// <summary>5xx/网络瞬断重试总窗口（含退避等待）。</summary>
     private static readonly TimeSpan LlmTurnRetryBudget = TimeSpan.FromSeconds(30);
+
+    /// <summary>429 重试总窗口：指数退避到 60s，最多约 2 分钟，不催促用户手工“继续”。</summary>
+    private static readonly TimeSpan LlmRateLimitRetryBudget = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// 判定本次 LLM 调用失败是否值得重试。
     /// 幂等保护：仅当本轮尚未产出任何内容/推理/工具调用（<paramref name="anythingEmitted"/> 为 false）
-    /// 且未超尝试上限时才重试；context overflow 属 400 语义（走 compact+retry），不在此重试。
+    /// 且未超对应策略的尝试上限时才重试；context overflow 属 400 语义（走 compact+retry），不在此重试。
     /// </summary>
-    internal static bool CanRetryLlmTurn(
-        Exception ex,
-        int attempt,
-        int maxAttempts,
-        bool anythingEmitted
-    )
+    internal static bool CanRetryLlmTurn(Exception ex, int attempt, bool anythingEmitted)
     {
-        if (attempt >= maxAttempts || anythingEmitted)
+        if (anythingEmitted)
             return false;
 
         var (httpStatusCode, _, isContextOverflow) = ExtractLlmError(ex);
         if (isContextOverflow)
             return false;
 
-        return httpStatusCode == 429
+        var maxAttempts = IsRateLimitStatus(httpStatusCode)
+            ? MaxLlmRateLimitRetryAttempts
+            : MaxLlmTurnRetryAttempts;
+        if (attempt >= maxAttempts)
+            return false;
+
+        return IsRateLimitStatus(httpStatusCode)
             || (httpStatusCode is >= 500 and < 600)
             || IsTransientNetworkError(ex);
     }
 
-    /// <summary>LLM 重试延迟：1s 起指数退避（封顶 8s）+ 20% jitter。LlmTornado 异常不带 Retry-After → 无头可读。</summary>
-    internal static TimeSpan LlmRetryDelay(int attempt)
+    /// <summary>429 使用更长的尝试窗口；其余瞬态错误仍是有界短重试。</summary>
+    private static int RetryAttemptLimitFor(Exception ex) =>
+        IsRateLimitStatus(ExtractLlmError(ex).httpStatusCode)
+            ? MaxLlmRateLimitRetryAttempts
+            : MaxLlmTurnRetryAttempts;
+
+    private static TimeSpan LlmRetryBudgetFor(Exception ex) =>
+        IsRateLimitStatus(ExtractLlmError(ex).httpStatusCode)
+            ? LlmRateLimitRetryBudget
+            : LlmTurnRetryBudget;
+
+    private static bool IsRateLimitStatus(int? httpStatusCode) => httpStatusCode == 429;
+
+    /// <summary>
+    /// LLM 重试延迟：普通瞬态错误 1s 起、封顶 8s；429/TPM 1s 起、封顶 60s，均带 jitter。
+    /// LlmTornado 异常不带 Retry-After，无法直接读取响应头。
+    /// </summary>
+    internal static TimeSpan LlmRetryDelay(int attempt, bool rateLimited = false)
     {
-        var baseMs = Math.Min(1000d * Math.Pow(2, Math.Max(attempt - 1, 0)), 8000d);
-        var jitterMs = Random.Shared.NextDouble() * baseMs * 0.2;
+        var capMs = rateLimited ? 60_000d : 8_000d;
+        var baseMs = Math.Min(1000d * Math.Pow(2, Math.Max(attempt - 1, 0)), capMs);
+        var jitterRatio = rateLimited ? 0.15 : 0.2;
+        var jitterMs = Random.Shared.NextDouble() * baseMs * jitterRatio;
         return TimeSpan.FromMilliseconds(baseMs + jitterMs);
     }
 

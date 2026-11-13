@@ -187,6 +187,18 @@ public sealed class StreamEventHandler(
                 CloseThinking();
                 break;
 
+            // ── 429/TPM 自动退避：提示等待，但保持回合继续 ──
+            case LlmRateLimitWait rl:
+            {
+                var seconds = Math.Max(1, (int)Math.Ceiling(rl.Delay.TotalSeconds));
+                target.AgentSteps.Add(
+                    AgentStep.CreateSystemEvent(
+                        $"⏳ TPM 限流，等待 {seconds} 秒后自动重试（{rl.Attempt}/{rl.MaxAttempts}）"
+                    )
+                );
+                break;
+            }
+
             // ── LLM 错误 ──
             case AgentError ae:
             {

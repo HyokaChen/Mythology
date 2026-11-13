@@ -158,6 +158,21 @@ public sealed class StreamEventHandlerToolDisplayTests
     }
 
     [Fact]
+    public void LlmRateLimitWait_ShowsAutomaticRetryNotice()
+    {
+        var target = new ChatMessage(MessageSender.Agent);
+        var handler = new StreamEventHandler(target);
+
+        handler.Handle(new LlmRateLimitWait(2, 8, TimeSpan.FromSeconds(4), 429));
+
+        var step = Assert.Single(target.AgentSteps);
+        Assert.False(step.IsError);
+        Assert.Contains("TPM 限流", step.ContentText, StringComparison.Ordinal);
+        Assert.Contains("4 秒", step.ContentText, StringComparison.Ordinal);
+        Assert.Contains("2/8", step.ContentText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AgentError_PlainTextIsKeptAndTruncated()
     {
         var target = new ChatMessage(MessageSender.Agent);

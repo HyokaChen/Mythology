@@ -346,6 +346,12 @@ public sealed class ConversationPanel
             AddInterruptMessage();
         };
 
+        _adapter.OnRateLimitWait += (attempt, maxAttempts, delay) =>
+        {
+            var seconds = Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds));
+            AddSystemMessage($"⏳ TPM 限流，等待 {seconds} 秒后自动重试（{attempt}/{maxAttempts}）");
+        };
+
         _adapter.OnError += (rawMessage, httpStatusCode, isContextOverflow, recoverable) =>
         {
             FinalizeToolCalls(interrupted: false);

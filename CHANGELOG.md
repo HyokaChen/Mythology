@@ -53,6 +53,13 @@
   `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_Includes5W1H_AndNext`、
   `ConversationVmContractTests.RetryFromUserMessage_ByEntryId_AfterTwoCompacts_AppendsOnly` /
   `UserMessagePersisted_AssignsEntryIdToLiveBubble`；Core 1645/1645、Desktop 729/729、TUI 904/904（2 skipped）。
+- **429/TPM 限流自动指数退避，不再让用户手工“继续”**：429 从原来的 3 次/30s 扩到
+  8 次尝试/5min，退避 1s→60s + jitter；5xx/网络瞬断仍保持 3 次/30s、1s→8s。
+  等待期间发 `LlmRateLimitWait`，Desktop/TUI 显示“TPM 限流，等待 N 秒后自动重试”，
+  成功后继续同一回合；幂等保护不变（已产出正文/推理/工具调用时不重发）。
+  回归：`ConversationLoopRetryTests.CanRetryLlmTurn_RateLimitHasLongerAttemptBudget` /
+  `LlmRetryDelay_RateLimit_CappedAt60Seconds` /
+  `StreamEventHandlerToolDisplayTests.LlmRateLimitWait_ShowsAutomaticRetryNotice`。
 - **不再在 70%/85%/92% 等任何阈值主动建议 `/compact`**：compact 模式本来就会在发送前自动压缩、
   溢出时自动恢复，模型侧每轮注入的「上下文使用率 >N%，建议压缩」既重复又打断写作，还额外消耗 token。
   现在 `WritingProcessPrompt` 的 compact 阶段边界改为「上下文由系统自动处理，不向用户提及/解释/征求意见」；

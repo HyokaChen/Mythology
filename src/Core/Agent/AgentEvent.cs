@@ -122,6 +122,16 @@ public sealed record CircuitBreakerTriggered(
 ) : AgentEvent;
 
 /// <summary>
+/// 429 限流（含 TPM）自动退避事件。UI 只展示“等待后自动重试”，不按错误收口。
+/// </summary>
+public sealed record LlmRateLimitWait(
+    int Attempt,
+    int MaxAttempts,
+    TimeSpan Delay,
+    int? HttpStatusCode
+) : AgentEvent;
+
+/// <summary>
 /// LLM 调用错误事件。携带原始错误消息和 HTTP 状态码，不翻译不分类。
 /// 仅 IsContextOverflow 需要识别（触发 auto-compact 自动恢复）。
 /// </summary>
