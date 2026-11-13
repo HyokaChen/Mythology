@@ -48,7 +48,6 @@ public sealed class AgentStep : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusIcon)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProcessing)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Title)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
@@ -140,7 +139,6 @@ public sealed class AgentStep : INotifyPropertyChanged
         {
             _argumentsSummary = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArgumentsSummary)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             NotifyDetailsChanged();
         }
     }
@@ -152,7 +150,9 @@ public sealed class AgentStep : INotifyPropertyChanged
         set
         {
             _resultSummary = value;
+            _resultPreview = BuildResultPreview(value);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResultSummary)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResultPreview)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResult)));
             NotifyDetailsChanged();
         }
@@ -205,7 +205,6 @@ public sealed class AgentStep : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDiff)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowRawResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetails)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
     }
 
     /// <summary>详情中的参数文本：优先完整参数，历史数据回退摘要。</summary>
@@ -221,7 +220,7 @@ public sealed class AgentStep : INotifyPropertyChanged
     public bool HasResultDetail => !string.IsNullOrWhiteSpace(DetailResult);
 
     /// <summary>
-    /// 是否显示「详情 / 展开 / 收起」按钮。
+    /// 是否显示「详情 / 展开 / 收起」入口。
     /// 思考步骤：有思考正文即可折叠（创建时默认展开）；工具步骤：有原始参数/结果/diff 即可展开。
     /// </summary>
     public bool HasDetails =>
@@ -244,7 +243,6 @@ public sealed class AgentStep : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsDetailsExpanded)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailsView)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailsToggleLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ShowStreamingPreview))
@@ -257,24 +255,33 @@ public sealed class AgentStep : INotifyPropertyChanged
         : Kind == StepKind.Thinking ? "展开"
         : "详情";
 
+    private string _resultPreview = "";
+
     /// <summary>
-    /// 单行步骤头：状态字形 + 标题 + 参数摘要 + 详情开关。用单个字符串
-    /// 交给一个 TextBlock，避免每行多个 TextBlock/Run 的文本布局开销。
+    /// 折叠态单行结果预览：去掉 Markdown 标题/列表标记，避免把「##」当成正文；
+    /// 完整结果仍在详情里，预览只承担「这一步行不行」的扫读。
     /// </summary>
-    public string HeaderText
+    public string ResultPreview => _resultPreview;
+
+    private static string BuildResultPreview(string? text)
     {
-        get
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        foreach (var rawLine in text.Split('\n'))
         {
-            var glyph = Status switch
-            {
-                AgentStepStatus.Completed => "✓ ",
-                AgentStepStatus.Failed => "✕ ",
-                _ => "",
-            };
-            var args = string.IsNullOrWhiteSpace(_argumentsSummary) ? "" : "  " + _argumentsSummary;
-            var toggle = HasDetails ? "  " + DetailsToggleLabel : "";
-            return glyph + Title + args + toggle;
+            var line = rawLine.Trim();
+            while (line.Length > 0 && line[0] is '#' or '>' or '-' or '*' or '+')
+                line = line[1..].TrimStart();
+            if (line.Length == 0 || line.All(c => c is '-' or '=' or '|' or ' '))
+                continue;
+
+            line = line.Replace("**", "").Replace("__", "").Replace("`", "").Trim();
+            if (line.Length == 0)
+                continue;
+            return "↳ " + line;
         }
+        return "";
     }
 
     /// <summary>
@@ -353,7 +360,6 @@ public sealed class AgentStep : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowRawResultDetail)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetails)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HeaderText)));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

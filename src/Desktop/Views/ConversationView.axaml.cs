@@ -1232,8 +1232,7 @@ public partial class ConversationView : UserControl
 
         var desired = BuildRows(message);
         var selected = new List<ConversationRow>(desired.Count);
-        var available =
-            new Dictionary<(ConversationRowKind, AgentStep?, bool, bool), Queue<ConversationRow>>();
+        var available = new Dictionary<(ConversationRowKind, AgentStep?), Queue<ConversationRow>>();
         foreach (var row in oldRows)
         {
             var key = RowTemplateKey(row);
@@ -1285,12 +1284,11 @@ public partial class ConversationView : UserControl
     }
 
     /// <summary>
-    /// 行模板由步骤状态决定（运行中/完成/展开/收起）。复用旧行对象时容器不会
-    /// 重新选模板，因此状态变化必须换新行对象，让 ItemsControl 重建该行。
+    /// 步骤行现在共用唯一模板，状态变化靠绑定更新；同一步骤可以稳定复用
+    /// 行对象与容器，不再因 processing/expanded 切换而重建。
     /// </summary>
-    private static (ConversationRowKind, AgentStep?, bool, bool) RowTemplateKey(
-        ConversationRow row
-    ) => (row.Kind, row.Step, row.Step?.IsProcessing == true, row.Step?.IsDetailsExpanded == true);
+    private static (ConversationRowKind, AgentStep?) RowTemplateKey(ConversationRow row) =>
+        (row.Kind, row.Step);
 
     private void SubscribeMessage(ChatMessage message)
     {

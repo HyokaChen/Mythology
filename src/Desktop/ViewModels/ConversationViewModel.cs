@@ -1878,6 +1878,11 @@ public sealed class ConversationViewModel : ViewModelBase
                 var text = ms.Message.Content ?? "";
                 if (text.Length == 0)
                     break;
+                // [mNNNN] 是 Core 发送前的运行时 ref 标签，不属于用户可见气泡。
+                // 个别重试/恢复路径会再次发出带标签的 MessageStart；若不过滤，
+                // 会与发送时先行的原文气泡并存，形成“同一条消息出现两次”。
+                if (IsRuntimeRefTaggedUserMessage(text))
+                    break;
                 // 本轮已先行插入的用户气泡：吞掉 Loop 回显（一次性内容匹配；
                 // residual steer 回显先于本回合 user 消息且文本不同，不受影响）
                 if (_pendingEchoText is not null && text == _pendingEchoText)
@@ -1898,6 +1903,19 @@ public sealed class ConversationViewModel : ViewModelBase
         }
 
         UpdateWaitingIndicator(evt);
+    }
+
+    /// <summary>Core 运行时 ref 标签格式：[m0001] 。不会出现在真实用户输入气泡里。</summary>
+    private static bool IsRuntimeRefTaggedUserMessage(string text)
+    {
+        if (text.Length < 8 || text[0] != '[' || text[1] != 'm' || text[6] != ']' || text[7] != ' ')
+            return false;
+        for (var i = 2; i < 6; i++)
+        {
+            if (!char.IsAsciiDigit(text[i]))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>

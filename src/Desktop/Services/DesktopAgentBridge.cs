@@ -36,7 +36,10 @@ public sealed class DesktopAgentBridge
         {
             try
             {
-                OnStreamEvent?.Invoke(this, evt);
+                // MessageStart 持有 Core 的可变 ChatMessage 引用；随后 InjectRefTags
+                // 会给 Content 加 [mNNNN] 前缀。若 UI 处理延迟到注入之后，会把同一条
+                // 用户消息当成新消息再画一个气泡。事件转发前先做内容快照。
+                OnStreamEvent?.Invoke(this, SnapshotForUi(evt));
                 if (evt is TokenUsageEvent tu)
                     OnTokenUsage?.Invoke(tu.PromptTokens, tu.CompletionTokens);
             }
@@ -46,6 +49,16 @@ public sealed class DesktopAgentBridge
             }
         };
     }
+
+    internal static AgentEvent SnapshotForUi(AgentEvent evt) =>
+        evt is MessageStart { Message.Role: LlmTornado.Code.ChatMessageRoles.User } ms
+            ? new MessageStart(
+                new LlmTornado.Chat.ChatMessage(
+                    ms.Message.Role ?? LlmTornado.Code.ChatMessageRoles.User,
+                    ms.Message.Content
+                )
+            )
+            : evt;
 
     /// <summary>
     /// 发送用户消息并等待 Agent 完成（流式事件通过 OnStreamEvent 推送）。

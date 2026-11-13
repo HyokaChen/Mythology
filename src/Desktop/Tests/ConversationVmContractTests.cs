@@ -327,6 +327,12 @@ public sealed class ConversationVmContractTests
         );
         Assert.Equal(2, vm.Messages.Count);
 
+        // Core 运行时 ref 标签回显不能变成第二个用户气泡
+        vm.HandleAgentEvent(
+            new MessageStart(new LlmChatMessage(ChatMessageRoles.User, "[m0003] 第一章大纲"))
+        );
+        Assert.Equal(2, vm.Messages.Count);
+
         // 不同文本（steer/注入）正常渲染
         vm.HandleAgentEvent(
             new MessageStart(new LlmChatMessage(ChatMessageRoles.User, "注入提示"))

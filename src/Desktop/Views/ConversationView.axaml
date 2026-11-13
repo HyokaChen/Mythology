@@ -156,6 +156,9 @@
       </StackPanel>
     </DataTemplate>
 
+    <!-- 所有步骤头共用同一模板：状态/参数/详情通过绑定切换，不再为
+         processing/completed/expanded 各建一套模板，也就不会在状态变化时重建容器。
+         详情只在展开时由 StepDetailsView 懒创建。 -->
     <DataTemplate x:Key="RowStep" x:DataType="models:ConversationRow">
       <StackPanel
         Margin="{Binding Margin}"
@@ -165,16 +168,55 @@
         PointerPressed="StepDetails_OnClick"
         IsVisible="{Binding Step.IsStepHeader}"
       >
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+          <Grid Width="12" Height="12" VerticalAlignment="Center">
+            <controls:BusySpinner
+              IsActive="{Binding Step.IsProcessing}"
+              IsVisible="{Binding Step.IsProcessing}"
+              FontSize="12"
+              Foreground="{DynamicResource BrushSageLeaf}"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+            />
+            <lucide:LucideIcon
+              Kind="{Binding Step.StatusIcon}"
+              Size="11"
+              StrokeWidth="1.6"
+              IsVisible="{Binding Step.IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+            />
+          </Grid>
+          <TextBlock
+            Grid.Column="1"
+            Text="{Binding Step.Title}"
+            Classes="Tag"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Grid.Column="2"
+            Text="{Binding Step.ArgumentsSummary}"
+            FontFamily="{StaticResource FontMono}"
+            FontSize="11"
+            Foreground="{DynamicResource BrushSageMist}"
+            TextTrimming="CharacterEllipsis"
+            TextWrapping="NoWrap"
+            VerticalAlignment="Center"
+          />
+          <TextBlock
+            Grid.Column="3"
+            Text="{Binding Step.DetailsToggleLabel}"
+            IsVisible="{Binding Step.HasDetails}"
+            FontSize="11"
+            LineHeight="16"
+            Foreground="{DynamicResource BrushSageLeaf}"
+            MinWidth="28"
+            TextAlignment="Right"
+            VerticalAlignment="Center"
+          />
+        </Grid>
         <TextBlock
-          Text="{Binding Step.HeaderText}"
-          FontFamily="{StaticResource FontMono}"
-          FontSize="11"
-          LineHeight="16"
-          TextTrimming="CharacterEllipsis"
-          TextWrapping="NoWrap"
-        />
-        <TextBlock
-          Text="{Binding Step.ResultSummary}"
+          Text="{Binding Step.ResultPreview}"
           IsVisible="{Binding Step.HasResult}"
           FontSize="11"
           LineHeight="16"
@@ -182,6 +224,18 @@
           TextTrimming="CharacterEllipsis"
           TextWrapping="NoWrap"
           Margin="18,0,0,0"
+        />
+        <controls:StreamingReasoningPreview
+          IsVisible="{Binding Step.ShowStreamingPreview}"
+          Text="{Binding Step.ReasoningPreview}"
+          TextForeground="{DynamicResource BrushSageGray}"
+          Margin="18,0,0,0"
+        />
+        <!-- 展开态才挂详情；ContentTemplate 不创建，收起行没有隐藏的 ScrollViewer 树。 -->
+        <ContentControl
+          IsVisible="{Binding Step.IsDetailsExpanded}"
+          Content="{Binding Step.DetailsView}"
+          ContentTemplate="{StaticResource StepDetails}"
         />
       </StackPanel>
     </DataTemplate>
@@ -192,105 +246,6 @@
         MarkdownBuilder="{Binding ContentMarkdown}"
         CodeBlockColorTheme="LightPlus"
       />
-    </DataTemplate>
-
-    <!-- 运行中的步骤才需要 spinner / 思考预览；展开的步骤才需要详情控件。
-         完成后的历史过程行用最轻的两行文本模板，滚动经过密集过程区时
-         不会为每一行创建隐藏的按钮、滚动区和预览控件。 -->
-    <DataTemplate x:Key="RowStepActive" x:DataType="models:ConversationRow">
-      <StackPanel
-        Margin="{Binding Margin}"
-        Spacing="2"
-        Background="Transparent"
-        Cursor="Hand"
-        PointerPressed="StepDetails_OnClick"
-      >
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-          <controls:BusySpinner
-            IsActive="{Binding Step.IsProcessing}"
-            IsVisible="{Binding Step.IsProcessing}"
-            FontSize="12"
-            Foreground="{DynamicResource BrushSageLeaf}"
-            VerticalAlignment="Center"
-          />
-          <TextBlock
-            Grid.Column="1"
-            Text="{Binding Step.HeaderText}"
-            FontFamily="{StaticResource FontMono}"
-            FontSize="11"
-            LineHeight="16"
-            TextTrimming="CharacterEllipsis"
-            TextWrapping="NoWrap"
-            VerticalAlignment="Center"
-          />
-        </Grid>
-        <TextBlock
-          Text="{Binding Step.ResultSummary}"
-          IsVisible="{Binding Step.HasResult}"
-          FontSize="11"
-          LineHeight="16"
-          Foreground="{DynamicResource BrushSageGray}"
-          TextTrimming="CharacterEllipsis"
-          TextWrapping="NoWrap"
-          Margin="18,0,0,0"
-        />
-        <controls:StreamingReasoningPreview
-          IsVisible="{Binding Step.ShowStreamingPreview}"
-          Text="{Binding Step.ReasoningPreview}"
-          TextForeground="{DynamicResource BrushSageGray}"
-          Margin="18,0,0,0"
-        />
-      </StackPanel>
-    </DataTemplate>
-
-    <DataTemplate x:Key="RowStepExpanded" x:DataType="models:ConversationRow">
-      <StackPanel
-        Margin="{Binding Margin}"
-        Spacing="2"
-        Background="Transparent"
-        Cursor="Hand"
-        PointerPressed="StepDetails_OnClick"
-      >
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-          <controls:BusySpinner
-            IsActive="{Binding Step.IsProcessing}"
-            IsVisible="{Binding Step.IsProcessing}"
-            FontSize="12"
-            Foreground="{DynamicResource BrushSageLeaf}"
-            VerticalAlignment="Center"
-          />
-          <TextBlock
-            Grid.Column="1"
-            Text="{Binding Step.HeaderText}"
-            FontFamily="{StaticResource FontMono}"
-            FontSize="11"
-            LineHeight="16"
-            TextTrimming="CharacterEllipsis"
-            TextWrapping="NoWrap"
-            VerticalAlignment="Center"
-          />
-        </Grid>
-        <TextBlock
-          Text="{Binding Step.ResultSummary}"
-          IsVisible="{Binding Step.HasResult}"
-          FontSize="11"
-          LineHeight="16"
-          Foreground="{DynamicResource BrushSageGray}"
-          TextTrimming="CharacterEllipsis"
-          TextWrapping="NoWrap"
-          Margin="18,0,0,0"
-        />
-        <controls:StreamingReasoningPreview
-          IsVisible="{Binding Step.ShowStreamingPreview}"
-          Text="{Binding Step.ReasoningPreview}"
-          TextForeground="{DynamicResource BrushSageGray}"
-          Margin="18,0,0,0"
-        />
-        <ContentControl
-          Content="{Binding Step.DetailsView}"
-          ContentTemplate="{StaticResource StepDetails}"
-        />
-      </StackPanel>
     </DataTemplate>
 
     <!-- 中间正文 / 提示 / 系统事件各自独立模板：工具和思考步骤不再为这些
@@ -535,8 +490,6 @@
       SystemTemplate="{StaticResource RowSystem}"
       WaitingTemplate="{StaticResource RowWaiting}"
       StepTemplate="{StaticResource RowStep}"
-      StepActiveTemplate="{StaticResource RowStepActive}"
-      StepExpandedTemplate="{StaticResource RowStepExpanded}"
       StepContentTemplate="{StaticResource RowStepContent}"
       StepNoticeTemplate="{StaticResource RowStepNotice}"
       StepSystemEventTemplate="{StaticResource RowStepSystemEvent}"

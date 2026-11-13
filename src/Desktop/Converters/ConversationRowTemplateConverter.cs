@@ -13,8 +13,6 @@ public sealed class ConversationRowTemplateConverter : IValueConverter, IDataTem
     public IDataTemplate? SystemTemplate { get; set; }
     public IDataTemplate? WaitingTemplate { get; set; }
     public IDataTemplate? StepTemplate { get; set; }
-    public IDataTemplate? StepActiveTemplate { get; set; }
-    public IDataTemplate? StepExpandedTemplate { get; set; }
     public IDataTemplate? StepContentTemplate { get; set; }
     public IDataTemplate? StepNoticeTemplate { get; set; }
     public IDataTemplate? StepSystemEventTemplate { get; set; }
@@ -46,9 +44,6 @@ public sealed class ConversationRowTemplateConverter : IValueConverter, IDataTem
                 StepKind.Content => StepContentTemplate ?? StepTemplate,
                 StepKind.Notice => StepNoticeTemplate ?? StepTemplate,
                 StepKind.SystemEvent => StepSystemEventTemplate ?? StepTemplate,
-                _ when step.IsDetailsExpanded && step.HasDetails => StepExpandedTemplate
-                    ?? StepTemplate,
-                _ when step.IsProcessing => StepActiveTemplate ?? StepTemplate,
                 _ => StepTemplate,
             }
             : ForKind(row.Kind);

@@ -207,7 +207,7 @@ public sealed class ConversationDetailStructureTests
         var header = root.Descendants()
             .Single(e =>
                 e.Name.LocalName == "TextBlock"
-                && Attr(e, "Text") == "{Binding Step.HeaderText}"
+                && Attr(e, "Text") == "{Binding Step.Title}"
                 && e.Ancestors()
                     .Any(a =>
                         a.Name.LocalName == "StackPanel"
@@ -220,5 +220,12 @@ public sealed class ConversationDetailStructureTests
             && Attr(e, "PointerPressed") == "StepDetails_OnClick"
             && Attr(e, "IsVisible") == "{Binding Step.IsStepHeader}"
         );
+
+        var toggle = root.Descendants()
+            .Single(e =>
+                e.Name.LocalName == "TextBlock"
+                && Attr(e, "Text") == "{Binding Step.DetailsToggleLabel}"
+            );
+        Assert.Equal("{Binding Step.HasDetails}", Attr(toggle, "IsVisible"));
     }
 }

@@ -1550,19 +1550,21 @@ public class ConversationRenderingTests
             try
             {
                 Pump();
-                var arguments = view.GetVisualDescendants()
+                var rowTexts = view.GetVisualDescendants()
                     .OfType<TextBlock>()
-                    .Single(text =>
+                    .Where(text =>
                         text.DataContext is Desktop.Models.ConversationRow { Step: var rowStep }
                         && ReferenceEquals(rowStep, step)
-                        && text.Text?.Contains(step.Title, StringComparison.Ordinal) == true
-                        && text.Text.Contains(step.ArgumentsSummary!, StringComparison.Ordinal)
-                    );
+                    )
+                    .ToList();
+                var title = Assert.Single(rowTexts, text => text.Text == step.Title);
+                var arguments = Assert.Single(rowTexts, text => text.Text == step.ArgumentsSummary);
                 _output.WriteLine($"步骤参数摘要宽度={arguments.Bounds.Width:F1}");
                 Assert.True(
                     arguments.Bounds.Width > 600,
                     $"步骤参数摘要宽度 {arguments.Bounds.Width:F1} 仍受旧 MaxWidth 限制"
                 );
+                Assert.True(title.Bounds.Width > 0);
 
                 var collapsed = RenderedText(view);
                 _output.WriteLine("工具步骤折叠态：");
@@ -1595,9 +1597,9 @@ public class ConversationRenderingTests
     }
 
     /// <summary>
-    /// 已完成过程行是滚动密集区：每一行只允许一个标题 TextBlock + 一个结果
-    /// TextBlock，不得再为每行创建 Button / ScrollViewer / 思考预览。否则
-    /// 换窗时会为几十行重复实例化整棵详情控件树，滚动明显掉帧。
+    /// 已完成过程行是滚动密集区：每行只保留图标、标题、参数、详情入口和结果预览；
+    /// 不得为每行创建 Button、详情 ScrollViewer 或可见的思考预览。否则换窗时
+    /// 会为几十行重复实例化整棵详情控件树，滚动明显掉帧。
     /// </summary>
     [Fact]
     public void SettledProcessRows_UseLeanHeaderWithoutPerRowDetailsChrome()
@@ -1642,14 +1644,13 @@ public class ConversationRenderingTests
                     .Where(row => row.Kind == ConversationRowKind.Step)
                     .ToList();
                 Assert.Equal(12, stepRows.Count);
-                Assert.Equal(
-                    24,
-                    view.GetVisualDescendants()
+                Assert.All(stepRows, row =>
+                {
+                    var texts = view.GetVisualDescendants()
                         .OfType<TextBlock>()
-                        .Count(text =>
-                            text.DataContext is ConversationRow { Kind: ConversationRowKind.Step }
-                        )
-                );
+                        .Count(text => ReferenceEquals(text.DataContext, row));
+                    Assert.InRange(texts, 1, 8);
+                });
                 Assert.DoesNotContain(view.GetVisualDescendants().OfType<Button>(), button =>
                     button.DataContext is ConversationRow { Kind: ConversationRowKind.Step }
                 );
@@ -1659,7 +1660,7 @@ public class ConversationRenderingTests
                 Assert.DoesNotContain(
                     view.GetVisualDescendants()
                         .OfType<Desktop.Controls.StreamingReasoningPreview>(),
-                    preview => preview.DataContext is ConversationRow
+                    preview => preview.DataContext is ConversationRow && preview.IsVisible
                 );
             }
             finally

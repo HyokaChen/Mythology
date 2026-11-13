@@ -88,14 +88,13 @@ public sealed class TuiInteractionParityTests
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         var header = Descendants(root, "TextBlock")
             .Single(t =>
-                Attr(t, "Text") == "{Binding Step.HeaderText}"
+                Attr(t, "Text") == "{Binding Step.Title}"
                 && t.Ancestors().Any(a => Attr(a, "IsVisible") == "{Binding Step.IsStepHeader}")
             );
         var details = Descendants(root, "StackPanel")
             .Single(s => Attr(s, "Classes") == "StepDetails");
 
         Assert.Equal("", Attr(header, "MaxWidth"));
-        Assert.Equal("NoWrap", Attr(header, "TextWrapping"));
         Assert.Equal("", Attr(details, "MaxWidth"));
         Assert.Equal("Stretch", Attr(details, "HorizontalAlignment"));
     }
@@ -114,18 +113,28 @@ public sealed class TuiInteractionParityTests
     }
 
     [Fact]
-    public void ConversationView_StepRow_UsesSingleHeaderTextWithoutPerRowIcon()
+    public void ConversationView_StepRow_UsesStructuredHeaderAndStableTemplate()
     {
         var root = Load("src", "Desktop", "Views", "ConversationView.axaml");
         var header = Descendants(root, "TextBlock")
             .Single(t =>
-                Attr(t, "Text") == "{Binding Step.HeaderText}"
+                Attr(t, "Text") == "{Binding Step.Title}"
                 && t.Ancestors().Any(a => Attr(a, "IsVisible") == "{Binding Step.IsStepHeader}")
             );
 
         Assert.Equal("", Attr(header, "MaxWidth"));
-        Assert.DoesNotContain(Descendants(root, "LucideIcon"), icon =>
+        Assert.Equal("Tag", Attr(header, "Classes"));
+        Assert.Contains(Descendants(root, "LucideIcon"), icon =>
             Attr(icon, "Kind") == "{Binding Step.StatusIcon}"
+        );
+        Assert.Contains(Descendants(root, "TextBlock"), text =>
+            Attr(text, "Text") == "{Binding Step.ArgumentsSummary}"
+        );
+        Assert.Contains(Descendants(root, "TextBlock"), text =>
+            Attr(text, "Text") == "{Binding Step.DetailsToggleLabel}"
+        );
+        Assert.DoesNotContain(Descendants(root, "TextBlock"), text =>
+            Attr(text, "Text") == "{Binding Step.HeaderText}"
         );
     }
 
