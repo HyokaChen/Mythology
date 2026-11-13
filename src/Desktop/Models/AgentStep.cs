@@ -259,7 +259,8 @@ public sealed class AgentStep : INotifyPropertyChanged
 
     /// <summary>
     /// 折叠态单行结果预览：去掉 Markdown 标题/列表标记，避免把「##」当成正文；
-    /// 完整结果仍在详情里，预览只承担「这一步行不行」的扫读。
+    /// 完整结果仍在详情里，预览只承担「这一步行不行」的扫读。不加箭头前缀，
+    /// 保持步骤时间线干净，也避免旧版多行 result 撑高行高。
     /// </summary>
     public string ResultPreview => _resultPreview;
 
@@ -277,9 +278,8 @@ public sealed class AgentStep : INotifyPropertyChanged
                 continue;
 
             line = line.Replace("**", "").Replace("__", "").Replace("`", "").Trim();
-            if (line.Length == 0)
-                continue;
-            return "↳ " + line;
+            if (line.Length > 0)
+                return line;
         }
         return "";
     }

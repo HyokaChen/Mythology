@@ -391,11 +391,11 @@ public class ConversationRenderingTests
     }
 
     /// <summary>
-    /// 尾部跟随时展开步骤详情：内容长高会把视口追到新的底部，刚展开的正文反而
-    /// 跑到视口上方。展开必须暂停跟随，并把详情第一行留在视口内，不能等用户滚动。
+    /// 尾部跟随时展开步骤详情：只暂停跟随并在原位向下长，不把视口滚到详情顶部；
+    /// 点击行的屏幕位置与当前 offset 必须保持不变。
     /// </summary>
     [Fact]
-    public void ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll()
+    public void ExpandingStepDetailsAtTail_KeepsCurrentOffset()
     {
         Ui.Value.Run(() =>
         {
@@ -465,6 +465,13 @@ public class ConversationRenderingTests
                     .OrderByDescending(item => item.Top!.Value.Y)
                     .FirstOrDefault();
                 Assert.NotNull(header.Text);
+                var clickedRow = Assert.IsType<ConversationRow>(header.Text.DataContext);
+                var presenterBefore = view.GetVisualDescendants()
+                    .OfType<ContentPresenter>()
+                    .First(p => ReferenceEquals(p.DataContext, clickedRow));
+                var rowTopBefore = presenterBefore.TranslatePoint(new Point(0, 0), scroll)?.Y;
+                Assert.NotNull(rowTopBefore);
+                var offsetBefore = scroll.Offset.Y;
 
                 window.MouseMove(header.Click!.Value);
                 window.MouseDown(header.Click.Value, MouseButton.Left);
@@ -483,19 +490,19 @@ public class ConversationRenderingTests
                         && ReferenceEquals(panel.DataContext, row.Step)
                     );
                 Assert.NotNull(details);
-                var detailText = details!
-                    .GetVisualDescendants()
-                    .OfType<TextBlock>()
-                    .FirstOrDefault(t =>
-                        t.Text?.StartsWith("长思考", StringComparison.Ordinal) == true
-                    );
-                Assert.NotNull(detailText);
-                var detailPoint = detailText!.TranslatePoint(new Point(0, 0), scroll);
-                Assert.NotNull(detailPoint);
+                Assert.True(details!.IsVisible);
                 Assert.True(
-                    detailPoint.Value.Y >= 0 && detailPoint.Value.Y < scroll.Viewport.Height,
-                    $"展开的详情第一行不在视口内：y={detailPoint.Value.Y:0.0}, "
-                        + $"viewport={scroll.Viewport.Height:0.0}, offset={scroll.Offset.Y:0.0}"
+                    Math.Abs(scroll.Offset.Y - offsetBefore) <= 1,
+                    $"手动展开改变了当前 offset：{offsetBefore:0.0} → {scroll.Offset.Y:0.0}"
+                );
+                var presenterAfter = view.GetVisualDescendants()
+                    .OfType<ContentPresenter>()
+                    .First(p => ReferenceEquals(p.DataContext, row));
+                var rowTopAfter = presenterAfter.TranslatePoint(new Point(0, 0), scroll)?.Y;
+                Assert.NotNull(rowTopAfter);
+                Assert.True(
+                    Math.Abs(rowTopAfter!.Value - rowTopBefore!.Value) <= 1,
+                    $"手动展开把点击行滚离了原屏幕位置：{rowTopBefore:0.0} → {rowTopAfter:0.0}"
                 );
             }
             finally

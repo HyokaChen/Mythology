@@ -182,6 +182,7 @@
               Kind="{Binding Step.StatusIcon}"
               Size="11"
               StrokeWidth="1.6"
+              Foreground="{DynamicResource BrushSageGray}"
               IsVisible="{Binding Step.IsProcessing, Converter={StaticResource InvertedBoolToVisibility}}"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
@@ -203,17 +204,21 @@
             TextWrapping="NoWrap"
             VerticalAlignment="Center"
           />
-          <TextBlock
+          <Border
             Grid.Column="3"
-            Text="{Binding Step.DetailsToggleLabel}"
+            Classes="StepDetailsToggle"
             IsVisible="{Binding Step.HasDetails}"
-            FontSize="11"
-            LineHeight="16"
-            Foreground="{DynamicResource BrushSageLeaf}"
             MinWidth="28"
-            TextAlignment="Right"
             VerticalAlignment="Center"
-          />
+          >
+            <TextBlock
+              Text="{Binding Step.DetailsToggleLabel}"
+              FontSize="11"
+              LineHeight="16"
+              Foreground="{DynamicResource BrushSageLeaf}"
+              TextAlignment="Right"
+            />
+          </Border>
         </Grid>
         <TextBlock
           Text="{Binding Step.ResultPreview}"
@@ -573,6 +578,18 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
     </Style>
+    <!-- 步骤详情的轻量开关：没有 Button 模板/命令，只有 mono 文本和 hover 时的
+         Eucalyptus wash。既保留旧版可点的「详情 / 展开」提示，又不在每条历史步骤上
+         创建 Button 控件树。 -->
+    <Style Selector="Border.StepDetailsToggle">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="{StaticResource RadiusTags}" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+    <Style Selector="Border.StepDetailsToggle:pointerover">
+      <Setter Property="Background" Value="{DynamicResource BrushEucalyptusWash}" />
+    </Style>
+
     <!-- 系统通知默认保持扁平；错误使用 DESIGN.md 的 Amber Wash 卡片（10px 圆角、
          1px 发丝边、14/10 内边距），与助手正文一样占满整行。 -->
     <Style Selector="Border.SystemNoticeCard">

@@ -226,6 +226,9 @@ public sealed class ConversationDetailStructureTests
                 e.Name.LocalName == "TextBlock"
                 && Attr(e, "Text") == "{Binding Step.DetailsToggleLabel}"
             );
-        Assert.Equal("{Binding Step.HasDetails}", Attr(toggle, "IsVisible"));
+        var toggleHost = toggle
+            .Ancestors()
+            .First(a => a.Name.LocalName == "Border" && Attr(a, "Classes") == "StepDetailsToggle");
+        Assert.Equal("{Binding Step.HasDetails}", Attr(toggleHost, "IsVisible"));
     }
 }

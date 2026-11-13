@@ -756,9 +756,9 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
   展开后的完整推理放在 `MaxHeight=320` 的内部 ScrollViewer，token 增长不改变对话总高度
   （借鉴 TKCode.Arc ReasoningBlock）
-- 点击「展开 / 详情」时先 `PauseFollow`，布局后把详情顶部对齐到视口上方留白；
-  否则尾部跟随时内容长高会把视口追到新底部，刚展开的正文反而跑到视口外，
-  必须再滚动一下才出现。回归：`ExpandingStepDetailsAtTail_RevealsContentWithoutExtraScroll`
+- 点击「展开 / 详情」时先 `PauseFollow`，保持点击行在屏幕上的位置与当前 offset；
+  详情从原位置向下展开，不把视口滚到详情顶部，也不追到消息尾部。
+  回归：`ExpandingStepDetailsAtTail_KeepsCurrentOffset`
 - **整个 Turn 完成**（`ConversationViewModel.IsProcessing == false`）后才等 450ms 自动折叠过程；
   回合进行中步骤结束不折叠，避免“先折起再展开”的抖动；失败自动展开；用户手动操作后不自动折；
   参数/结果/diff 各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
@@ -783,8 +783,8 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
 - 窗口失焦/激活：失焦期间忽略 ScrollChanged 的跟随判定；离开时在底部（或正在跟随）
   则激活后 `ResetFollow` 回到底部，阅读中段则保持原位置。回归：
   `WindowDeactivateReactivate_AtBottom_StaysAtBottom`
-- 步骤详情展开后的延迟 `BringStepDetailsIntoView` 只处理“详情在视口下方”的情况；
-  用户已经继续下滚、详情跑到视口上方时直接放弃，避免快速滚到底时被反向拽回。
+- 步骤详情展开后的行顶补偿只修正布局/窗口换页造成的位移；用户一旦滚轮/键盘滚动，
+  或已经恢复尾部跟随，就放弃补偿，避免快速滚到底时被反向拽回。
   快速滚动在估算 extent 底部时即使 extent 仍在增长也恢复跟随，不能停在差一点到底。
   回归：`ExpandDetailsThenFastWheel_DoesNotBounceBack`、
   `FastWheelToBottom_AfterExpansion_ReachesRealBottom`
