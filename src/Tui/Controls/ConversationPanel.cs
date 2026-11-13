@@ -348,7 +348,7 @@ public sealed class ConversationPanel
 
         _adapter.OnRateLimitWait += (attempt, maxAttempts, delay) =>
         {
-            var seconds = Math.Max(1, (int)Math.Ceiling(delay.TotalSeconds));
+            var seconds = Math.Max(1, (int)Math.Round(delay.TotalSeconds));
             AddSystemMessage($"⏳ TPM 限流，等待 {seconds} 秒后自动重试（{attempt}/{maxAttempts}）");
         };
 
