@@ -1644,36 +1644,42 @@ public partial class ConversationView : UserControl
     private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: ConversationRow { Step: { } step } row })
-        {
-            if (!step.HasDetails)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            // 展开步骤详情会让当前行长高。若仍在尾部跟随，AutoScroll 会把视口
-            // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
-            // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
-            var expand = !step.IsDetailsExpanded;
-            InvalidatePendingReveal();
-            if (expand)
-            {
-                MessageList.PauseFollow();
-                RememberReadingAnchor();
-            }
-            step.IsDetailsExpanded = expand;
-            if (expand)
-            {
-                var revealVersion = _revealVersion;
-                // 模板切换会替换行对象，窗口同步/新容器布局都在 Background 阶段；
-                // reveal 放到 ContextIdle，确保详情控件已经实例化且锚点恢复已结束。
-                Dispatcher.UIThread.Post(
-                    () => BringStepDetailsIntoView(row, revealVersion),
-                    DispatcherPriority.ContextIdle
-                );
-            }
-        }
+            ToggleStepDetails(row, step);
         e.Handled = true;
+    }
+
+    /// <summary>步骤头点击的纯 UI 逻辑；测试可直接验证自动折叠交互，不依赖指针命中。</summary>
+    internal void ToggleStepDetails(ConversationRow row, AgentStep step)
+    {
+        if (!step.HasDetails)
+            return;
+
+        // 手动操作过步骤详情后，本轮不再自动折叠过程；否则 450ms 自动折叠
+        // 会把刚展开的详情连同行一起移除，看起来像“点了没反应”。
+        row.Message.ProcessTouchedByUser = true;
+        CancelProcessFold();
+
+        // 展开步骤详情会让当前行长高。若仍在尾部跟随，AutoScroll 会把视口
+        // 追到新的底部，刚展开的内容反而跑到视口上方；先退出跟随，再在布局后
+        // 把详情滚进可见区，保证点击后立即看到内容。收起不需要打断跟随。
+        var expand = !step.IsDetailsExpanded;
+        InvalidatePendingReveal();
+        if (expand)
+        {
+            MessageList.PauseFollow();
+            RememberReadingAnchor();
+        }
+        step.IsDetailsExpanded = expand;
+        if (expand)
+        {
+            var revealVersion = _revealVersion;
+            // 模板切换会替换行对象，窗口同步/新容器布局都在 Background 阶段；
+            // reveal 放到 ContextIdle，确保详情控件已经实例化且锚点恢复已结束。
+            Dispatcher.UIThread.Post(
+                () => BringStepDetailsIntoView(row, revealVersion),
+                DispatcherPriority.ContextIdle
+            );
+        }
     }
 
     private void BringStepDetailsIntoView(ConversationRow row, int revealVersion)

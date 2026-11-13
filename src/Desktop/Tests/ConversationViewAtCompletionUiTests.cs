@@ -3007,6 +3007,64 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
+    public void DetailsToggle_WhileSettled_CancelsAutoFold()
+    {
+        Ui.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            var step = new Desktop.Models.AgentStep
+            {
+                Kind = Desktop.Models.StepKind.ToolCall,
+                Title = "编辑文件",
+                Status = Desktop.Models.AgentStepStatus.Completed,
+                ArgumentsSummary = "chapter.md",
+                FullArguments = """{"path":"chapter.md"}""",
+                ResultSummary = "已更新 chapter.md",
+                FullResult = "已更新 chapter.md",
+            };
+            message.AgentSteps.Add(step);
+            _vm.IsProcessing = true;
+            _vm.Messages.Add(message);
+            _vm.HasMessages = true;
+
+            var (window, view, list, _) = ShowConversation();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        list
+                            .Items.OfType<Desktop.Models.ConversationRow>()
+                            .Any(row => ReferenceEquals(row.Step, step)),
+                    "步骤行挂载"
+                );
+
+                var row = list
+                    .Items.OfType<Desktop.Models.ConversationRow>()
+                    .Single(item => ReferenceEquals(item.Step, step));
+                view.ToggleStepDetails(row, step);
+                Assert.True(step.IsDetailsExpanded, "详情开关应立即展开");
+
+                // 回合结束后自动折叠不得再移除用户刚打开的详情。
+                _vm.IsProcessing = false;
+                for (var i = 0; i < 80; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+
+                Assert.True(step.IsDetailsExpanded, "点击详情后不能又被自动折叠");
+                Assert.True(message.IsProcessExpanded, "用户点击详情后过程行必须保留");
+                Assert.True(message.ProcessTouchedByUser);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void LiveStream_PreservesMarkdownRenderer_WhenStepsArrive()
     {
         Ui.Run(() =>

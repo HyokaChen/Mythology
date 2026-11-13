@@ -1515,6 +1515,67 @@ public class ConversationRenderingTests
     }
 
     [Fact]
+    public void ToolStep_DetailsToggleClick_Expands()
+    {
+        Ui.Value.Run(() =>
+        {
+            var step = new Desktop.Models.AgentStep
+            {
+                Kind = Desktop.Models.StepKind.ToolCall,
+                Title = "编辑文件",
+                Status = Desktop.Models.AgentStepStatus.Completed,
+                ArgumentsSummary = "chapter.md",
+                FullArguments = """{"path":"chapter.md"}""",
+                ResultSummary = "已更新 chapter.md",
+                FullResult = "已更新 chapter.md",
+            };
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+            message.AgentSteps.Add(step);
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                var toggle = view.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(text =>
+                        text.Text == "详情"
+                        && text.DataContext is Desktop.Models.ConversationRow { Step: var stepRow }
+                        && ReferenceEquals(stepRow, step)
+                    );
+                var point = toggle
+                    .TranslatePoint(
+                        new Point(toggle.Bounds.Width / 2, toggle.Bounds.Height / 2),
+                        window
+                    )!
+                    .Value;
+                window.MouseDown(point, MouseButton.Left);
+                window.MouseUp(point, MouseButton.Left);
+                Pump();
+
+                Assert.True(step.IsDetailsExpanded);
+                Assert.Contains(view.GetVisualDescendants().OfType<StackPanel>(), panel =>
+                    panel.Classes.Contains("StepDetails") && panel.IsVisible
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void ToolStep_DetailsAreCollapsedUntilExpanded()
     {
         Ui.Value.Run(() =>
