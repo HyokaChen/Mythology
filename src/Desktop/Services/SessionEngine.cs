@@ -541,10 +541,12 @@ public sealed class SessionEngine(
     /// <param name="visibleUserMessageOrdinal">目标用户消息在 UI 可见用户消息中的零基序号
     /// （过滤注入消息/ask_user 回复，与 <see cref="SessionMessageMapper"/> 一致）。</param>
     /// <param name="editedText">编辑后的文本；null = 纯重试（保留原用户消息）。</param>
+    /// <param name="targetEntryId">持久化目标 entryId；有则优先于序号（UI 列表可能因 compact 已过期）。</param>
     public async Task<bool> RetryFromUserMessageAsync(
         int visibleUserMessageOrdinal,
         string? editedText,
-        CancellationToken ct
+        CancellationToken ct,
+        string? targetEntryId = null
     )
     {
         if (_sessionPersistenceFaulted)
@@ -570,17 +572,40 @@ public sealed class SessionEngine(
             return false;
         }
 
-        var visibleUsers = active.Where(IsVisibleUserMessage).ToList();
-        if (visibleUserMessageOrdinal < 0 || visibleUserMessageOrdinal >= visibleUsers.Count)
+        Core.Data.ChatMessage? target;
+        if (!string.IsNullOrEmpty(targetEntryId))
         {
-            OnSystemNotice?.Invoke("找不到可重试的用户消息");
-            return false;
+            // UI 列表可能停在 compact 之前：目标已不在当前 active path，但 entryId 仍在
+            // append-only 分片里。按 as-of 上下文精确取回它，而不是用过期序号猜。
+            target = active.FirstOrDefault(m =>
+                string.Equals(m.EntryId, targetEntryId, StringComparison.Ordinal)
+                && IsVisibleUserMessage(m)
+            );
+            if (target is null)
+            {
+                var asOf = await store.GetContextMessages(
+                    _sessionId,
+                    ct,
+                    asOfEntryId: targetEntryId
+                );
+                target = asOf.FirstOrDefault(m =>
+                    string.Equals(m.EntryId, targetEntryId, StringComparison.Ordinal)
+                    && IsVisibleUserMessage(m)
+                );
+            }
+        }
+        else
+        {
+            var visibleUsers = active.Where(IsVisibleUserMessage).ToList();
+            target =
+                visibleUserMessageOrdinal >= 0 && visibleUserMessageOrdinal < visibleUsers.Count
+                    ? visibleUsers[visibleUserMessageOrdinal]
+                    : null;
         }
 
-        var target = visibleUsers[visibleUserMessageOrdinal];
-        if (string.IsNullOrEmpty(target.EntryId))
+        if (target is null || string.IsNullOrEmpty(target.EntryId) || !IsVisibleUserMessage(target))
         {
-            OnSystemNotice?.Invoke("当前会话缺少可回退的消息锚点");
+            OnSystemNotice?.Invoke("找不到可重试的用户消息");
             return false;
         }
 

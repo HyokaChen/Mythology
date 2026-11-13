@@ -132,6 +132,40 @@ public sealed class SessionA2CheckpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AsOf_AfterCompact_IncludesSummaryBeforeFirstKept_ButNotFuture()
+    {
+        var u1 = await SaveAsync("u1");
+        var a1 = await SaveAsync("a1", u1, 1);
+        var u2 = await SaveAsync("u2", a1, 2);
+        var a2 = await SaveAsync("a2", u2, 3);
+        var (compactId, _) = await _store.CompactSession(
+            SessionId,
+            NovelId,
+            summary: "compact summary",
+            firstKeptEntryId: u1,
+            messagesBefore: 4,
+            parentEntryId: a2,
+            order: 4
+        );
+        // compact 之后的新分支：不能被 as-of 到 a2 的旧目标带进上下文。
+        await SaveAsync("future", compactId, 5);
+
+        var asOf = await _store.GetContextMessages(SessionId, asOfEntryId: a2);
+
+        Assert.Contains(asOf, m =>
+            m.Content?.Contains("[上下文摘要", StringComparison.Ordinal) == true
+        );
+        Assert.Contains(asOf, m => m.Content == "u1");
+        Assert.Contains(asOf, m => m.Content == "a2");
+        Assert.DoesNotContain(asOf, m => m.Content == "future");
+        var summaryIndex = asOf.FindIndex(m =>
+            m.Content?.Contains("[上下文摘要", StringComparison.Ordinal) == true
+        );
+        var keptIndex = asOf.FindIndex(m => m.Content == "u1");
+        Assert.True(summaryIndex >= 0 && summaryIndex < keptIndex);
+    }
+
+    [Fact]
     public async Task LeafFollowedByMessage_LastMessageWins()
     {
         var u1 = await SaveAsync("u1");

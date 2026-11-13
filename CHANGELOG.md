@@ -46,6 +46,12 @@
   新 user/assistant 以锚点为 parent 追加到 JSONL 末尾；旧分支保留为 inactive sibling，
   可随时切回。retry 不再写新 leaf，active 由最后一条物理 entry 决定。`GetContextMessages`
   新增 as-of-target 读取，retry prefix 不会被目标之后的 window/compact 先截断。
+- **compact 后 retry/edit 的边界错位**：compact 摘要改在 `first-kept-entry-id` 边界注入，
+  不再按 compact 条目自身 order 漂到保留消息之后；UI 消息动作改为携带持久化 `entryId`，
+  即使 compact 后 UI 列表已不在当前 active path，也能精确回退到目标消息的 parent 再 append。
+  compact 摘要仍可跨分支共享，但目标之前已保留的消息不会被目标之后的 compact/window 污染。
+  回归：`SessionA2CheckpointTests.AsOf_AfterCompact_IncludesSummaryBeforeFirstKept_ButNotFuture`、
+  `ConversationVmContractTests.RetryFromUserMessage_ByEntryId_WorksWhenTargetLeftActiveAfterCompact`。
 - **compact/window 改为按 active path 作用域**：compact 以 `first-kept-entry-id`、window
   以 window entry 自身是否在当前 active path 判断；不再使用全局最后 checkpoint 污染
   retry 目标前缀或 sibling 分支。leaf 只有仍是最后一条物理 entry 时才有效。

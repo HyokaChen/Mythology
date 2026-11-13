@@ -1034,6 +1034,42 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
+    public async Task RetryFromUserMessage_ByEntryId_WorksWhenTargetLeftActiveAfterCompact()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        var active = await h.Engine.GetUiMessagesAsync();
+        var firstUser = active.First(m => m.Content == "第一问");
+        var secondUser = active.First(m => m.Content == "第二问");
+        var last = active[^1];
+        var (nextOrder, _) = await h.Store.GetSessionMetadataAsync(h.Engine.SessionId);
+        await h.Store.CompactSession(
+            h.Engine.SessionId,
+            h.Agent.CurrentNovelId ?? "",
+            summary: "compact summary",
+            firstKeptEntryId: secondUser.EntryId!,
+            messagesBefore: active.Count,
+            parentEntryId: last.EntryId,
+            order: nextOrder
+        );
+
+        var compacted = await h.Engine.GetUiMessagesAsync();
+        Assert.DoesNotContain(compacted, m => m.EntryId == firstUser.EntryId);
+
+        var started = await h.Engine.RetryFromUserMessageAsync(
+            0,
+            "改写第一问",
+            CancellationToken.None,
+            targetEntryId: firstUser.EntryId
+        );
+
+        Assert.True(started);
+        var after = await h.Engine.GetUiMessagesAsync();
+        Assert.Contains(after, m => m.Content == "改写第一问");
+    }
+
+    [Fact]
     public async Task RetryFromUserMessage_KeepsEarlierTurns_WhenTargetingSecondUser()
     {
         using var h = new Harness();

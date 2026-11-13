@@ -272,12 +272,18 @@ public sealed class SessionMessageMapperDisplayTests
     public void MapUi_KeepsRealUserMessage_AndDropsEmptyUser()
     {
         var ui = SessionMessageMapper.MapUi([
-            new Core.Data.ChatMessage { Role = MessageRole.User, Content = "帮我看看林月如" },
+            new Core.Data.ChatMessage
+            {
+                Role = MessageRole.User,
+                Content = "帮我看看林月如",
+                EntryId = "u1",
+            },
             new Core.Data.ChatMessage { Role = MessageRole.User, Content = "   " },
         ]);
 
         var msg = Assert.Single(ui);
         Assert.Equal(MessageSender.User, msg.Sender);
+        Assert.Equal("u1", msg.EntryId);
         Assert.Equal("帮我看看林月如", msg.Content.ToString());
     }
 

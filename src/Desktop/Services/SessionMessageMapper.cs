@@ -77,7 +77,7 @@ public static class SessionMessageMapper
                         break;
 
                     FlushAgent();
-                    var msg = new ChatMessage(MessageSender.User);
+                    var msg = new ChatMessage(MessageSender.User) { EntryId = m.EntryId };
                     msg.Content.Append(text);
                     result.Add(msg);
                     break;

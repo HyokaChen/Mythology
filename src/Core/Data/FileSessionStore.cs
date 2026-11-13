@@ -1499,11 +1499,25 @@ public sealed class FileSessionStore
         // 过滤 + 渲染（JSONL append-only 保证 order 递增，无需额外排序）
         var messages = new List<ChatMessage>();
 
+        var compactSummaryAdded = false;
         foreach (var entry in entries)
         {
             // ★ 页截断：封页（order ≤ 最新 window 行）的内容一律不进模型上下文
             if (windowFromOrder >= 0 && entry.Order <= windowFromOrder)
                 continue;
+
+            // compact 摘要代表「first-kept 之前的全部历史」，必须落在 first-kept 边界，
+            // 不能按 compact 条目自身的 order 漂到保留消息之后（否则 as-of 前缀会错位）。
+            if (
+                !compactSummaryAdded
+                && latestCompact is not null
+                && compactFromOrder >= 0
+                && entry.Order == compactFromOrder
+            )
+            {
+                AddCompactSummary(messages, latestCompact, mode, sessionId);
+                compactSummaryAdded = true;
+            }
 
             switch (entry.Type)
             {
@@ -1541,61 +1555,9 @@ public sealed class FileSessionStore
                     );
                     continue;
                 }
-                // compact 条目：根据渲染模式差异化输出
-                // 新格式分片存储中，compact 条目始终在活跃路径上（它是分片的头部标记）。
-                // 旧格式兼容：如果 compact 不在活跃路径上，检查其 parentId 链。
-                // A2：只渲染当前 active path 适用的最新 compact；没有适用项时全部隐藏，
-                // 不能用旧分支的全局摘要。
-                case JsonlEntryType.Compact
-                    when latestCompact is null || entry.EntryId != latestCompact.EntryId:
-                // ★ B5：compact 是全局摘要（覆盖会话前缀，分支间共享），不做 activeIds/
-                // parentId 链检查——分支切换后挂载点（压缩时最后一条消息）不在新活跃路径，
-                // 但摘要内容对当前分支仍有效（被压缩的早期消息已从可见列表移除，
-                // 必须靠摘要承载上下文）。latestCompact（order 最大）即最近一次压缩。
-                case JsonlEntryType.Compact when string.IsNullOrEmpty(entry.CompactSummary):
-                    continue;
+                // compact 条目本身不按物理 order 输出：摘要已在 first-kept 边界注入。
                 case JsonlEntryType.Compact:
-                {
-                    if (mode == MessageRenderMode.Context)
-                    {
-                        // B2：摘要标签带 blockId（[上下文摘要 b1]），会话恢复后模型仍可 decompress；
-                        // 迁移前旧数据无 blockId，降级为无标签摘要。
-                        var label = entry.CompactBlockId is not null
-                            ? $"[上下文摘要 {entry.CompactBlockId}]"
-                            : "[上下文摘要]";
-                        messages.Add(
-                            new ChatMessage
-                            {
-                                Id = entry.Order,
-                                SessionId = sessionId,
-                                Role = MessageRole.User,
-                                Content = $"{label}\n{entry.CompactSummary}",
-                                Order = entry.Order,
-                                EntryId = entry.EntryId,
-                                ParentEntryId = entry.ParentEntryId,
-                                CreatedAt = entry.Timestamp,
-                            }
-                        );
-                    }
-                    else
-                    {
-                        messages.Add(
-                            new ChatMessage
-                            {
-                                Id = entry.Order,
-                                SessionId = sessionId,
-                                Role = MessageRole.Unknown,
-                                Content = entry.CompactSummary,
-                                Order = entry.Order,
-                                EntryId = entry.EntryId,
-                                ParentEntryId = entry.ParentEntryId,
-                                CreatedAt = entry.Timestamp,
-                                EventType = SessionEventType.Compact,
-                            }
-                        );
-                    }
                     continue;
-                }
                 // label 条目不输出到 messages
                 case JsonlEntryType.Label:
                 // event 条目
@@ -2723,6 +2685,57 @@ public sealed class FileSessionStore
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// 把当前适用的 compact 摘要渲染成一条消息。Context 模式用 UserMessage（带 blockId 可 decompress），
+    /// Active 模式用 Unknown+Compact 事件供 UI 降级为系统行。
+    /// </summary>
+    private static void AddCompactSummary(
+        List<ChatMessage> messages,
+        ParsedEntry compact,
+        MessageRenderMode mode,
+        string sessionId
+    )
+    {
+        if (string.IsNullOrEmpty(compact.CompactSummary))
+            return;
+
+        if (mode == MessageRenderMode.Context)
+        {
+            var label = compact.CompactBlockId is not null
+                ? $"[上下文摘要 {compact.CompactBlockId}]"
+                : "[上下文摘要]";
+            messages.Add(
+                new ChatMessage
+                {
+                    Id = compact.Order,
+                    SessionId = sessionId,
+                    Role = MessageRole.User,
+                    Content = $"{label}\n{compact.CompactSummary}",
+                    Order = compact.Order,
+                    EntryId = compact.EntryId,
+                    ParentEntryId = compact.ParentEntryId,
+                    CreatedAt = compact.Timestamp,
+                }
+            );
+            return;
+        }
+
+        messages.Add(
+            new ChatMessage
+            {
+                Id = compact.Order,
+                SessionId = sessionId,
+                Role = MessageRole.Unknown,
+                Content = compact.CompactSummary,
+                Order = compact.Order,
+                EntryId = compact.EntryId,
+                ParentEntryId = compact.ParentEntryId,
+                CreatedAt = compact.Timestamp,
+                EventType = SessionEventType.Compact,
+            }
+        );
     }
 
     /// <summary>

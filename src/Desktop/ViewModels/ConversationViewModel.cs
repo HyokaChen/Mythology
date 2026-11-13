@@ -1634,8 +1634,9 @@ public sealed class ConversationViewModel : ViewModelBase
             message.IsEditing = false;
 
             var removed = Messages.Skip(index).ToArray();
+            var targetEntryId = message.EntryId;
             TrimFrom(index);
-            await StartRetryTurnAsync(ordinal, outbound, editedText, index, removed);
+            await StartRetryTurnAsync(ordinal, outbound, editedText, index, removed, targetEntryId);
         }
         finally
         {
@@ -1676,13 +1677,15 @@ public sealed class ConversationViewModel : ViewModelBase
             return;
 
         var removed = Messages.Skip(userIndex + 1).ToArray();
+        var targetEntryId = Messages[userIndex].EntryId;
         TrimFrom(userIndex + 1);
         await StartRetryTurnAsync(
             ordinal,
             editedOutbound: null,
             editedDisplay: null,
             restoreIndex: userIndex + 1,
-            removed
+            removed,
+            targetEntryId
         );
     }
 
@@ -1695,7 +1698,8 @@ public sealed class ConversationViewModel : ViewModelBase
         string? editedOutbound,
         string? editedDisplay,
         int restoreIndex,
-        ChatMessageModel[] removed
+        ChatMessageModel[] removed,
+        string? targetEntryId
     )
     {
         if (_engine.IsPersistenceFaulted)
@@ -1744,7 +1748,8 @@ public sealed class ConversationViewModel : ViewModelBase
             var started = await _engine.RetryFromUserMessageAsync(
                 userOrdinal,
                 editedOutbound,
-                _cts.Token
+                _cts.Token,
+                targetEntryId
             );
             if (!started)
             {
