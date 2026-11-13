@@ -111,9 +111,8 @@ public sealed class HistoryToolsTests : IAsyncLifetime
         await WriteMessagesAsync(("user", "现在改渲染层"));
 
         // 模型上下文已被页截断（旧消息不可见）
-        Assert.DoesNotContain(
-            await _store.GetContextMessages(TestSessionId),
-            m => m.Content!.Contains("魔法数字")
+        Assert.DoesNotContain(await _store.GetContextMessages(TestSessionId), m =>
+            m.Content!.Contains("魔法数字")
         );
 
         var tool = new HistorySearchContentsTool(_agent, _store);

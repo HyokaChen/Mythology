@@ -66,9 +66,8 @@ public sealed class ToolArgumentGuardTests
         Assert.Equal(0, tool.ExecutionCount);
         Assert.Equal("{}", call.Arguments);
         Assert.False(call.Result!.InvocationSucceeded);
-        Assert.Contains(
-            events.OfType<ToolExecutionEnd>(),
-            e => e.IsError && e.Result!.Contains("arguments", StringComparison.OrdinalIgnoreCase)
+        Assert.Contains(events.OfType<ToolExecutionEnd>(), e =>
+            e.IsError && e.Result!.Contains("arguments", StringComparison.OrdinalIgnoreCase)
         );
     }
 

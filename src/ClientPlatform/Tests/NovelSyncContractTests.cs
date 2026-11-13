@@ -210,17 +210,15 @@ public sealed class NovelSyncContractTests(CloudBackendFixture fixture) : IDispo
             [("chapter", "ch1"), ("file", binaryPath)],
             ct
         );
-        var chapter = Assert.Single(
-            fetched,
-            document => document.DocumentType == "chapter" && document.EntityId == "ch1"
+        var chapter = Assert.Single(fetched, document =>
+            document.DocumentType == "chapter" && document.EntityId == "ch1"
         );
         Assert.Equal(ChapterOne, chapter.Content);
         Assert.Equal("utf8", chapter.ContentEncoding);
         Assert.Equal($"{NovelDirectory}/chapters/ch-01.md", chapter.RelativePath);
 
-        var binary = Assert.Single(
-            fetched,
-            document => document.DocumentType == "file" && document.EntityId == binaryPath
+        var binary = Assert.Single(fetched, document =>
+            document.DocumentType == "file" && document.EntityId == binaryPath
         );
         Assert.Equal("base64", binary.ContentEncoding);
         Assert.Equal(BinaryBytes, Convert.FromBase64String(binary.Content));
@@ -278,9 +276,8 @@ public sealed class NovelSyncContractTests(CloudBackendFixture fixture) : IDispo
         Assert.Equal(2, deleteConflict[0].Current!.Revision);
 
         var remaining = await client.ListDocumentsAsync(novelId, ct);
-        Assert.DoesNotContain(
-            remaining,
-            meta => meta.DocumentType == "chapter" && meta.EntityId == "ch2"
+        Assert.DoesNotContain(remaining, meta =>
+            meta.DocumentType == "chapter" && meta.EntityId == "ch2"
         );
     }
 
@@ -350,12 +347,10 @@ public sealed class NovelSyncContractTests(CloudBackendFixture fixture) : IDispo
         Assert.Equal(0, renameReport.Conflicts);
 
         var metas = await deviceB.Client.ListDocumentsAsync(novelId, ct);
-        Assert.Contains(
-            metas,
-            meta =>
-                meta.DocumentType == "chapter"
-                && meta.EntityId == "ch2"
-                && meta.RelativePath == newRelative
+        Assert.Contains(metas, meta =>
+            meta.DocumentType == "chapter"
+            && meta.EntityId == "ch2"
+            && meta.RelativePath == newRelative
         );
 
         // 设备 A 跟随远端改名：新路径落盘、旧路径清理。
@@ -389,9 +384,8 @@ public sealed class NovelSyncContractTests(CloudBackendFixture fixture) : IDispo
         Assert.Equal(0, deleteReport.Conflicts);
 
         var metas = await deviceB.Client.ListDocumentsAsync(novelId, ct);
-        Assert.DoesNotContain(
-            metas,
-            meta => meta.DocumentType == "chapter" && meta.EntityId == "ch1"
+        Assert.DoesNotContain(metas, meta =>
+            meta.DocumentType == "chapter" && meta.EntityId == "ch1"
         );
 
         var followReport = await deviceA.Service.SyncAsync(novelId, ct: ct);

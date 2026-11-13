@@ -9,6 +9,7 @@ using Core.Data;
 using Core.Infrastructure;
 using Core.Interactions;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using Desktop.Controls;
 using Desktop.Models;
@@ -309,8 +310,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _bridge = bridge;
         _sessionStore = sessionStore;
         _store = store;
-        _log =
-            log
+        _log = log
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MainWindowViewModel>.Instance;
         _agent = agent;
         _configuration = configuration;
@@ -967,8 +967,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         var window = new VariantReviewWindow(review.Details);
         DialogTheme.FitToOwner(window, owner, 0.78, 720, 1400, 0.78, 480, 900);
         await window.ShowDialog(owner);
-        var decision =
-            window.Decision ?? new VariantReviewDecision { Action = VariantReviewAction.Dismiss };
+        var decision = window.Decision
+            ?? new VariantReviewDecision { Action = VariantReviewAction.Dismiss };
 
         var result = _interactionHub.SubmitVariantDecision(snapshot.Id, decision, lease);
         if (result.Status != SubmitStatus.Accepted)
@@ -979,10 +979,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         try
         {
-            await _variantEffectExecutor.ExecuteAsync(
-                snapshot.Id,
-                effect,
-                e => ExecuteVariantEffectAsync(vm, e)
+            await _variantEffectExecutor.ExecuteAsync(snapshot.Id, effect, e =>
+                ExecuteVariantEffectAsync(vm, e)
             );
         }
         catch (Exception ex)
@@ -1150,8 +1148,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 doc.RootElement,
                 CancellationToken.None
             );
-            var resultText =
-                (result.Content.ToList().FirstOrDefault() as TextContent)?.Text ?? "已写入";
+            var resultText = (result.Content.ToList().FirstOrDefault() as TextContent)?.Text
+                ?? "已写入";
             vm.AddSystemNotice($"✅ {resultText}（采用「{variantLabel}」）");
         }
         catch (Exception ex)
@@ -1700,10 +1698,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await new ModelQuickSwitchWindow(
-            _agent.State.ModelName ?? "",
-            models,
-            m => _ = ApplyQuickModelAsync(m)
+        await new ModelQuickSwitchWindow(_agent.State.ModelName ?? "", models, m =>
+            _ = ApplyQuickModelAsync(m)
         ).ShowDialog(owner);
     }
 
@@ -1957,8 +1953,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// </summary>
     public void UpdateContextGauge()
     {
-        var window =
-            _agent.ModelProfile?.ContextWindowTokens
+        var window = _agent.ModelProfile?.ContextWindowTokens
             ?? _services.GetRequiredService<ConfigStore>().Load().Providers.ContextWindowSize;
         if (window <= 0)
         {

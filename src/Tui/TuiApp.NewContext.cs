@@ -113,7 +113,9 @@ public sealed partial class TuiApp
 
             // 5) 监控器真正归零（空页 ≈ 固定开销；为 0 时 Seed 自动跳过 →
             //    下一轮增量走 seeded=false 分支 = full prompt，即新页真实占用）
-            ResetStabilityMonitor(_tokenCalibrator.Project(EstimateContextTokens([])));
+            ResetStabilityMonitor(
+                _tokenCalibrator.Project(CompactionEngine.EstimateContextTokens([]))
+            );
 
             InvalidateContextMeasure();
             UpdateTokenDisplay();
@@ -178,10 +180,10 @@ public sealed partial class TuiApp
     /// 溢出恢复分支（**模式互斥**，唯一入口）：接续 → 换页（无摘要、无信息损失）；
     /// compact → 分片压缩。两条路径互不回落——接续模式下换页失败即报错，不做有损压缩。
     /// </summary>
-    private Task<bool> RelieveOverflowAsync(int keepRecent) =>
+    private Task<bool> RelieveOverflowAsync(int keepRecentTokens) =>
         _contextManagement is { Mode: ContextMode.Continuation }
             ? RollContextWindowAsync("overflow")
-            : CompactForOverflowAsync(keepRecent);
+            : CompactForOverflowAsync(keepRecentTokens);
 
     /// <summary>
     /// 被迫换页（接近上限 / 溢出恢复）后的自动接续：新页不再等用户发话，直接把上一任务接着做。

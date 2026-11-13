@@ -250,9 +250,9 @@ public sealed class VolumeHeadingChapters : IDataMigration
         try
         {
             return YamlHelper
-                    .Deserialize(File.ReadAllText(path))
-                    .GetValueOrDefault("id")
-                    ?.ToString()
+                .Deserialize(File.ReadAllText(path))
+                .GetValueOrDefault("id")
+                ?.ToString()
                 ?? "";
         }
         catch

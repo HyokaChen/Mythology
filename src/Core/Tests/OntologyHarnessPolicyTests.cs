@@ -39,9 +39,8 @@ public sealed class OntologyHarnessPolicyTests : IAsyncDisposable
 
         var result = await EvaluateAsync(novel, chapter, scenes, []);
 
-        Assert.Contains(
-            result.Signals,
-            s => s.Kind == HarnessSignalKind.Drift && s.Severity == HarnessSeverity.Critical
+        Assert.Contains(result.Signals, s =>
+            s.Kind == HarnessSignalKind.Drift && s.Severity == HarnessSeverity.Critical
         );
         Assert.True(result.BlocksCloud);
         Assert.Contains("[本体 harness]", result.Render);
@@ -94,9 +93,8 @@ public sealed class OntologyHarnessPolicyTests : IAsyncDisposable
 
         var result = await EvaluateAsync(novel, chapter, scenes, [rule]);
 
-        Assert.Contains(
-            result.Signals,
-            s => s.RuleId == "r1" && s.Severity == HarnessSeverity.Critical
+        Assert.Contains(result.Signals, s =>
+            s.RuleId == "r1" && s.Severity == HarnessSeverity.Critical
         );
         Assert.True(result.BlocksCloud);
     }
@@ -108,9 +106,8 @@ public sealed class OntologyHarnessPolicyTests : IAsyncDisposable
 
         var result = await EvaluateAsync(novel, chapter, scenes, []);
 
-        Assert.Contains(
-            result.Signals,
-            s => s.Kind == HarnessSignalKind.Stall && s.SuggestedTool == "plan_scene_deltas"
+        Assert.Contains(result.Signals, s =>
+            s.Kind == HarnessSignalKind.Stall && s.SuggestedTool == "plan_scene_deltas"
         );
         Assert.Contains("plan_scene_deltas", result.Render);
     }
@@ -160,9 +157,8 @@ public sealed class OntologyHarnessPolicyTests : IAsyncDisposable
 
         var result = await EvaluateAsync(novel, chapter, scenes, []);
 
-        Assert.Contains(
-            result.Signals,
-            s => s.Kind == HarnessSignalKind.Quality && s.Severity == HarnessSeverity.Warning
+        Assert.Contains(result.Signals, s =>
+            s.Kind == HarnessSignalKind.Quality && s.Severity == HarnessSeverity.Warning
         );
         Assert.False(result.BlocksCloud);
     }

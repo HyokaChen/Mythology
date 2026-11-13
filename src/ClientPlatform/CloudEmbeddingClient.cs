@@ -106,8 +106,7 @@ public sealed class CloudEmbeddingClient : IEmbeddingService, IBatchEmbeddingSer
             ct,
             completionOption: HttpCompletionOption.ResponseHeadersRead
         );
-        var parsed =
-            JsonSerializer.Deserialize<EmbeddingResponse>(json, ClientJsonDefaults.Cloud)
+        var parsed = JsonSerializer.Deserialize<EmbeddingResponse>(json, ClientJsonDefaults.Cloud)
             ?? throw new CloudApiException("embedding_failed", "云端 embedding 响应无法解析。");
 
         if (!parsed.Available)

@@ -172,8 +172,11 @@ public sealed class WritingFlowHook(
                     Novel = novel,
                     PreviousContent = previous,
                     PriorAppearedCharacterIds = priorAppeared,
-                    SnapshotStale =
-                        _snapshotCache?.IsStale(novelId, chapters.Max(c => c.Order), chapters.Count)
+                    SnapshotStale = _snapshotCache?.IsStale(
+                        novelId,
+                        chapters.Max(c => c.Order),
+                        chapters.Count
+                    )
                         ?? false,
                     // P3 §16.4：SceneGoal 自动填充
                     SceneGoal = ResolveSceneGoal(novel, chapter),
@@ -952,8 +955,9 @@ public sealed class WritingFlowHook(
     /// <summary>从输入组装规则引擎本地事实（§4.2 A-3/A-4/A-5 数据源）。internal 供熵差接线测试。</summary>
     internal LocalFacts BuildLocalFacts(CloudRound round, DiagnosisInput input)
     {
-        var protagonist =
-            input.Novel.Characters.FirstOrDefault(c => c.Role == CharacterRole.Protagonist)?.Name
+        var protagonist = input
+            .Novel.Characters.FirstOrDefault(c => c.Role == CharacterRole.Protagonist)
+            ?.Name
             ?? "";
         var orderById = input.Chapters.ToDictionary(c => c.Id, c => c.Order);
         var orderedChapters = input.Chapters.OrderBy(c => c.Order).ToList();

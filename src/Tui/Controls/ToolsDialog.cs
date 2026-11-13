@@ -50,8 +50,7 @@ public sealed class ToolsDialog
     /// </summary>
     public void ShowPlugin(string pluginId)
     {
-        var pluginName =
-            _registry.GetPluginNameById(pluginId)
+        var pluginName = _registry.GetPluginNameById(pluginId)
             ?? _registry
                 .GetPluginNames()
                 .FirstOrDefault(p => p.Equals(pluginId, StringComparison.OrdinalIgnoreCase));

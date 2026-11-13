@@ -307,14 +307,13 @@ public sealed class SetUpPanelViewModel : ViewModelBase
     /// <summary>角色性别筛选项（按当前数据出现过的性别归一集；无数据 = 无此维度）。</summary>
     private EntityFilterField? GenderFilterField()
     {
-        var genders =
-            _allEntityItems
-                .GetValueOrDefault(EntityType.Character)
-                ?.Select(i => i.FilterSecondary ?? "")
-                .Where(g => g.Length > 0)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(g => g, StringComparer.Ordinal)
-                .ToArray()
+        var genders = _allEntityItems
+            .GetValueOrDefault(EntityType.Character)
+            ?.Select(i => i.FilterSecondary ?? "")
+            .Where(g => g.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(g => g, StringComparer.Ordinal)
+            .ToArray()
             ?? [];
         return genders.Length == 0
             ? null
@@ -495,8 +494,7 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         _registry = registry;
         _cloudHarness = cloudHarness;
         _novelIdProvider = novelIdProvider;
-        _log =
-            log
+        _log = log
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SetUpPanelViewModel>.Instance;
 
         // 大纲 Tab 的内容 = Parent.OutlineRows（行模型）；通用实体列表对大纲 Tab 隐藏，故传空集合
@@ -1035,10 +1033,9 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         var list = await _store.GetScenesByNovel(novelId);
         // 筛选「所属卷」需要章 → 卷映射（结构索引按目录戳缓存，与大纲树共用同一真源）
         var structure = await _store.GetStructure(novelId);
-        var chapterVolume =
-            structure
-                ?.Chapters.Where(c => !string.IsNullOrEmpty(c.VolumeId))
-                .ToDictionary(c => c.Id, c => c.VolumeId!, StringComparer.Ordinal)
+        var chapterVolume = structure
+            ?.Chapters.Where(c => !string.IsNullOrEmpty(c.VolumeId))
+            .ToDictionary(c => c.Id, c => c.VolumeId!, StringComparer.Ordinal)
             ?? [];
         var items = list.OrderBy(s => s.Order)
             .Select(s => new EntityItem
@@ -1258,10 +1255,7 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         );
         var rows = build.Rows;
         // 书级内容改由顶部摘要条承载（不再是树里的三行）
-        BookSummary = build.Summary with
-        {
-            CheckFindings = Findings.Count,
-        };
+        BookSummary = build.Summary with { CheckFindings = Findings.Count };
 
         // 定位高亮是一次性的：本轮行构建用掉后即清除，下一轮重建不再高亮
         _revealVolumeId = null;
@@ -1367,11 +1361,8 @@ public sealed class SetUpPanelViewModel : ViewModelBase
         if (novelRow is null)
             return;
 
-        var novel = new OutlineNodeVm(
-            OutlineRowKind.Novel,
-            novelRow,
-            _novelExpanded,
-            expanded => _novelExpanded = expanded
+        var novel = new OutlineNodeVm(OutlineRowKind.Novel, novelRow, _novelExpanded, expanded =>
+            _novelExpanded = expanded
         );
         OutlineNodes.Add(novel);
 
@@ -1722,8 +1713,9 @@ public sealed class SetUpPanelViewModel : ViewModelBase
             if (string.IsNullOrEmpty(novelId))
                 return "";
             var entries = await EntityLogView.BuildForEntityAsync(_store, novelId, type, entityId);
-            var name =
-                entries.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.EntityName))?.EntityName
+            var name = entries
+                .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.EntityName))
+                ?.EntityName
                 ?? _relations?.NameOf(type, entityId)
                 ?? entityId;
             return EntityLogFormatter.ToMarkdown(name, entries);

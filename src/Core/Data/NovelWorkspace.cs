@@ -71,8 +71,7 @@ public sealed class NovelWorkspace
         foreach (var seed in seedRoots ?? [])
             UpsertSeed(seed);
 
-        _activeRoot =
-            PickActive(_persistPath, Normalize(activeRoot))
+        _activeRoot = PickActive(_persistPath, Normalize(activeRoot))
             ?? MostRecentlyUsed()?.Path
             ?? DefaultNovelsRoot();
 

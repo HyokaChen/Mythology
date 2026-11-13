@@ -69,9 +69,8 @@ public sealed class SessionMessageMapperDisplayTests
         Assert.Equal(2, ui.Count);
         var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
         Assert.Equal("最终答复", agent.Content.ToString());
-        Assert.Contains(
-            agent.AgentSteps,
-            step => step.Kind == StepKind.Content && step.ContentText == "先查角色。"
+        Assert.Contains(agent.AgentSteps, step =>
+            step.Kind == StepKind.Content && step.ContentText == "先查角色。"
         );
         Assert.Contains(agent.AgentSteps, step => step.Kind == StepKind.ToolCall);
 
@@ -121,9 +120,8 @@ public sealed class SessionMessageMapperDisplayTests
         Assert.Equal(2, ui.Count);
         Assert.DoesNotContain(ui, msg => msg.Sender == MessageSender.System);
         var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
-        Assert.Contains(
-            agent.AgentSteps,
-            step => step.Kind == StepKind.SystemEvent && step.ContentText.Contains("429")
+        Assert.Contains(agent.AgentSteps, step =>
+            step.Kind == StepKind.SystemEvent && step.ContentText.Contains("429")
         );
 
         var rows = TurnRows(agent);
@@ -208,9 +206,8 @@ public sealed class SessionMessageMapperDisplayTests
         var agent = Assert.Single(ui, msg => msg.Sender == MessageSender.Agent);
         Assert.True(agent.IsInterrupted);
         var rows = TurnRows(agent);
-        var interruptedRow = Assert.Single(
-            rows,
-            row => row.Kind == ConversationRowKind.Interrupted
+        var interruptedRow = Assert.Single(rows, row =>
+            row.Kind == ConversationRowKind.Interrupted
         );
         var actions = Assert.Single(rows, row => row.Kind == ConversationRowKind.Actions);
         Assert.True(rows.IndexOf(interruptedRow) < rows.IndexOf(actions));

@@ -395,9 +395,8 @@ public sealed class MonotonyHookIntegrationTests
 
         // L2-1/ACTION 轮：不应出现灵感信号
         var drained = agent.InjectQueue.DequeueAllWithIds();
-        Assert.DoesNotContain(
-            drained,
-            m => ((LlmChatMessage)m.Message).Content?.Contains("[风格观察]") == true
+        Assert.DoesNotContain(drained, m =>
+            ((LlmChatMessage)m.Message).Content?.Contains("[风格观察]") == true
         );
     }
 

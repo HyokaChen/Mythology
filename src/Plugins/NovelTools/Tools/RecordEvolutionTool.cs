@@ -108,19 +108,17 @@ public sealed class RecordEvolutionTool(INovelStore store)
         }
 
         // 2. 章内顺序与上下文
-        var sequence =
-            existing?.Sequence
+        var sequence = existing?.Sequence
             ?? (chapterChanges.Count == 0 ? 1 : chapterChanges.Max(c => c.Sequence) + 1);
 
         var scenes = await store.GetScenesByChapter(chapter.Id, ct);
-        var targetScene =
-            (
-                args.SceneId is null
-                    ? null
-                    : scenes.FirstOrDefault(s =>
-                        string.Equals(s.Id, args.SceneId, StringComparison.Ordinal)
-                    )
-            )
+        var targetScene = (
+            args.SceneId is null
+                ? null
+                : scenes.FirstOrDefault(s =>
+                    string.Equals(s.Id, args.SceneId, StringComparison.Ordinal)
+                )
+        )
             ?? scenes.FirstOrDefault(s =>
                 s.ParticipantIds.Contains(args.TargetId, StringComparer.Ordinal)
             )

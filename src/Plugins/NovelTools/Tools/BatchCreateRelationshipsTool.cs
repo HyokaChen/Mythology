@@ -60,8 +60,7 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
                 NovelId = args.NovelId,
                 CharacterAId = r.CharacterAId.Trim(),
                 CharacterBId = r.CharacterBId.Trim(),
-                Type =
-                    RelationshipTypeExtensions.ParseRelationshipType(r.Type)
+                Type = RelationshipTypeExtensions.ParseRelationshipType(r.Type)
                     ?? RelationshipType.Friend, // 默认朋友
                 Strength = Enum.TryParse<RelationshipStrength>(
                     r.Strength ?? "medium",

@@ -22,8 +22,7 @@ public sealed class CloudSessionStore
     {
         // 统一到 ~/.mythology/（UserProfile/.mythology），与 config.yaml / sessions / plugins / input-history 同目录；
         // 显式传入 mythologyDir（测试）时仍以调用方为准。
-        var dir =
-            mythologyDir
+        var dir = mythologyDir
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mythology"

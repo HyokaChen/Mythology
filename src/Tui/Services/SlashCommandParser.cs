@@ -406,8 +406,7 @@ internal static class SlashCommandParser
             var pluginId = fullArg[..colonIdx];
             var toolName = fullArg[(colonIdx + 1)..];
 
-            var pluginName =
-                registry.GetPluginNameById(pluginId)
+            var pluginName = registry.GetPluginNameById(pluginId)
                 ?? registry
                     .GetPluginNames()
                     .FirstOrDefault(p => p.Equals(pluginId, StringComparison.OrdinalIgnoreCase));
@@ -415,10 +414,9 @@ internal static class SlashCommandParser
             if (pluginName is not null)
             {
                 var tools = registry.GetToolsByPlugin(pluginName);
-                var tool =
-                    tools.FirstOrDefault(t =>
-                        t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)
-                    )
+                var tool = tools.FirstOrDefault(t =>
+                    t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)
+                )
                     ?? tools.FirstOrDefault(t =>
                         t.Name.Contains(toolName, StringComparison.OrdinalIgnoreCase)
                     );

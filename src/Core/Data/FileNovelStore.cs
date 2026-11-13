@@ -86,8 +86,7 @@ public sealed class FileNovelStore : INovelStore
     )
     {
         _workspace = workspace;
-        var mythDir =
-            mythologyDir
+        var mythDir = mythologyDir
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mythology"
@@ -1075,34 +1074,30 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Character?> GetCharacter(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Character>(
-            id,
-            "characters",
-            dict => new Character
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = GetString(dict, "novel-id") ?? "",
-                Name = GetString(dict, "name") ?? "",
-                Gender = GetString(dict, "gender") ?? "",
-                Age = GetString(dict, "age") ?? "",
-                Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
-                Personality = GetString(dict, "personality") ?? "",
-                Appearance = GetString(dict, "appearance") ?? "",
-                Background = GetString(dict, "background") ?? "",
-                Motivation = GetString(dict, "motivation") ?? "",
-                Tags = GetStringList(dict, "tags"),
-                Abilities = GetString(dict, "abilities") ?? "",
-                Weakness = GetString(dict, "weakness") ?? "",
-                Habits = GetString(dict, "habits") ?? "",
-                Notes = GetString(dict, "notes") ?? "",
-                Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
-                FactionId = GetString(dict, "faction-id"),
-                CurrentLocationId = GetString(dict, "current-location-id"),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Character>(id, "characters", dict => new Character
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = GetString(dict, "novel-id") ?? "",
+            Name = GetString(dict, "name") ?? "",
+            Gender = GetString(dict, "gender") ?? "",
+            Age = GetString(dict, "age") ?? "",
+            Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
+            Personality = GetString(dict, "personality") ?? "",
+            Appearance = GetString(dict, "appearance") ?? "",
+            Background = GetString(dict, "background") ?? "",
+            Motivation = GetString(dict, "motivation") ?? "",
+            Tags = GetStringList(dict, "tags"),
+            Abilities = GetString(dict, "abilities") ?? "",
+            Weakness = GetString(dict, "weakness") ?? "",
+            Habits = GetString(dict, "habits") ?? "",
+            Notes = GetString(dict, "notes") ?? "",
+            Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
+            FactionId = GetString(dict, "faction-id"),
+            CurrentLocationId = GetString(dict, "current-location-id"),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<Character?> GetCharacter(
@@ -1111,67 +1106,58 @@ public sealed class FileNovelStore : INovelStore
         CancellationToken ct = default
     )
     {
-        return await GetEntityAsync<Character>(
-            novelId,
-            id,
-            "characters",
-            dict => new Character
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Gender = GetString(dict, "gender") ?? "",
-                Age = GetString(dict, "age") ?? "",
-                Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
-                Personality = GetString(dict, "personality") ?? "",
-                Appearance = GetString(dict, "appearance") ?? "",
-                Background = GetString(dict, "background") ?? "",
-                Motivation = GetString(dict, "motivation") ?? "",
-                Tags = GetStringList(dict, "tags"),
-                Abilities = GetString(dict, "abilities") ?? "",
-                Weakness = GetString(dict, "weakness") ?? "",
-                Habits = GetString(dict, "habits") ?? "",
-                Notes = GetString(dict, "notes") ?? "",
-                Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
-                FactionId = GetString(dict, "faction-id"),
-                CurrentLocationId = GetString(dict, "current-location-id"),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Character>(novelId, id, "characters", dict => new Character
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Gender = GetString(dict, "gender") ?? "",
+            Age = GetString(dict, "age") ?? "",
+            Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
+            Personality = GetString(dict, "personality") ?? "",
+            Appearance = GetString(dict, "appearance") ?? "",
+            Background = GetString(dict, "background") ?? "",
+            Motivation = GetString(dict, "motivation") ?? "",
+            Tags = GetStringList(dict, "tags"),
+            Abilities = GetString(dict, "abilities") ?? "",
+            Weakness = GetString(dict, "weakness") ?? "",
+            Habits = GetString(dict, "habits") ?? "",
+            Notes = GetString(dict, "notes") ?? "",
+            Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
+            FactionId = GetString(dict, "faction-id"),
+            CurrentLocationId = GetString(dict, "current-location-id"),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Character>> GetCharacters(string novelId, CancellationToken ct = default)
     {
-        return await GetEntitiesAsync(
-            novelId,
-            "characters",
-            dict => new Character
-            {
-                Id = GetString(dict, "id") ?? "",
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Gender = GetString(dict, "gender") ?? "",
-                Age = GetString(dict, "age") ?? "",
-                Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
-                Personality = GetString(dict, "personality") ?? "",
-                Appearance = GetString(dict, "appearance") ?? "",
-                Background = GetString(dict, "background") ?? "",
-                Motivation = GetString(dict, "motivation") ?? "",
-                Tags = GetStringList(dict, "tags"),
-                Abilities = GetString(dict, "abilities") ?? "",
-                Weakness = GetString(dict, "weakness") ?? "",
-                Habits = GetString(dict, "habits") ?? "",
-                Notes = GetString(dict, "notes") ?? "",
-                Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
-                FactionId = GetString(dict, "faction-id"),
-                CurrentLocationId = GetString(dict, "current-location-id"),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntitiesAsync(novelId, "characters", dict => new Character
+        {
+            Id = GetString(dict, "id") ?? "",
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Gender = GetString(dict, "gender") ?? "",
+            Age = GetString(dict, "age") ?? "",
+            Role = YamlHelper.YamlToEnum(dict, "role", CharacterRole.Supporting),
+            Personality = GetString(dict, "personality") ?? "",
+            Appearance = GetString(dict, "appearance") ?? "",
+            Background = GetString(dict, "background") ?? "",
+            Motivation = GetString(dict, "motivation") ?? "",
+            Tags = GetStringList(dict, "tags"),
+            Abilities = GetString(dict, "abilities") ?? "",
+            Weakness = GetString(dict, "weakness") ?? "",
+            Habits = GetString(dict, "habits") ?? "",
+            Notes = GetString(dict, "notes") ?? "",
+            Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
+            FactionId = GetString(dict, "faction-id"),
+            CurrentLocationId = GetString(dict, "current-location-id"),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task SaveCharacter(Character character, CancellationToken ct = default)
@@ -1250,25 +1236,21 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Plotline?> GetPlotline(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Plotline>(
-            id,
-            "plotlines",
-            dict => new Plotline
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = GetString(dict, "novel-id") ?? "",
-                Name = GetString(dict, "name") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
-                Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
-                PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
-                ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
-                Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
-                Turnpoints = GetString(dict, "turnpoints") ?? "",
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Plotline>(id, "plotlines", dict => new Plotline
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = GetString(dict, "novel-id") ?? "",
+            Name = GetString(dict, "name") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
+            Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
+            PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
+            ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
+            Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
+            Turnpoints = GetString(dict, "turnpoints") ?? "",
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<Plotline?> GetPlotline(
@@ -1277,49 +1259,40 @@ public sealed class FileNovelStore : INovelStore
         CancellationToken ct = default
     )
     {
-        return await GetEntityAsync<Plotline>(
-            novelId,
-            id,
-            "plotlines",
-            dict => new Plotline
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
-                Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
-                PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
-                ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
-                Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
-                Turnpoints = GetString(dict, "turnpoints") ?? "",
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Plotline>(novelId, id, "plotlines", dict => new Plotline
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
+            Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
+            PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
+            ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
+            Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
+            Turnpoints = GetString(dict, "turnpoints") ?? "",
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Plotline>> GetPlotlines(string novelId, CancellationToken ct = default)
     {
-        return await GetEntitiesAsync(
-            novelId,
-            "plotlines",
-            dict => new Plotline
-            {
-                Id = GetString(dict, "id") ?? "",
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
-                Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
-                PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
-                ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
-                Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
-                Turnpoints = GetString(dict, "turnpoints") ?? "",
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntitiesAsync(novelId, "plotlines", dict => new Plotline
+        {
+            Id = GetString(dict, "id") ?? "",
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", PlotlineType.Main),
+            Tension = YamlHelper.YamlToEnum(dict, "tension", PlotlineTension.Medium),
+            PlannedRevealChapterId = GetString(dict, "planned-reveal-chapter-id"),
+            ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
+            Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
+            Turnpoints = GetString(dict, "turnpoints") ?? "",
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Plotline>> GetOpenPlotlines(
@@ -1378,26 +1351,22 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Faction?> GetFaction(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Faction>(
-            id,
-            "factions",
-            dict => new Faction
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = GetString(dict, "novel-id") ?? "",
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
-                Description = GetString(dict, "description") ?? "",
-                Leader = GetString(dict, "leader") ?? "",
-                HeadquartersId = GetString(dict, "headquarters-id"),
-                Goal = GetString(dict, "goal") ?? "",
-                Members = GetStringList(dict, "members"),
-                Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Faction>(id, "factions", dict => new Faction
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = GetString(dict, "novel-id") ?? "",
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
+            Description = GetString(dict, "description") ?? "",
+            Leader = GetString(dict, "leader") ?? "",
+            HeadquartersId = GetString(dict, "headquarters-id"),
+            Goal = GetString(dict, "goal") ?? "",
+            Members = GetStringList(dict, "members"),
+            Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<Faction?> GetFaction(
@@ -1406,51 +1375,42 @@ public sealed class FileNovelStore : INovelStore
         CancellationToken ct = default
     )
     {
-        return await GetEntityAsync<Faction>(
-            novelId,
-            id,
-            "factions",
-            dict => new Faction
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
-                Description = GetString(dict, "description") ?? "",
-                Leader = GetString(dict, "leader") ?? "",
-                HeadquartersId = GetString(dict, "headquarters-id"),
-                Goal = GetString(dict, "goal") ?? "",
-                Members = GetStringList(dict, "members"),
-                Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Faction>(novelId, id, "factions", dict => new Faction
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
+            Description = GetString(dict, "description") ?? "",
+            Leader = GetString(dict, "leader") ?? "",
+            HeadquartersId = GetString(dict, "headquarters-id"),
+            Goal = GetString(dict, "goal") ?? "",
+            Members = GetStringList(dict, "members"),
+            Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Faction>> GetFactions(string novelId, CancellationToken ct = default)
     {
-        return await GetEntitiesAsync(
-            novelId,
-            "factions",
-            dict => new Faction
-            {
-                Id = GetString(dict, "id") ?? "",
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
-                Description = GetString(dict, "description") ?? "",
-                Leader = GetString(dict, "leader") ?? "",
-                HeadquartersId = GetString(dict, "headquarters-id"),
-                Goal = GetString(dict, "goal") ?? "",
-                Members = GetStringList(dict, "members"),
-                Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntitiesAsync(novelId, "factions", dict => new Faction
+        {
+            Id = GetString(dict, "id") ?? "",
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", FactionType.Sect),
+            Description = GetString(dict, "description") ?? "",
+            Leader = GetString(dict, "leader") ?? "",
+            HeadquartersId = GetString(dict, "headquarters-id"),
+            Goal = GetString(dict, "goal") ?? "",
+            Members = GetStringList(dict, "members"),
+            Status = YamlHelper.YamlToEnum(dict, "status", FactionStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task SaveFaction(Faction faction, CancellationToken ct = default)
@@ -1853,8 +1813,7 @@ public sealed class FileNovelStore : INovelStore
             result.Add(
                 new StateEffect
                 {
-                    TargetType =
-                        EntityTypeExtensions.ParseEntityType(GetString(map, "target-type"))
+                    TargetType = EntityTypeExtensions.ParseEntityType(GetString(map, "target-type"))
                         ?? EntityType.Character,
                     TargetId = GetString(map, "target-id") ?? "",
                     Field = GetString(map, "field") ?? "",
@@ -2190,25 +2149,21 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Location?> GetLocation(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Location>(
-            id,
-            "locations",
-            dict => new Location
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = GetString(dict, "novel-id") ?? "",
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
-                Atmosphere = GetString(dict, "atmosphere") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                ParentId = GetString(dict, "parent-id"),
-                AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
-                Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Location>(id, "locations", dict => new Location
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = GetString(dict, "novel-id") ?? "",
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
+            Atmosphere = GetString(dict, "atmosphere") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            ParentId = GetString(dict, "parent-id"),
+            AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
+            Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<Location?> GetLocation(
@@ -2217,49 +2172,40 @@ public sealed class FileNovelStore : INovelStore
         CancellationToken ct = default
     )
     {
-        return await GetEntityAsync<Location>(
-            novelId,
-            id,
-            "locations",
-            dict => new Location
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
-                Atmosphere = GetString(dict, "atmosphere") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                ParentId = GetString(dict, "parent-id"),
-                AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
-                Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Location>(novelId, id, "locations", dict => new Location
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
+            Atmosphere = GetString(dict, "atmosphere") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            ParentId = GetString(dict, "parent-id"),
+            AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
+            Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Location>> GetLocations(string novelId, CancellationToken ct = default)
     {
-        return await GetEntitiesAsync(
-            novelId,
-            "locations",
-            dict => new Location
-            {
-                Id = GetString(dict, "id") ?? "",
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
-                Atmosphere = GetString(dict, "atmosphere") ?? "",
-                Description = GetString(dict, "description") ?? "",
-                ParentId = GetString(dict, "parent-id"),
-                AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
-                Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntitiesAsync(novelId, "locations", dict => new Location
+        {
+            Id = GetString(dict, "id") ?? "",
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", LocationType.City),
+            Atmosphere = GetString(dict, "atmosphere") ?? "",
+            Description = GetString(dict, "description") ?? "",
+            ParentId = GetString(dict, "parent-id"),
+            AdjacentLocations = GetLocationAdjacency(dict, "adjacent-locations"),
+            Status = YamlHelper.YamlToEnum(dict, "status", LocationStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task SaveLocation(Location location, CancellationToken ct = default)
@@ -2317,72 +2263,59 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Item?> GetItem(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Item>(
-            id,
-            "items",
-            dict => new Item
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = GetString(dict, "novel-id") ?? "",
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
-                Description = GetString(dict, "description") ?? "",
-                OwnerId = GetString(dict, "owner-id"),
-                LocationId = GetString(dict, "location-id"),
-                OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
-                Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Item>(id, "items", dict => new Item
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = GetString(dict, "novel-id") ?? "",
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
+            Description = GetString(dict, "description") ?? "",
+            OwnerId = GetString(dict, "owner-id"),
+            LocationId = GetString(dict, "location-id"),
+            OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
+            Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<Item?> GetItem(string novelId, string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync<Item>(
-            novelId,
-            id,
-            "items",
-            dict => new Item
-            {
-                Id = GetString(dict, "id") ?? id,
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
-                Description = GetString(dict, "description") ?? "",
-                OwnerId = GetString(dict, "owner-id"),
-                LocationId = GetString(dict, "location-id"),
-                OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
-                Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntityAsync<Item>(novelId, id, "items", dict => new Item
+        {
+            Id = GetString(dict, "id") ?? id,
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
+            Description = GetString(dict, "description") ?? "",
+            OwnerId = GetString(dict, "owner-id"),
+            LocationId = GetString(dict, "location-id"),
+            OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
+            Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task<List<Item>> GetItems(string novelId, CancellationToken ct = default)
     {
-        return await GetEntitiesAsync(
-            novelId,
-            "items",
-            dict => new Item
-            {
-                Id = GetString(dict, "id") ?? "",
-                NovelId = novelId,
-                Name = GetString(dict, "name") ?? "",
-                Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
-                Description = GetString(dict, "description") ?? "",
-                OwnerId = GetString(dict, "owner-id"),
-                LocationId = GetString(dict, "location-id"),
-                OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
-                Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
-                Metrics = ReadMetrics(dict),
-                CreatedAt = GetDateTime(dict, "created-at"),
-                UpdatedAt = GetDateTime(dict, "updated-at"),
-            }
-        );
+        return await GetEntitiesAsync(novelId, "items", dict => new Item
+        {
+            Id = GetString(dict, "id") ?? "",
+            NovelId = novelId,
+            Name = GetString(dict, "name") ?? "",
+            Type = YamlHelper.YamlToEnum(dict, "type", ItemType.Artifact),
+            Description = GetString(dict, "description") ?? "",
+            OwnerId = GetString(dict, "owner-id"),
+            LocationId = GetString(dict, "location-id"),
+            OwnershipPeriods = GetOwnershipPeriods(dict, "ownership-periods"),
+            Status = YamlHelper.YamlToEnum(dict, "status", ItemStatus.Active),
+            Metrics = ReadMetrics(dict),
+            CreatedAt = GetDateTime(dict, "created-at"),
+            UpdatedAt = GetDateTime(dict, "updated-at"),
+        });
     }
 
     public async Task SaveItem(Item item, CancellationToken ct = default)
@@ -2640,10 +2573,9 @@ public sealed class FileNovelStore : INovelStore
                             NovelId = novelId,
                             CharacterAId = aId ?? "",
                             CharacterBId = bId ?? "",
-                            Type =
-                                RelationshipTypeExtensions.ParseRelationshipType(
-                                    GetString(r, "type")
-                                ) ?? RelationshipType.Friend,
+                            Type = RelationshipTypeExtensions.ParseRelationshipType(
+                                GetString(r, "type")
+                            ) ?? RelationshipType.Friend,
                             Strength = YamlHelper.YamlToEnum(
                                 r,
                                 "strength",
@@ -2693,14 +2625,12 @@ public sealed class FileNovelStore : INovelStore
 
         return rels.Select(r => new Relationship
             {
-                Id =
-                    GetString(r, "id")
+                Id = GetString(r, "id")
                     ?? $"{GetString(r, "character-a-id")}↔{GetString(r, "character-b-id")}",
                 NovelId = novelId,
                 CharacterAId = GetString(r, "character-a-id") ?? "",
                 CharacterBId = GetString(r, "character-b-id") ?? "",
-                Type =
-                    RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
+                Type = RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
                     ?? RelationshipType.Friend,
                 Strength = YamlHelper.YamlToEnum(r, "strength", RelationshipStrength.Medium),
                 Description = GetString(r, "description") ?? "",
@@ -2753,11 +2683,9 @@ public sealed class FileNovelStore : INovelStore
         await AtomicFile.WriteAllTextAsync(path, yaml, ct);
 
         // Lightweight name lookup — read individual YAML files instead of loading all characters
-        var nameA =
-            await GetCharacterNameById(relationship.NovelId, relationship.CharacterAId, ct)
+        var nameA = await GetCharacterNameById(relationship.NovelId, relationship.CharacterAId, ct)
             ?? relationship.CharacterAId;
-        var nameB =
-            await GetCharacterNameById(relationship.NovelId, relationship.CharacterBId, ct)
+        var nameB = await GetCharacterNameById(relationship.NovelId, relationship.CharacterBId, ct)
             ?? relationship.CharacterBId;
 
         var action = existingIdx >= 0 ? AuditAction.Update : AuditAction.Create;
@@ -2844,9 +2772,9 @@ public sealed class FileNovelStore : INovelStore
             if (item is not Dictionary<string, object?> map)
                 continue;
 
-            var targetType =
-                EntityTypeExtensions.ParseEntityType(GetString(map, "target-entity-type"))
-                ?? EntityType.Character;
+            var targetType = EntityTypeExtensions.ParseEntityType(
+                GetString(map, "target-entity-type")
+            ) ?? EntityType.Character;
             EvolutionAspect? aspect = null;
             if (
                 Enum.TryParse<EvolutionAspect>(
@@ -2908,10 +2836,8 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<SceneDefinition?> GetScene(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync(
-            id,
-            "scenes",
-            dict => ReadSceneFromDict(dict, GetString(dict, "novel-id") ?? "")
+        return await GetEntityAsync(id, "scenes", dict =>
+            ReadSceneFromDict(dict, GetString(dict, "novel-id") ?? "")
         );
     }
 
@@ -2921,11 +2847,8 @@ public sealed class FileNovelStore : INovelStore
         CancellationToken ct = default
     )
     {
-        return await GetEntityAsync(
-            novelId,
-            id,
-            "scenes",
-            dict => ReadSceneFromDict(dict, novelId)
+        return await GetEntityAsync(novelId, id, "scenes", dict =>
+            ReadSceneFromDict(dict, novelId)
         );
     }
 
@@ -3053,29 +2976,22 @@ public sealed class FileNovelStore : INovelStore
 
     public async Task<Volume?> GetVolume(string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync(
-            id,
-            "volumes",
-            dict => ReadVolumeFromDict(dict, GetString(dict, "novel-id") ?? "")
+        return await GetEntityAsync(id, "volumes", dict =>
+            ReadVolumeFromDict(dict, GetString(dict, "novel-id") ?? "")
         );
     }
 
     public async Task<Volume?> GetVolume(string novelId, string id, CancellationToken ct = default)
     {
-        return await GetEntityAsync(
-            novelId,
-            id,
-            "volumes",
-            dict => ReadVolumeFromDict(dict, novelId)
+        return await GetEntityAsync(novelId, id, "volumes", dict =>
+            ReadVolumeFromDict(dict, novelId)
         );
     }
 
     public async Task<List<Volume>> GetVolumes(string novelId, CancellationToken ct = default)
     {
-        var volumes = await GetEntitiesAsync(
-            novelId,
-            "volumes",
-            dict => ReadVolumeFromDict(dict, novelId)
+        var volumes = await GetEntitiesAsync(novelId, "volumes", dict =>
+            ReadVolumeFromDict(dict, novelId)
         );
         return volumes.OrderBy(v => v.Order).ToList();
     }
@@ -4022,14 +3938,12 @@ public sealed class FileNovelStore : INovelStore
         result.AddRange(
             rels.Select(r => new Relationship
             {
-                Id =
-                    GetString(r, "id")
+                Id = GetString(r, "id")
                     ?? $"{GetString(r, "character-a-id")}↔{GetString(r, "character-b-id")}",
                 NovelId = novelId,
                 CharacterAId = GetString(r, "character-a-id") ?? "",
                 CharacterBId = GetString(r, "character-b-id") ?? "",
-                Type =
-                    RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
+                Type = RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
                     ?? RelationshipType.Friend,
                 Strength = YamlHelper.YamlToEnum(r, "strength", RelationshipStrength.Medium),
                 Description = GetString(r, "description") ?? "",
@@ -4631,8 +4545,7 @@ public sealed class FileNovelStore : INovelStore
                     NovelId = novelId,
                     CharacterAId = GetString(r, "character-a-id") ?? "",
                     CharacterBId = GetString(r, "character-b-id") ?? "",
-                    Type =
-                        RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
+                    Type = RelationshipTypeExtensions.ParseRelationshipType(GetString(r, "type"))
                         ?? RelationshipType.Friend,
                     Strength = YamlHelper.YamlToEnum(r, "strength", RelationshipStrength.Medium),
                     Description = GetString(r, "description") ?? "",

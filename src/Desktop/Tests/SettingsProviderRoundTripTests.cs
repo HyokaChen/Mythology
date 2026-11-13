@@ -296,9 +296,8 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         vm.McpServers[0].AuthValue = "v2";
         vm.SaveCommand.Execute().Subscribe();
 
-        var saved = await WaitForAsync(
-            store,
-            c => c.Mcp.Servers.Count > 0 && c.Mcp.Servers[0].AuthHeader == "X-Token"
+        var saved = await WaitForAsync(store, c =>
+            c.Mcp.Servers.Count > 0 && c.Mcp.Servers[0].AuthHeader == "X-Token"
         );
         Assert.Equal("X-Token", saved.Mcp.Servers[0].AuthHeader);
         Assert.Equal("v2", saved.Mcp.Servers[0].AuthValue);

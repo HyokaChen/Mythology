@@ -224,20 +224,16 @@ public sealed class OntologyProposalGateTests
 
         Assert.NotEmpty(proposals);
         Assert.NotEmpty(receipts);
-        Assert.Contains(
-            proposals,
-            p =>
-                p.Element == OntologyElement.State
-                && p.Field == "status"
-                && p.To == "deceased"
-                && p.Status == OntologyProposalStatus.Proposed
+        Assert.Contains(proposals, p =>
+            p.Element == OntologyElement.State
+            && p.Field == "status"
+            && p.To == "deceased"
+            && p.Status == OntologyProposalStatus.Proposed
         );
-        Assert.Contains(
-            proposals,
-            p =>
-                p.Element == OntologyElement.Rule
-                && p.RuleId == "r1"
-                && p.Status == OntologyProposalStatus.Proposed
+        Assert.Contains(proposals, p =>
+            p.Element == OntologyElement.Rule
+            && p.RuleId == "r1"
+            && p.Status == OntologyProposalStatus.Proposed
         );
     }
 

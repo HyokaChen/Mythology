@@ -387,14 +387,12 @@ public sealed class RelationWriteThroughTests : IDisposable
         var l1 = await ReloadLocation("l1");
         await ApplyAsync(l1, Add("adjacent-to", true, EntityType.Location, "l2", detail: "30"));
 
-        var fromL1 = Assert.Single(
-            (await ReloadLocation("l1")).AdjacentLocations!,
-            a => a.TargetId == "l2"
+        var fromL1 = Assert.Single((await ReloadLocation("l1")).AdjacentLocations!, a =>
+            a.TargetId == "l2"
         );
         Assert.Equal(30d, fromL1.DistanceLi);
-        var fromL2 = Assert.Single(
-            (await ReloadLocation("l2")).AdjacentLocations!,
-            a => a.TargetId == "l1"
+        var fromL2 = Assert.Single((await ReloadLocation("l2")).AdjacentLocations!, a =>
+            a.TargetId == "l1"
         );
         Assert.Equal(30d, fromL2.DistanceLi);
     }
@@ -414,13 +412,11 @@ public sealed class RelationWriteThroughTests : IDisposable
         var l1 = await ReloadLocation("l1");
         await ApplyAsync(l1, Add("adjacent-to", true, EntityType.Location, "l2", detail));
 
-        Assert.DoesNotContain(
-            (await ReloadLocation("l1")).AdjacentLocations ?? [],
-            a => a.TargetId == "l2"
+        Assert.DoesNotContain((await ReloadLocation("l1")).AdjacentLocations ?? [], a =>
+            a.TargetId == "l2"
         );
-        Assert.DoesNotContain(
-            (await ReloadLocation("l2")).AdjacentLocations ?? [],
-            a => a.TargetId == "l1"
+        Assert.DoesNotContain((await ReloadLocation("l2")).AdjacentLocations ?? [], a =>
+            a.TargetId == "l1"
         );
     }
 
@@ -437,13 +433,11 @@ public sealed class RelationWriteThroughTests : IDisposable
         l1 = await ReloadLocation("l1");
         await ApplyAsync(l1, Remove("adjacent-to", true, EntityType.Location, "l2"));
 
-        Assert.DoesNotContain(
-            (await ReloadLocation("l1")).AdjacentLocations ?? [],
-            a => a.TargetId == "l2"
+        Assert.DoesNotContain((await ReloadLocation("l1")).AdjacentLocations ?? [], a =>
+            a.TargetId == "l2"
         );
-        Assert.DoesNotContain(
-            (await ReloadLocation("l2")).AdjacentLocations ?? [],
-            a => a.TargetId == "l1"
+        Assert.DoesNotContain((await ReloadLocation("l2")).AdjacentLocations ?? [], a =>
+            a.TargetId == "l1"
         );
     }
 

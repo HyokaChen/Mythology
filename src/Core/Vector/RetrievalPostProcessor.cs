@@ -45,15 +45,13 @@ public static class RetrievalPostProcessor
             .Select(g =>
             {
                 var best = g.MaxBy(r => r.Score)!;
-                return g.Aggregate(
-                    best,
-                    (acc, r) =>
-                        acc with
-                        {
-                            HitChannel = acc.HitChannel | r.HitChannel,
-                            DenseRank = acc.DenseRank ?? r.DenseRank,
-                            LexicalRank = acc.LexicalRank ?? r.LexicalRank,
-                        }
+                return g.Aggregate(best, (acc, r) =>
+                    acc with
+                    {
+                        HitChannel = acc.HitChannel | r.HitChannel,
+                        DenseRank = acc.DenseRank ?? r.DenseRank,
+                        LexicalRank = acc.LexicalRank ?? r.LexicalRank,
+                    }
                 );
             })
             .OrderByDescending(r => r.Score)
@@ -142,23 +140,20 @@ public static class RetrievalPostProcessor
         // 用 Aggregate 构建相邻块组
         var groups = chunks
             .Skip(1)
-            .Aggregate(
-                new List<List<RetrievalSearchResult>> { new() { chunks[0] } },
-                (acc, curr) =>
+            .Aggregate(new List<List<RetrievalSearchResult>> { new() { chunks[0] } }, (acc, curr) =>
+            {
+                var lastGroup = acc[^1];
+                var last = lastGroup[^1];
+                if (curr.ChunkOrdinal == last.ChunkOrdinal + 1)
                 {
-                    var lastGroup = acc[^1];
-                    var last = lastGroup[^1];
-                    if (curr.ChunkOrdinal == last.ChunkOrdinal + 1)
-                    {
-                        lastGroup.Add(curr);
-                    }
-                    else
-                    {
-                        acc.Add([curr]);
-                    }
-                    return acc;
+                    lastGroup.Add(curr);
                 }
-            );
+                else
+                {
+                    acc.Add([curr]);
+                }
+                return acc;
+            });
 
         // 每组合并为一个结果
         return groups

@@ -115,10 +115,7 @@ public sealed class HolographicEngine : IHolographicEngine
     {
         ArgumentNullException.ThrowIfNull(profile);
         // 同步 VsaDimensionality，确保漂移阈值计算基于实际维度
-        profile = profile with
-        {
-            VsaDimensionality = _config.Dimensionality,
-        };
+        profile = profile with { VsaDimensionality = _config.Dimensionality };
         _config.ApplyProfile(profile);
     }
 

@@ -63,11 +63,11 @@ public sealed class ConversationLoop(
 ) : IAsyncDisposable
 {
     private readonly TornadoApi _api = api ?? throw new ArgumentNullException(nameof(api));
-    private readonly string _modelName =
-        modelName ?? throw new ArgumentNullException(nameof(modelName));
+    private readonly string _modelName = modelName
+        ?? throw new ArgumentNullException(nameof(modelName));
     private string _systemPrompt = systemPrompt; // 可变：UpdateSystemPrompt 需要更新
-    private readonly ToolRegistry _toolRegistry =
-        toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
+    private readonly ToolRegistry _toolRegistry = toolRegistry
+        ?? throw new ArgumentNullException(nameof(toolRegistry));
 
     /// <summary>本地判定模型客户端（可选；`system-one.loop.enabled=false` 时零请求、零影响）。</summary>
     private readonly ISystemOneClient? _systemOne = systemOne;
@@ -347,26 +347,18 @@ public sealed class ConversationLoop(
     }
 
     /// <summary>
-    /// 上下文压力提示文案。**模式互斥**：compact 指向 /compact，接续指向 new_context，两套文案不交叉。
+    /// 上下文压力提示文案。只在接续模式注入：这是模型可直接执行的 new_context 出口；
+    /// compact 模式由宿主自动压缩，模型侧不再收到 nudge，避免向用户重复建议 /compact。
     /// </summary>
-    internal static string BuildPressureNudge(
-        PressureLevel level,
-        double percent,
-        bool continuation
-    ) =>
-        (level, continuation) switch
+    internal static string BuildPressureNudge(PressureLevel level, double percent) =>
+        level switch
         {
-            (PressureLevel.Critical, true) =>
+            PressureLevel.Critical =>
                 $"🚨 上下文使用率 >{percent:P0}，接近上限。本轮必须完成当前阶段并立即调用 new_context 开启新页，不得开启新的长任务。{HiddenNotice}",
-            (PressureLevel.Critical, false) =>
-                $"🚨 上下文使用率 >{percent:P0}，接近上限。本轮必须完成当前阶段并立即建议用户执行 /compact，不得开启新的长任务。",
-            (PressureLevel.Warn, true) =>
+            PressureLevel.Warn =>
                 $"⚠️ 上下文使用率 >{percent:P0}。请完成当前阶段后调用 new_context 开启新页继续；新页不携带历史，需要时用 history_* 检索。{HiddenNotice}",
-            (PressureLevel.Warn, false) =>
-                $"⚠️ 上下文使用率 >{percent:P0}。请完成当前阶段后，向用户建议执行 /compact 压缩已完成内容。",
-            (PressureLevel.Info, true) =>
+            _ =>
                 $"📋 上下文使用率 >{percent:P0}，建议调用 new_context 开启新页继续。{HiddenNotice}",
-            _ => $"📋 上下文使用率 >{percent:P0}，建议压缩已消耗内容。",
         };
 
     /// <summary>建议换页阈值（usage 比例）：配置覆盖优先，否则用模型 profile 推导值。</summary>
@@ -1538,8 +1530,10 @@ public sealed class ConversationLoop(
         // # ponytail: 线性检查，无字典重建，无抽象层，若频率>10Hz 再优化
         // AddMessage 在 messagesBeforeCall 之后 → 属本轮新增；发送后 RemoveMessage
         // → 不被 SyncNewMessagesFromConversation 捕获，不持久化、不堆积。
+        // compact 模式不注入：宿主已有自动压缩，模型侧再提醒只会让回复反复建议 /compact。
         ChatMessage? nudgeMsg = null;
-        if (stabilityMonitor is { IsFrozen: false, TotalTokens: > 0 })
+        var continuation = _contextManagement is { Mode: ContextMode.Continuation };
+        if (continuation && stabilityMonitor is { IsFrozen: false, TotalTokens: > 0 })
         {
             var budget = stabilityMonitor.GetTokenBudget();
             if (budget > 0)
@@ -1550,23 +1544,21 @@ public sealed class ConversationLoop(
                 var critical = _modelProfile.NudgeCriticalPercent;
                 var warn = _modelProfile.NudgeWarnPercent;
                 var info = _modelProfile.NudgeInfoPercent;
-                // ★ 模式互斥：提示文案不得交叉（compact → /compact；接续 → new_context）
-                var continuation = _contextManagement is { Mode: ContextMode.Continuation };
                 nudgeMsg =
                     ratio >= critical
                         ? new ChatMessage(
                             ChatMessageRoles.User,
-                            BuildPressureNudge(PressureLevel.Critical, critical, continuation)
+                            BuildPressureNudge(PressureLevel.Critical, critical)
                         )
                     : ratio >= warn
                         ? new ChatMessage(
                             ChatMessageRoles.User,
-                            BuildPressureNudge(PressureLevel.Warn, warn, continuation)
+                            BuildPressureNudge(PressureLevel.Warn, warn)
                         )
                     : ratio >= info
                         ? new ChatMessage(
                             ChatMessageRoles.User,
-                            BuildPressureNudge(PressureLevel.Info, info, continuation)
+                            BuildPressureNudge(PressureLevel.Info, info)
                         )
                     : null;
                 if (nudgeMsg is not null)
@@ -1658,9 +1650,8 @@ public sealed class ConversationLoop(
 
                 if (toolExecution == ToolExecutionMode.Parallel && calls.Count > 1)
                 {
-                    var (sequential, parallel) = PartitionByExecutionMode(
-                        calls,
-                        call => _toolRegistry.TryGet(call.Name)
+                    var (sequential, parallel) = PartitionByExecutionMode(calls, call =>
+                        _toolRegistry.TryGet(call.Name)
                     );
 
                     foreach (var call in sequential)
@@ -1914,8 +1905,7 @@ public sealed class ConversationLoop(
             await NotifyMessagesReadyAsync(ct);
 
             // 发射 MessageEnd 和 TurnEnd 事件
-            var finalMessage =
-                newMessages.LastOrDefault(m => m.Role == ChatMessageRoles.Assistant)
+            var finalMessage = newMessages.LastOrDefault(m => m.Role == ChatMessageRoles.Assistant)
                 ?? BuildAssistantMessage(fullText, reasoningText, toolCallsCollected);
 
             // ★ GuardRail 输出检查：在 MessageEnd 之前
@@ -3014,8 +3004,7 @@ public sealed class ConversationLoop(
         };
 
         // 注册工具：ToolInjector 优先（按需注入），否则全量注入（向后兼容）
-        var tools =
-            toolInjector?.BuildRequestTools()
+        var tools = toolInjector?.BuildRequestTools()
             ?? _toolRegistry.GetAll().OrderBy(t => t.Name, StringComparer.Ordinal).ToArray();
         if (tools.Count > 0)
         {

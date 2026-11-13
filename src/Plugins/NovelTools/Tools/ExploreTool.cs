@@ -187,8 +187,7 @@ public sealed class ExploreTool(Agent agent, INovelStore store)
         {
             // 从 store 查出章节真实 Title/Order，不依赖 LLM 传参
             var chapters = await store.GetChapters(novelId, ct);
-            var chapter =
-                chapters.FirstOrDefault(c => c.Id == args.ChapterId)
+            var chapter = chapters.FirstOrDefault(c => c.Id == args.ChapterId)
                 ?? chapters.FirstOrDefault(c => c.Order.ToString() == args.ChapterId);
             applyTarget = chapter is not null
                 ? new VariantApplyTarget

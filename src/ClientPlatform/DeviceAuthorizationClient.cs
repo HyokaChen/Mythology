@@ -31,8 +31,7 @@ public sealed class DeviceAuthorizationClient(HttpClient http, string baseUrl)
         // D5 统一：优先 OAuth Discovery（/.well-known/oauth-authorization-server）声明的
         // device_authorization_endpoint（RFC 8628 字段），缺失/失败回退硬编码路径
         // （Cloud.Api 端点路径稳定，discovery 为前瞻兼容）。
-        var authorizeEndpoint =
-            await DiscoverDeviceAuthorizationEndpointAsync(cancellationToken)
+        var authorizeEndpoint = await DiscoverDeviceAuthorizationEndpointAsync(cancellationToken)
             ?? $"{baseUrl}/v1/device/authorize";
 
         // 登录客户端 Timeout 无限（LoginHttpTimeout，交互期可长挂起），但 authorize 是纯

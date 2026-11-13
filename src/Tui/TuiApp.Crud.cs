@@ -188,17 +188,13 @@ public sealed partial class TuiApp
                 ToastService.Warning("请先选择小说项目");
                 return;
             }
-            TextInputDialog.Show(
-                "📦 新建分卷",
-                "",
-                "卷名（可留空，只记卷序）",
-                name =>
-                    TuiSafeFire.SafeFire(
-                        () => CreateVolumeAsync(novelId, name),
-                        "create volume",
-                        _logger,
-                        "新建分卷失败"
-                    )
+            TextInputDialog.Show("📦 新建分卷", "", "卷名（可留空，只记卷序）", name =>
+                TuiSafeFire.SafeFire(
+                    () => CreateVolumeAsync(novelId, name),
+                    "create volume",
+                    _logger,
+                    "新建分卷失败"
+                )
             );
         };
         _setUpPanel.OnAddVolume += addVolumeHandler;
@@ -492,16 +488,13 @@ public sealed partial class TuiApp
     )
     {
         var volumes = ChapterOrdering.SortVolumes(await _store.GetVolumes(novelId));
-        ChapterCreateDialog.Show(
-            volumes,
-            presetVolumeId,
-            (title, volumeId) =>
-                TuiSafeFire.SafeFire(
-                    () => CreateChapterAsync(novelId, title, volumeId, afterChapterId),
-                    "create chapter",
-                    _logger,
-                    "新建章节失败"
-                )
+        ChapterCreateDialog.Show(volumes, presetVolumeId, (title, volumeId) =>
+            TuiSafeFire.SafeFire(
+                () => CreateChapterAsync(novelId, title, volumeId, afterChapterId),
+                "create chapter",
+                _logger,
+                "新建章节失败"
+            )
         );
     }
 
@@ -594,21 +587,17 @@ public sealed partial class TuiApp
     private async Task DeleteNovelWithConfirmationAsync(string novelId)
     {
         var name = (await _store.GetNovel(novelId))?.Title ?? novelId;
-        ConfirmDeleteDialog.Show(
-            EntityType.Novel,
-            name,
-            async () =>
-            {
-                _manualEdit = true;
-                await _store.DeleteNovel(novelId);
-                // 与 InjectNovelContextAsync 的空态同一口径：提示无已加载小说，不直接建
-                _agent.SetNovelContext(
-                    "⚡ 当前没有加载任何小说项目。如果用户想创建新小说，先用 ask_user 确认，不要直接调用 create_novel。"
-                );
-                await RefreshOutline();
-                ToastService.Info($"已删除小说「{name}」");
-            }
-        );
+        ConfirmDeleteDialog.Show(EntityType.Novel, name, async () =>
+        {
+            _manualEdit = true;
+            await _store.DeleteNovel(novelId);
+            // 与 InjectNovelContextAsync 的空态同一口径：提示无已加载小说，不直接建
+            _agent.SetNovelContext(
+                "⚡ 当前没有加载任何小说项目。如果用户想创建新小说，先用 ask_user 确认，不要直接调用 create_novel。"
+            );
+            await RefreshOutline();
+            ToastService.Info($"已删除小说「{name}」");
+        });
     }
 
     /// <summary>
@@ -660,16 +649,12 @@ public sealed partial class TuiApp
             {
                 displayName = id;
             }
-            ConfirmDeleteDialog.Show(
-                EntityType.Relationship,
-                displayName,
-                async () =>
-                {
-                    _manualEdit = true;
-                    await _store.DeleteRelationship(id);
-                    await RefreshOutline();
-                }
-            );
+            ConfirmDeleteDialog.Show(EntityType.Relationship, displayName, async () =>
+            {
+                _manualEdit = true;
+                await _store.DeleteRelationship(id);
+                await RefreshOutline();
+            });
         };
         _setUpPanel.OnDeleteRelationship += handler;
         _crudUnsubscribers.Add(() => _setUpPanel.OnDeleteRelationship -= handler);
@@ -683,22 +668,17 @@ public sealed partial class TuiApp
     private async Task DeleteWithConfirmationAsync(EntityType entityType, string id)
     {
         var name = await GetEntityDisplayNameAsync(entityType, id);
-        ConfirmDeleteDialog.Show(
-            entityType,
-            name ?? id,
-            () =>
-                TuiSafeFire.SafeFire(
-                    async () =>
-                    {
-                        _manualEdit = true;
-                        await DeleteEntityAsync(entityType, id);
-                        await RefreshOutline();
-                    },
-                    "delete entity",
-                    _logger,
-                    $"{EntityDisplayHelper.DisplayName(entityType)}删除失败"
-                )
-        );
+        ConfirmDeleteDialog.Show(entityType, name ?? id, () => TuiSafeFire.SafeFire(
+                async () =>
+                {
+                    _manualEdit = true;
+                    await DeleteEntityAsync(entityType, id);
+                    await RefreshOutline();
+                },
+                "delete entity",
+                _logger,
+                $"{EntityDisplayHelper.DisplayName(entityType)}删除失败"
+            ));
     }
 
     /// <summary>

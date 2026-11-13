@@ -63,18 +63,17 @@ public sealed class ManageRelationshipTool(INovelStore store)
             return Error("创建关系需要 character_a_id 和 character-b-id");
 
         // 容忍传角色名称而非 ID（与 manage_character 一致）
-        var characterAId =
-            await ResolveCharacterId(args.NovelId, args.CharacterAId) ?? args.CharacterAId;
-        var characterBId =
-            await ResolveCharacterId(args.NovelId, args.CharacterBId) ?? args.CharacterBId;
+        var characterAId = await ResolveCharacterId(args.NovelId, args.CharacterAId)
+            ?? args.CharacterAId;
+        var characterBId = await ResolveCharacterId(args.NovelId, args.CharacterBId)
+            ?? args.CharacterBId;
 
         var rel = new Relationship
         {
             NovelId = args.NovelId,
             CharacterAId = characterAId,
             CharacterBId = characterBId,
-            Type =
-                RelationshipTypeExtensions.ParseRelationshipType(args.Type)
+            Type = RelationshipTypeExtensions.ParseRelationshipType(args.Type)
                 ?? RelationshipType.Friend,
             Strength = Enum.TryParse<RelationshipStrength>(
                 args.Strength ?? "medium",

@@ -166,8 +166,7 @@ public sealed class ManageWorldRuleTool(INovelStore store)
         if (args.Unit is not null)
             rule.Unit = args.Unit.Trim();
         if (args.SubjectType is { Length: > 0 } subjectType)
-            rule.SubjectType =
-                EntityTypeExtensions.ParseEntityType(subjectType)
+            rule.SubjectType = EntityTypeExtensions.ParseEntityType(subjectType)
                 ?? ParseEnum(subjectType, EntityTypeEnum.Character);
         if (args.SubjectId is not null)
             rule.SubjectId = NullIfEmpty(args.SubjectId);

@@ -1365,8 +1365,8 @@ public sealed class EntityEditDialog(
                     }
                     default:
                     {
-                        var initialVal =
-                            initialValues.GetValueOrDefault(def.Prop, "")?.ToString() ?? "";
+                        var initialVal = initialValues.GetValueOrDefault(def.Prop, "")?.ToString()
+                            ?? "";
 
                         State<string?>? textState;
                         State<int>? selectState = null;
@@ -2319,8 +2319,7 @@ public sealed class EntityEditDialog(
                 // CharacterAId/BId: Select returns ID directly
                 rel.CharacterAId = Val(values, "CharacterAId");
                 rel.CharacterBId = Val(values, "CharacterBId");
-                rel.Type =
-                    RelationshipTypeExtensions.ParseRelationshipType(Val(values, "Type"))
+                rel.Type = RelationshipTypeExtensions.ParseRelationshipType(Val(values, "Type"))
                     ?? RelationshipType.Friend;
                 rel.Strength = Enum.TryParse<RelationshipStrength>(
                     Val(values, "Strength"),

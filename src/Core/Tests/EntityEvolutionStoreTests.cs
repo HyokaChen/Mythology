@@ -84,20 +84,14 @@ public sealed class EntityEvolutionStoreTests : IAsyncDisposable
         // 按章读回
         var byChapter = await _store.GetAppearancesByChapter("nov001", chapter.Id);
         Assert.Equal(2, byChapter.Count);
-        Assert.Contains(
-            byChapter,
-            r =>
-                r.EntityId == "char1"
-                && r.Mode == AppearanceMode.Present
-                && r.Source == AuditSource.System
-                && r.EvidenceSpan == "林长歌推门而入"
+        Assert.Contains(byChapter, r =>
+            r.EntityId == "char1"
+            && r.Mode == AppearanceMode.Present
+            && r.Source == AuditSource.System
+            && r.EvidenceSpan == "林长歌推门而入"
         );
-        Assert.Contains(
-            byChapter,
-            r =>
-                r.EntityId == "loc1"
-                && r.Mode == AppearanceMode.Mentioned
-                && r.Source == AuditSource.Ai
+        Assert.Contains(byChapter, r =>
+            r.EntityId == "loc1" && r.Mode == AppearanceMode.Mentioned && r.Source == AuditSource.Ai
         );
 
         // 全量读回

@@ -136,12 +136,10 @@ public sealed class ScanOntologyToolTests : IAsyncDisposable
 
         Assert.False(result.IsError);
         var actions = await _store.GetOntologyActions("n1");
-        Assert.Contains(
-            actions,
-            a =>
-                a.TargetEntityType == EntityType.Relationship
-                && a.ProposalId == "op-1"
-                && a.Evidence == "证据引文"
+        Assert.Contains(actions, a =>
+            a.TargetEntityType == EntityType.Relationship
+            && a.ProposalId == "op-1"
+            && a.Evidence == "证据引文"
         );
     }
 

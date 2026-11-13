@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using Desktop.Services;
 using Desktop.ViewModels;

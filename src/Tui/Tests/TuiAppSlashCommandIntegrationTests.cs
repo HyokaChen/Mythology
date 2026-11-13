@@ -155,7 +155,7 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     [Fact]
     public async Task Compact_Plain_CompactsSeededSession()
     {
-        await H.SeedSessionStoreAsync();
+        await H.SeedSessionStoreAsync(paddingChars: 800);
 
         InvokeSlash("/compact 2");
 
@@ -167,7 +167,7 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     {
         // MessageScorer 为 null 时 smart 必须退回普通压缩（同一落盘结果）
         Assert.Null(H.Agent.MessageScorer);
-        await H.SeedSessionStoreAsync();
+        await H.SeedSessionStoreAsync(paddingChars: 800);
 
         InvokeSlash("/compact smart 2");
 
@@ -178,7 +178,7 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     public async Task Compact_ZeroKeepRecent_ClampsAndCompacts()
     {
         // /compact 0 旧实现候选索引 = messages.Count（越界）；clamp 后仍按完整轮次切。
-        await H.SeedSessionStoreAsync();
+        await H.SeedSessionStoreAsync(paddingChars: 800);
 
         InvokeSlash("/compact 0");
 
@@ -190,7 +190,7 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
     {
         // 回归：topN 最早索引 = 0 时旧实现会保留全部 6 条（摘要+原消息），
         // 假压缩导致上下文不降反升；硬上限必须强制至少压掉前 4 条。
-        await H.SeedSessionStoreAsync();
+        await H.SeedSessionStoreAsync(paddingChars: 800);
         H.Agent.MessageScorer = new EarlyTurnScorer();
 
         InvokeSlash("/compact smart 2");
@@ -223,7 +223,8 @@ public sealed class TuiAppSlashCommandIntegrationTests : IAsyncDisposable
         Assert.Single(blocks);
         Assert.Equal("b1", blocks[0].BlockId);
         Assert.Equal(4, blocks[0].MessageCount);
-        Assert.Contains("压缩概览", blocks[0].Summary);
+        Assert.Contains("## Where / 写到哪里", blocks[0].Summary);
+        Assert.Contains("## Next / 下一步", blocks[0].Summary);
 
         // 被压缩的消息原文进入 CompressionBlocks（decompress 恢复数据源）
         Assert.Single(H.Agent.CompressionBlocks);

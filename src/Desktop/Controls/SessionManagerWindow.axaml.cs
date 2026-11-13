@@ -133,10 +133,8 @@ public partial class SessionManagerWindow : Window
     {
         if (SelectedSession is not { } item)
             return;
-        var confirm = new ConfirmDeleteWindow(
-            "会话",
-            item.Title ?? "未命名",
-            async () => await _onDelete(item)
+        var confirm = new ConfirmDeleteWindow("会话", item.Title ?? "未命名", async () =>
+            await _onDelete(item)
         );
         await confirm.ShowDialog(this);
         await LoadAsync();

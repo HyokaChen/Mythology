@@ -79,8 +79,8 @@ public static class OntologyWriteContext
             {
                 Source = AuditSource.System,
                 ChangeSetId = set.Id,
-                ChapterId =
-                    chapter?.Id ?? (string.IsNullOrEmpty(set.ChapterId) ? null : set.ChapterId),
+                ChapterId = chapter?.Id
+                    ?? (string.IsNullOrEmpty(set.ChapterId) ? null : set.ChapterId),
             }
         );
     }

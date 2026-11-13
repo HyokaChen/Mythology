@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using LlmTornado.Code;
 using Tui.Controls;
@@ -49,7 +50,7 @@ public sealed partial class TuiApp
         if (_measuredThisRun && _measuredContextTokens > 0)
         {
             _tokenCalibrator.AddSample(
-                EstimateContextTokens(_agent.State.Messages),
+                CompactionEngine.EstimateContextTokens(_agent.State.Messages),
                 _measuredContextTokens
             );
             _measuredThisRun = false;
@@ -230,8 +231,8 @@ public sealed partial class TuiApp
     /// <param name="pendingText">即将进入上下文的文本（发消息时传入，使计数先增后校）。</param>
     private void UpdateTokenDisplay(string? pendingText = null)
     {
-        var window =
-            _agent.ModelProfile?.ContextWindowTokens ?? _settingsService.Provider.ContextWindowSize;
+        var window = _agent.ModelProfile?.ContextWindowTokens
+            ?? _settingsService.Provider.ContextWindowSize;
 
         long used;
         if (pendingText is null && _hasContextMeasure && _tokenCalibrator.HasCalibration)
@@ -244,7 +245,7 @@ public sealed partial class TuiApp
         else
         {
             // 结构变化（切换/compact/清空/恢复）或发消息：按消息内容估算会话上下文
-            var est = EstimateContextTokens(_agent.State.Messages);
+            var est = CompactionEngine.EstimateContextTokens(_agent.State.Messages);
             if (!string.IsNullOrEmpty(pendingText))
                 est += pendingText.Length * 2 / 3; // 新消息即将进入上下文，与 EstimateContextTokens 同公式
             used = _tokenCalibrator.ProjectConversation(est);

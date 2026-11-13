@@ -122,12 +122,10 @@ public sealed class PlanSceneDeltasToolTests : IAsyncDisposable
         Assert.Equal(2, scene!.PlannedDeltas.Count);
 
         var actions = await _store.GetOntologyActions("n1");
-        Assert.Contains(
-            actions,
-            a =>
-                a.Element == OntologyElement.Action
-                && a.Field == "planned-deltas"
-                && a.ProposalId == "op-1"
+        Assert.Contains(actions, a =>
+            a.Element == OntologyElement.Action
+            && a.Field == "planned-deltas"
+            && a.ProposalId == "op-1"
         );
     }
 

@@ -24,8 +24,8 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
 
-    /// <summary>持久化 entryId（会话恢复后可用于精确定位 retry/edit；实时新消息为空）。</summary>
-    public string? EntryId { get; init; }
+    /// <summary>持久化 entryId（会话恢复后可用于精确定位 retry/edit；实时新消息落盘后回填）。</summary>
+    public string? EntryId { get; set; }
 
     /// <summary>本回合是否已经结束（正常结束、中断或错误收尾）。结束前不显示「重试」。</summary>
     public bool IsCompleted

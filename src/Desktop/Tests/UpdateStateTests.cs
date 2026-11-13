@@ -162,10 +162,8 @@ public sealed class UpdateStateTests : IDisposable
 
     private UpdateState CreateState(IUpdateCheckService service, Func<bool>? busy = null)
     {
-        var state = new UpdateState(
-            service,
-            NullLogger<UpdateState>.Instance,
-            uiPost: action => action()
+        var state = new UpdateState(service, NullLogger<UpdateState>.Instance, uiPost: action =>
+            action()
         );
         if (busy is not null)
             state.IsBusyProbe = busy;

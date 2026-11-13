@@ -93,9 +93,8 @@ public sealed class SetUpPanelOutlineRowsTests : IDisposable
         Assert.Contains(novel.Children, n => n.Kind == OutlineRowKind.UnassignedHeader);
 
         // 行模型仍只出结构行（本体/检查不出行）
-        Assert.DoesNotContain(
-            vm.OutlineRows,
-            r => r.Kind is OutlineRowKind.Ontology or OutlineRowKind.Check
+        Assert.DoesNotContain(vm.OutlineRows, r =>
+            r.Kind is OutlineRowKind.Ontology or OutlineRowKind.Check
         );
     }
 
@@ -390,9 +389,8 @@ public sealed class SetUpPanelOutlineRowsTests : IDisposable
         );
 
         await vm.RefreshAsync();
-        Assert.DoesNotContain(
-            vm.OutlineRows,
-            r => r.Kind == OutlineRowKind.Chapter && r.Id == "ch-new" && r.IsNewlyCreated
+        Assert.DoesNotContain(vm.OutlineRows, r =>
+            r.Kind == OutlineRowKind.Chapter && r.Id == "ch-new" && r.IsNewlyCreated
         );
     }
 

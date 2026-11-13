@@ -84,15 +84,12 @@ public class RetrievalKernelTests
         var chunks = chunker.Chunk(text);
 
         // 所有块的 offset 应在文本范围内
-        Assert.All(
-            chunks,
-            c =>
-            {
-                Assert.True(c.SourceOffsetStart >= 0);
-                Assert.True(c.SourceOffsetEnd <= text.Length);
-                Assert.True(c.SourceOffsetStart < c.SourceOffsetEnd);
-            }
-        );
+        Assert.All(chunks, c =>
+        {
+            Assert.True(c.SourceOffsetStart >= 0);
+            Assert.True(c.SourceOffsetEnd <= text.Length);
+            Assert.True(c.SourceOffsetStart < c.SourceOffsetEnd);
+        });
     }
 
     [Fact]

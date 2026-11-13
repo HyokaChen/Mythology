@@ -118,10 +118,8 @@ public class WeChatAgentChannelTests
 
     /// <summary>请求体是 JSON，中文被默认编码器转义成 \uXXXX；断言前先解回原文。</summary>
     private static string Decoded(string jsonBody) =>
-        System.Text.RegularExpressions.Regex.Replace(
-            jsonBody,
-            @"\\u([0-9a-fA-F]{4})",
-            m => ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString()
+        System.Text.RegularExpressions.Regex.Replace(jsonBody, @"\\u([0-9a-fA-F]{4})", m =>
+            ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString()
         );
 
     [Fact]

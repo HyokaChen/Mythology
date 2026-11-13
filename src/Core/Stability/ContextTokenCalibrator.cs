@@ -1,7 +1,8 @@
-namespace Tui.Services;
+namespace Core.Stability;
 
 /// <summary>
 /// 上下文 token 口径校准器：把字符估算投影到 API 实测（PromptTokens）口径。
+/// TUI / Desktop 共用同一实现，避免两套口径漂移。
 ///
 /// 模型：measured ≈ offset + rate × estimate。
 /// - offset：固定开销（系统提示 + 工具定义 + 小说上下文），字符估算完全数不到的部分；

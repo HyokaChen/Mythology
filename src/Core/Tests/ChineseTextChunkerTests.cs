@@ -236,15 +236,12 @@ public sealed class ChineseTextChunkerTests
         var text =
             "# 标题\n" + new string('内', 100) + "。\n\n# 标题2\n" + new string('容', 100) + "。";
         var chunks = chunker.Chunk(text);
-        Assert.All(
-            chunks,
-            c =>
-            {
-                Assert.True(c.SourceOffsetStart >= 0);
-                Assert.True(c.SourceOffsetEnd >= c.SourceOffsetStart);
-                Assert.Equal(c.Text.Length, c.SourceOffsetEnd - c.SourceOffsetStart);
-            }
-        );
+        Assert.All(chunks, c =>
+        {
+            Assert.True(c.SourceOffsetStart >= 0);
+            Assert.True(c.SourceOffsetEnd >= c.SourceOffsetStart);
+            Assert.Equal(c.Text.Length, c.SourceOffsetEnd - c.SourceOffsetStart);
+        });
     }
 
     [Fact]

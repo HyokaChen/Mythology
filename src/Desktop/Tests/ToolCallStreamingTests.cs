@@ -102,15 +102,12 @@ public sealed class ToolCallStreamingTests
 
         handler.FinalizeProcessingSteps(interrupted: true);
 
-        Assert.All(
-            target.AgentSteps,
-            step =>
-            {
-                Assert.Equal(AgentStepStatus.Failed, step.Status);
-                Assert.True(step.IsError);
-                Assert.Equal("已中断", step.ResultSummary);
-            }
-        );
+        Assert.All(target.AgentSteps, step =>
+        {
+            Assert.Equal(AgentStepStatus.Failed, step.Status);
+            Assert.True(step.IsError);
+            Assert.Equal("已中断", step.ResultSummary);
+        });
     }
 
     [Fact]

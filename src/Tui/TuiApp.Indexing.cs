@@ -42,8 +42,8 @@ public sealed partial class TuiApp
                 new IndexTask
                 {
                     NovelId = evt.NovelId,
-                    EntityType =
-                        EntityTypeToSourceType(evt.EntityType) ?? evt.EntityType.ToString(),
+                    EntityType = EntityTypeToSourceType(evt.EntityType)
+                        ?? evt.EntityType.ToString(),
                     EntityId = evt.EntityId,
                     Action = evt.Action == AuditAction.Create ? "create" : "update",
                     BuildFunc = buildFunc,

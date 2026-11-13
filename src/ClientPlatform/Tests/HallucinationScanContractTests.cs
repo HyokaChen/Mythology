@@ -86,11 +86,9 @@ public sealed class HallucinationScanContractTests(CloudBackendFixture fixture)
         Assert.Equal(3, scan.GetProperty("chapters-scanned").GetInt32());
 
         var findings = element.GetProperty("findings").EnumerateArray().ToList();
-        Assert.Contains(
-            findings,
-            f =>
-                f.GetProperty("id").GetString() == "HS.conflict.status.c1"
-                && f.GetProperty("verdict").GetString() == "conflict"
+        Assert.Contains(findings, f =>
+            f.GetProperty("id").GetString() == "HS.conflict.status.c1"
+            && f.GetProperty("verdict").GetString() == "conflict"
         );
         // location 组存在（ch_2「现身于青云山之巅」窗口取值成功——证明 ch_{Order} 引用被云端解析）
         var groups = scan.GetProperty("attribute-groups").EnumerateArray().ToList();

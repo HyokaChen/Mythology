@@ -83,14 +83,12 @@ internal static partial class WeChatMarkdown
                 line = Link().Replace(line, "$1 ($2)");
                 line = InlineCode().Replace(line, "$1");
                 line = Bold()
-                    .Replace(
-                        line,
-                        m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value
+                    .Replace(line, m =>
+                        m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value
                     );
                 line = Italic()
-                    .Replace(
-                        line,
-                        m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value
+                    .Replace(line, m =>
+                        m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value
                     );
             }
 

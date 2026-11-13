@@ -76,8 +76,8 @@ public sealed class WritingFlowHookCloudTests
                 Content = "少年在山巅睁开眼。",
             }
         );
-        var effectiveOptions =
-            options ?? new CloudDiagnosisOptions { OntologyHarnessEnabled = false };
+        var effectiveOptions = options
+            ?? new CloudDiagnosisOptions { OntologyHarnessEnabled = false };
         return new WritingFlowHook(
             agent ?? NewAgent(),
             store,
@@ -783,9 +783,8 @@ public sealed class WritingFlowHookCloudTests
             requests.Where(r => r.Capability is "fiction.scene.plan" or "fiction.story.check"),
             r => Assert.NotNull(r.Context?.Setup)
         );
-        Assert.All(
-            requests.Where(r => r.Capability == "fiction.context.retrieve"),
-            r => Assert.Null(r.Context?.Setup)
+        Assert.All(requests.Where(r => r.Capability == "fiction.context.retrieve"), r =>
+            Assert.Null(r.Context?.Setup)
         );
 
         // 同章同内容二次写入 → 幂等跳过 → 不再构图
@@ -1063,9 +1062,8 @@ public sealed class WritingFlowHookCloudTests
             Assert.Contains("胜率 50% · 0 次", block); // 首次观测：Laplace 0.5 / 0 次使用
 
             var firstRows = ReadLedgerRows(dir);
-            Assert.Contains(
-                firstRows,
-                r => KindOf(r) == "diagnose" && r.GetProperty("verdict").GetString() == "action"
+            Assert.Contains(firstRows, r =>
+                KindOf(r) == "diagnose" && r.GetProperty("verdict").GetString() == "action"
             );
             Assert.Contains(firstRows, r => KindOf(r) == "learn");
             // A-4（本地事实）与 S-1(节奏)（云端高危信号）各注入一条
@@ -1088,18 +1086,15 @@ public sealed class WritingFlowHookCloudTests
             // A-4 与 S-1(节奏) 的待结算项均一次结清为 fail（第二章复现同 code）
             var verdictRows = secondRows.Where(r => KindOf(r) == "verdict").ToList();
             Assert.Equal(2, verdictRows.Count);
-            Assert.All(
-                verdictRows,
-                r => Assert.Equal("fail", r.GetProperty("outcome").GetString())
+            Assert.All(verdictRows, r =>
+                Assert.Equal("fail", r.GetProperty("outcome").GetString())
             );
             Assert.All(verdictRows, r => Assert.Equal(2, r.GetProperty("chapter").GetInt32()));
             Assert.Equal(2, secondRows.Count(r => KindOf(r) == "diagnose")); // 新章继续记录
-            Assert.Contains(
-                secondRows,
-                r =>
-                    KindOf(r) == "diagnose"
-                    && r.GetProperty("chapter").GetInt32() == 2
-                    && r.GetProperty("verdict").GetString() == "action"
+            Assert.Contains(secondRows, r =>
+                KindOf(r) == "diagnose"
+                && r.GetProperty("chapter").GetInt32() == 2
+                && r.GetProperty("verdict").GetString() == "action"
             );
 
             // 第二章再次注入战术块（新章未命中「本章已注入过」门控）
@@ -1159,9 +1154,8 @@ public sealed class WritingFlowHookCloudTests
         await hook.AfterToolCallAsync(WriteContext(), TestContext.Current.CancellationToken);
         Assert.Equal(1, calls);
         var messages = agent.InjectQueue.DequeueAllWithIds().Select(item => item.Message).ToList();
-        Assert.Contains(
-            messages,
-            message => message.Content?.Contains("素材参考A", StringComparison.Ordinal) == true
+        Assert.Contains(messages, message =>
+            message.Content?.Contains("素材参考A", StringComparison.Ordinal) == true
         );
 
         // 同章第二次写入：已尝试过预取 → 不再扣费/注入。

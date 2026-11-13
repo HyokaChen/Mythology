@@ -223,8 +223,9 @@ public static class OntologyHarnessPolicy
         {
             if (character.FactionId is not null && dissolvedFactions.Contains(character.FactionId))
             {
-                var factionName =
-                    novel.Factions.FirstOrDefault(f => f.Id == character.FactionId)?.Name
+                var factionName = novel
+                    .Factions.FirstOrDefault(f => f.Id == character.FactionId)
+                    ?.Name
                     ?? character.FactionId;
                 signals.Add(
                     new HarnessSignal(

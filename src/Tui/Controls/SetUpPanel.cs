@@ -1195,24 +1195,20 @@ public sealed partial class SetUpPanel
 
     /// <summary>打开大纲筛选对话框（范围 + 状态；关键字槽位唯一 = 搜索框）。</summary>
     private void ShowChapterFilterDialog() =>
-        ChapterFilterDialog.Show(
-            _chapterFilter,
-            _volumes,
-            filter =>
-            {
-                // 关键字槽位唯一：搜索框有内容时以它为准（对话框里改关键字不覆盖搜索）
-                _chapterFilter = string.IsNullOrWhiteSpace(_searchText)
-                    ? filter
-                    : filter with
-                    {
-                        Keyword = _searchText.Trim(),
-                    };
-                if (filter.ScopeVolumeId is { Length: > 0 } scope)
-                    _expandedVolumes.Add(scope);
-                RenderOutline();
-                ApplySectionChrome();
-            }
-        );
+        ChapterFilterDialog.Show(_chapterFilter, _volumes, filter =>
+        {
+            // 关键字槽位唯一：搜索框有内容时以它为准（对话框里改关键字不覆盖搜索）
+            _chapterFilter = string.IsNullOrWhiteSpace(_searchText)
+                ? filter
+                : filter with
+                {
+                    Keyword = _searchText.Trim(),
+                };
+            if (filter.ScopeVolumeId is { Length: > 0 } scope)
+                _expandedVolumes.Add(scope);
+            RenderOutline();
+            ApplySectionChrome();
+        });
 
     /// <summary>工具栏「新建章节」的默认归属卷：恰好展开一个卷时用它，否则未分卷。</summary>
     private string? CurrentVolumeContext()
@@ -1517,18 +1513,16 @@ public sealed partial class SetUpPanel
         {
             IsSelectable = false,
         };
-        _headerActions.Add(
-            menuLabel,
-            () =>
-                ShowActionMenu(
-                    menuLabel,
-                    [
-                        ("📄 查看 / 编辑", () => editAction?.Invoke(CurrentNovelId, entityId)),
-                        ("📋 插入引用", () => OnEntityClicked?.Invoke(entityType, entityName)),
-                        ("🧾 变更记录", () => OnViewAuditLog?.Invoke(entityType, entityId)),
-                        ("❌ 删除", () => delAction?.Invoke(CurrentNovelId, entityId)),
-                    ]
-                )
+        _headerActions.Add(menuLabel, () =>
+            ShowActionMenu(
+                menuLabel,
+                [
+                    ("📄 查看 / 编辑", () => editAction?.Invoke(CurrentNovelId, entityId)),
+                    ("📋 插入引用", () => OnEntityClicked?.Invoke(entityType, entityName)),
+                    ("🧾 变更记录", () => OnViewAuditLog?.Invoke(entityType, entityId)),
+                    ("❌ 删除", () => delAction?.Invoke(CurrentNovelId, entityId)),
+                ]
+            )
         );
 
         // 头部 Grid：名字(Auto) | 弹性占位(Star) | 操作标签(Auto)——
@@ -1724,17 +1718,17 @@ public sealed partial class SetUpPanel
             return;
         _lastRefreshNovelId = novelId;
         // Save expanded state before clearing
-        _expandedCharacterId =
-            FindExpandedId(_characterAccordion, _characterIds) ?? _expandedCharacterId;
+        _expandedCharacterId = FindExpandedId(_characterAccordion, _characterIds)
+            ?? _expandedCharacterId;
         _expandedFactionId = FindExpandedId(_factionAccordion, _factionIds) ?? _expandedFactionId;
-        _expandedLocationId =
-            FindExpandedId(_locationAccordion, _locationIds) ?? _expandedLocationId;
-        _expandedPlotlineId =
-            FindExpandedId(_plotlineAccordion, _plotlineIds) ?? _expandedPlotlineId;
+        _expandedLocationId = FindExpandedId(_locationAccordion, _locationIds)
+            ?? _expandedLocationId;
+        _expandedPlotlineId = FindExpandedId(_plotlineAccordion, _plotlineIds)
+            ?? _expandedPlotlineId;
         _expandedSceneId = FindExpandedId(_sceneAccordion, _sceneIds) ?? _expandedSceneId;
         _expandedItemId = FindExpandedId(_itemAccordion, _itemIds) ?? _expandedItemId;
-        _expandedRelationshipId =
-            FindExpandedId(_relationshipAccordion, _relationshipIds) ?? _expandedRelationshipId;
+        _expandedRelationshipId = FindExpandedId(_relationshipAccordion, _relationshipIds)
+            ?? _expandedRelationshipId;
         try
         {
             // 搜索过滤在行数上限裁剪之前应用（否则第 61 条以后搜不到）。
@@ -2136,11 +2130,9 @@ public sealed partial class SetUpPanel
             _relationshipNames.Clear();
             var (visiblerelationships, morerelationships) = CapRows(
                 EntityType.Relationship,
-                FilterBySearch(
-                    relationships,
-                    r =>
-                        $"{charNameMap.GetValueOrDefault(r.CharacterAId, r.CharacterAId)} "
-                        + $"{charNameMap.GetValueOrDefault(r.CharacterBId, r.CharacterBId)}"
+                FilterBySearch(relationships, r =>
+                    $"{charNameMap.GetValueOrDefault(r.CharacterAId, r.CharacterAId)} "
+                    + $"{charNameMap.GetValueOrDefault(r.CharacterBId, r.CharacterBId)}"
                 ),
                 r => r.Id,
                 r => (r.Type.ToString(), r.Strength.ToString())
@@ -2283,14 +2275,11 @@ public sealed partial class SetUpPanel
                 : $"{safeLabel}: {safeName}（{safeDetail}）";
 
             var line = new Markup($"  {text}") { IsSelectable = false };
-            _headerActions.Add(
-                line,
-                () =>
-                {
-                    NavigateToEntity(targetType, targetId);
-                    _ = RefreshAsync(CurrentNovelId ?? "");
-                }
-            );
+            _headerActions.Add(line, () =>
+            {
+                NavigateToEntity(targetType, targetId);
+                _ = RefreshAsync(CurrentNovelId ?? "");
+            });
             lines.Add(line);
         }
 
@@ -2412,9 +2401,8 @@ public sealed partial class SetUpPanel
                 items.Add(("📄 详情", () => OnEditNovel?.Invoke(CurrentNovelId, CurrentNovelId)));
                 AddReference();
                 items.Add(
-                    (
-                        "🧾 变更记录",
-                        () => OnViewAuditLog?.Invoke(EntityType.Novel, CurrentNovelId ?? "")
+                    ("🧾 变更记录", () =>
+                        OnViewAuditLog?.Invoke(EntityType.Novel, CurrentNovelId ?? "")
                     )
                 );
                 items.Add(("❌ 删除", () => OnDeleteNovel?.Invoke(CurrentNovelId, CurrentNovelId)));
@@ -2503,14 +2491,11 @@ public sealed partial class SetUpPanel
 
         var hidden = items.Count - MaxAccordionRows;
         var moreRow = new Markup($"[dim]  … 还有 {hidden} 条（点击显示全部）[/]");
-        _headerActions.Add(
-            moreRow,
-            () =>
-            {
-                _showAllLists.Add(type);
-                _ = RefreshAsync(CurrentNovelId ?? "");
-            }
-        );
+        _headerActions.Add(moreRow, () =>
+        {
+            _showAllLists.Add(type);
+            _ = RefreshAsync(CurrentNovelId ?? "");
+        });
         return ([.. items.Take(MaxAccordionRows)], moreRow);
     }
 

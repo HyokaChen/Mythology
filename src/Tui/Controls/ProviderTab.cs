@@ -218,9 +218,8 @@ internal sealed class ProviderTab
             }
             else
             {
-                var idx = Array.FindIndex(
-                    PresetDisplayNames,
-                    p => ProviderDefinition.FindByDisplayName(p).ConfigKey == entry.Provider
+                var idx = Array.FindIndex(PresetDisplayNames, p =>
+                    ProviderDefinition.FindByDisplayName(p).ConfigKey == entry.Provider
                 );
                 AddApiKeyCard(idx < 0 ? 0 : idx, entry.ApiKey, null, null);
             }

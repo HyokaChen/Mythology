@@ -57,9 +57,8 @@ public sealed class AskUserDialogTests : TerminalUiFixture
         Assert.NotNull(selection);
 
         Assert.Same(selection, await OnUiAsync(() => App!.FocusedElement));
-        Assert.Contains(
-            await CaptureFrameAsync(),
-            line => line.Contains('☐') && line.Contains("身世")
+        Assert.Contains(await CaptureFrameAsync(), line =>
+            line.Contains('☐') && line.Contains("身世")
         );
 
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Space });
@@ -71,9 +70,8 @@ public sealed class AskUserDialogTests : TerminalUiFixture
         await WaitForConditionAsync(() => selection!.Checked[2], "空格勾选第三项");
 
         Assert.False(await OnUiAsync(() => selection!.Checked[1]), "未操作的第二项不应被勾选");
-        Assert.Contains(
-            await CaptureFrameAsync(),
-            line => line.Contains('☑') && line.Contains("身世")
+        Assert.Contains(await CaptureFrameAsync(), line =>
+            line.Contains('☑') && line.Contains("身世")
         );
 
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Tab });

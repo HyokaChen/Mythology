@@ -419,9 +419,8 @@ public sealed class TerminalOutputFidelityTests : IAsyncLifetime
             GetRenderBuffer(_app).ToMarkupLines().Select(StripMarkup).ToArray()
         );
 
-        var genderRow = Array.FindIndex(
-            rows,
-            row => row.Contains("性别", StringComparison.Ordinal)
+        var genderRow = Array.FindIndex(rows, row =>
+            row.Contains("性别", StringComparison.Ordinal)
         );
         Assert.True(genderRow >= 0, "对话框中找不到性别下拉项");
         var caretCol = rows[genderRow].LastIndexOf('▾');

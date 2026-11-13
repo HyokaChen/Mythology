@@ -49,11 +49,10 @@ public static class CoreServiceExtensions
     )
     {
         // 项目目录工作区：读取范围 = 清单并集，写入范围 = ActiveRoot
-        var novelWorkspace =
-            workspace ?? NovelWorkspace.Single(NovelWorkspace.ResolveNovelsRoot(config).Path);
+        var novelWorkspace = workspace
+            ?? NovelWorkspace.Single(NovelWorkspace.ResolveNovelsRoot(config).Path);
         var novelsRoot = novelWorkspace.ActiveRoot;
-        var mythologyDir =
-            mythologyDirOverride
+        var mythologyDir = mythologyDirOverride
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mythology"

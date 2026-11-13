@@ -138,19 +138,16 @@ public sealed partial class TuiApp
     internal static string InlineFileReferences(string text)
     {
         return PathRegex()
-            .Replace(
-                text,
-                m =>
-                {
-                    var pathPart = m.Groups[1].Value;
-                    var resolved = PathHelper.ResolvePath(pathPart);
-                    if (!File.Exists(resolved) && !Directory.Exists(resolved))
-                        // 路径不存在时返回提示，避免 LLM 调用不存在的文件
-                        return $"[文件不存在: {pathPart}]";
-                    // 保留来源：模型只能读取用户当前消息里明确出现的 @ 路径
-                    return Path.IsPathRooted(pathPart) ? pathPart : "@" + pathPart;
-                }
-            );
+            .Replace(text, m =>
+            {
+                var pathPart = m.Groups[1].Value;
+                var resolved = PathHelper.ResolvePath(pathPart);
+                if (!File.Exists(resolved) && !Directory.Exists(resolved))
+                    // 路径不存在时返回提示，避免 LLM 调用不存在的文件
+                    return $"[文件不存在: {pathPart}]";
+                // 保留来源：模型只能读取用户当前消息里明确出现的 @ 路径
+                return Path.IsPathRooted(pathPart) ? pathPart : "@" + pathPart;
+            });
     }
 
     /// <summary>引用起始（`#类型:`）；名称由 <see cref="EntityReferenceMatcher"/> 匹配（可含空格）。</summary>

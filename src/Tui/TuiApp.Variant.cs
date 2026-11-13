@@ -245,8 +245,8 @@ public sealed partial class TuiApp
                 CancellationToken.None
             );
 
-            var resultText =
-                (result.Content.ToList().FirstOrDefault() as TextContent)?.Text ?? "已写入";
+            var resultText = (result.Content.ToList().FirstOrDefault() as TextContent)?.Text
+                ?? "已写入";
             if (!await TryPersistNewMessagesAsync())
                 return;
             _conversationPanel.AddSystemMessage($"✅ {resultText}（采用「{variantLabel}」）");

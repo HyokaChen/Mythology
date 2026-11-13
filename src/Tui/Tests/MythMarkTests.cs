@@ -20,9 +20,8 @@ public sealed class MythMarkTests
         foreach (var row in MythMark.MarkPixels)
         {
             Assert.Equal(MythMark.Width, row.Length); // 定宽
-            Assert.All(
-                row,
-                ch => Assert.True(ch is '.' or (>= '0' and <= '3'), $"非法字符: '{ch}'")
+            Assert.All(row, ch =>
+                Assert.True(ch is '.' or (>= '0' and <= '3'), $"非法字符: '{ch}'")
             );
         }
     }

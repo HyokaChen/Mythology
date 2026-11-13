@@ -155,8 +155,7 @@ public static class PluginCommands
         }
 
         // 确定插件 ID
-        var pluginId =
-            manifest?.Id
+        var pluginId = manifest?.Id
             ?? Path.GetFileNameWithoutExtension(csproj).Replace("Plugins.", "").ToLowerInvariant();
 
         // 确定安装目标目录

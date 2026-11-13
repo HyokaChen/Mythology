@@ -316,8 +316,7 @@ public sealed class SessionStorageNormalization : IDataMigration
         if (!value.TryGetValue<string>(out var raw))
             return false;
 
-        var mapped =
-            s_eventRenames.GetValueOrDefault(raw)
+        var mapped = s_eventRenames.GetValueOrDefault(raw)
             ?? (raw.Contains('_') ? raw.Replace('_', '-') : raw);
         if (string.Equals(mapped, raw, StringComparison.Ordinal))
             return false;

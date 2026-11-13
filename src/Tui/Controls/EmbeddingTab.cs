@@ -143,9 +143,8 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
             }
             else
             {
-                var idx = Array.FindIndex(
-                    PresetDisplayNames,
-                    p => ProviderDefinition.FindByDisplayName(p)?.ConfigKey == entry.Provider
+                var idx = Array.FindIndex(PresetDisplayNames, p =>
+                    ProviderDefinition.FindByDisplayName(p)?.ConfigKey == entry.Provider
                 );
                 AddApiKeyCard(idx < 0 ? 0 : idx, entry.ApiKey, null, null);
             }
@@ -198,9 +197,8 @@ internal sealed class EmbeddingTab(SettingsService cfg, Visual? optionalFooter =
         if (_modelSelect is null || _modelTextBox is null)
             return;
 
-        var index = Array.FindIndex(
-            _availableModels,
-            m => string.Equals(m, model, StringComparison.OrdinalIgnoreCase)
+        var index = Array.FindIndex(_availableModels, m =>
+            string.Equals(m, model, StringComparison.OrdinalIgnoreCase)
         );
         if (_modelSelectVisible && index >= 0)
         {

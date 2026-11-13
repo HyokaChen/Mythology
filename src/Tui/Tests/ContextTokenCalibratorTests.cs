@@ -1,4 +1,4 @@
-using Tui.Services;
+using Core.Stability;
 using Xunit;
 
 namespace Tui.Tests;

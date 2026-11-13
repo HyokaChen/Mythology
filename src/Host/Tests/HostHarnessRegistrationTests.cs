@@ -35,9 +35,8 @@ public sealed class HostHarnessRegistrationTests
             ]
         );
 
-        var descriptor = Assert.Single(
-            services,
-            d => d.ServiceType == typeof(IFictionHarnessClient)
+        var descriptor = Assert.Single(services, d =>
+            d.ServiceType == typeof(IFictionHarnessClient)
         );
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
     }
@@ -62,9 +61,8 @@ public sealed class HostHarnessRegistrationTests
             ]
         );
 
-        Assert.Contains(
-            services,
-            d => d.ServiceType.FullName == "ClientPlatform.RetrievalRestClient"
+        Assert.Contains(services, d =>
+            d.ServiceType.FullName == "ClientPlatform.RetrievalRestClient"
         );
     }
 

@@ -1,6 +1,7 @@
 # 上下文管理两套逻辑全景：压缩（Compact）与移交（Continuation / 换页）
 
 > 本文档只做**方案与分析**，不改代码。所有行号对照撰写时的源码，方法移动后以方法名为准。
+> **2026-11-13 架构更新**：压缩执行已抽到 `Core/Agent/CompactionEngine.cs`；TUI `TuiApp.Compact.cs` 与 Desktop `SessionEngine.cs` 只保留触发、会话计数和 UI 适配。下文涉及 Host 执行细节的旧行号仅作历史参考，压缩语义以 Core 为准。
 > 核心文件：`src/Core/Agent/ConversationLoop.cs`（循环内判定与注入）、
 > `src/Tui/TuiApp.Compact.cs` / `src/Tui/TuiApp.NewContext.cs` / `src/Tui/TuiApp.Session.cs`（Host 执行体）、
 > `src/Plugins/ContextContinuation/*`（模型侧工具）、`src/Core/Data/FileSessionStore.cs`（落盘）。
@@ -39,7 +40,7 @@
 | **Loop（Core）** | `ConversationLoop.cs` | 阈值判定、登记、运行时注入（不持久化）、异常转译 | `ScheduleContextRollIfNeeded`(:393)、`FlushScheduledContextRollAsync`(:421)、`ShouldAutoRoll`(:367)、`TryClaimBudgetReminder`(:352)、`BuildContextWindowFragment`(:211)、`BuildBudgetReminder`(:277)、`BuildPressureNudge`(:322)、`RunLoopAsync`(:720)、`StreamOneTurnAsync`(:1058) |
 | **Agent（Core）** | `Agent.cs` | 持有换页请求/交接说明的待决状态、页状态、回调槽 | `RequestNewContextWindow`(:179)、`ConsumeNewContextRequest`(:187)、`ConsumeNewContextNote`(:195)、`SetContextWindowState`(:206)、`OnNewContextRequested`(:217) |
 | **模型侧工具** | `Plugins/ContextContinuation/NewContextTool.cs`、`HistoryTools.cs` | `new_context(note:)` 只置位；`history_*` 跨页检索 | `NewContextTool.ExecuteAsync`(:62) |
-| **Host（执行体）** | `TuiApp.Compact.cs`、`TuiApp.NewContext.cs`、`TuiApp.Session.cs`（Desktop 同名见 `SessionEngine.cs`） | 压缩/换页的真实执行、重试、自动接续 | `PrepareAndCompactAsync`(:289)、`RollContextWindowAsync`(NewContext:56)、`RelieveOverflowAsync`(NewContext:181)、`AutoContinueAfterForcedRollAsync`(NewContext:190) |
+| **Host（适配层）** | `TuiApp.Compact.cs`、`TuiApp.NewContext.cs`、`TuiApp.Session.cs`（Desktop 同名见 `SessionEngine.cs`） | 仅触发时机、会话计数器、UI 呈现；真实压缩在 `Core/Agent/CompactionEngine.cs` | `PrepareAndCompactAsync`（适配）、`RollContextWindowAsync`(NewContext:56)、`RelieveOverflowAsync`(NewContext:181)、`AutoContinueAfterForcedRollAsync`(NewContext:190) |
 | **Store** | `FileSessionStore.cs`、`JsonlDto.cs` | 滚动分片、compact/window 条目、按页检索 | `CompactSession`(:505)、`StartNewContextWindowAsync`(:619)、`GetWindowBoundaryAsync`(:723)、`ListHistoryItemsAsync`(:826) |
 
 **两条链路的共同依赖（容易被忽略但很关键）**：
@@ -83,30 +84,34 @@ StreamOneTurnAsync（:1058+）
 注意：**pre-flight 在接续模式下同样抛异常**，注释明确「接续模式不在 run 中途换页，统一走溢出恢复」——
 Host 捕获后换页并重试同一段文本，重试会把用户消息重新投进新页，无信息丢失。
 
-### 2.3 Host 侧（`PrepareAndCompactCoreAsync`，`TuiApp.Compact.cs:335`）
+### 2.3 Core 压缩执行（`CompactionEngine.CompactAsync`，`Core/Agent/CompactionEngine.cs`）
+
+TUI 与 Desktop 共用同一条链路；Host 只传 `CompactionRequest`（session/order/reason/keep budget）。
 
 ```
-1. FindCutPoint(messages, keepRecent)        ← 向前扫描到完整轮次起点（user 消息），
-                                              避免 assistant+toolCalls 被拆到 compact 两侧（:462）
-2. cutIndex < 3 且消息数 > keepRecent → 强制 keepRecent/2 重算（防御无效压缩）
-3. previousSummary = GetLatestCompactSummaryAsync()   ← 增量摘要链
-4. GenerateCompactSummaryAsync(AI 优先 / 规则 fallback) + BuildRecentExecutionBlock()
-                                             ← 把被压缩区尾部的精确执行状态嵌进摘要
-5. dbMsgs = GetActiveMessages().Where(Order >= pageStart)   ← ★ 必须按当前页切片，
-                                            否则换页后 Skip/Take 会错位到旧页（compact 截断点跑到 window 之前）
-6. firstKeptEntryId / compressedIds（跳过 EventType==Compact 的旧条目，防嵌套压缩混入）
-7. _sessionStore.CompactSession(...)          ← 写 type=compact 条目 + 滚动分片（不删旧分片）
-8. ReplaceMessages([summaryMsg] + keptMessages)  ← 摘要消息内容 = "[上下文摘要 {blockId}]\n{summary}" + novel 快照
-9. CompressionBlocks.Add(blockId, ids, summary) ← 最小版可逆状态（decompress 用）
-10. ResetStabilityMonitor(估算) + ResetPromptBaseline() + InvalidateContextMeasure()
-11. _nextOrder++（compact 条目占一个 order 位）
+1. 自动/溢出：FindTokenCutPoint(messages, keepRecentTokens, minKeep=4)
+   手动：FindCutPoint(messages, keepRecent)
+   smart：ScoreTurnsWithDecimator + FindSmartCutPoint
+2. 有效压缩门槛：cut 必须是 >0 的 user 边界；compressedTokens >= max(2000, before/10)；
+   预计节省 >= max(1024, before/10)，否则返回 TooSmall 且不写 JSONL
+3. previousSummary = GetLatestCompactSummaryAsync()
+4. BuildNovelStateSnapshotAsync() ← 5W1H：当前卷/章/场景/角色/情节线/时间线/Next
+5. GenerateCompactSummaryAsync(AI 优先 / 规则 fallback) ← 单份 5W1H；旧摘要只进 How 背景
+6. dbMsgs = GetActiveMessages().Where(Order >= pageStart) ← 必须按当前页切片
+7. firstKeptEntryId / compressedIds（跳过 EventType==Compact 的旧条目）
+8. FileSessionStore.CompactSession(...) ← 新分片只写一条 compact；parent-id 串回旧 tail
+9. ReplaceMessages([summaryMsg] + keptMessages) + CompressionBlocks.Add()
+10. Agent.ResetPromptBaseline()
 ```
 
-**溢出专用附加逻辑**（`CompactForOverflowAsync:160`）：
-- 消息数 ≤ keepRecent 且监控器处于冻结态 → 只 `Unfreeze` + 重设基线，不压缩；
-- 压缩后 `tokensAfter >= tokensBefore` → 判定无效压缩，返回 false 让上层停止重试（防死循环）；
-- `_isCompacting` 防重入（B4）：manual/smart/auto/overflow 四源在 `PrepareAndCompactAsync` 单点拦截；
-- **模式兜底**：接续模式下走到这里直接返回 `RejectedWrongMode`（`TuiApp.Compact.cs` `PrepareAndCompactAsync` 的模式守卫）——压缩与换页混用会互相干扰。
+Host 在 Core 返回 Success 后只做：`_nextOrder += OrderConsumed`、`_persistedMessageCount = 当前消息数`、
+`_lastParentEntryId = CompactEntryId`、`ResetStabilityMonitor(Project(估算))`、刷新 UI/上下文仪表。
+
+**溢出专用附加逻辑**（`CompactForOverflowAsync`）：
+- 无消息且监控器处于冻结态 → 只 `Unfreeze` + 重设基线，不压缩；
+- 压缩后 `tokensAfter >= tokensBefore - max(1024, before/10)` → 判定无效压缩，返回 false 让上层停止重试（防死循环）；
+- `CompactionEngine.IsCompacting` 防重入（B4）：manual/smart/auto/overflow 四源在 Core `CompactAsync` 单点拦截；
+- **模式兜底**：接续模式下 Core 直接返回 `RejectedWrongMode`——压缩与换页混用会互相干扰。
 
 **重试上限**：`TuiApp.Session.cs:170 maxOverflowRetries = 3`，耗尽后按模式给不同错误文案
 （compact 模式提示 `/compact`；接续模式提示开新会话）。

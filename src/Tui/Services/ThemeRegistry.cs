@@ -306,8 +306,7 @@ public static class ThemeRegistry
     )
     {
         var c = colors ?? ThemeMapper.Map(tokens);
-        var s =
-            styles
+        var s = styles
             ?? new ThemeControlStyles(
                 ThemeStyles.BuildDialog(c),
                 ThemeStyles.BuildTabControl(c),

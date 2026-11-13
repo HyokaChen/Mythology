@@ -459,23 +459,19 @@ public sealed class OutlineOntologyTests : IAsyncDisposable
         Assert.Contains(chapterRelations, r => r.EdgeType == "features" && r.TargetId == "c1");
 
         var characterRelations = index.GetRelations(EntityType.Character, "c1");
-        Assert.Contains(
-            characterRelations,
-            r => r.EdgeType == "membership" && r.TargetType == EntityType.Faction
+        Assert.Contains(characterRelations, r =>
+            r.EdgeType == "membership" && r.TargetType == EntityType.Faction
         );
-        Assert.Contains(
-            characterRelations,
-            r => r.EdgeType == "relationship" && r.TargetId == "c2"
+        Assert.Contains(characterRelations, r =>
+            r.EdgeType == "relationship" && r.TargetId == "c2"
         );
-        Assert.Contains(
-            characterRelations,
-            r => r.EdgeType == "appears-in" && r.TargetType == EntityType.Scene
+        Assert.Contains(characterRelations, r =>
+            r.EdgeType == "appears-in" && r.TargetType == EntityType.Scene
         );
 
         // 悬空引用（c2.FactionId = missing）不产生边
-        Assert.DoesNotContain(
-            index.GetRelations(EntityType.Character, "c2"),
-            r => r.EdgeType == "membership"
+        Assert.DoesNotContain(index.GetRelations(EntityType.Character, "c2"), r =>
+            r.EdgeType == "membership"
         );
 
         // 地点层级（规范方向 父→子）与邻接
@@ -502,39 +498,24 @@ public sealed class OutlineOntologyTests : IAsyncDisposable
         Assert.Equal("第3章起", ownerC2.Detail);
 
         // 情节线锚点 + 时间线 + 规则
-        Assert.Contains(
-            index.GetRelations(EntityType.Plotline, "pl1"),
-            r => r.EdgeType == "reveals-at" && r.TargetId == "ch2"
+        Assert.Contains(index.GetRelations(EntityType.Plotline, "pl1"), r =>
+            r.EdgeType == "reveals-at" && r.TargetId == "ch2"
         );
-        Assert.Contains(
-            index.GetRelations(EntityType.Plotline, "pl1"),
-            r => r.EdgeType == "resolves-at" && r.TargetId == "ch3"
+        Assert.Contains(index.GetRelations(EntityType.Plotline, "pl1"), r =>
+            r.EdgeType == "resolves-at" && r.TargetId == "ch3"
         );
-        Assert.Contains(
-            index.GetRelations(EntityType.TimelineEvent, "te1"),
-            r => r.EdgeType == "occurs-in" && r.TargetId == "ch1"
+        Assert.Contains(index.GetRelations(EntityType.TimelineEvent, "te1"), r =>
+            r.EdgeType == "occurs-in" && r.TargetId == "ch1"
         );
-        Assert.Contains(
-            index.GetRelations(EntityType.Novel, "nov200"),
-            r =>
-                r.EdgeType == "constrains"
-                && r.SourceId == "wr1"
-                && r.Detail == "travel-speed=300里/日" // 规范键（迁移 007 后）
+        Assert.Contains(index.GetRelations(EntityType.Novel, "nov200"), r =>
+            r.EdgeType == "constrains" && r.SourceId == "wr1" && r.Detail == "travel-speed=300里/日" // 规范键（迁移 007 后）
         );
         var ruleRelations = index.GetRelations(EntityType.WorldRule, "wr2");
-        Assert.Contains(
-            ruleRelations,
-            r =>
-                r.EdgeType == "constrains"
-                && r.TargetType == EntityType.Character
-                && r.TargetId == "c1"
+        Assert.Contains(ruleRelations, r =>
+            r.EdgeType == "constrains" && r.TargetType == EntityType.Character && r.TargetId == "c1"
         );
-        Assert.Contains(
-            ruleRelations,
-            r =>
-                r.EdgeType == "affects"
-                && r.TargetType == EntityType.Character
-                && r.TargetId == "c2"
+        Assert.Contains(ruleRelations, r =>
+            r.EdgeType == "affects" && r.TargetType == EntityType.Character && r.TargetId == "c2"
         );
         Assert.Empty(index.GetRelations(EntityType.WorldRule, "set1"));
 

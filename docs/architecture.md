@@ -183,6 +183,8 @@ updated-at: 2026-07-01T12:00:00Z
 
 JSONL 格式（借鉴 pi agent 模式），每行一条事件，追加写入。由 `FileSessionStore` 管理。
 
+**压缩实现（2026-11-13）**：压缩的切点、有效压缩门槛、5W1H 摘要、compact 落盘和 Agent 内存替换统一在 `Core/Agent/CompactionEngine.cs`；TUI 的 `TuiApp.Compact.cs` 与 Desktop 的 `SessionEngine` 只保留触发时机、会话计数器和 UI 呈现。`ContextTokenCalibrator` 也统一在 `Core/Stability/`，避免两套 token 口径漂移。
+
 **分片存储（v2，2026-07-29）**：每个会话从单文件 `{sessionId}.jsonl` 改造为**目录**，目录内含 `MANIFEST.json` 元数据和多个世代分片文件。每次 compact 操作创建新的分片，使单个文件大小有明确上界。
 
 **目录命名**：`{yyyy-MM-ddTHH-mm-ss-fffZ}_{sessionId}/`，如 `2026-07-01T08-30-00-123Z_abc123def456/`。时间戳前缀来自会话创建时的 UTC 时间（自动迁移时来自旧文件的创建时间），使文件系统浏览时可按时间排序，清晰识别会话创建时间。
@@ -225,13 +227,13 @@ JSONL 格式（借鉴 pi agent 模式），每行一条事件，追加写入。�
     { "seq": 0, "file": "000000.jsonl", "start-order": 0, "end-order": 499,
       "message-count": 240, "entry-count": 250, "file-size": 128000,
       "compact-entry-id": null, "has-compact": false, "created-at": "..." },
-    { "seq": 1, "file": "000001.jsonl", "start-order": 500, "end-order": 999,
-      "message-count": 245, "entry-count": 256, "file-size": 132000,
+    { "seq": 1, "file": "000001.jsonl", "start-order": 500, "end-order": 500,
+      "message-count": 0, "entry-count": 1, "file-size": 1024,
       "compact-entry-id": "a1b2c3d4e5f6", "has-compact": true, "created-at": "..." }
   ],
   "active-segment": 1,
   "compact-count": 1,
-  "totalEntryCount": 506
+  "totalEntryCount": 251
 }
 ```
 
@@ -243,7 +245,7 @@ JSONL 格式（借鉴 pi agent 模式），每行一条事件，追加写入。�
 | `000001.jsonl` | 第 1 次 compact 后生成的活跃分片 | ❌ 只读 |
 | `000002.jsonl` | 当前活跃分片 | ✅ 写入中 |
 
-每次 compact 创建下一个序号的 `.jsonl` 文件。每个分片文件内部是自包含的 JSONL，可以独立解析。`000000.jsonl` 第一行是 `type=message`（原始会话）；`000001+.jsonl` 第一行是 `type=compact` 条目（摘要），后续是保留消息。
+每次 compact 创建下一个序号的 `.jsonl` 文件。`000000.jsonl` 第一行是 `type=message`（原始会话）；`000001+.jsonl` 只包含一条 `type=compact` 条目，被保留的消息仍留在旧分片，由 compact 的 `parent-id` 串回旧 active tail。旧格式（compact 后复制保留消息）仍兼容读取。
 
 **自动迁移**：旧格式的 `{sessionId}.jsonl` 文件在首次访问时自动迁移为分片目录格式（`{sessionId}/000000.jsonl + MANIFEST.json`），无需用户干预。
 

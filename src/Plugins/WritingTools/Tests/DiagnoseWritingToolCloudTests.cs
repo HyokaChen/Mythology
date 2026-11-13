@@ -630,19 +630,14 @@ public sealed class DiagnoseWritingToolCloudTests
         Assert.False(result.IsError);
         Assert.Equal("fiction.story.check", harness.LastRequest!.Capability);
         var report = Assert.IsType<DiagnosticReport>(result.Details);
-        Assert.Contains(
-            report.Issues,
-            i => i.Dimension == DimensionKeys.CharacterArc && i.Description.Contains("配角喧宾夺主")
+        Assert.Contains(report.Issues, i =>
+            i.Dimension == DimensionKeys.CharacterArc && i.Description.Contains("配角喧宾夺主")
         );
-        Assert.Contains(
-            report.Issues,
-            i =>
-                i.Dimension == DimensionKeys.CharacterArc
-                && i.Description.Contains("主角 PR 排名连续")
+        Assert.Contains(report.Issues, i =>
+            i.Dimension == DimensionKeys.CharacterArc && i.Description.Contains("主角 PR 排名连续")
         );
-        Assert.Contains(
-            report.Issues,
-            i => i.Dimension == DimensionKeys.Foreshadowing && i.Description.Contains("支线漂移")
+        Assert.Contains(report.Issues, i =>
+            i.Dimension == DimensionKeys.Foreshadowing && i.Description.Contains("支线漂移")
         );
         Assert.Contains(report.Strengths, s => s.Contains("TextRank"));
     }

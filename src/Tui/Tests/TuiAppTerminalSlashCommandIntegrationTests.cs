@@ -58,7 +58,7 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
     protected override async ValueTask OnReadyToRunAsync()
     {
         // 种子会话（6 条消息）必须在 RunAsync 前完成：startup OpenNovelAsync 恢复该会话
-        await _harness.SeedSessionStoreAsync();
+        await _harness.SeedSessionStoreAsync(paddingChars: 800);
         _harness.Registry.Register(new FakeAgentTool("read_file", "读取文件"), "Test Plugin");
         _harness.Registry.Register(new FakeAgentTool("write_file", "写入文件"), "Test Plugin");
     }
@@ -243,17 +243,11 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
         });
 
         Assert.NotEmpty(edgeCells);
-        Assert.All(
-            edgeCells,
-            cell =>
-            {
-                Assert.True(
-                    cell.HasBackground,
-                    $"实体输入框 ({cell.X},{inputBounds.Y}) 没有显式背景"
-                );
-                Assert.Equal(dialogSurface, cell.Background);
-            }
-        );
+        Assert.All(edgeCells, cell =>
+        {
+            Assert.True(cell.HasBackground, $"实体输入框 ({cell.X},{inputBounds.Y}) 没有显式背景");
+            Assert.Equal(dialogSurface, cell.Background);
+        });
     }
 
     [Fact]
@@ -408,10 +402,8 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
         await Dispatcher.Current.InvokeAsync(() =>
         {
             _harness.Store.Novels.Clear();
-            new NovelProjectDialog(
-                _harness.Store,
-                _harness.SessionStore,
-                (id, _) => openedNovelId = id
+            new NovelProjectDialog(_harness.Store, _harness.SessionStore, (id, _) =>
+                openedNovelId = id
             ).Show();
         });
         await WaitForOutputAsync("新建小说项目", "总纲");

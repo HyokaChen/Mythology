@@ -308,16 +308,13 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
         Assert.Equal(6, preview.PendingChanges.Count);
         Assert.Empty(preview.DetectedDeaths);
 
-        Assert.Contains(
-            preview.Suggestions,
-            s =>
-                s.TargetType == EntityType.Relationship
-                && s.Field == "until-chapter-id"
-                && s.IsAutomatic
+        Assert.Contains(preview.Suggestions, s =>
+            s.TargetType == EntityType.Relationship
+            && s.Field == "until-chapter-id"
+            && s.IsAutomatic
         );
-        Assert.Contains(
-            preview.Suggestions,
-            s => s.TargetType == EntityType.Faction && s.Field == "members" && s.IsAutomatic
+        Assert.Contains(preview.Suggestions, s =>
+            s.TargetType == EntityType.Faction && s.Field == "members" && s.IsAutomatic
         );
         Assert.True(
             preview.Suggestions.Any(s =>
@@ -325,12 +322,10 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
             ),
             string.Join("\n", preview.Suggestions.Select(s => $"{s.Id} auto={s.IsAutomatic}"))
         );
-        Assert.Contains(
-            preview.Suggestions,
-            s =>
-                s.TargetType == EntityType.Plotline
-                && s.Field == "resolved-at-chapter-id"
-                && s.IsAutomatic
+        Assert.Contains(preview.Suggestions, s =>
+            s.TargetType == EntityType.Plotline
+            && s.Field == "resolved-at-chapter-id"
+            && s.IsAutomatic
         );
     }
 
@@ -378,15 +373,12 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
         Assert.Contains(sets[0].Entries, e => e.Kind == ChangeSetEntryKind.EntityUpdate);
 
         var records = await _store.GetEntityStateChangesByChapter("nov001", chapter.Id);
-        Assert.All(
-            records,
-            r =>
-            {
-                Assert.Equal(ChangeLifecycle.Committed, r.Lifecycle);
-                Assert.Equal(sets[0].Id, r.ChangeSetId);
-                Assert.NotNull(r.CommittedAt);
-            }
-        );
+        Assert.All(records, r =>
+        {
+            Assert.Equal(ChangeLifecycle.Committed, r.Lifecycle);
+            Assert.Equal(sets[0].Id, r.ChangeSetId);
+            Assert.NotNull(r.CommittedAt);
+        });
         Assert.All(records, r => Assert.Equal("loc1", r.LocationId));
         Assert.All(records, r => Assert.Contains("pl1", r.PlotlineIds));
 
@@ -409,14 +401,12 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
 
         var reverted = (await _store.GetChapterChangeSets("nov001", chapter.Id))[0];
         Assert.Equal(ChangeSetStatus.Reverted, reverted.Status);
-        Assert.All(
-            await _store.GetEntityStateChangesByChapter("nov001", chapter.Id),
-            r => Assert.Equal(ChangeLifecycle.Pending, r.Lifecycle)
+        Assert.All(await _store.GetEntityStateChangesByChapter("nov001", chapter.Id), r =>
+            Assert.Equal(ChangeLifecycle.Pending, r.Lifecycle)
         );
         var actions = await _store.GetOntologyActions("nov001");
-        Assert.Contains(
-            actions,
-            a => a.Operation == OntologyOperation.Revert && a.ChangeSetId == reverted.Id
+        Assert.Contains(actions, a =>
+            a.Operation == OntologyOperation.Revert && a.ChangeSetId == reverted.Id
         );
 
         // 幂等：再次发布/撤回
@@ -458,9 +448,8 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
 
         var preview = await _service.PreviewPublishAsync("nov001", chapter.Id);
         Assert.False(preview.HasBlockingIssues);
-        Assert.Contains(
-            preview.ValidationIssues,
-            i => i.Code == "manual-modified" && !i.BlocksPublish
+        Assert.Contains(preview.ValidationIssues, i =>
+            i.Code == "manual-modified" && !i.BlocksPublish
         );
     }
 
@@ -759,9 +748,8 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
         await _store.SaveRelationship(relationship);
 
         var preview = await _service.PreviewPublishAsync("nov001", chapter.Id);
-        Assert.DoesNotContain(
-            preview.Suggestions,
-            s => s.TargetType == EntityType.Relationship && s.TargetId == "rel1"
+        Assert.DoesNotContain(preview.Suggestions, s =>
+            s.TargetType == EntityType.Relationship && s.TargetId == "rel1"
         );
     }
 
@@ -908,13 +896,11 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
         Assert.Equal("deceased", asOf[EvolutionAspect.Status]);
 
         var actions = await _store.GetOntologyActions("nov001");
-        Assert.Contains(
-            actions,
-            a =>
-                a.TargetEntityType == EntityType.Character
-                && a.Field == "status"
-                && a.Source == AuditSource.User
-                && a.To == "deceased"
+        Assert.Contains(actions, a =>
+            a.TargetEntityType == EntityType.Character
+            && a.Field == "status"
+            && a.Source == AuditSource.User
+            && a.To == "deceased"
         );
 
         var log = await EntityLogView.BuildAsync(_store, "nov001");

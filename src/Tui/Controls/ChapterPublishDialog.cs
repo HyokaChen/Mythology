@@ -241,8 +241,8 @@ internal static class ChapterPublishDialog
         var lines = new List<string>();
         foreach (var change in preview.PendingChanges)
         {
-            var target =
-                targetName?.Invoke(change.TargetEntityType, change.TargetId) ?? change.TargetId;
+            var target = targetName?.Invoke(change.TargetEntityType, change.TargetId)
+                ?? change.TargetId;
             var summary = string.IsNullOrWhiteSpace(change.Summary)
                 ? $"{change.FromSummary ?? "?"} → {change.ToSummary ?? "?"}"
                 : change.Summary;

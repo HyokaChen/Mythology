@@ -1291,8 +1291,7 @@ public sealed class ConversationViewModel : ViewModelBase
         _novelsRoot = novelsRoot;
         _toolDisplay = new ToolDisplayFormatter(tools);
         _registry = tools;
-        _log =
-            log
+        _log = log
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ConversationViewModel>.Instance;
 
         SendMessageCommand = ReactiveCommand.CreateFromTask(SendMessageAsync);
@@ -1301,6 +1300,11 @@ public sealed class ConversationViewModel : ViewModelBase
 
         // 引擎通知 → 系统气泡 + 仪表重算（压缩进度、溢出重试、持久化故障）
         _engine.OnSystemNotice += text => Dispatcher.UIThread.Post(() => AddSystemNotice(text));
+
+        // 实时用户消息落盘后绑定真实 entryId：compact 让消息离开 active 列表后，
+        // retry/edit 仍能从目标 parent 精确追加，而不是按可见序号猜测。
+        _engine.UserMessagePersisted += (_, entryId) =>
+            Dispatcher.UIThread.Post(() => BindPersistedUserEntryId(entryId));
         _engine.OnCompactStart += () =>
         {
             // 先记在调用线程上：CompactAsync 可能在 UI Post 执行前就返回，
@@ -1351,6 +1355,21 @@ public sealed class ConversationViewModel : ViewModelBase
 
                 ApplyCompactEnd(message);
             });
+    }
+
+    /// <summary>
+    /// 把落盘 entryId 绑定到最后一条尚未绑定 id 的本地用户气泡。
+    /// compact 后消息离开 active 列表，retry/edit 仍靠这个 id 定位。
+    /// </summary>
+    internal void BindPersistedUserEntryId(string entryId)
+    {
+        if (Messages.Any(m => m.EntryId == entryId))
+            return;
+        var local = Messages.LastOrDefault(m =>
+            m.Sender == MessageSender.User && m.EntryId is null
+        );
+        if (local is not null)
+            local.EntryId = entryId;
     }
 
     /// <summary>把压缩结束事件落到同一条系统状态行，并清掉压缩态。</summary>

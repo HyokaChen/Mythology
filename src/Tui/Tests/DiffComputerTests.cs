@@ -71,9 +71,8 @@ public class DiffComputerTests
         // b: delete old=2 new=null
         // x: insert old=null new=2
         // c: context old=2(new=3) ... actually after insert line numbering
-        Assert.Contains(
-            lines,
-            l => l is { Type: DiffLineType.Context, OldLineNum: 1, NewLineNum: 1 }
+        Assert.Contains(lines, l =>
+            l is { Type: DiffLineType.Context, OldLineNum: 1, NewLineNum: 1 }
         );
     }
 

@@ -136,8 +136,7 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
             }
         }
 
-        var targetType =
-            EntityTypeExtensions.ParseEntityType(args.TargetEntityType)
+        var targetType = EntityTypeExtensions.ParseEntityType(args.TargetEntityType)
             ?? ParseEnum(args.TargetEntityType, EntityTypeEnum.Character);
         EvolutionAspect? aspect = null;
         if (!string.IsNullOrWhiteSpace(args.Aspect))

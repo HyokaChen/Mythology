@@ -49,10 +49,10 @@ public sealed class ContextContinuationTests : IAsyncDisposable
     }
 
     /// <summary>溢出恢复分支（模式互斥的唯一入口）。</summary>
-    private async Task<bool> RelieveOverflowAsync(int keepRecent)
+    private async Task<bool> RelieveOverflowAsync(int keepRecentTokens)
     {
         var method = typeof(TuiApp).GetMethod("RelieveOverflowAsync", Flags)!;
-        var task = (Task<bool>)method.Invoke(_harness.App, [keepRecent])!;
+        var task = (Task<bool>)method.Invoke(_harness.App, [keepRecentTokens])!;
         return await task;
     }
 
@@ -63,7 +63,7 @@ public sealed class ContextContinuationTests : IAsyncDisposable
         var task = (Task)
             method.Invoke(
                 _harness.App,
-                [_harness.Agent.State.Messages, keepRecent, "manual", false]
+                [_harness.Agent.State.Messages, keepRecent, "manual", false, 0, false]
             )!;
         await task;
     }
@@ -277,7 +277,7 @@ public sealed class ContextContinuationTests : IAsyncDisposable
         await _harness.SeedSessionStoreAsync();
         EnableContinuation();
 
-        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2));
 
         var window = Assert.Single(ReadSessionEntries("window"));
         Assert.Equal("overflow", window.GetProperty("reason").GetString());
@@ -290,9 +290,9 @@ public sealed class ContextContinuationTests : IAsyncDisposable
     {
         await _harness.SeedSessionStoreAsync();
         // 种入足以产生「有效压缩」的长消息（短消息压完反而更长，会走无效压缩分支）
-        await SeedLongPageMessagesAsync(count: 10, charsPerMessage: 300);
+        await SeedLongPageMessagesAsync(count: 10, charsPerMessage: 500);
 
-        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2));
 
         var compact = Assert.Single(ReadSessionEntries("compact"));
         Assert.Equal("overflow", compact.GetProperty("reason").GetString());
@@ -314,17 +314,18 @@ public sealed class ContextContinuationTests : IAsyncDisposable
         // 模拟换页后的新一页消息（Host 落盘路径）
         var novelId = TuiSlashTestHarness.NovelId;
         var sessionId = TuiSlashTestHarness.SessionId;
-        // 页内 8 条：cutIndex 要落在 ≥3 的位置才不会被 FindCutPoint 的防御分支退化为 0
+        // 页内 8 条：保证有足够 token 产生有效压缩，并让 first-kept 落在当前页。
+        var pageBody = new string('述', 400);
         var pageMessages = new List<LlmChatMessage>
         {
-            new(ChatMessageRoles.User, "换页后第一条"),
-            new(ChatMessageRoles.Assistant, "换页后第二条"),
-            new(ChatMessageRoles.User, "换页后第三条"),
-            new(ChatMessageRoles.Assistant, "换页后第四条"),
-            new(ChatMessageRoles.User, "换页后第五条"),
-            new(ChatMessageRoles.Assistant, "换页后第六条"),
-            new(ChatMessageRoles.User, "换页后第七条"),
-            new(ChatMessageRoles.Assistant, "换页后第八条"),
+            new(ChatMessageRoles.User, "换页后第一条" + pageBody),
+            new(ChatMessageRoles.Assistant, "换页后第二条" + pageBody),
+            new(ChatMessageRoles.User, "换页后第三条" + pageBody),
+            new(ChatMessageRoles.Assistant, "换页后第四条" + pageBody),
+            new(ChatMessageRoles.User, "换页后第五条" + pageBody),
+            new(ChatMessageRoles.Assistant, "换页后第六条" + pageBody),
+            new(ChatMessageRoles.User, "换页后第七条" + pageBody),
+            new(ChatMessageRoles.Assistant, "换页后第八条" + pageBody),
         };
         foreach (var m in pageMessages)
             _harness.Agent.AppendMessage(m);
@@ -383,26 +384,23 @@ public sealed class ContextContinuationTests : IAsyncDisposable
             $"first-kept-entry-id 落在旧页: order={allIds[firstKept]}"
         );
         Assert.NotEmpty(compressed);
-        Assert.All(
-            compressed,
-            id =>
-                Assert.True(
-                    allIds[id] >= pageOrderFloor,
-                    $"compressedId 落在旧页: order={allIds[id]}"
-                )
+        Assert.All(compressed, id =>
+            Assert.True(allIds[id] >= pageOrderFloor, $"compressedId 落在旧页: order={allIds[id]}")
         );
 
         // 重载会话：模型上下文 = 摘要 + 页内保留消息，且不含任何换页前消息
         var reloaded = await _harness.SessionStore.GetContextMessages(sessionId);
-        Assert.Contains(
-            reloaded,
-            m => m.Content!.Contains("[上下文摘要", StringComparison.Ordinal)
+        Assert.Contains(reloaded, m =>
+            m.Content!.Contains("[上下文摘要", StringComparison.Ordinal)
         );
-        Assert.DoesNotContain(
-            reloaded,
-            m => m.Content!.Contains("第一章开始", StringComparison.Ordinal)
+        Assert.DoesNotContain(reloaded, m =>
+            m.Content!.Contains("第一章开始", StringComparison.Ordinal)
         );
-        Assert.Contains(reloaded, m => m.Content == "换页后第八条");
-        Assert.Contains(reloaded, m => m.Content == "换页后第七条");
+        Assert.Contains(reloaded, m =>
+            m.Content!.StartsWith("换页后第八条", StringComparison.Ordinal)
+        );
+        Assert.Contains(reloaded, m =>
+            m.Content!.StartsWith("换页后第七条", StringComparison.Ordinal)
+        );
     }
 }

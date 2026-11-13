@@ -296,8 +296,7 @@ internal static class EntityFieldWriter
                 throw new InvalidOperationException("字段补丁不能为空");
 
             var name = patch.Field?.Trim() ?? "";
-            var def =
-                EntityFieldRegistry.FindWritableField(type, name)
+            var def = EntityFieldRegistry.FindWritableField(type, name)
                 ?? throw new InvalidOperationException(
                     $"字段 '{name}' 不可写。{EntityFieldRegistry.Label(type)} 可用字段: {FieldNames(type)}"
                 );
@@ -312,8 +311,7 @@ internal static class EntityFieldWriter
                     throw new InvalidOperationException("章节正文请用 write_chapter / edit_text");
             }
 
-            var prop =
-                entity.GetType().GetProperty(def.Prop, PropFlags)
+            var prop = entity.GetType().GetProperty(def.Prop, PropFlags)
                 ?? throw new InvalidOperationException($"模型缺少字段 {def.Prop}");
 
             var value = Coerce(def, prop, patch);
@@ -402,8 +400,8 @@ internal static class EntityFieldWriter
             return def.OptionValues[index];
 
         return def.OptionValues.FirstOrDefault(v =>
-                string.Equals(v, raw, StringComparison.OrdinalIgnoreCase)
-            ) ?? raw;
+            string.Equals(v, raw, StringComparison.OrdinalIgnoreCase)
+        ) ?? raw;
     }
 
     private static bool TryParseBool(string raw, out bool value)

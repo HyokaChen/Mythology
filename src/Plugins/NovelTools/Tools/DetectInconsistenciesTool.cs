@@ -134,11 +134,9 @@ public sealed class DetectInconsistenciesTool(INovelStore store)
         {
             if (deceasedIds.Contains(rel.CharacterAId) || deceasedIds.Contains(rel.CharacterBId))
             {
-                var nameA =
-                    characters.FirstOrDefault(c => c.Id == rel.CharacterAId)?.Name
+                var nameA = characters.FirstOrDefault(c => c.Id == rel.CharacterAId)?.Name
                     ?? rel.CharacterAId;
-                var nameB =
-                    characters.FirstOrDefault(c => c.Id == rel.CharacterBId)?.Name
+                var nameB = characters.FirstOrDefault(c => c.Id == rel.CharacterBId)?.Name
                     ?? rel.CharacterBId;
                 issues.Add(
                     new IssueEntry

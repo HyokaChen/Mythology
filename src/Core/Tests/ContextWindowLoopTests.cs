@@ -92,31 +92,21 @@ public sealed class ContextWindowLoopTests
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  压力提示：模式互斥（compact 指 /compact，接续指 new_context）
+    //  压力提示：只在接续模式注入 new_context 出口
     // ═══════════════════════════════════════════════════════════
 
-    /// <summary>三档压力提示都必须指向本模式自己的出口，且绝不出现另一条路径的出口。</summary>
+    /// <summary>三档压力提示必须指向 new_context，且绝不提 compact；compact 模式不再注入 nudge。</summary>
     [Theory]
     [InlineData(ConversationLoop.PressureLevel.Info)]
     [InlineData(ConversationLoop.PressureLevel.Warn)]
     [InlineData(ConversationLoop.PressureLevel.Critical)]
-    public void PressureNudge_IsModeExclusive(ConversationLoop.PressureLevel level)
+    public void PressureNudge_IsContinuationOnly(ConversationLoop.PressureLevel level)
     {
-        var compactText = ConversationLoop.BuildPressureNudge(level, 0.9, continuation: false);
-        var continuationText = ConversationLoop.BuildPressureNudge(level, 0.9, continuation: true);
+        var text = ConversationLoop.BuildPressureNudge(level, 0.9);
 
-        // compact：只指压缩出口（info 档沿用「压缩」措辞，warn/critical 点名 /compact），不提接续工具
-        Assert.True(
-            compactText.Contains("/compact", StringComparison.Ordinal)
-                || compactText.Contains("压缩", StringComparison.Ordinal),
-            compactText
-        );
-        Assert.DoesNotContain("new_context", compactText);
-        Assert.DoesNotContain("history_", compactText);
-
-        // 接续：只指 new_context / history_*，绝不提 /compact
-        Assert.Contains("new_context", continuationText);
-        Assert.DoesNotContain("/compact", continuationText);
+        Assert.Contains("new_context", text);
+        Assert.DoesNotContain("/compact", text);
+        Assert.DoesNotContain("建议压缩", text);
     }
 
     // ═══════════════════════════════════════════════════════════

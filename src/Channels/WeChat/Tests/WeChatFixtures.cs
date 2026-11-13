@@ -103,10 +103,8 @@ internal static class WeChatFixtures
 
     /// <summary>请求体是 JSON，中文被默认编码器转义成 \uXXXX；断言前先解回原文。</summary>
     public static string Decoded(string jsonBody) =>
-        System.Text.RegularExpressions.Regex.Replace(
-            jsonBody,
-            @"\\u([0-9a-fA-F]{4})",
-            m => ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString()
+        System.Text.RegularExpressions.Regex.Replace(jsonBody, @"\\u([0-9a-fA-F]{4})", m =>
+            ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString()
         );
 
     /// <summary>拼一条含指定文本的入站 getupdates 响应（普通插值字符串：避开原始字符串的花括号歧义）。</summary>

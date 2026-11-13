@@ -77,9 +77,8 @@ public sealed class ConversationViewStructureTests
     {
         var child = Child(Popup(LoadConversationView(), popupName));
         Assert.Equal("Border", child.Name.LocalName);
-        Assert.DoesNotContain(
-            child.Attributes(),
-            a => a.Name.LocalName is "MinWidth" or "MaxWidth"
+        Assert.DoesNotContain(child.Attributes(), a =>
+            a.Name.LocalName is "MinWidth" or "MaxWidth"
         );
     }
 }

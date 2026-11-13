@@ -192,8 +192,8 @@ public static class HostBootstrapper
 
         // ── 核心服务解析 ──
         var store = provider.GetRequiredService<FileNovelStore>();
-        var semantic =
-            provider.GetService<NovelSemanticService>() ?? new NovelSemanticService(workspace);
+        var semantic = provider.GetService<NovelSemanticService>()
+            ?? new NovelSemanticService(workspace);
         var questionStore = provider.GetRequiredService<UserQuestionStore>();
         var interactionHub = provider.GetRequiredService<InteractionHub>();
         var agent = provider.GetRequiredService<Agent>();
@@ -502,9 +502,8 @@ public static class HostBootstrapper
         // SSE 长连接（HttpFictionHarnessClient / DeviceAuthorizationClient 流式路径共享本客户端）。
         services
             .AddHttpClient("MythologyCloud")
-            .AddResilienceHandler(
-                "mythology-cloud",
-                static b => ClientPlatform.CloudHttpResilience.ConfigureRetry(b)
+            .AddResilienceHandler("mythology-cloud", static b =>
+                ClientPlatform.CloudHttpResilience.ConfigureRetry(b)
             );
 
         // ── 登录/探活命名客户端：OAuth/设备码一次性凭证交换非幂等，不重试（文章：只重试幂等操作）──

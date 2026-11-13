@@ -252,8 +252,7 @@ public sealed class AgentMemoryStore : IAsyncDisposable
                 // vec0.dll 在 SDK 项目输出中位于 runtimes/{rid}/native/ 子目录（非扁平），
                 // SQLite C API 的 LoadExtension 不走 .NET 程序集解析器，须按显式路径加载；
                 // 宿主扁平布局（vec0.dll 在 BaseDirectory）时回退到裸名。
-                var rid =
-                    System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
+                var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
                     ?? "win-x64";
                 var nativeDir = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native");
                 var vecFileName =

@@ -17,9 +17,8 @@ public sealed class TerminalQrTests
 
         Assert.NotNull(rendered);
         // 字形集合固定：多出别的字符就意味着行宽计算错了（终端会错位）
-        Assert.All(
-            rendered,
-            ch => Assert.True(ch is '█' or '▀' or '▄' or ' ' or '\n', $"意外字符：{(int)ch}")
+        Assert.All(rendered, ch =>
+            Assert.True(ch is '█' or '▀' or '▄' or ' ' or '\n', $"意外字符：{(int)ch}")
         );
     }
 

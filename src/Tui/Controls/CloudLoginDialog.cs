@@ -231,17 +231,14 @@ public sealed class CloudLoginDialog
             if (tcs.TrySetResult(false))
             {
                 statusText.Value = $"❗ {ex.Message}";
-                RunAfterDelay(
-                    1500,
-                    () =>
-                    {
-                        dialog.Close();
+                RunAfterDelay(1500, () =>
+                {
+                    dialog.Close();
 
-                        // 自动回退到设备流
-                        ToastService.Info($"本地回调失败（{ex.Message}），自动切换到设备流…");
-                        _ = ShowDeviceFlowAsync(ct);
-                    }
-                );
+                    // 自动回退到设备流
+                    ToastService.Info($"本地回调失败（{ex.Message}），自动切换到设备流…");
+                    _ = ShowDeviceFlowAsync(ct);
+                });
             }
         }
         catch (OperationCanceledException)
@@ -257,16 +254,13 @@ public sealed class CloudLoginDialog
             if (tcs.TrySetResult(false))
             {
                 statusText.Value = $"❗ 本地回调失败: {ex.Message}";
-                RunAfterDelay(
-                    1500,
-                    () =>
-                    {
-                        dialog.Close();
+                RunAfterDelay(1500, () =>
+                {
+                    dialog.Close();
 
-                        ToastService.Info("本地回调失败，自动切换到设备流…");
-                        _ = ShowDeviceFlowAsync(ct);
-                    }
-                );
+                    ToastService.Info("本地回调失败，自动切换到设备流…");
+                    _ = ShowDeviceFlowAsync(ct);
+                });
             }
         }
     }

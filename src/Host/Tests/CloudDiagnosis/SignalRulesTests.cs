@@ -196,9 +196,8 @@ public sealed class SignalRulesTests
     [Fact]
     public void A3_NotYetDue_DoesNotTrigger()
     {
-        Assert.DoesNotContain(
-            SignalRules.Evaluate(null, null, null, Facts).Actions,
-            a => a.Code.StartsWith("A-3")
+        Assert.DoesNotContain(SignalRules.Evaluate(null, null, null, Facts).Actions, a =>
+            a.Code.StartsWith("A-3")
         );
     }
 
@@ -238,9 +237,8 @@ public sealed class SignalRulesTests
             ],
         };
 
-        Assert.DoesNotContain(
-            SignalRules.Evaluate(null, null, null, facts).Actions,
-            a => a.Code.StartsWith("A-3")
+        Assert.DoesNotContain(SignalRules.Evaluate(null, null, null, facts).Actions, a =>
+            a.Code.StartsWith("A-3")
         );
     }
 
@@ -400,11 +398,7 @@ public sealed class SignalRulesTests
     public void Priority_CapsAtThree_ByDocumentedRankOrder()
     {
         // 同时命中 S-1(high)/A-3(逾期)/A-4(过载) → 取前 3
-        var facts = Facts with
-        {
-            ActiveInfoGaps = 0,
-            MaxChapterOrder = 26,
-        };
+        var facts = Facts with { ActiveInfoGaps = 0, MaxChapterOrder = 26 };
 
         var contextRetrieve = SignalBuilder.ParseContextRetrieve(
             ContextRetrieve(
@@ -668,9 +662,8 @@ public sealed class SignalRulesTests
             )
         );
 
-        Assert.DoesNotContain(
-            SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions,
-            a => a.Code == "A-7"
+        Assert.DoesNotContain(SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions, a =>
+            a.Code == "A-7"
         );
     }
 
@@ -917,9 +910,8 @@ public sealed class SignalRulesEdgeTests
             )
         );
 
-        Assert.DoesNotContain(
-            SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions,
-            a => a.Code == "A-1"
+        Assert.DoesNotContain(SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions, a =>
+            a.Code == "A-1"
         );
     }
 
@@ -965,9 +957,8 @@ public sealed class SignalRulesEdgeTests
             StoryCheck("""{"dimensions":{"pace":{"overall-score":85,"issues":[]}}}""")
         );
 
-        Assert.DoesNotContain(
-            SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions,
-            a => a.Code == "A-6"
+        Assert.DoesNotContain(SignalRules.Evaluate(null, null, storyCheck, Neutral).Actions, a =>
+            a.Code == "A-6"
         );
     }
 

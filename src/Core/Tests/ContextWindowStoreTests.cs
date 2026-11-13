@@ -256,9 +256,8 @@ public sealed class ContextWindowStoreTests : IAsyncLifetime
         var windowSegment = Assert.Single(manifest.Segments, s => s.HasWindow);
         Assert.Equal("w1", windowSegment.WindowId);
         // 非 window 分片不得被误标
-        Assert.All(
-            manifest.Segments.Where(s => s.Seq != windowSegment.Seq),
-            s => Assert.False(s.HasWindow)
+        Assert.All(manifest.Segments.Where(s => s.Seq != windowSegment.Seq), s =>
+            Assert.False(s.HasWindow)
         );
     }
 

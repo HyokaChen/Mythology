@@ -476,8 +476,7 @@ public sealed partial class TuiApp
     /// </summary>
     private async Task HandleContextCommandAsync(SlashCommandParser.ContextArgs args)
     {
-        var current =
-            _contextModeSwitcher?.CurrentMode
+        var current = _contextModeSwitcher?.CurrentMode
             ?? (
                 _agent.ContextManagement is { Mode: ContextMode.Continuation }
                     ? ContextMode.Continuation
@@ -633,15 +632,10 @@ public sealed partial class TuiApp
         var chapters = (await _store.GetChapters(novelId)).OrderBy(c => c.Order).ToList();
         var hits = NovelTextSearch.Search(chapters, query);
         var navigation = (await _store.GetStructure(novelId))?.Chapters ?? chapters;
-        ChapterSearchDialog.Show(
-            query.Trim(),
-            hits,
-            chapters,
-            chapter =>
-            {
-                _ = OpenReaderFromSearchAsync(novelId, navigation, chapter);
-            }
-        );
+        ChapterSearchDialog.Show(query.Trim(), hits, chapters, chapter =>
+        {
+            _ = OpenReaderFromSearchAsync(novelId, navigation, chapter);
+        });
     }
 
     /// <summary>/search 命中打开阅读器（异步包装：OptionList 回调是同步的）。</summary>
@@ -831,10 +825,8 @@ public sealed partial class TuiApp
     /// <summary>显示小说项目选择对话框，选择后打开对应小说和会话。</summary>
     private void ShowNovelProjectDialog()
     {
-        new NovelProjectDialog(
-            _store,
-            _sessionStore,
-            (novelId, sessionId) => _ = OpenNovelAsync(novelId, sessionId)
+        new NovelProjectDialog(_store, _sessionStore, (novelId, sessionId) =>
+            _ = OpenNovelAsync(novelId, sessionId)
         ).Show();
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
@@ -119,9 +120,8 @@ public sealed class SessionA2CheckpointTests : IAsyncLifetime
         );
 
         var compacted = await _store.GetContextMessages(SessionId);
-        Assert.Contains(
-            compacted,
-            m => m.Content?.Contains("[上下文摘要", StringComparison.Ordinal) == true
+        Assert.Contains(compacted, m =>
+            m.Content?.Contains("[上下文摘要", StringComparison.Ordinal) == true
         );
         Assert.DoesNotContain(compacted, m => m.Content == "u1");
 
@@ -163,6 +163,107 @@ public sealed class SessionA2CheckpointTests : IAsyncLifetime
         );
         var keptIndex = asOf.FindIndex(m => m.Content == "u1");
         Assert.True(summaryIndex >= 0 && summaryIndex < keptIndex);
+    }
+
+    [Fact]
+    public async Task Compact_NewSegmentContainsOnlyCompactEntry()
+    {
+        var u1 = await SaveAsync("u1");
+        var a1 = await SaveAsync("a1", u1, 1);
+        var u2 = await SaveAsync("u2", a1, 2);
+        await SaveAsync("a2", u2, 3);
+        var oldPath = Directory
+            .GetFiles(_sessionsDir, "000000.jsonl", SearchOption.AllDirectories)
+            .Single();
+        var oldLines = await File.ReadAllLinesAsync(oldPath);
+
+        await _store.CompactSession(
+            SessionId,
+            NovelId,
+            summary: "compact summary",
+            firstKeptEntryId: u2,
+            messagesBefore: 4,
+            order: 4
+        );
+
+        var newPath = Directory
+            .GetFiles(_sessionsDir, "000001.jsonl", SearchOption.AllDirectories)
+            .Single();
+        var newLines = (await File.ReadAllLinesAsync(newPath))
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
+        var compactLine = Assert.Single(newLines);
+        using (var doc = JsonDocument.Parse(compactLine))
+        {
+            Assert.Equal("compact", doc.RootElement.GetProperty("type").GetString());
+        }
+
+        // 旧分片 append-only：保留消息仍只在旧分片，不被复制进新分片。
+        Assert.Equal(4, oldLines.Length);
+        Assert.Equal(oldLines, await File.ReadAllLinesAsync(oldPath));
+
+        var active = await _store.GetActiveMessages(SessionId);
+        Assert.Contains(active, m => m.Content == "u2");
+        Assert.Contains(active, m => m.Content == "a2");
+        Assert.DoesNotContain(active, m => m.Content == "u1");
+        Assert.Single(active, m => m.EventType == SessionEventType.Compact);
+
+        var context = await _store.GetContextMessages(SessionId);
+        var summaryIndex = context.FindIndex(m =>
+            m.Content?.Contains("[上下文摘要", StringComparison.Ordinal) == true
+        );
+        var keptIndex = context.FindIndex(m => m.Content == "u2");
+        Assert.True(summaryIndex >= 0 && summaryIndex < keptIndex);
+    }
+
+    [Fact]
+    public async Task LegacyCompactSegmentWithRetainedCopies_RemainsReadable()
+    {
+        var u1 = await SaveAsync("u1");
+        var a1 = await SaveAsync("a1", u1, 1);
+        var u2 = await SaveAsync("u2", a1, 2);
+        await SaveAsync("a2", u2, 3);
+        await _store.CompactSession(
+            SessionId,
+            NovelId,
+            summary: "legacy summary",
+            firstKeptEntryId: u2,
+            messagesBefore: 4,
+            order: 4
+        );
+
+        // 模拟旧格式：新分片 = compact 行 + 保留消息副本（当前实现只写 compact 行）。
+        var oldPath = Directory
+            .GetFiles(_sessionsDir, "000000.jsonl", SearchOption.AllDirectories)
+            .Single();
+        var newPath = Directory
+            .GetFiles(_sessionsDir, "000001.jsonl", SearchOption.AllDirectories)
+            .Single();
+        var compactLine = (await File.ReadAllLinesAsync(newPath)).Single(line =>
+            !string.IsNullOrWhiteSpace(line)
+        );
+        var retained = (await File.ReadAllLinesAsync(oldPath))
+            .SkipWhile(line => !line.Contains($"\"id\":\"{u2}\"", StringComparison.Ordinal))
+            .ToArray();
+        await File.WriteAllLinesAsync(newPath, [compactLine, .. retained]);
+
+        // 新 store 实例绕过 parse cache，验证读取端仍兼容旧分片格式。
+        var reloaded = new FileSessionStore(
+            novelsRoot: Path.Combine(_root, "novels"),
+            mythologyDir: _root
+        )
+        {
+            SkipConflictCheck = true,
+        };
+        var active = await reloaded.GetActiveMessages(SessionId);
+        Assert.Contains(active, m => m.Content == "u2");
+        Assert.Contains(active, m => m.Content == "a2");
+        Assert.DoesNotContain(active, m => m.Content == "u1");
+        Assert.Single(active, m => m.EventType == SessionEventType.Compact);
+
+        var context = await reloaded.GetContextMessages(SessionId);
+        Assert.Contains(context, m => m.Content?.Contains("legacy summary") == true);
+        Assert.Contains(context, m => m.Content == "u2");
     }
 
     [Fact]

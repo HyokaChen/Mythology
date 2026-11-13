@@ -121,10 +121,10 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.Null(_agent.PendingNewContextNote); // 已取走
     }
 
-    private async Task<bool> RelieveOverflowAsync(int keepRecent)
+    private async Task<bool> RelieveOverflowAsync(int keepRecentTokens)
     {
         var method = typeof(SessionEngine).GetMethod("RelieveOverflowAsync", Flags)!;
-        var task = (Task<bool>)method.Invoke(_engine, [keepRecent, CancellationToken.None])!;
+        var task = (Task<bool>)method.Invoke(_engine, [keepRecentTokens, CancellationToken.None])!;
         return await task;
     }
 
@@ -135,7 +135,15 @@ public sealed class ContextContinuationEngineTests : IDisposable
         var task = (Task)
             method.Invoke(
                 _engine,
-                [_agent.State.Messages, keepRecent, "manual", false, CancellationToken.None]
+                [
+                    _agent.State.Messages,
+                    keepRecent,
+                    "manual",
+                    false,
+                    CancellationToken.None,
+                    0,
+                    false,
+                ]
             )!;
         await task;
     }
@@ -148,28 +156,66 @@ public sealed class ContextContinuationEngineTests : IDisposable
             (Task<CompactResult>)
                 method.Invoke(
                     _engine,
-                    [_agent.State.Messages, keepRecent, "manual", false, CancellationToken.None]
+                    [
+                        _agent.State.Messages,
+                        keepRecent,
+                        "manual",
+                        false,
+                        CancellationToken.None,
+                        0,
+                        false,
+                    ]
                 )!;
         return await task;
     }
 
     /// <summary>
-    /// 自动压缩内部异常（例如评分器抛错）也必须触发 OnCompactEnd，
-    /// 否则 UI 的「上下文压缩中…」会永久旋转。
+    /// 智能压缩内部异常（例如评分器抛错）也必须触发 OnCompactEnd，
+    /// 否则 UI 的「上下文压缩中…」会永久旋转。自动压缩已不再走 scorer，
+    /// 因此直接验证手动 smart 路径。
     /// </summary>
     [Fact]
-    public async Task AutoCompact_ScorerFailure_StillFiresCompactEnd()
+    public async Task CompactSmart_ScorerFailure_StillFiresCompactEnd()
     {
-        await SeedSessionAsync(count: 6, charsPerMessage: 300);
+        await SeedSessionAsync(count: 10, charsPerMessage: 300);
         _agent.MessageScorer = new ThrowingScorer();
         var ended = new List<string>();
         _engine.OnCompactEnd += ended.Add;
 
-        var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
-        await (Task)method.Invoke(_engine, [2, CancellationToken.None])!;
+        var outcome = await _engine.CompactAsync(smart: true, keepRecent: 2);
 
-        Assert.Contains("自动压缩失败", Assert.Single(ended));
+        Assert.Equal(CompactOutcomeKind.Failed, outcome.Kind);
+        Assert.Contains("智能压缩失败", Assert.Single(ended));
         Assert.False(_engine.IsCompacting);
+    }
+
+    /// <summary>自动压缩必须按 token 预算切，不允许 31→30 这种微型压缩。</summary>
+    [Fact]
+    public async Task AutoCompact_TokenBudget_DoesNotWriteTinyTail()
+    {
+        await SeedSessionAsync(count: 32, charsPerMessage: 500);
+        var before = _agent.State.Messages.Count;
+        var ended = new List<string>();
+        _engine.OnCompactEnd += ended.Add;
+
+        var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
+        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None])!;
+
+        Assert.Contains("自动压缩完成", Assert.Single(ended));
+        var compact = Assert.Single(ReadSessionEntries("compact"));
+        var compressed = compact.GetProperty("compressed-message-ids").EnumerateArray().ToList();
+        Assert.True(compressed.Count > 1, $"compressed={compressed.Count}");
+        Assert.True(compact.GetProperty("estimated-tokens-after").GetInt32() > 0);
+        Assert.True(_agent.State.Messages.Count < before);
+
+        var newSegment = Directory
+            .GetFiles(_base, "000001.jsonl", SearchOption.AllDirectories)
+            .Single();
+        Assert.Single(
+            (await File.ReadAllLinesAsync(newSegment)).Where(line =>
+                !string.IsNullOrWhiteSpace(line)
+            )
+        );
     }
 
     /// <summary>拒绝原因 → 用户文案（私有助手，反射调用以钉死两种语义不混词）。</summary>
@@ -331,7 +377,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         EnableContinuation();
         await SeedSessionAsync();
 
-        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2));
 
         var window = Assert.Single(ReadSessionEntries("window"));
         Assert.Equal("overflow", window.GetProperty("reason").GetString());
@@ -396,7 +442,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         // 回归：RGDecimator 把第 0 轮评为最高分时，旧实现取 topN 最早索引 = 0，
         // 于是 messages.Count → keep = 全部，生成摘要 + 原消息全留（202→202），
         // 压缩不降反升，后续立刻再触发 85% 压缩提醒。
-        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+        await SeedSessionAsync(count: 10, charsPerMessage: 500);
         _agent.MessageScorer = new EarlyTurnScorer();
         var before = _agent.State.Messages.Count;
 
@@ -414,13 +460,13 @@ public sealed class ContextContinuationEngineTests : IDisposable
     [Fact]
     public async Task RelieveOverflow_CompactMode_FiresCompactLifecycle()
     {
-        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+        await SeedSessionAsync(count: 12, charsPerMessage: 500);
         var started = 0;
         var ended = new List<string>();
         _engine.OnCompactStart += () => started++;
         _engine.OnCompactEnd += ended.Add;
 
-        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2_000));
 
         Assert.Equal(1, started);
         Assert.Contains("上下文溢出压缩完成", Assert.Single(ended));
@@ -430,9 +476,9 @@ public sealed class ContextContinuationEngineTests : IDisposable
     public async Task RelieveOverflow_CompactMode_CompactsWithoutRolling()
     {
         // 长消息才产生「有效压缩」（短消息压完反而更长，会走无效压缩分支返回 false）
-        await SeedSessionAsync(count: 10, charsPerMessage: 300);
+        await SeedSessionAsync(count: 12, charsPerMessage: 500);
 
-        Assert.True(await RelieveOverflowAsync(keepRecent: 2));
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2_000));
 
         var compact = Assert.Single(ReadSessionEntries("compact"));
         Assert.Equal("overflow", compact.GetProperty("reason").GetString());

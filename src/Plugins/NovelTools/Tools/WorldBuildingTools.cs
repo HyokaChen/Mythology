@@ -533,10 +533,10 @@ public sealed class TransferItemTool(INovelStore store, RetrievalKernel? kernel 
             ? null
             : await ResolveOwner(args, args.NewOwnerId, ct);
         var oldOwnerLabel = oldOwner?.Name ?? oldOwnerId ?? "无人";
-        var newOwnerLabel =
-            newOwner?.Name ?? (string.IsNullOrEmpty(args.NewOwnerId) ? "无人" : args.NewOwnerId);
-        item.OwnerId =
-            newOwner?.Id ?? (string.IsNullOrEmpty(args.NewOwnerId) ? null : args.NewOwnerId);
+        var newOwnerLabel = newOwner?.Name
+            ?? (string.IsNullOrEmpty(args.NewOwnerId) ? "无人" : args.NewOwnerId);
+        item.OwnerId = newOwner?.Id
+            ?? (string.IsNullOrEmpty(args.NewOwnerId) ? null : args.NewOwnerId);
         await store.SaveItem(item, ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)

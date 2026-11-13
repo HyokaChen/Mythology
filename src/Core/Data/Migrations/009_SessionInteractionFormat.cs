@@ -224,8 +224,8 @@ public sealed class SessionInteractionFormat : IDataMigration
         if (string.Equals(raw, "(已取消)", StringComparison.Ordinal))
             return raw;
 
-        var multi =
-            multiSelect ?? (raw.Contains(", ", StringComparison.Ordinal) || raw.Contains('、'));
+        var multi = multiSelect
+            ?? (raw.Contains(", ", StringComparison.Ordinal) || raw.Contains('、'));
         if (!multi)
             return raw;
 

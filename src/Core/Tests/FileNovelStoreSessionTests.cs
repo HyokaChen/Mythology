@@ -824,7 +824,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
 
         // 第三轮对话（parent-id 指向 lastId2）
         var batch3 = CreateSimpleConversation("第三轮用户", "第三轮助手");
-        await _store.SaveSessionMessages(
+        var lastId3 = await _store.SaveSessionMessages(
             TestSessionId,
             TestNovelId,
             batch3,
@@ -843,7 +843,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             summary: "第二轮摘要",
             firstKeptEntryId: batch2FirstEntryId!,
             messagesBefore: 2,
-            parentEntryId: compactId1,
+            parentEntryId: lastId3,
             order: 7
         );
 
@@ -891,7 +891,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
 
         // 第三轮对话
         var batch3 = CreateSimpleConversation("第三轮用户", "第三轮助手");
-        await _store.SaveSessionMessages(
+        var lastId3 = await _store.SaveSessionMessages(
             TestSessionId,
             TestNovelId,
             batch3,
@@ -909,7 +909,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             summary: "第二轮摘要",
             firstKeptEntryId: firstKeptEntryId2!,
             messagesBefore: 2,
-            parentEntryId: compactId1,
+            parentEntryId: lastId3,
             order: 7
         );
 
@@ -1296,7 +1296,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             startOrder: 0
         );
         var batch2 = CreateSimpleConversation("新1", "新2");
-        await _store.SaveSessionMessages(
+        var lastId2 = await _store.SaveSessionMessages(
             TestSessionId,
             TestNovelId,
             batch2,
@@ -1312,7 +1312,7 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             summary: "压缩旧轮次",
             firstKeptEntryId: new1EntryId!,
             messagesBefore: 4,
-            parentEntryId: lastId1,
+            parentEntryId: lastId2,
             order: 4
         );
 

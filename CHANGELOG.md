@@ -35,6 +35,32 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **compact 不再 31→30 微型压缩，也不再嵌套旧摘要**：自动/溢出压缩改按模型窗口的
+  token 预算（`ScaledKeepRecentTokens`）从尾部反扫切割点，并强制完整 user 轮次；
+  压缩区低于 `max(2,000, before/10)` 或预计节省不足时返回 `TooSmall`，不写 JSONL。
+  compact 摘要改为单份 5W1H 小说写作检查点（Where/Who/What/Why/When/How/Next），
+  从设定面板同一数据源读取当前卷/章/场景/角色/情节线/时间线并给出可执行 Next，
+  不再生成「压缩概览 / 之前的摘要 / 文件操作」；AI 输出也只保留 canonical 标题。
+  compact 新分片只追加一条 compact 行，保留消息仍留在旧分片，由 `parent-id` 串回
+  active path；旧 retained-copy 分片继续可读。UI 实时 user 气泡落盘后回填真实
+  `entryId`，compact 前后 retry/edit 都按目标 parent 追加，不重写旧分支。
+  **压缩执行已收拢到 `Core/Agent/CompactionEngine.cs`**：切点、门槛、5W1H 摘要、
+  compact 落盘与 Agent 内存替换只此一份；TUI/Desktop 仅保留触发、计数与 UI 适配。
+  `ContextTokenCalibrator` 同步收拢到 `Core/Stability/`，删除 TUI/Desktop 两份副本。
+  回归：`SessionA2CheckpointTests.Compact_NewSegmentContainsOnlyCompactEntry`、
+  `ContextContinuationEngineTests.AutoCompact_TokenBudget_DoesNotWriteTinyTail`、
+  `CompactSummary_TwoPasses_AreSingleCheckpoint`、
+  `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_Includes5W1H_AndNext`、
+  `ConversationVmContractTests.RetryFromUserMessage_ByEntryId_AfterTwoCompacts_AppendsOnly` /
+  `UserMessagePersisted_AssignsEntryIdToLiveBubble`；Core 1645/1645、Desktop 729/729、TUI 904/904（2 skipped）。
+- **不再在 70% 主动建议 `/compact`**：compact 模式本来就会在发送前自动压缩、溢出时自动恢复，
+  模型侧每轮注入的「上下文使用率 >70%，建议压缩」既重复又打断写作。现在：
+  `WritingProcessPrompt` 的 compact 阶段边界改为「上下文由系统自动处理，不向用户征求意见」；
+  `ConversationLoop` 的 nudge 只在 continuation 模式注入（那里模型能直接调 `new_context`）。
+  用户只在真正压缩/失败时看到系统状态行，不再收到 70%/80%/90% 的主动推荐。
+  回归：`ContextWindowLoopTests.PressureNudge_IsContinuationOnly`、
+  `PromptsContentTests.WritingProcessPrompt_ContinuationSwapsOnlyStageBoundaryRule` /
+  `PromptAssembly_ContinuationSkeleton_IsModeExclusive`；Core 1645/1645。
 - **底部慢速上滚不再被吸附回底**：触控板每次只移动 0.1~0.5px 时，旧逻辑
   用 1px/0.5px 阈值和“接近底部即恢复”判断，滚轮事件尚未落地就被当成回底，
   并在 80ms 回弹定时器后再次贴底，表现为闪烁、滚不上去。现在方向只认

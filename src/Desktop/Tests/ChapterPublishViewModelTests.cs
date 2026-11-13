@@ -147,9 +147,8 @@ public sealed class ChapterPublishViewModelTests
     [Fact]
     public void NameResolver_ReplacesRawEntityIds()
     {
-        var vm = new ChapterPublishViewModel(
-            BuildPreview(),
-            (type, id) => type == EntityType.Character && id == "char1" ? "沈砚" : id
+        var vm = new ChapterPublishViewModel(BuildPreview(), (type, id) =>
+            type == EntityType.Character && id == "char1" ? "沈砚" : id
         );
 
         Assert.Contains("沈砚 · 对师兄态度转冷", vm.PendingChangeLines[0]);

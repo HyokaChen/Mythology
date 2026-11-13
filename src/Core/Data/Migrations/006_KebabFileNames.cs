@@ -39,9 +39,8 @@ public sealed class KebabFileNames : IDataMigration
             {
                 ct.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(file);
-                var target = Array.Find(
-                    s_renames,
-                    r => string.Equals(r.Old, name, StringComparison.Ordinal)
+                var target = Array.Find(s_renames, r =>
+                    string.Equals(r.Old, name, StringComparison.Ordinal)
                 );
                 if (target.Old is null)
                     continue;

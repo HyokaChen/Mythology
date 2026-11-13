@@ -7,9 +7,9 @@
 /// </summary>
 public static class WritingProcessPrompt
 {
-    /// <summary>第 9 条（compact 模式）：上下文接近上限时向用户建议 /compact。</summary>
+    /// <summary>第 9 条（compact 模式）：上下文由宿主自动处理，模型不向用户提出压缩建议。</summary>
     private const string StageBoundaryRuleCompact =
-        "9. **阶段边界压缩**：章节完成 / 设定大改 / 任务切换时，若上下文使用率 >70%，主动向用户建议压缩（/compact），不等上下文挤满";
+        "9. **阶段边界**：完成当前阶段后直接继续写作；上下文管理由系统自动处理，不要向用户提及、解释或征求意见";
 
     /// <summary>
     /// 第 9 条（接续模式）：主动调用 new_context 换页。

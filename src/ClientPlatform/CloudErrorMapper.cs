@@ -96,8 +96,7 @@ public static class CloudErrorMapper
     {
         // 服务端 CloudProblems 把 title 设为错误码、detail 设为可读描述；
         // OAuth 错误体（RFC 6749）的可读描述在 error_description。按此优先级取第一个非空。
-        var embedded =
-            FindProblemField(body, "detail")
+        var embedded = FindProblemField(body, "detail")
             ?? FindProblemField(body, "error_description")
             ?? FindProblemField(body, "title");
         return !string.IsNullOrWhiteSpace(embedded)

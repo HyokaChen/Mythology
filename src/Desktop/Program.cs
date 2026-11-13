@@ -128,8 +128,8 @@ public static class Program
             //  子步骤 2：Tool Search 基础设施（镜像 HostBootstrapper §6.2）
             //  延迟加载 → ToolInjector → tool_search → 索引构建
             // ══════════════════════════════════════════════════════════
-            var embeddingService =
-                provider.GetService<IEmbeddingService>() ?? new Core.Vector.DummyEmbeddingService();
+            var embeddingService = provider.GetService<IEmbeddingService>()
+                ?? new Core.Vector.DummyEmbeddingService();
             var toolSearchEngine = new ToolSearchEngine(
                 embeddingService,
                 loggerFactory.CreateLogger<ToolSearchEngine>()
@@ -635,16 +635,13 @@ public static class Program
 
         // ── 自动更新（GitHub Releases 检测 + 静默下载 + 弹窗/设置页「关于」入口）──
         // 公开仓库匿名直连 GitHub REST（无需令牌）；不可达/私有/无 release 一律按「无更新」静默处理。
-        services.AddHttpClient(
-            "GitHub",
-            client =>
-            {
-                client.BaseAddress = new Uri("https://api.github.com/");
-                client.Timeout = TimeSpan.FromMinutes(10); // 安装包体积大，留足下载时间
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("Mythology-Desktop"); // GitHub API 要求 UA
-                client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            }
-        );
+        services.AddHttpClient("GitHub", client =>
+        {
+            client.BaseAddress = new Uri("https://api.github.com/");
+            client.Timeout = TimeSpan.FromMinutes(10); // 安装包体积大，留足下载时间
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mythology-Desktop"); // GitHub API 要求 UA
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        });
         services.AddSingleton<IUpdateCheckService>(sp => new UpdateCheckService(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient("GitHub"),
             sp.GetRequiredService<ILogger<UpdateCheckService>>(),
@@ -708,9 +705,8 @@ public static class Program
         // 数据面命名客户端：官方 Microsoft.Extensions.Http.Resilience 重试流水线（Host 同构）。
         services
             .AddHttpClient("MythologyCloud")
-            .AddResilienceHandler(
-                "mythology-cloud",
-                static b => ClientPlatform.CloudHttpResilience.ConfigureRetry(b)
+            .AddResilienceHandler("mythology-cloud", static b =>
+                ClientPlatform.CloudHttpResilience.ConfigureRetry(b)
             );
 
         // 登录/探活命名客户端：OAuth/设备码一次性凭证交换非幂等，不重试（Host 同构）。

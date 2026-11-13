@@ -31,6 +31,7 @@ internal enum CompactResult
     Success,
     RejectedInProgress,
     RejectedWrongMode,
+    TooSmall,
     Failed,
 }
 
@@ -66,6 +67,7 @@ public sealed class SessionEngine(
 )
 {
     private readonly Agent agent = bridge.Agent;
+    private readonly CompactionEngine _compactor = new(bridge.Agent, store, novelStore, log);
     private readonly string _todoRoot = string.IsNullOrWhiteSpace(todoRoot)
         ? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -87,10 +89,7 @@ public sealed class SessionEngine(
     /// <summary>随手记捕获扫描游标：已扫描到 Agent 消息列表的哪一位（压缩/换页/切会话后回退自愈）。</summary>
     private int _noteScanIndex;
     private int _nextOrder;
-    private volatile bool _isCompacting;
 
-    /// <summary>AI 摘要的硬超时；超时回退规则摘要，防止压缩永久挂起。</summary>
-    private static readonly TimeSpan AiSummaryTimeout = TimeSpan.FromSeconds(45);
     private readonly List<string> _inputHistory = [];
     private ExploreDetails? _lastExploreDetails;
 
@@ -101,7 +100,7 @@ public sealed class SessionEngine(
     public string SessionId => _sessionId;
 
     /// <summary>是否有压缩进行中。</summary>
-    public bool IsCompacting => _isCompacting;
+    public bool IsCompacting => _compactor.IsCompacting;
 
     /// <summary>最近的变体组（会话恢复/重新打开用）。</summary>
     public ExploreDetails? LastVariantSet => _lastExploreDetails;
@@ -117,6 +116,12 @@ public sealed class SessionEngine(
 
     /// <summary>压缩结束（参数：结果文案）。</summary>
     public event Action<string>? OnCompactEnd;
+
+    /// <summary>
+    /// 用户消息成功落盘（参数：显示文本、entryId）。后台线程触发；
+    /// UI 用它把本地气泡绑定到真实 entryId，compact 后 retry/edit 仍能精确定位。
+    /// </summary>
+    public event Action<string, string>? UserMessagePersisted;
 
     // ══════════════════════════════════════════════════════════
     //  增量持久化状态机
@@ -230,6 +235,27 @@ public sealed class SessionEngine(
             AssertOrderInvariant();
             if (lastEntryId is not null)
                 _lastParentEntryId = lastEntryId;
+
+            // UI 本地气泡在发送时还没有 entryId；落盘后把真实 id 回填给它，
+            // 之后 compact 即使让该消息离开 active 列表，retry/edit 仍可用 id 定位。
+            foreach (var m in newMessages)
+            {
+                if (
+                    m.Role != ChatMessageRoles.User
+                    || m.NativeObject is not string id
+                    || SessionInternalMessages.IsInjectedUserMessage(m.Content)
+                )
+                    continue;
+                try
+                {
+                    UserMessagePersisted?.Invoke(m.Content ?? "", id);
+                }
+                catch (Exception ex)
+                {
+                    // 订阅方异常不能把已成功的持久化变成会话故障。
+                    log.LogDebug(ex, "user message persisted handler failed");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -506,18 +532,17 @@ public sealed class SessionEngine(
                     ConversationLoop.EstimateMessagesTokens(agent.State.Messages)
                 );
                 var compactPercent = agent.ModelProfile?.CompactThresholdPercent ?? 0.85;
-                var contextWindow =
-                    agent.ModelProfile?.ContextWindowTokens
+                var contextWindow = agent.ModelProfile?.ContextWindowTokens
                     ?? configStore.Load().Providers.ContextWindowSize;
                 var compactThreshold = (long)(contextWindow * compactPercent);
-                var keepRecent = agent.ModelProfile?.ScaledKeepRecent ?? 20;
+                var keepRecentTokens = agent.ModelProfile?.ScaledKeepRecentTokens ?? 20_000;
                 // ★ 模式互斥：接续模式在发送前只换页（不压缩）；compact 模式保持原压缩路径。
                 if (estimatedTokens > compactThreshold)
                 {
                     if (_contextManagement is { Mode: ContextMode.Continuation })
                         await RollContextWindowAsync("threshold");
                     else
-                        await AutoCompactAsync(keepRecent, ct);
+                        await AutoCompactAsync(keepRecentTokens, ct);
                 }
 
                 // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
@@ -816,8 +841,8 @@ public sealed class SessionEngine(
                 return;
             }
 
-            var keepRecentOverflow = agent.ModelProfile?.ScaledKeepRecent ?? 20;
-            var relieved = await RelieveOverflowAsync(keepRecentOverflow, ct);
+            var keepRecentTokensOverflow = agent.ModelProfile?.ScaledKeepRecentTokens ?? 20_000;
+            var relieved = await RelieveOverflowAsync(keepRecentTokensOverflow, ct);
             if (relieved)
             {
                 OnSystemNotice?.Invoke(
@@ -967,6 +992,16 @@ public sealed class SessionEngine(
                     RejectionMessage(result)
                 );
             }
+            if (result == CompactResult.TooSmall)
+            {
+                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage);
+                return new CompactOutcome(
+                    CompactOutcomeKind.Failed,
+                    messages.Count,
+                    messages.Count,
+                    CompactionEngine.TooSmallMessage
+                );
+            }
             if (result == CompactResult.Failed)
             {
                 OnCompactEnd?.Invoke("上下文压缩失败");
@@ -997,19 +1032,16 @@ public sealed class SessionEngine(
     private async Task<CompactOutcome> CompactSmartCoreAsync(int keepRecent, CancellationToken ct)
     {
         var messages = agent.State.Messages;
-        var decimator = agent.MessageScorer!;
         OnCompactStart?.Invoke();
         try
         {
-            var scoredTurns = ScoreTurnsWithDecimator(messages, decimator);
-            var cutIndex = FindSmartCutPoint(messages, scoredTurns, keepRecent);
-            var keep = messages.Count - cutIndex;
             var result = await PrepareAndCompactAsync(
                 messages,
-                keep,
+                keepRecent,
                 "smart",
                 willRetry: false,
-                ct: ct
+                ct: ct,
+                smart: true
             );
 
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
@@ -1018,15 +1050,29 @@ public sealed class SessionEngine(
                 return new CompactOutcome(
                     CompactOutcomeKind.Rejected,
                     messages.Count,
-                    keep,
+                    messages.Count,
                     RejectionMessage(result)
+                );
+            }
+            if (result == CompactResult.TooSmall)
+            {
+                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage);
+                return new CompactOutcome(
+                    CompactOutcomeKind.Failed,
+                    messages.Count,
+                    messages.Count,
+                    CompactionEngine.TooSmallMessage
                 );
             }
             if (result == CompactResult.Failed)
             {
-                // 智能失败退回普通
-                OnCompactEnd?.Invoke($"智能压缩失败，退回普通模式");
-                return await CompactAsync(smart: false, keepRecent, ct);
+                OnCompactEnd?.Invoke("智能压缩失败");
+                return new CompactOutcome(
+                    CompactOutcomeKind.Failed,
+                    messages.Count,
+                    messages.Count,
+                    "智能压缩失败"
+                );
             }
             OnCompactEnd?.Invoke(
                 $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
@@ -1046,43 +1092,27 @@ public sealed class SessionEngine(
         }
     }
 
-    /// <summary>自动压缩：token 阈值触发，静默执行（不弹压缩进度外的额外文案）。</summary>
-    private async Task AutoCompactAsync(int keepRecent, CancellationToken ct)
+    /// <summary>自动压缩：token 阈值触发，按 token 预算切尾，静默执行。</summary>
+    private async Task AutoCompactAsync(int keepRecentTokens, CancellationToken ct)
     {
         var messages = agent.State.Messages;
         var novelId = agent.CurrentNovelId;
-        if (string.IsNullOrEmpty(novelId) || messages.Count <= keepRecent)
+        if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
             return;
 
         OnCompactStart?.Invoke();
         var endMessage = "自动压缩失败";
         try
         {
-            if (agent.MessageScorer is not null)
-            {
-                var scoredTurns = ScoreTurnsWithDecimator(messages, agent.MessageScorer);
-                var cutIndex = FindSmartCutPoint(messages, scoredTurns, keepRecent);
-                var keep = messages.Count - cutIndex;
-                var r = await PrepareAndCompactAsync(
-                    messages,
-                    keep,
-                    "smart",
-                    willRetry: false,
-                    ct: ct
-                );
-                endMessage = DescribeAutoCompact(r, messages.Count);
-            }
-            else
-            {
-                var r = await PrepareAndCompactAsync(
-                    messages,
-                    keepRecent,
-                    "threshold",
-                    willRetry: false,
-                    ct: ct
-                );
-                endMessage = DescribeAutoCompact(r, messages.Count);
-            }
+            var r = await PrepareAndCompactAsync(
+                messages,
+                keepRecent: 0,
+                "threshold",
+                willRetry: false,
+                keepRecentTokens: keepRecentTokens,
+                ct: ct
+            );
+            endMessage = DescribeAutoCompact(r, messages.Count);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1105,40 +1135,44 @@ public sealed class SessionEngine(
         {
             CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
                 DescribeRejection(result),
+            CompactResult.TooSmall => CompactionEngine.TooSmallMessage,
             CompactResult.Failed => "自动压缩失败",
             _ => $"自动压缩完成：{before} → {KeptMessageCountAfterCompact()} 条",
         };
 
     /// <summary>上下文溢出时压缩：compact 后验证 token 是否真的降低，无效时返回 false 防死循环。</summary>
-    private async Task<bool> CompactForOverflowAsync(int keepRecent, CancellationToken ct)
+    private async Task<bool> CompactForOverflowAsync(int keepRecentTokens, CancellationToken ct)
     {
         try
         {
             var messages = agent.State.Messages;
             var novelId = agent.CurrentNovelId;
 
-            // 消息数不足时：若监控器冻结（累计口径虚高触发 BudgetExhausted），解冻重设基线即恢复
-            if (string.IsNullOrEmpty(novelId) || messages.Count <= keepRecent)
+            // 消息不足时：若监控器冻结（累计口径虚高触发 BudgetExhausted），解冻重设基线即恢复
+            if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
             {
                 var monitor = agent.StabilityMonitor;
                 if (monitor is not null && monitor.IsFrozen)
                 {
-                    monitor.Unfreeze(calibrator.Project(EstimateContextTokens(messages)));
+                    monitor.Unfreeze(
+                        calibrator.Project(CompactionEngine.EstimateContextTokens(messages))
+                    );
                     return true;
                 }
                 return false;
             }
 
-            var tokensBefore = EstimateContextTokens(messages);
+            var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
             OnCompactStart?.Invoke();
             var endMessage = "上下文溢出压缩失败";
             try
             {
                 var result = await PrepareAndCompactAsync(
                     messages,
-                    keepRecent,
+                    keepRecent: 0,
                     "overflow",
                     willRetry: true,
+                    keepRecentTokens: keepRecentTokens,
                     ct: ct
                 );
 
@@ -1153,16 +1187,28 @@ public sealed class SessionEngine(
                     endMessage = DescribeRejection(result);
                     return result == CompactResult.RejectedInProgress;
                 }
+                if (result == CompactResult.TooSmall)
+                {
+                    endMessage = CompactionEngine.TooSmallMessage;
+                    return false;
+                }
+                if (result == CompactResult.Failed)
+                {
+                    endMessage = "上下文溢出压缩失败";
+                    return false;
+                }
 
-                var tokensAfter = EstimateContextTokens(agent.State.Messages);
-                if (tokensAfter >= tokensBefore)
+                var tokensAfter = CompactionEngine.EstimateContextTokens(agent.State.Messages);
+                var requiredDrop = Math.Max(1_024L, tokensBefore / 10);
+                if (tokensAfter >= tokensBefore - requiredDrop)
                 {
                     log.LogWarning(
-                        "compact after context overflow: token count did not decrease (before={Before}, after={After})",
+                        "compact after context overflow: token count did not drop enough (before={Before}, after={After}, requiredDrop={RequiredDrop})",
                         tokensBefore,
-                        tokensAfter
+                        tokensAfter,
+                        requiredDrop
                     );
-                    endMessage = "上下文溢出压缩未降低 token";
+                    endMessage = "上下文溢出压缩未显著降低 token，请开启新会话";
                     return false;
                 }
                 endMessage =
@@ -1207,581 +1253,56 @@ public sealed class SessionEngine(
             ? "压缩进行中，请稍候再试"
             : "接续模式不使用压缩：上下文接近上限时会自动开启新页。";
 
-    /// <summary>准备并执行压缩：B4 防重入单点拦截所有触发源。</summary>
+    /// <summary>宿主适配：把压缩请求交给 Core.CompactionEngine，并推进本会话的计数链。</summary>
     private async Task<CompactResult> PrepareAndCompactAsync(
         IReadOnlyList<LlmChatMessage> messages,
         int keepRecent,
         string reason,
         bool willRetry,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        int keepRecentTokens = 0,
+        bool smart = false
     )
     {
-        if (_isCompacting)
-        {
-            log.LogDebug(
-                "prepare compaction: rejected {Reason} request because compaction is in progress",
-                reason
-            );
-            return CompactResult.RejectedInProgress;
-        }
-        // ★ 模式互斥（单点兜底）：接续模式不使用压缩。调用点都已按模式分支，
-        // 走到这里说明新增了漏判模式的触发源——拒绝而不是悄悄产生 compact 条目。
-        if (_contextManagement is { Mode: ContextMode.Continuation })
-        {
-            log.LogDebug(
-                "prepare compaction: rejected {Reason} request because context management mode is continuation",
-                reason
-            );
-            return CompactResult.RejectedWrongMode;
-        }
-        _isCompacting = true;
-        try
-        {
-            return await PrepareAndCompactCoreAsync(messages, keepRecent, reason, willRetry, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            log.LogWarning(ex, "prepare compaction failed");
-            return CompactResult.Failed;
-        }
-        finally
-        {
-            _isCompacting = false;
-        }
-    }
-
-    /// <summary>PrepareAndCompactAsync 的实际执行体（防重入标志内）。</summary>
-    private async Task<CompactResult> PrepareAndCompactCoreAsync(
-        IReadOnlyList<LlmChatMessage> messages,
-        int keepRecent,
-        string reason,
-        bool willRetry,
-        CancellationToken ct
-    )
-    {
-        var novelId = agent.CurrentNovelId ?? "";
-
-        // 计算切割点——保证轮次完整性
-        var cutIndex = FindCutPoint(messages, keepRecent);
-
-        // 防御：cutIndex 过小意味着压缩几乎无效，强制降低 keepRecent 重算
-        if (cutIndex < 3 && messages.Count > keepRecent)
-        {
-            var reducedKeep = Math.Max(3, keepRecent / 2);
-            cutIndex = FindCutPoint(messages, reducedKeep);
-            log.LogDebug(
-                "prepare compaction: reduced keepRecent from {Keep} to {Reduced}; cutIndex={Cut}",
-                keepRecent,
-                reducedKeep,
-                cutIndex
-            );
-        }
-
-        // 不变量：切割点必须是 >0 的完整 user 轮次起点。cutIndex=0 表示一条也不压，
-        // 旧实现仍会写“保存全部 + 摘要”的 compact 条目（202→202 的假压缩）。
-        // 单轮超长对话找不到安全切点时明确失败，而不是留下一个空压缩块。
-        if (
-            messages.Count == 0
-            || cutIndex <= 0
-            || messages[cutIndex].Role != ChatMessageRoles.User
-        )
-        {
-            log.LogWarning(
-                "prepare compaction: no complete user turn can be compressed (keepRecent={Keep}, cutIndex={Cut})",
-                keepRecent,
-                cutIndex
-            );
-            return CompactResult.Failed;
-        }
-
-        var previousSummary = await store.GetLatestCompactSummaryAsync(_sessionId, ct);
-
-        var summary = await GenerateCompactSummaryAsync(messages, cutIndex, previousSummary, ct);
-        var recentBlock = BuildRecentExecutionBlock(messages, cutIndex);
-        if (recentBlock.Length > 0)
-            summary = summary + "\n\n" + recentBlock;
-
-        // ★ 必须按当前页切片：换页后 messages（页内列表）比 dbMsgs（全量）短，
-        // Skip/Take(cutIndex) 会错位到换页前的旧消息 → firstKeptEntryId 落在旧页、
-        // compact 截断点跑到 window 之前 → 重载会话时页内消息全部回归。
-        var pageStart = agent.ContextWindowState.StartOrder;
-        var dbMsgs = (await store.GetActiveMessages(_sessionId, ct))
-            .Where(m => pageStart == 0 || m.Order >= pageStart)
-            .ToList();
-
-        if (dbMsgs.Count != messages.Count)
-            log.LogDebug(
-                "prepare compaction: database message count={Db} memory message count={Mem}",
-                dbMsgs.Count,
-                messages.Count
-            );
-
-        // firstKeptEntryId 必须是真实消息：跳过 compact 条目
-        var keptEntry = dbMsgs
-            .Skip(cutIndex)
-            .FirstOrDefault(m => m.EventType != SessionEventType.Compact);
-        var firstKeptEntryId = keptEntry?.EntryId ?? "";
-        var messagesBefore = messages.Count;
-
-        // 收集被压缩消息的 entryId 供 decompress 恢复原文（跳过 compact 条目）
-        var compressedIds = dbMsgs
-            .Take(cutIndex)
-            .Where(m => m.EventType != SessionEventType.Compact)
-            .Select(m => m.EntryId ?? $"msg_{m.Order}")
-            .Where(id => !string.IsNullOrEmpty(id))
-            .ToList();
-
-        var (compactEntryId, blockId) = await store.CompactSession(
-            _sessionId,
-            novelId,
-            summary,
-            firstKeptEntryId,
-            messagesBefore,
-            parentEntryId: _lastParentEntryId,
-            order: _nextOrder,
-            reason: reason,
-            willRetry: willRetry,
-            estimatedTokensAfter: EstimateCompactTokensAfter(summary, cutIndex, messages),
-            compressedMessageIds: compressedIds,
-            ct: ct
+        var execution = await _compactor.CompactAsync(
+            new CompactionRequest(
+                _sessionId,
+                agent.CurrentNovelId ?? "",
+                reason,
+                _nextOrder,
+                KeepRecent: keepRecent,
+                KeepRecentTokens: keepRecentTokens,
+                Smart: smart,
+                WillRetry: willRetry,
+                ParentEntryId: _lastParentEntryId
+            ),
+            ct
         );
 
-        // 直接更新 Agent 内存消息，避免重新读取 JSONL
-        var snapshot = BuildNovelSnapshot();
-        var summaryMsg = new LlmChatMessage(
-            ChatMessageRoles.User,
-            $"[上下文摘要 {blockId}]\n{summary}{(snapshot.Length > 0 ? "\n\n" + snapshot : "")}"
-        );
-        var keptMessages = agent.State.Messages.Skip(cutIndex).ToList();
-        var newMessages = new List<LlmChatMessage>(keptMessages.Count + 1) { summaryMsg };
-        newMessages.AddRange(keptMessages);
-        agent.ReplaceMessages(newMessages);
-
-        // 最小版压缩状态：记录本次压缩的 block（支持后续 decompress）
-        agent.CompressionBlocks.Add((blockId, compressedIds, summary));
-
-        // compact 后重置稳定性监控器：真正归零 + 用估算的当前上下文重设 token 基线
-        // （只调 Unfreeze 无效：未冻结时直接 return，而 pre-flight 溢出通常未冻结）
-        ResetStabilityMonitor(calibrator.Project(EstimateContextTokens(newMessages)));
-
-        // B6：重置 prompt token 基线（compact 后 prompt 缩小，旧基线会算出负增量压低 TotalTokens）
-        agent.ResetPromptBaseline();
-
-        // compact 后重置增量追踪状态
-        _nextOrder++; // compact 条目占一个 order 位
-        _persistedMessageCount = agent.State.Messages.Count;
-        AssertOrderInvariant();
-        _lastParentEntryId = compactEntryId;
-        return CompactResult.Success;
-    }
-
-    /// <summary>计算压缩切割点——保证轮次完整性（对齐到 user 消息边界）。</summary>
-    private static int FindCutPoint(IReadOnlyList<LlmChatMessage> messages, int keepRecent)
-    {
-        if (messages.Count == 0)
-            return 0;
-        // keepRecent<=0（/compact 0、负数）不能让候选索引越过末尾——越界会直接抛异常。
-        var candidate = Math.Clamp(messages.Count - keepRecent, 0, messages.Count - 1);
-        for (var i = candidate; i >= 0; i--)
+        if (execution.Status == CompactionStatus.Success)
         {
-            if (messages[i].Role == ChatMessageRoles.User)
-                return i;
-        }
-        return candidate;
-    }
-
-    private readonly record struct TurnScore(int StartIndex, int EndIndex, double Score);
-
-    /// <summary>按完整轮次分组，用 IMessageScorer 评分每轮信息密度。</summary>
-    private static List<TurnScore> ScoreTurnsWithDecimator(
-        IReadOnlyList<LlmChatMessage> messages,
-        IMessageScorer decimator
-    )
-    {
-        var turns = new List<(int startIndex, int endIndex, string text)>();
-        for (var i = 0; i < messages.Count; )
-        {
-            if (messages[i].Role == ChatMessageRoles.User)
-            {
-                var start = i;
-                var sb = new StringBuilder();
-                for (; i < messages.Count; i++)
-                {
-                    if (i > start && messages[i].Role == ChatMessageRoles.User)
-                        break;
-                    if (!string.IsNullOrEmpty(messages[i].Content))
-                        sb.AppendLine(messages[i].Content);
-                }
-                turns.Add((start, i - 1, sb.ToString()));
-            }
-            else
-            {
-                i++;
-            }
+            _nextOrder += execution.OrderConsumed;
+            _persistedMessageCount = agent.State.Messages.Count;
+            AssertOrderInvariant();
+            if (execution.CompactEntryId is not null)
+                _lastParentEntryId = execution.CompactEntryId;
+            ResetStabilityMonitor(
+                calibrator.Project(CompactionEngine.EstimateContextTokens(agent.State.Messages))
+            );
         }
 
-        if (turns.Count == 0)
-            return [];
-
-        var scored = new List<TurnScore>(turns.Count);
-        for (var t = 0; t < turns.Count; t++)
+        return execution.Status switch
         {
-            var (start, end, text) = turns[t];
-            var context = t > 0 ? turns[t - 1].text : "";
-            var score = decimator.Score(text.AsSpan(), context.AsSpan());
-            scored.Add(new TurnScore(start, end, score));
-        }
-
-        // 最后一轮总是保留（连续性）
-        if (scored.Count > 1)
-            scored[^1] = scored[^1] with { Score = 2.0 };
-
-        return scored;
-    }
-
-    /// <summary>
-    /// 基于 RGDecimator 评分的智能切割点：保留 top-N 轮 + 最近一轮。
-    /// 智能压缩只能保留一个连续后缀，因此必须给“保留更多历史”设硬上限：
-    /// 最早的 top 轮若落在历史开头，不设限会把整段对话原样留下（真实事故 202→202，
-    /// 摘要反而让上下文更高）。上限 = max(keepRecent, 消息数/2)：智能模式最多保留一半消息，
-    /// 保证每次智能压缩都真正降低上下文；被压掉的早期轮次仍由摘要承载。
-    /// </summary>
-    private static int FindSmartCutPoint(
-        IReadOnlyList<LlmChatMessage> messages,
-        List<TurnScore> scoredTurns,
-        int keepRecent
-    )
-    {
-        if (scoredTurns.Count == 0 || messages.Count <= keepRecent)
-            return 0;
-
-        var topN = scoredTurns
-            .OrderByDescending(t => t.Score)
-            .Take(Math.Max(1, keepRecent / 2))
-            .Select(t => t.StartIndex)
-            .ToHashSet();
-
-        if (scoredTurns.Count > 0)
-            topN.Add(scoredTurns[^1].StartIndex);
-
-        var cutIndex = topN.Min();
-        for (var i = cutIndex; i >= 0; i--)
-        {
-            if (messages[i].Role == ChatMessageRoles.User)
-            {
-                cutIndex = i;
-                break;
-            }
-        }
-
-        // 连续后缀的硬上限：从 messages.Count - maxKeep 往后找完整轮次起点。
-        // 找不到（上限落在最后一轮内部）时保持原 cut，宁可多留一轮也不拆轮次。
-        var maxKeep = Math.Max(keepRecent, messages.Count / 2);
-        var capIndex = messages.Count - maxKeep;
-        for (var i = capIndex; i < messages.Count; i++)
-        {
-            if (messages[i].Role == ChatMessageRoles.User)
-            {
-                cutIndex = Math.Max(cutIndex, i);
-                break;
-            }
-        }
-
-        return cutIndex;
+            CompactionStatus.Success => CompactResult.Success,
+            CompactionStatus.RejectedInProgress => CompactResult.RejectedInProgress,
+            CompactionStatus.RejectedWrongMode => CompactResult.RejectedWrongMode,
+            CompactionStatus.TooSmall => CompactResult.TooSmall,
+            _ => CompactResult.Failed,
+        };
     }
 
     /// <summary>压缩后 LLM 可见的保留消息数（不含摘要消息；outcome/toast 用实际值而非请求值）。</summary>
     private int KeptMessageCountAfterCompact() => Math.Max(0, agent.State.Messages.Count - 1);
-
-    /// <summary>估算上下文 token（锚点优先 + CJK 感知，委托 ConversationLoop）。</summary>
-    private static long EstimateContextTokens(IReadOnlyList<LlmChatMessage> messages) =>
-        ConversationLoop.EstimateMessagesTokens(messages);
-
-    /// <summary>估算 compact 后的上下文 token = 摘要 token + 保留后缀 token。</summary>
-    private static int EstimateCompactTokensAfter(
-        string summary,
-        int cutIndex,
-        IReadOnlyList<LlmChatMessage> messages
-    )
-    {
-        var tokens = ConversationLoop.EstimateTextTokens(summary);
-        for (var i = cutIndex; i < messages.Count; i++)
-            tokens += ConversationLoop.EstimateSingleMessageTokens(messages[i]);
-        return tokens > int.MaxValue ? int.MaxValue : (int)tokens;
-    }
-
-    /// <summary>生成压缩摘要（AI 优先，规则 fallback）。达阈值才用 AI 摘要。</summary>
-    private async Task<string> GenerateCompactSummaryAsync(
-        IReadOnlyList<LlmChatMessage> messages,
-        int cutIndex,
-        string? previousSummary,
-        CancellationToken ct
-    )
-    {
-        const int aiSummaryMinCompressed = 20;
-        if (cutIndex >= aiSummaryMinCompressed)
-        {
-            try
-            {
-                var aiSummary = await TryGenerateAiSummaryAsync(
-                    messages,
-                    cutIndex,
-                    previousSummary,
-                    ct
-                );
-                if (aiSummary is not null)
-                    return aiSummary;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                log.LogWarning(ex, "generate AI compact summary failed");
-            }
-        }
-
-        return Truncate(
-            BuildCompactSummary(messages, messages.Count - cutIndex, previousSummary),
-            800
-        );
-    }
-
-    private async Task<string?> TryGenerateAiSummaryAsync(
-        IReadOnlyList<LlmChatMessage> messages,
-        int cutIndex,
-        string? previousSummary,
-        CancellationToken ct
-    )
-    {
-        var api = agent.TornadoApi;
-        var modelName = agent.State.ModelName;
-        if (api is null || string.IsNullOrEmpty(modelName))
-            return null;
-
-        var sb = new StringBuilder();
-        for (var i = 0; i < cutIndex; i++)
-        {
-            var msg = messages[i];
-            var role = msg.Role?.ToString() ?? "unknown";
-            var content = Truncate(msg.Content ?? "", 200);
-            if (!string.IsNullOrEmpty(content))
-                sb.AppendLine($"[{role}]: {content}");
-        }
-
-        if (sb.Length == 0)
-            return null;
-
-        var prompt = new StringBuilder();
-        prompt.AppendLine("请为以下对话生成简洁的结构化摘要，保留关键决策、文件操作和未完成任务。");
-        prompt.AppendLine("摘要格式：");
-        prompt.AppendLine("## 目标");
-        prompt.AppendLine("## 进展");
-        prompt.AppendLine("## 关键决策");
-        prompt.AppendLine("## 文件操作");
-        prompt.AppendLine("## 下一步");
-        prompt.AppendLine();
-        prompt.AppendLine(
-            "要求：列出未完成任务与相关文件路径；下一步不超过 3 条具体动作；总长度不超过 15 句。"
-        );
-
-        if (previousSummary is not null)
-        {
-            prompt.AppendLine("## 之前的摘要");
-            prompt.AppendLine(CompactPreviousSummary(previousSummary));
-            prompt.AppendLine();
-            prompt.AppendLine("## 新增对话");
-        }
-
-        prompt.AppendLine(sb.ToString());
-
-        var request = new ChatRequest { MaxTokens = 1024 };
-        var conversation = api.Chat.CreateConversation(request);
-        conversation.AddSystemMessage(
-            "你是一个对话摘要专家。为对话生成简洁、结构化的摘要，保留关键信息。使用中文。"
-        );
-        conversation.AddUserMessage(prompt.ToString());
-
-        // 摘要调用必须可取消且有硬超时：主模型/网关卡住时不能把整个压缩
-        // 永久挂在「上下文压缩中」。超时后回退到规则摘要。
-        using var summaryCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        summaryCts.CancelAfter(AiSummaryTimeout);
-
-        var summaryBuilder = new StringBuilder();
-        await conversation.StreamResponse(
-            token =>
-            {
-                summaryBuilder.Append(token);
-            },
-            summaryCts.Token
-        );
-        var result = summaryBuilder.ToString().Trim();
-        return string.IsNullOrEmpty(result) ? null : Truncate(result, 800);
-    }
-
-    /// <summary>构建规则 compact 摘要（AI 摘要的 fallback）。</summary>
-    private static string BuildCompactSummary(
-        IReadOnlyList<LlmChatMessage> messages,
-        int keepRecent,
-        string? previousSummary = null
-    )
-    {
-        var compressedCount = messages.Count - keepRecent;
-        var sb = new StringBuilder();
-        sb.AppendLine("## 压缩概览");
-        sb.AppendLine($"压缩前 {messages.Count} 条消息，保留最近 {keepRecent} 条");
-        sb.AppendLine();
-
-        if (previousSummary is not null)
-        {
-            sb.AppendLine("## 之前的摘要");
-            sb.AppendLine(CompactPreviousSummary(previousSummary));
-            sb.AppendLine();
-        }
-
-        sb.AppendLine("## 关键上下文");
-        var userMessages = messages
-            .Where(m => m.Role == ChatMessageRoles.User && !string.IsNullOrEmpty(m.Content))
-            .Take(compressedCount)
-            .ToList();
-        if (userMessages.Count > 0)
-        {
-            sb.AppendLine("用户请求：");
-            foreach (var msg in userMessages.Take(5))
-                sb.AppendLine($"- {Truncate((msg.Content ?? "").TrimStart(), 80)}");
-            if (userMessages.Count > 5)
-                sb.AppendLine($"- ...（共 {userMessages.Count} 条用户消息）");
-        }
-
-        var assistantMessages = messages
-            .Where(m => m.Role == ChatMessageRoles.Assistant && !string.IsNullOrEmpty(m.Content))
-            .Take(compressedCount)
-            .ToList();
-        if (assistantMessages.Count > 0)
-        {
-            sb.AppendLine("助手回复摘要：");
-            foreach (var msg in assistantMessages.Take(3))
-                sb.AppendLine($"- {Truncate((msg.Content ?? "").TrimStart(), 80)}");
-            if (assistantMessages.Count > 3)
-                sb.AppendLine($"- ...（共 {assistantMessages.Count} 条助手消息）");
-        }
-
-        var fileOps = messages
-            .Where(m =>
-                m.Role == ChatMessageRoles.Tool
-                && !string.IsNullOrEmpty(m.Name)
-                && m.Name is "read" or "write" or "edit" or "list" or "search"
-            )
-            .Take(compressedCount)
-            .Select(m => $"{m.Name}: {Truncate(m.Content ?? "", 60)}")
-            .Take(10)
-            .ToList();
-        if (fileOps.Count > 0)
-        {
-            sb.AppendLine("文件操作：");
-            foreach (var op in fileOps)
-                sb.AppendLine($"- {op}");
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>提取被压缩区尾部最近一个完整轮次原文，拼入摘要保留精确执行状态。</summary>
-    private static string BuildRecentExecutionBlock(
-        IReadOnlyList<LlmChatMessage> messages,
-        int cutIndex
-    )
-    {
-        if (cutIndex <= 0)
-            return "";
-
-        var start = cutIndex - 1;
-        while (start >= 0 && messages[start].Role != ChatMessageRoles.User)
-            start--;
-        if (start < 0)
-            return "";
-
-        var sb = new StringBuilder();
-        sb.AppendLine("## 最近执行状态（压缩前最后一轮原文）");
-        var appended = 0;
-        for (var i = start; i < cutIndex && appended < 5; i++)
-        {
-            var msg = messages[i];
-            var content = (msg.Content ?? "").ReplaceLineEndings(" ");
-            if (content.Length == 0 && msg.ReasoningContent is not null)
-                content = msg.ReasoningContent.ReplaceLineEndings(" ");
-            if (content.Length == 0)
-                continue;
-            var role = msg.Role switch
-            {
-                ChatMessageRoles.User => "user",
-                ChatMessageRoles.Assistant => "assistant",
-                ChatMessageRoles.Tool => "tool",
-                _ => "unknown",
-            };
-            sb.AppendLine($"[{role}] {Truncate(content, 200)}");
-            appended++;
-        }
-        return appended > 0 ? sb.ToString() : "";
-    }
-
-    /// <summary>压缩继承摘要：只保留最近一份并截断（进展+文件操作+下一步三段）。</summary>
-    private static string CompactPreviousSummary(string previousSummary)
-    {
-        const int maxPrevChars = 800;
-        if (previousSummary.Length <= maxPrevChars)
-            return previousSummary;
-
-        var progress = ExtractSection(previousSummary, "## 进展");
-        var fileOps = ExtractSection(previousSummary, "## 文件操作");
-        var next = ExtractSection(previousSummary, "## 下一步");
-        var sb = new StringBuilder();
-        if (progress is not null)
-            sb.AppendLine("## 进展").AppendLine(progress);
-        if (fileOps is not null)
-            sb.AppendLine("## 文件操作").AppendLine(fileOps);
-        if (next is not null)
-            sb.AppendLine("## 下一步").AppendLine(next);
-        var result =
-            sb.Length > 0 ? sb.ToString().TrimEnd() : previousSummary[..maxPrevChars] + "…";
-        return result.Length <= maxPrevChars ? result : result[..maxPrevChars] + "…";
-    }
-
-    private static string? ExtractSection(string markdown, string heading)
-    {
-        var idx = markdown.IndexOf(heading, StringComparison.Ordinal);
-        if (idx < 0)
-            return null;
-        var contentStart = idx + heading.Length;
-        var nextIdx = markdown.IndexOf("\n## ", contentStart, StringComparison.Ordinal);
-        var section =
-            nextIdx > contentStart ? markdown[contentStart..nextIdx] : markdown[contentStart..];
-        return section.Trim();
-    }
-
-    /// <summary>轻量作品状态快照，压缩后随摘要注入。</summary>
-    private string BuildNovelSnapshot()
-    {
-        var novelId = agent.CurrentNovelId;
-        if (string.IsNullOrEmpty(novelId))
-            return "";
-        var sb = new StringBuilder();
-        sb.AppendLine("## 作品状态快照");
-        sb.AppendLine($"- 当前小说: {novelId}");
-        if (agent.CompressionBlocks.Count > 0)
-            sb.AppendLine(
-                $"- 历史压缩块: {agent.CompressionBlocks.Count} 个（可用 decompress 工具恢复原文）"
-            );
-        return sb.ToString();
-    }
-
-    private static string Truncate(string text, int maxLen) =>
-        text.Length <= maxLen ? text : text[..maxLen] + "…";
 
     // ══════════════════════════════════════════════════════════
     //  decompress
@@ -2174,7 +1695,7 @@ public sealed class SessionEngine(
             );
             _lastRollReason = reason;
 
-            ResetStabilityMonitor(calibrator.Project(EstimateContextTokens([])));
+            ResetStabilityMonitor(calibrator.Project(CompactionEngine.EstimateContextTokens([])));
             AssertOrderInvariant();
 
             // 不弹通知、不写会话面板：机制对用户隐藏（仅日志可查）
@@ -2237,10 +1758,10 @@ public sealed class SessionEngine(
     /// 溢出恢复分支（**模式互斥**，唯一入口）：接续 → 换页；compact → 分片压缩。
     /// 两条路径互不回落——接续模式下换页失败即报错，不做有损压缩。
     /// </summary>
-    private Task<bool> RelieveOverflowAsync(int keepRecent, CancellationToken ct) =>
+    private Task<bool> RelieveOverflowAsync(int keepRecentTokens, CancellationToken ct) =>
         _contextManagement is { Mode: ContextMode.Continuation }
             ? RollContextWindowAsync("overflow")
-            : CompactForOverflowAsync(keepRecent, ct);
+            : CompactForOverflowAsync(keepRecentTokens, ct);
 
     /// <summary>
     /// 封页后异步建立向量索引（仅 vector_retrieval: true 且注入 kernel 时）。

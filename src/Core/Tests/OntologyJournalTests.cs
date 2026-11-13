@@ -181,19 +181,15 @@ public sealed class OntologyJournalTests : IAsyncDisposable
 
         var actions = await _store.GetOntologyActions("nov001");
         Assert.Equal(3, actions.Count(a => a.TargetEntityType == EntityType.Relationship));
-        Assert.Contains(
-            actions,
-            a =>
-                a.TargetEntityType == EntityType.WorldRule
-                && a.Element == OntologyElement.Rule
-                && a.Operation == OntologyOperation.Create
+        Assert.Contains(actions, a =>
+            a.TargetEntityType == EntityType.WorldRule
+            && a.Element == OntologyElement.Rule
+            && a.Operation == OntologyOperation.Create
         );
-        Assert.Contains(
-            actions,
-            a =>
-                a.TargetEntityType == EntityType.TimelineEvent
-                && a.Element == OntologyElement.Action
-                && a.ChapterId == "ch1"
+        Assert.Contains(actions, a =>
+            a.TargetEntityType == EntityType.TimelineEvent
+            && a.Element == OntologyElement.Action
+            && a.ChapterId == "ch1"
         );
     }
 
@@ -222,12 +218,8 @@ public sealed class OntologyJournalTests : IAsyncDisposable
             await _store.SaveChapter(chapter);
         }
         var actions = await _store.GetOntologyActions("nov001");
-        Assert.Contains(
-            actions,
-            a =>
-                a.TargetEntityType == EntityType.Chapter
-                && a.Field == "status"
-                && a.To == "published"
+        Assert.Contains(actions, a =>
+            a.TargetEntityType == EntityType.Chapter && a.Field == "status" && a.To == "published"
         );
     }
 

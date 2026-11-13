@@ -106,14 +106,11 @@ public sealed class ThinkingLevelsTests
     [Fact]
     public void Options_EachHasNonEmptyKeyAndLabel()
     {
-        Assert.All(
-            ThinkingLevelBudgets.Options,
-            o =>
-            {
-                Assert.NotEmpty(o.Key);
-                Assert.NotEmpty(o.Label);
-            }
-        );
+        Assert.All(ThinkingLevelBudgets.Options, o =>
+        {
+            Assert.NotEmpty(o.Key);
+            Assert.NotEmpty(o.Label);
+        });
     }
 
     // ══════════════════════════════════════════════════════

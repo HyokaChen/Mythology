@@ -216,6 +216,16 @@ public sealed record ModelContextProfile
         };
 
     /// <summary>
+    /// 自动压缩保留的最近上下文 token 预算。
+    /// 与按条数保留不同，token 预算不会因消息长短变化把 31 条压成 30 条；
+    /// 200K → 20K，128K → 12.8K，8K → 4K（Pi 的 keepRecentTokens 同量级）。
+    /// </summary>
+    public int ScaledKeepRecentTokens =>
+        ContextWindowTokens <= 0
+            ? 20_000
+            : (int)Math.Clamp(ContextWindowTokens / 10, 4_000L, 20_000L);
+
+    /// <summary>
     /// Compact 阈值：上下文 token 使用达到总窗口的多少百分比时触发主动压缩。
     /// 复用 Pre-flight 阈值的计算逻辑，确保 compact 和 pre-flight 使用一致的百分比。
     /// 200K → ~89%, 128K → ~84%, 1M → ~97.6%, 8K → ~72.5%。
@@ -239,11 +249,12 @@ public sealed record ModelContextProfile
             : 0.85;
 
     /// <summary>
-    /// Nudge 分级提醒阈值（P0）：从 PreflightThresholdPercent 向下推导，确保提醒先于 pre-flight 拦截触发。
+    /// 接续模式的分级换页提醒阈值（P0）：从 PreflightThresholdPercent 向下推导，
+    /// 确保提醒先于 pre-flight 拦截触发。compact 模式不注入 nudge，由宿主自动压缩。
     /// 修复：原先硬编码 70%/85%/92% 与 pre-flight 动态阈值层级矛盾——
-    /// 8K 模型 pre-flight=85%，92% 提醒在其拦截后永远不可达（死代码）；
+    /// 8K 模型 pre-flight=85%，92% 提醒在其拦截后永远不可达（死代码）。
     /// 1M 模型 pre-flight=99.25%，92% 提醒远早于上限、过度打扰。
-    /// 三级：info（建议压缩）→ warn（收尾后建议）→ critical（立即建议 /compact），
+    /// 三级：info（建议换页）→ warn（收尾后换页）→ critical（立即调用 new_context），
     /// 分别 = preflight − 15% / − 8% / − 3%，并 clamp 到合理区间。
     /// 不变量：NudgeInfo < NudgeWarn < NudgeCritical < PreflightThresholdPercent。
     /// </summary>

@@ -215,9 +215,11 @@ public sealed class PromptsContentTests
     [Fact]
     public void WritingProcessPrompt_ContinuationSwapsOnlyStageBoundaryRule()
     {
-        // compact：建议用户执行 /compact
-        Assert.Contains("阶段边界压缩", WritingProcessPrompt.Full);
-        Assert.Contains("/compact", WritingProcessPrompt.Full);
+        // compact：上下文由系统自动处理，模型不得主动向用户建议 /compact（否则每轮都刷屏）
+        Assert.Contains("阶段边界", WritingProcessPrompt.Full);
+        Assert.Contains("系统自动处理", WritingProcessPrompt.Full);
+        Assert.DoesNotContain("/compact", WritingProcessPrompt.Full);
+        Assert.DoesNotContain("建议压缩", WritingProcessPrompt.Full);
         Assert.DoesNotContain("new_context", WritingProcessPrompt.Full);
 
         // 接续：直接调用 new_context 换页，且不得提到 /compact（该模式压缩不可用、机制对用户隐藏）
@@ -241,8 +243,9 @@ public sealed class PromptsContentTests
         var compact = PromptAssembly.Build(null);
         var continuation = PromptAssembly.Build(null, continuation: true);
 
-        Assert.Contains("/compact", compact);
+        Assert.DoesNotContain("/compact", compact);
         Assert.DoesNotContain("new_context", compact);
+        Assert.Contains("系统自动处理", compact);
         Assert.Contains("new_context", continuation);
         Assert.DoesNotContain("/compact", continuation);
     }

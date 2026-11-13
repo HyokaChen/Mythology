@@ -139,10 +139,7 @@ public sealed class RetrievalKernel(
         if (request.NovelId is not null)
         {
             // 设置当前章节序号（如果请求中有章节范围）
-            config = config with
-            {
-                CurrentChapterOrder = request.ChapterOrderRange?.Min,
-            };
+            config = config with { CurrentChapterOrder = request.ChapterOrderRange?.Min };
         }
 
         var judged = await ApplyJudgeAsync(useJudge, request, results, ct);

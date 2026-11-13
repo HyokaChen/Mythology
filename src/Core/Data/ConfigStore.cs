@@ -19,8 +19,7 @@ public sealed class ConfigStore
     /// <param name="mythologyDir">可选，自定义配置目录路径，默认为 ~/.mythology。</param>
     public ConfigStore(string? mythologyDir = null)
     {
-        var dir =
-            mythologyDir
+        var dir = mythologyDir
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mythology"

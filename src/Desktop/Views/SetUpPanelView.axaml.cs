@@ -244,16 +244,12 @@ public partial class SetUpPanelView : UserControl
         )
             return;
 
-        var dialog = new ConfirmDeleteWindow(
-            "小说",
-            row.Title,
-            async () =>
-            {
-                await store.DeleteNovel(novelId);
-                if (DataContext is ViewModels.SetUpPanelViewModel vm)
-                    vm.NotifyNovelDeleted(novelId);
-            }
-        );
+        var dialog = new ConfirmDeleteWindow("小说", row.Title, async () =>
+        {
+            await store.DeleteNovel(novelId);
+            if (DataContext is ViewModels.SetUpPanelViewModel vm)
+                vm.NotifyNovelDeleted(novelId);
+        });
         ShowDialog(dialog);
     }
 
@@ -349,10 +345,8 @@ public partial class SetUpPanelView : UserControl
             return;
         var volumes = ChapterOrdering.SortVolumes(await store.GetVolumes(novelId));
         ShowDialog(
-            new ChapterQuickCreateWindow(
-                volumes,
-                presetVolumeId,
-                (title, volumeId) => _ = CreateChapterAsync(title, volumeId, afterChapterId)
+            new ChapterQuickCreateWindow(volumes, presetVolumeId, (title, volumeId) =>
+                _ = CreateChapterAsync(title, volumeId, afterChapterId)
             )
         );
     }
@@ -474,16 +468,12 @@ public partial class SetUpPanelView : UserControl
             && CurrentNovelId is { Length: > 0 } novelId
         )
         {
-            var dialog = new ConfirmDeleteWindow(
-                "分卷",
-                row.Title,
-                async () =>
-                {
-                    await store.DeleteVolume(novelId, row.Id);
-                    if (DataContext is ViewModels.SetUpPanelViewModel vm)
-                        await vm.RefreshAsync();
-                }
-            );
+            var dialog = new ConfirmDeleteWindow("分卷", row.Title, async () =>
+            {
+                await store.DeleteVolume(novelId, row.Id);
+                if (DataContext is ViewModels.SetUpPanelViewModel vm)
+                    await vm.RefreshAsync();
+            });
             ShowDialog(dialog);
         }
         e.Handled = true;

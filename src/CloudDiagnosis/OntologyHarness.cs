@@ -48,11 +48,10 @@ public sealed class OntologyHarness(
                 return;
             }
             var chapters = await store.GetChapters(novelId, ct);
-            var chapter =
-                chapters
-                    .Where(c => c.Status == ChapterStatus.Draft)
-                    .OrderBy(c => c.Order)
-                    .LastOrDefault()
+            var chapter = chapters
+                .Where(c => c.Status == ChapterStatus.Draft)
+                .OrderBy(c => c.Order)
+                .LastOrDefault()
                 ?? chapters.OrderBy(c => c.Order).LastOrDefault();
             if (chapter is null)
             {

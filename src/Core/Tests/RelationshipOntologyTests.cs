@@ -42,9 +42,8 @@ public sealed class RelationshipOntologyTests
 
         var tokens = RelationshipOntology.Tokens;
         Assert.Equal(tokens.Count, tokens.Distinct(StringComparer.Ordinal).Count());
-        Assert.All(
-            types,
-            type => Assert.Contains(type.ToKebabCaseString(), tokens, StringComparer.Ordinal)
+        Assert.All(types, type =>
+            Assert.Contains(type.ToKebabCaseString(), tokens, StringComparer.Ordinal)
         );
     }
 
@@ -95,9 +94,8 @@ public sealed class RelationshipOntologyTests
             RelationshipType.Disciple,
         ];
 
-        Assert.All(
-            RelationshipOntology.Relations,
-            spec => Assert.Equal(directed.Contains(spec.Type), spec.Directed)
+        Assert.All(RelationshipOntology.Relations, spec =>
+            Assert.Equal(directed.Contains(spec.Type), spec.Directed)
         );
     }
 
@@ -131,19 +129,15 @@ public sealed class RelationshipOntologyTests
         var tokens = RelationshipOntology.StructuralRelations.Select(spec => spec.Token).ToList();
         Assert.Equal(expected.Length, tokens.Count);
         Assert.All(expected, token => Assert.Contains(token, tokens));
-        Assert.All(
-            RelationshipOntology.StructuralRelations,
-            spec =>
-            {
-                Assert.NotEmpty(spec.SourceTypes);
-                Assert.NotEmpty(spec.TargetTypes);
-                Assert.False(string.IsNullOrWhiteSpace(spec.Description));
-            }
-        );
+        Assert.All(RelationshipOntology.StructuralRelations, spec =>
+        {
+            Assert.NotEmpty(spec.SourceTypes);
+            Assert.NotEmpty(spec.TargetTypes);
+            Assert.False(string.IsNullOrWhiteSpace(spec.Description));
+        });
 
-        var relationship = Assert.Single(
-            RelationshipOntology.StructuralRelations,
-            spec => spec.Token == "relationship"
+        var relationship = Assert.Single(RelationshipOntology.StructuralRelations, spec =>
+            spec.Token == "relationship"
         );
         Assert.Equal([EntityType.Character], relationship.SourceTypes);
         Assert.Equal([EntityType.Character], relationship.TargetTypes);

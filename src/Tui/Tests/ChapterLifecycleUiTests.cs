@@ -93,9 +93,8 @@ public sealed class ChapterLifecycleUiTests
         var blockers = ChapterUnpublishDialog.DescribeBlockers(blocked);
         Assert.Contains(blockers, b => b.Contains("后续章节已发布", StringComparison.Ordinal));
         Assert.Contains(blockers, b => b.Contains("第4章", StringComparison.Ordinal));
-        Assert.Contains(
-            blockers,
-            b => b.Contains("角色 ch1", StringComparison.Ordinal) && b.Contains("发布后被修改")
+        Assert.Contains(blockers, b =>
+            b.Contains("角色 ch1", StringComparison.Ordinal) && b.Contains("发布后被修改")
         );
     }
 

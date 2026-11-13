@@ -104,16 +104,15 @@ public sealed partial class TuiApp
             // 阈值通过 ModelContextProfile.CompactThresholdPercent 动态计算
             // （1M → 99.25%, 128K → 96.5%, 8K → 85%），给估算误差留余量。
             var estimatedTokens = _tokenCalibrator.Project(
-                EstimateContextTokens(_agent.State.Messages)
+                CompactionEngine.EstimateContextTokens(_agent.State.Messages)
             );
             var compactPercent = _agent.ModelProfile?.CompactThresholdPercent ?? 0.85;
             // ★ 阈值必须与显示分母一致：用模型声明/生效的上下文窗口（ModelContextProfile），
             // 而非用户手动选择的 ContextWindowSize——两者在"模型声明 ≠ 用户选择"时不一致。
-            var contextWindow =
-                _agent.ModelProfile?.ContextWindowTokens
+            var contextWindow = _agent.ModelProfile?.ContextWindowTokens
                 ?? _settingsService.Provider.ContextWindowSize;
             var compactThreshold = (long)(contextWindow * compactPercent);
-            var keepRecent = _agent.ModelProfile?.ScaledKeepRecent ?? 20;
+            var keepRecentTokens = _agent.ModelProfile?.ScaledKeepRecentTokens ?? 20_000;
             // ★ 模式互斥：接续模式在发送前只换页（不压缩）；compact 模式保持原压缩路径。
             // 换页失败即放弃（不压缩、不拦发送）：真正的溢出由循环 pre-flight 抛异常后的溢出分支兜底。
             if (estimatedTokens > compactThreshold)
@@ -121,7 +120,7 @@ public sealed partial class TuiApp
                 if (_contextManagement is { Mode: ContextMode.Continuation })
                     await RollContextWindowAsync("threshold");
                 else
-                    await AutoCompactAsync(keepRecent);
+                    await AutoCompactAsync(keepRecentTokens);
             }
 
             // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
@@ -228,8 +227,8 @@ public sealed partial class TuiApp
                 return;
             }
 
-            var keepRecentOverflow = _agent.ModelProfile?.ScaledKeepRecent ?? 20;
-            var relieved = await RelieveOverflowAsync(keepRecentOverflow);
+            var keepRecentTokensOverflow = _agent.ModelProfile?.ScaledKeepRecentTokens ?? 20_000;
+            var relieved = await RelieveOverflowAsync(keepRecentTokensOverflow);
             if (relieved)
             {
                 ToastService.Info(

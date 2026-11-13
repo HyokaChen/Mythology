@@ -734,10 +734,8 @@ public sealed class SetUpPanelLayoutTests
         Assert.DoesNotContain(texts, t => t.Contains("尚未运行"));
         Assert.Contains(texts, t => t.Contains("开关重建"));
         Assert.Contains("📄 详情", RowMenuLabels(panel, (OutlineRow)NovelNode(panel).Data!));
-        Assert.Contains(
-            NovelNode(panel).Children,
-            child =>
-                NodeHeaderText(child).Contains("总纲：全书走向：复仇", StringComparison.Ordinal)
+        Assert.Contains(NovelNode(panel).Children, child =>
+            NodeHeaderText(child).Contains("总纲：全书走向：复仇", StringComparison.Ordinal)
         );
 
         // 展开检查分节（原为点「🔍 检查」菜单项，入口已移除，改直接驱动）→ 空态引导出现
@@ -1194,9 +1192,8 @@ public sealed class SetUpPanelLayoutTests
 
         var accordion = GetCharacterAccordion(panel);
         Assert.Equal(35, accordion.Children.Count); // 无「还有 N 条」行（35 < 上限）
-        Assert.DoesNotContain(
-            accordion.Children,
-            child => child is Markup { Text: not null } m && m.Text.Contains("还有")
+        Assert.DoesNotContain(accordion.Children, child =>
+            child is Markup { Text: not null } m && m.Text.Contains("还有")
         );
         var placeholder = GetPrivate<TextBox>(panel, "_searchBox").Placeholder ?? "";
         Assert.Contains("筛选中 35/70", placeholder);
@@ -1285,9 +1282,8 @@ public sealed class SetUpPanelLayoutTests
         // 树行内容与配色也要在（防两类假绿：树没重建 / 重建但树空了）。离屏渲染不保证重建行的
         // 排版（真实 App 下由布局循环重建，已用实机帧验证标题与行菜单照常渲染），
         // 所以这里用模型文本 + 行动作按钮（＋ / ⋯，色在 ButtonStyle 里而不是 markup 文本里）钉住。
-        Assert.Contains(
-            CollectTexts(panel.Visual),
-            t => t.Contains("主题测试书", StringComparison.Ordinal)
+        Assert.Contains(CollectTexts(panel.Visual), t =>
+            t.Contains("主题测试书", StringComparison.Ordinal)
         );
         var treeButtons = panel.Visual.EnumerateVisualsDepthFirst().OfType<Button>().ToList();
         var menuChip = treeButtons.First(b =>
@@ -1777,13 +1773,11 @@ public sealed class SetUpPanelLayoutTests
         var novel = NovelNode(panel);
         Assert.Contains("结构操作", NodeHeaderText(novel), StringComparison.Ordinal);
         // 图标不再进标题文本：层级图标由 IconResolver 放进框架图标槽（见 OutlineTree_LevelIcons_PerKind）
-        Assert.Contains(
-            novel.Children,
-            child => NodeHeaderText(child).Contains("1 卷 · 3 章", StringComparison.Ordinal)
+        Assert.Contains(novel.Children, child =>
+            NodeHeaderText(child).Contains("1 卷 · 3 章", StringComparison.Ordinal)
         );
-        Assert.Contains(
-            novel.Children,
-            child => NodeHeaderText(child).Contains("总纲：走向", StringComparison.Ordinal)
+        Assert.Contains(novel.Children, child =>
+            NodeHeaderText(child).Contains("总纲：走向", StringComparison.Ordinal)
         );
 
         var volumeNodes = novel.Children.Where(n => IsVolumeNode(n)).ToList();
@@ -1800,9 +1794,8 @@ public sealed class SetUpPanelLayoutTests
 
         // 未分卷组：组头 + 其下章节点
         var unassigned = novel.Children.Single(n => NodeHeaderText(n).Contains("未分卷"));
-        Assert.Contains(
-            unassigned.Children,
-            n => NodeHeaderText(n).Contains("未分卷章", StringComparison.Ordinal)
+        Assert.Contains(unassigned.Children, n =>
+            NodeHeaderText(n).Contains("未分卷章", StringComparison.Ordinal)
         );
     }
 

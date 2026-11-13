@@ -34,8 +34,7 @@ public sealed class FileSessionStore
     public FileSessionStore(NovelWorkspace workspace, string? mythologyDir = null)
     {
         _workspace = workspace;
-        var mythDir =
-            mythologyDir
+        var mythDir = mythologyDir
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".mythology"
@@ -485,6 +484,9 @@ public sealed class FileSessionStore
 
                 var entryId = GenerateEntryId();
                 var order = startOrder + i;
+                // B3 ref 稳定 + UI retry：持久化后消息对象保留真实 entryId。
+                // 不覆盖调用方已设置的值（恢复路径会先透传历史 EntryId）。
+                m.NativeObject ??= entryId;
 
                 string? toolCallsJson = null;
                 if (m.ToolCalls is not null && m.ToolCalls.Count > 0)
@@ -579,13 +581,24 @@ public sealed class FileSessionStore
             // BlockId = 新分片 seq：分片全局递增且不重用，天然唯一稳定（B2）。
             var newSeq = mgr.ActiveSeq + 1;
             var blockId = $"b{newSeq}";
-            var path = mgr.ActivePath;
+            var oldPath = mgr.ActivePath;
+
+            // compact 必须接在 append-only 当前 active leaf 后面：它可能是 message、event、
+            // branch_summary 或 leaf 目标；调用方 _lastParentEntryId 可能只记得最后一条消息，
+            // 直接使用会把 compact 之后的 event 变成 sibling。caller parent 仅作最后兜底。
+            var effectiveParentEntryId = mgr.ActiveLastEntryId;
+            if (effectiveParentEntryId is null && File.Exists(oldPath))
+            {
+                var (_, activeLeaf, _) = await ReadAndParseJsonlAsync(oldPath, sessionId);
+                effectiveParentEntryId = activeLeaf;
+            }
+            effectiveParentEntryId ??= parentEntryId;
 
             var compactEntryId = GenerateEntryId();
             var compactEntry = new JsonlCompactEntry
             {
                 Id = compactEntryId,
-                ParentId = parentEntryId,
+                ParentId = effectiveParentEntryId,
                 Timestamp = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
                 Summary = summary,
                 FirstKeptEntryId = firstKeptEntryId,
@@ -598,17 +611,16 @@ public sealed class FileSessionStore
                 BlockId = blockId,
             };
 
-            // 从当前活跃分片读取保留消息行
-            var retainedLines = await ReadRetainedLinesAsync(path, firstKeptEntryId);
-
-            // 写新分片文件：compact 行 + 保留消息
+            // append-only：新分片只写 compact 行，保留消息继续留在旧分片。
+            // compact.ParentId 串回旧 tail，读取时 active path 会经由它回溯保留消息。
             var newFilePath = Path.Combine(mgr.SessionDir, $"{newSeq:D6}.jsonl");
-            var allLines = new List<string>(1 + retainedLines.Count)
-            {
-                JsonSerializer.Serialize(compactEntry, JsonOpts),
-            };
-            allLines.AddRange(retainedLines);
-            await File.WriteAllLinesAsync(newFilePath, allLines);
+            Directory.CreateDirectory(Path.GetDirectoryName(newFilePath)!);
+            await AtomicFile.AppendLinesDurableAsync(
+                newFilePath,
+                [JsonSerializer.Serialize(compactEntry, JsonOpts)],
+                checkConflict: !SkipConflictCheck,
+                ct: ct
+            );
 
             // 创建新分段的 MANIFEST 记录
             var newSegment = new ManifestSegmentRecord
@@ -616,9 +628,9 @@ public sealed class FileSessionStore
                 Seq = newSeq,
                 File = $"{newSeq:D6}.jsonl",
                 StartOrder = order,
-                EndOrder = order + retainedLines.Count,
-                MessageCount = retainedLines.Count,
-                EntryCount = 1 + retainedLines.Count,
+                EndOrder = order,
+                MessageCount = 0,
+                EntryCount = 1,
                 FileSize = new FileInfo(newFilePath).Length,
                 CompactEntryId = compactEntryId,
                 HasCompact = true,
@@ -641,7 +653,7 @@ public sealed class FileSessionStore
                     ActiveSegment = newSeq,
                     CompactCount = mgr.Manifest.CompactCount + 1,
                     WindowCount = mgr.Manifest.WindowCount,
-                    TotalEntryCount = mgr.Manifest.TotalEntryCount,
+                    TotalEntryCount = mgr.Manifest.TotalEntryCount + 1,
                     TokenEstimate =
                         estimatedTokensAfter > 0
                             ? estimatedTokensAfter
@@ -650,8 +662,10 @@ public sealed class FileSessionStore
             );
 
             WriteManifest(mgr.SessionDir, mgr.Manifest);
-            InvalidateParseCache(path);
             InvalidateParseCache(newFilePath);
+
+            // 元数据链：compact 行成为会话最后一条条目，下一次 append 的 parent 指向它。
+            mgr.ActiveLastEntryId = compactEntryId;
 
             return (compactEntryId, blockId);
         }
@@ -1095,36 +1109,6 @@ public sealed class FileSessionStore
             ? items.OrderByDescending(i => i.Order)
             : items.OrderBy(i => i.Order);
         return ordered.Take(max).ToList();
-    }
-
-    /// <summary>
-    /// 从 JSONL 文件中读取 firstKeptEntryId 及其之后的所有行。
-    /// firstKeptEntryId 是保留的第一条消息的 ID，该行本身也会被包含在结果中。
-    /// </summary>
-    private static async Task<List<string>> ReadRetainedLinesAsync(
-        string path,
-        string firstKeptEntryId
-    )
-    {
-        var lines = await File.ReadAllLinesAsync(path);
-        var result = new List<string>(lines.Length);
-        var found = false;
-        foreach (var line in lines)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-            if (!found)
-            {
-                if (line.Contains($"\"id\":\"{firstKeptEntryId}\""))
-                {
-                    found = true;
-                    result.Add(line); // 包含 firstKeptEntryId 所在行本身
-                }
-                continue;
-            }
-            result.Add(line);
-        }
-        return result;
     }
 
     public async Task SaveSessionEvent(
@@ -1835,7 +1819,7 @@ public sealed class FileSessionStore
     /// 新格式：从 MANIFEST 直接读取（最快）；旧格式兼容：解析 JSONL 文件。
     /// </summary>
     /// <param name="sessionId">会话 ID。</param>
-    /// <returns>(maxOrder + 1, lastNonCompactEntryId)。无数据时返回 (0, null)。</returns>
+    /// <returns>(maxOrder + 1, active leaf entryId)。无数据时返回 (0, null)。</returns>
     public async Task<(int NextOrder, string? LastEntryId)> GetSessionMetadataAsync(
         string sessionId,
         CancellationToken ct = default
@@ -1885,6 +1869,21 @@ public sealed class FileSessionStore
             return (defaultNextOrder, null);
 
         var activeIds = ResolveActiveIds(entries, leafTargetId);
+
+        // compact-only 分片的物理 leaf 就是 compact 条目；它必须作为下一次 append 的 parent，
+        // 否则重启后新消息会绕过摘要，active path 断在旧 tail。
+        // label 是书签标记，不是消息链节点；落到 label 时继续向下找最后一条非 label 条目。
+        var leafEntry = leafTargetId is null
+            ? null
+            : entries.FirstOrDefault(e =>
+                string.Equals(e.EntryId, leafTargetId, StringComparison.Ordinal)
+            );
+        if (
+            leafTargetId is not null
+            && leafEntry?.Type != JsonlEntryType.Label
+            && (activeIds is null || activeIds.Contains(leafTargetId))
+        )
+            return (defaultNextOrder, leafTargetId);
 
         var maxOrder = -1;
         string? lastEntryId = null;
@@ -2111,10 +2110,7 @@ public sealed class FileSessionStore
         if (_parseCache.TryGetValue(path, out var cached) && cached.Mtime == currentMtime)
         {
             // Update last accessed time for approximate LRU
-            _parseCache[path] = cached with
-            {
-                LastAccessed = DateTime.UtcNow,
-            };
+            _parseCache[path] = cached with { LastAccessed = DateTime.UtcNow };
             return (cached.Entries, cached.LeafTargetId, cached.LabelMap);
         }
 

@@ -674,9 +674,8 @@ public sealed class CloudNovelSyncServiceTests : IDisposable
         _client.SaveState = true;
         var report = await service.SyncAsync(NovelId);
         Assert.Equal(1, report.Pushed);
-        Assert.All(
-            _client.PushCalls.SelectMany(c => c),
-            item => Assert.Equal("accepted", _client.PushResults[item.EntityId].Status)
+        Assert.All(_client.PushCalls.SelectMany(c => c), item =>
+            Assert.Equal("accepted", _client.PushResults[item.EntityId].Status)
         );
         Assert.Equal(0, report.Conflicts);
     }

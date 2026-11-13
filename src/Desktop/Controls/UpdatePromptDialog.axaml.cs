@@ -31,9 +31,7 @@ public partial class UpdatePromptDialog : UserControl
             return;
 
         // Esc = 稍后提醒（隧道预览：焦点在根面板时按键先到这里；不取消下载、不清状态）
-        (DataContext as UpdateState)
-            ?.RemindLaterCommand.Execute()
-            .Subscribe();
+        (DataContext as UpdateState)?.RemindLaterCommand.Execute().Subscribe();
         e.Handled = true;
     }
 

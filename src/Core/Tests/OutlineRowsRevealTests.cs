@@ -285,9 +285,8 @@ public sealed class OutlineRowsRevealTests
             ),
             r => Assert.Equal(0, r.Depth)
         );
-        Assert.All(
-            rows.Where(r => r.Kind is OutlineRowKind.Chapter or OutlineRowKind.More),
-            r => Assert.Equal(1, r.Depth)
+        Assert.All(rows.Where(r => r.Kind is OutlineRowKind.Chapter or OutlineRowKind.More), r =>
+            Assert.Equal(1, r.Depth)
         );
     }
 }

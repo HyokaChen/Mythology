@@ -271,21 +271,18 @@ public sealed class PlotForecastBuilderTests
     {
         var forecast = Build();
 
-        var characterGap = Assert.Single(
-            forecast.SeedGaps,
-            g => g.Kind == "Character" && g.EntityId == "c-envoy"
+        var characterGap = Assert.Single(forecast.SeedGaps, g =>
+            g.Kind == "Character" && g.EntityId == "c-envoy"
         );
         Assert.Equal("北境使者", characterGap.Name);
         Assert.Equal(7, characterGap.ReferencedOrder);
 
-        Assert.Contains(
-            forecast.SeedGaps,
-            g => g.Kind == "Plotline" && g.EntityId == "p-rebellion"
+        Assert.Contains(forecast.SeedGaps, g =>
+            g.Kind == "Plotline" && g.EntityId == "p-rebellion"
         );
         // 青铜钥匙在第2章转折里已播种 → 不算缺口
-        Assert.DoesNotContain(
-            forecast.SeedGaps,
-            g => g.Kind == "Plotline" && g.EntityId == "p-bronze"
+        Assert.DoesNotContain(forecast.SeedGaps, g =>
+            g.Kind == "Plotline" && g.EntityId == "p-bronze"
         );
     }
 
@@ -319,21 +316,16 @@ public sealed class PlotForecastBuilderTests
         plotlines[0].PlannedRevealChapterId = "ch4";
         var forecast = Build(plotlines: plotlines);
 
-        Assert.Contains(
-            forecast.Risks,
-            r =>
-                r.Kind == ForecastRiskKind.Overdue
-                && r.Message.Contains("已逾期 1 章", StringComparison.Ordinal)
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.Overdue
+            && r.Message.Contains("已逾期 1 章", StringComparison.Ordinal)
         );
-        Assert.Contains(
-            forecast.Risks,
-            r =>
-                r.Kind == ForecastRiskKind.NoPlanOnWindowLine
-                && r.Message.Contains("《北境叛乱》出现在第7章细纲中", StringComparison.Ordinal)
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.NoPlanOnWindowLine
+            && r.Message.Contains("《北境叛乱》出现在第7章细纲中", StringComparison.Ordinal)
         );
-        Assert.Contains(
-            forecast.Risks,
-            r => r.Kind == ForecastRiskKind.BeatAfterReveal && r.ChapterOrder == 7
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.BeatAfterReveal && r.ChapterOrder == 7
         );
     }
 
@@ -342,14 +334,12 @@ public sealed class PlotForecastBuilderTests
     {
         var forecast = Build();
 
-        Assert.Contains(
-            forecast.Risks,
-            r =>
-                r.Kind == ForecastRiskKind.DueWithoutAdvance
-                && r.Message.Contains(
-                    "《青铜钥匙》计划第6章揭示（还有 1 章），但已写章节中从未推进过该线",
-                    StringComparison.Ordinal
-                )
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.DueWithoutAdvance
+            && r.Message.Contains(
+                "《青铜钥匙》计划第6章揭示（还有 1 章），但已写章节中从未推进过该线",
+                StringComparison.Ordinal
+            )
         );
     }
 
@@ -385,11 +375,9 @@ public sealed class PlotForecastBuilderTests
         var forecast = Build(chapters, plotlines: plotlines);
 
         Assert.Equal(PlotForecastBuilder.MaxBeats, forecast.Beats.Count); // 渲染只取前 8
-        Assert.Contains(
-            forecast.Risks,
-            r =>
-                r.Kind == ForecastRiskKind.BeatAfterReveal
-                && r.Message.Contains("第10章", StringComparison.Ordinal)
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.BeatAfterReveal
+            && r.Message.Contains("第10章", StringComparison.Ordinal)
         );
     }
 
@@ -402,9 +390,8 @@ public sealed class PlotForecastBuilderTests
         chapters[3].Order = 4;
         var forecast = Build(chapters);
 
-        Assert.Contains(
-            forecast.Risks,
-            r => r.Kind == ForecastRiskKind.UnwrittenHole && r.ChapterOrder == 3
+        Assert.Contains(forecast.Risks, r =>
+            r.Kind == ForecastRiskKind.UnwrittenHole && r.ChapterOrder == 3
         );
     }
 

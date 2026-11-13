@@ -402,9 +402,8 @@ public sealed class LocalKebabKeysTests
     public async Task KebabWorldRuleTypes_RewritesTypeValues_ScopedToWorldRulesFile()
     {
         // 迁移表的值必须落在规范键集内（否则迁移产出与云端 StpChecker 期望不一致）
-        Assert.All(
-            KebabWorldRuleTypes.LegacyValueMap.Values,
-            v => Assert.Contains(WorldRuleTypes.All, t => t.Key == v)
+        Assert.All(KebabWorldRuleTypes.LegacyValueMap.Values, v =>
+            Assert.Contains(WorldRuleTypes.All, t => t.Key == v)
         );
         Assert.Equal("travel-speed", WorldRuleTypes.Normalize("travel_speed"));
         Assert.Equal("travel-speed", WorldRuleTypes.Normalize("  Travel_Speed "));

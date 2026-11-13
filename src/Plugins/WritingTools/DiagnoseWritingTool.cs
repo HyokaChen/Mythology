@@ -571,8 +571,7 @@ public sealed class DiagnoseWritingTool(
         string? detail = null
     )
     {
-        var message =
-            detail
+        var message = detail
             ?? state switch
             {
                 CloudConnectionState.Authenticating =>

@@ -194,12 +194,21 @@ internal sealed class TuiSlashTestHarness : IAsyncDisposable
     }
 
     /// <summary>镜像 OpenNovelAsync 的会话初始化：种子 JSONL + 恢复 order/parent 追踪状态。</summary>
-    internal async Task SeedSessionStoreAsync(bool seedCompactBlock = false)
+    internal async Task SeedSessionStoreAsync(bool seedCompactBlock = false, int paddingChars = 0)
     {
-        var messages = new List<LlmChatMessage>(SampleMessages);
+        var messages = SampleMessages
+            .Select(m =>
+                paddingChars > 0
+                    ? new LlmChatMessage(
+                        m.Role ?? ChatMessageRoles.User,
+                        (m.Content ?? "") + new string('述', paddingChars)
+                    )
+                    : m
+            )
+            .ToList();
 
         Agent.CurrentNovelId = NovelId;
-        foreach (var m in SampleMessages)
+        foreach (var m in messages)
             Agent.AppendMessage(m);
 
         var lastEntryId = await SessionStore.SaveSessionMessages(SessionId, NovelId, messages);

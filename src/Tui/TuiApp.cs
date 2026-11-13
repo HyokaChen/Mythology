@@ -49,6 +49,9 @@ public sealed partial class TuiApp : IDisposable
     /// <summary>会话数据存储（JSONL）。</summary>
     private readonly FileSessionStore _sessionStore;
 
+    /// <summary>Core 共享压缩引擎：切点、摘要、compact 落盘与 Agent 状态替换统一在此。</summary>
+    private readonly CompactionEngine _compactor;
+
     /// <summary>工具注册表，管理所有可用工具。</summary>
     private readonly ToolRegistry _registry;
     private readonly IFictionHarnessClient? _cloudHarness; // CHANGE_10 §4.3 反馈上报
@@ -252,6 +255,7 @@ public sealed partial class TuiApp : IDisposable
         _logger = logger ?? NullLogger<TuiApp>.Instance;
         _store = store;
         _sessionStore = sessionStore;
+        _compactor = new CompactionEngine(_agent, _sessionStore, _store, _logger);
         _registry = registry;
         _contextModeSwitcher = contextModeSwitcher; // 设置页「上下文」标签页热切换（null = 只写配置）
         _cloudHarness = cloudHarness; // CHANGE_10 §4.3 设定检查反馈上报

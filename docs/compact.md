@@ -13,10 +13,11 @@
 | `[mN]` ref 标签（B3） | ✅ 已实现 | `ConversationLoop.InjectRefTags`（运行时注入、发送后还原、不污染 JSONL）；`Agent.EntryIdProvider` 委托提供稳定身份（`LlmChatMessage.NativeObject` 存 EntryId），ref 跨 compact/恢复稳定 |
 | nudge 分级提醒 | ✅ 已实现（简化版） | 内联在 `ConversationLoop`（无独立类，符合决策 #4）；阈值从 `ModelContextProfile.NudgeInfo/Warn/CriticalPercent` 动态推导（先于 pre-flight 触发），非设计稿的固定 50/70/85% |
 | `CompressionBlock` record + `CompressionState` | 🟡 最小版 | `Agent.CompressionBlocks` 为 `List<(BlockId, MessageIds, Summary)>` 元组列表（线性扫描），非设计稿的 `CompressionBlock`/`CompressionState` 类型；无 `Tier`/`Topic`/`DirectBlockIds` 等字段 |
-| `CompressionEngine`（Compress/Decompress 纯操作 + CJK token 估算） | ❌ 未实现 | 压缩逻辑仍在 `FileSessionStore.CompactSession` + `TuiApp.Compact.cs`；CJK token 估算未独立成 `CompressionEngine.EstimateMessageTokens` |
+| `CompressionEngine`（Compress/Decompress 纯操作 + CJK token 估算） | 🟡 部分实现（2026-11-13） | 切点/摘要/compact 落盘/Agent 替换已统一到 `Core/Agent/CompactionEngine.cs`（TUI/Desktop 共用）；CJK 估算仍由 `ConversationLoop.Estimate*Tokens` + `Core/Stability/ContextTokenCalibrator` 提供，尚未拆成纯 `Compress/Decompress` 类 |
 | `CompressTool`（模型驱动 `compress` 工具） | ❌ 未实现 | 注册表无 `compress` 工具；压缩触发仍为阈值/手动/溢出兜底，模型不能自主压缩 |
 | `CompressionPrompt` + `("compression", ...)` 骨架段 | ❌ 未实现 | `PromptAssembly` 无 compression 段 |
 | 迁移 `002_CompactBlocks` | ✅ 已实现 | `Core/Data/Migrations/002_CompactBlocks.cs`（推导覆盖区间 + 迁移后二次扫描验证） |
+| 压缩执行统一 | ✅ 2026-11-13 | `Core/Agent/CompactionEngine.cs`：TUI/Desktop 共用的切点、有效门槛、5W1H 摘要、compact 落盘与 Agent 替换；`ContextTokenCalibrator` 统一到 `Core/Stability/`。仍是阈值/手动驱动，不是本设计稿的模型驱动 `compress` 工具。 |
 
 **结论**：设计稿的「可逆 + ref + nudge」三件套已落地并稳定运行；「模型驱动压缩」（决策 #1 主通道）尚未实现——当前压缩仍是阈值/规则驱动，`/compact` 与 `ContextOverflowException` 是唯一入口。下文 §3–§9 保留为未落地部分的原始设计，落地时需按本表校准。
 

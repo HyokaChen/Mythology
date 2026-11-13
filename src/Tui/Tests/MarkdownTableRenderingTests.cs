@@ -65,9 +65,8 @@ public class MarkdownTableRenderingTests
     {
         // At wide enough target, ， fits on previous line
         var lines = WrapCell("你好，世界", 6);
-        Assert.All(
-            lines,
-            l => Assert.False(l.StartsWith('\uff0c'), "， should fit on line 1 at width 6")
+        Assert.All(lines, l =>
+            Assert.False(l.StartsWith('\uff0c'), "， should fit on line 1 at width 6")
         );
 
         // At very narrow target, ， may stay at line start rather than overflow
@@ -80,9 +79,8 @@ public class MarkdownTableRenderingTests
     {
         // At wide enough target, （ stays with following text
         var lines = WrapCell("你好（世界", 6);
-        Assert.All(
-            lines,
-            l => Assert.False(l.EndsWith('\uff08'), "（ should not end a line at width 6")
+        Assert.All(lines, l =>
+            Assert.False(l.EndsWith('\uff08'), "（ should not end a line at width 6")
         );
 
         // At narrow target, （ may end a line rather than overflow

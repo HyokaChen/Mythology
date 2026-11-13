@@ -53,19 +53,15 @@ public sealed class ToolRegistry
 
         _tools[tool.Name] = tool;
         _toolToPlugin[tool.Name] = pluginName;
-        _pluginTools.AddOrUpdate(
-            pluginName,
-            [tool.Name],
-            (_, existing) =>
+        _pluginTools.AddOrUpdate(pluginName, [tool.Name], (_, existing) =>
+        {
+            if (!existing.Contains(tool.Name, StringComparer.Ordinal))
             {
-                if (!existing.Contains(tool.Name, StringComparer.Ordinal))
-                {
-                    var updated = new List<string>(existing) { tool.Name };
-                    return updated;
-                }
-                return existing;
+                var updated = new List<string>(existing) { tool.Name };
+                return updated;
             }
-        );
+            return existing;
+        });
 
         // 注册规范化 ID
         var normalizedId = NormalizePluginId(pluginName);

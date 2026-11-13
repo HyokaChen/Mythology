@@ -664,8 +664,7 @@ public sealed class DiagnosisScheduler(
     {
         // P-1：章节排序由调用方（RunAsync）按轮计算一次后传入，避免每个能力各排一次
         var chapters = scheduledChapters;
-        var target =
-            chapters.FirstOrDefault(c => c.Id == input.ChapterId)
+        var target = chapters.FirstOrDefault(c => c.Id == input.ChapterId)
             ?? new Chapter
             {
                 Id = input.ChapterId,

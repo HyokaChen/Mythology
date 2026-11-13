@@ -29,14 +29,11 @@ public sealed class AboutDialogEntriesTests
     {
         var all = AboutDialog.Shortcuts.Concat(AboutDialog.Commands).ToList();
 
-        Assert.All(
-            all,
-            e =>
-            {
-                Assert.False(string.IsNullOrWhiteSpace(e.Key), "条目缺键");
-                Assert.False(string.IsNullOrWhiteSpace(e.Description), $"{e.Key} 缺说明");
-            }
-        );
+        Assert.All(all, e =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(e.Key), "条目缺键");
+            Assert.False(string.IsNullOrWhiteSpace(e.Description), $"{e.Key} 缺说明");
+        });
     }
 
     /// <summary>

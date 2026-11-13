@@ -106,9 +106,8 @@ public sealed class HttpFictionHarnessClientTests
 
         Assert.Equal("completed", result.Status);
         // 取结果必须打在旧 run_old 上，而不是新建的 run_new
-        Assert.Contains(
-            paths,
-            p => p == "/v1/agent/runs/run_old/harness-invocations/inv_old/events"
+        Assert.Contains(paths, p =>
+            p == "/v1/agent/runs/run_old/harness-invocations/inv_old/events"
         );
         Assert.DoesNotContain(paths, p => p.Contains("run_new"));
     }
@@ -155,9 +154,8 @@ public sealed class HttpFictionHarnessClientTests
 
         Assert.Equal(1, runCreations);
         Assert.Equal(2, invocationPaths.Count);
-        Assert.All(
-            invocationPaths,
-            path => Assert.Equal("/v1/agent/runs/run_1/harness-invocations", path)
+        Assert.All(invocationPaths, path =>
+            Assert.Equal("/v1/agent/runs/run_1/harness-invocations", path)
         );
     }
 

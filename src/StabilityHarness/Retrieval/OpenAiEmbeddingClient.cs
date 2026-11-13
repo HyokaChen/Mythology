@@ -62,8 +62,9 @@ public sealed class OpenAiEmbeddingClient : IDisposable
                 throw new InvalidOperationException(
                     $"embedding 失败：HTTP {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(ct)}"
                 );
-            var body =
-                await response.Content.ReadFromJsonAsync<ResponseBody>(ct).ConfigureAwait(false)
+            var body = await response
+                .Content.ReadFromJsonAsync<ResponseBody>(ct)
+                .ConfigureAwait(false)
                 ?? throw new InvalidOperationException("embedding 返回空响应");
             if (body.Data.Count != batch.Count)
                 throw new InvalidOperationException(

@@ -58,8 +58,8 @@ public sealed class EvaluateImmersionTool(
             ReaderFitScore = GetDimensionScore(dim, "reader-fit-score"),
             FlawScore = GetDimensionScore(dim, "flaw-score"),
             ViewpointScore = GetDimensionScore(dim, "viewpoint-score"),
-            HasProtagonist =
-                novel?.Characters.Any(c => c.Role == CharacterRole.Protagonist) ?? false,
+            HasProtagonist = novel?.Characters.Any(c => c.Role == CharacterRole.Protagonist)
+                ?? false,
             Issues = ParseDimensionIssues(dim)
                 .Select(i => new ImmersionIssueEntry
                 {

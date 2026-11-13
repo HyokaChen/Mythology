@@ -125,8 +125,8 @@ public sealed partial class SetUpPanel
 
         if (!string.IsNullOrWhiteSpace(ch.CurrentLocationId))
         {
-            var locationName =
-                locNameMap?.GetValueOrDefault(ch.CurrentLocationId) ?? ch.CurrentLocationId;
+            var locationName = locNameMap?.GetValueOrDefault(ch.CurrentLocationId)
+                ?? ch.CurrentLocationId;
             parts.Add($"[dim]当前地点:[/] 📍 {ToolCallRenderer.Escape(locationName)}");
         }
 
@@ -419,8 +419,8 @@ public sealed partial class SetUpPanel
 
         if (!string.IsNullOrWhiteSpace(s.LocationId))
         {
-            var locName =
-                allLocations.FirstOrDefault(l => l.Id == s.LocationId)?.Name ?? s.LocationId;
+            var locName = allLocations.FirstOrDefault(l => l.Id == s.LocationId)?.Name
+                ?? s.LocationId;
             parts.Add($"[dim]地点:[/] {ToolCallRenderer.Escape(locName)}");
         }
 

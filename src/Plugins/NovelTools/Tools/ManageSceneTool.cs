@@ -148,8 +148,8 @@ public sealed class ManageSceneTool(INovelStore store)
         if (args.Order is not null)
             scene.Order = args.Order.Value;
         if (args.ChapterId is not null)
-            scene.ChapterId =
-                await ResolveChapterId(args.NovelId, args.ChapterId) ?? scene.ChapterId; // 序号解析失败时保留原章节，避免误清空
+            scene.ChapterId = await ResolveChapterId(args.NovelId, args.ChapterId)
+                ?? scene.ChapterId; // 序号解析失败时保留原章节，避免误清空
         if (args.LocationId is not null)
             scene.LocationId = args.LocationId;
         if (args.TimeDescription is not null)

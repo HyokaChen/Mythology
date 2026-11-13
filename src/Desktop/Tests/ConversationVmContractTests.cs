@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.Agent;
 using Core.Data;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using Desktop.Controls;
 using Desktop.Models;
@@ -14,6 +15,7 @@ using LlmTornado.Code;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReactiveUI.Primitives;
 using Xunit;
+using ChatMessageModel = Desktop.Models.ChatMessage;
 using LlmChatMessage = LlmTornado.Chat.ChatMessage;
 
 namespace Desktop.Tests;
@@ -1067,6 +1069,111 @@ public sealed class ConversationVmContractTests
         Assert.True(started);
         var after = await h.Engine.GetUiMessagesAsync();
         Assert.Contains(after, m => m.Content == "改写第一问");
+    }
+
+    [Fact]
+    public async Task RetryFromUserMessage_ByEntryId_AfterTwoCompacts_AppendsOnly()
+    {
+        using var h = new Harness();
+        await SeedConversationAsync(h);
+
+        var active = await h.Engine.GetUiMessagesAsync();
+        var firstUser = active.First(m => m.Content == "第一问");
+        var secondUser = active.First(m => m.Content == "第二问");
+        var filesBefore = Directory
+            .GetFiles(h.StoreDir, "*.jsonl", SearchOption.AllDirectories)
+            .ToDictionary(path => path, File.ReadAllBytes, StringComparer.Ordinal);
+
+        var (nextOrder1, _) = await h.Store.GetSessionMetadataAsync(h.Engine.SessionId);
+        await h.Store.CompactSession(
+            h.Engine.SessionId,
+            h.Agent.CurrentNovelId ?? "",
+            summary: "第一次摘要",
+            firstKeptEntryId: secondUser.EntryId!,
+            messagesBefore: active.Count,
+            parentEntryId: active[^1].EntryId,
+            order: nextOrder1
+        );
+
+        var (nextOrder2, _) = await h.Store.GetSessionMetadataAsync(h.Engine.SessionId);
+        await h.Store.CompactSession(
+            h.Engine.SessionId,
+            h.Agent.CurrentNovelId ?? "",
+            summary: "第二次摘要",
+            firstKeptEntryId: secondUser.EntryId!,
+            messagesBefore: active.Count,
+            order: nextOrder2
+        );
+
+        Assert.DoesNotContain(await h.Engine.GetUiMessagesAsync(), m =>
+            m.EntryId == firstUser.EntryId
+        );
+
+        var started = await h.Engine.RetryFromUserMessageAsync(
+            0,
+            "改写第一问",
+            CancellationToken.None,
+            targetEntryId: firstUser.EntryId
+        );
+
+        Assert.True(started);
+        var after = await h.Engine.GetUiMessagesAsync();
+        Assert.Contains(after, m => m.Content == "改写第一问");
+        var compactCount = Directory
+            .GetFiles(h.StoreDir, "*.jsonl", SearchOption.AllDirectories)
+            .SelectMany(File.ReadAllLines)
+            .Count(line => line.Contains("\"type\":\"compact\"", StringComparison.Ordinal));
+        Assert.Equal(2, compactCount);
+
+        foreach (var (path, original) in filesBefore)
+        {
+            Assert.True(File.Exists(path));
+            var current = File.ReadAllBytes(path);
+            Assert.True(current.Length >= original.Length);
+            Assert.True(
+                current.AsSpan(0, original.Length).SequenceEqual(original),
+                $"two compact/retry rewrote {Path.GetFileName(path)}"
+            );
+        }
+    }
+
+    [Fact]
+    public async Task UserMessagePersisted_AssignsEntryIdToLiveBubble()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        h.Engine.NewSession();
+        string? publishedId = null;
+        h.Engine.UserMessagePersisted += (_, id) => publishedId = id;
+
+        var first = new ChatMessageModel(MessageSender.User);
+        first.Content.Append("第一问");
+        vm.Messages.Add(first);
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, "第一问"));
+        Assert.True(await h.Engine.TryPersistNewMessagesAsync());
+
+        var firstEntryId = h.Agent.State.Messages[0].NativeObject as string;
+        Assert.False(string.IsNullOrEmpty(firstEntryId));
+        Assert.Equal(firstEntryId, publishedId);
+        vm.BindPersistedUserEntryId(firstEntryId!);
+
+        Assert.False(string.IsNullOrEmpty(first.EntryId));
+        Assert.Equal(firstEntryId, first.EntryId);
+
+        var second = new ChatMessageModel(MessageSender.User);
+        second.Content.Append("第二问");
+        vm.Messages.Add(second);
+        h.Agent.AppendMessage(new LlmChatMessage(ChatMessageRoles.User, "第二问"));
+        Assert.True(await h.Engine.TryPersistNewMessagesAsync());
+
+        var secondEntryId = h.Agent.State.Messages[1].NativeObject as string;
+        Assert.False(string.IsNullOrEmpty(secondEntryId));
+        Assert.Equal(secondEntryId, publishedId);
+        vm.BindPersistedUserEntryId(secondEntryId!);
+
+        Assert.False(string.IsNullOrEmpty(second.EntryId));
+        Assert.NotEqual(firstEntryId, second.EntryId);
+        Assert.Equal(firstEntryId, first.EntryId);
     }
 
     [Fact]

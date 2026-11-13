@@ -196,9 +196,8 @@ public sealed class ConversationLoopStaticTests
     {
         var msg = BuildAssistantMessage("", "thinking", []);
         Assert.NotNull(msg.Parts);
-        Assert.Contains(
-            msg.Parts,
-            p => p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
+        Assert.Contains(msg.Parts, p =>
+            p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
         );
     }
 
@@ -208,9 +207,8 @@ public sealed class ConversationLoopStaticTests
         var msg = BuildAssistantMessage("answer", "thinking", []);
         Assert.NotNull(msg.Parts);
         Assert.Contains(msg.Parts, p => p is { Type: ChatMessageTypes.Text, Text: "answer" });
-        Assert.Contains(
-            msg.Parts,
-            p => p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
+        Assert.Contains(msg.Parts, p =>
+            p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
         );
     }
 
@@ -238,9 +236,8 @@ public sealed class ConversationLoopStaticTests
         var msg = BuildAssistantMessage("answer", "thinking", toolCalls);
         Assert.NotNull(msg.Parts);
         Assert.Contains(msg.Parts, p => p is { Type: ChatMessageTypes.Text, Text: "answer" });
-        Assert.Contains(
-            msg.Parts,
-            p => p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
+        Assert.Contains(msg.Parts, p =>
+            p is { Type: ChatMessageTypes.Reasoning, Reasoning.Content: "thinking" }
         );
         Assert.NotNull(msg.ToolCalls);
         Assert.Single(msg.ToolCalls);
@@ -385,9 +382,8 @@ public sealed class ConversationLoopStaticTests
 
         var calls = new List<FakeCall> { new("read_a"), new("write_a"), new("write_b") };
 
-        var (sequential, parallel) = ConversationLoop.PartitionByExecutionMode(
-            calls,
-            c => registry.TryGet(c.Name)
+        var (sequential, parallel) = ConversationLoop.PartitionByExecutionMode(calls, c =>
+            registry.TryGet(c.Name)
         );
 
         Assert.Equal(["write_a", "write_b"], sequential.Select(c => c.Name));
@@ -402,9 +398,8 @@ public sealed class ConversationLoopStaticTests
 
         var calls = new List<FakeCall> { new("missing"), new("write_a") };
 
-        var (sequential, parallel) = ConversationLoop.PartitionByExecutionMode(
-            calls,
-            c => registry.TryGet(c.Name)
+        var (sequential, parallel) = ConversationLoop.PartitionByExecutionMode(calls, c =>
+            registry.TryGet(c.Name)
         );
 
         Assert.Equal(["write_a"], sequential.Select(c => c.Name));
@@ -420,9 +415,8 @@ public sealed class ConversationLoopStaticTests
 
         var calls = new List<FakeCall> { new("s2"), new("s1") };
 
-        var (sequential, _) = ConversationLoop.PartitionByExecutionMode(
-            calls,
-            c => registry.TryGet(c.Name)
+        var (sequential, _) = ConversationLoop.PartitionByExecutionMode(calls, c =>
+            registry.TryGet(c.Name)
         );
 
         Assert.Equal(["s2", "s1"], sequential.Select(c => c.Name));

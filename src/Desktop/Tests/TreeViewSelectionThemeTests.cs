@@ -46,9 +46,8 @@ public sealed class TreeViewSelectionThemeTests
             Dispatcher.UIThread.RunJobs();
 
             var item = Assert.Single(tree.GetVisualDescendants().OfType<TreeViewItem>());
-            var border = Assert.Single(
-                item.GetVisualDescendants().OfType<Border>(),
-                b => b.Name == "SelectionBorder"
+            var border = Assert.Single(item.GetVisualDescendants().OfType<Border>(), b =>
+                b.Name == "SelectionBorder"
             );
 
             // 无头首帧还没有推进 BrushTransition 的时钟；这里先移除过渡，
@@ -105,13 +104,11 @@ public sealed class TreeViewSelectionThemeTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
-            var border = Assert.Single(
-                item.GetVisualDescendants().OfType<Border>(),
-                b => b.Name == "SelectionBorder"
+            var border = Assert.Single(item.GetVisualDescendants().OfType<Border>(), b =>
+                b.Name == "SelectionBorder"
             );
-            var header = Assert.Single(
-                item.GetVisualDescendants().OfType<ContentPresenter>(),
-                p => p.Name == "PART_HeaderPresenter"
+            var header = Assert.Single(item.GetVisualDescendants().OfType<ContentPresenter>(), p =>
+                p.Name == "PART_HeaderPresenter"
             );
 
             // 无头首帧还没推进 BrushTransition 时钟：移除过渡，只看最终底色。
@@ -166,9 +163,8 @@ public sealed class TreeViewSelectionThemeTests
             Assert.Equal(2, allBorders.Count);
 
             Border BorderOf(TreeViewItem owner) =>
-                Assert.Single(
-                    allBorders,
-                    b => b.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault() == owner
+                Assert.Single(allBorders, b =>
+                    b.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault() == owner
                 );
 
             var parentBorder = BorderOf(parent);

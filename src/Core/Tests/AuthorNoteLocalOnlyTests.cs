@@ -69,9 +69,8 @@ public sealed class AuthorNoteLocalOnlyTests : IDisposable
         );
 
         Assert.NotEmpty(docs);
-        Assert.DoesNotContain(
-            docs,
-            d => d.RelativePath.Contains("/notes/", StringComparison.Ordinal)
+        Assert.DoesNotContain(docs, d =>
+            d.RelativePath.Contains("/notes/", StringComparison.Ordinal)
         );
         Assert.DoesNotContain(docs, d => d.DocumentType == "note");
         // 章节仍照常同步

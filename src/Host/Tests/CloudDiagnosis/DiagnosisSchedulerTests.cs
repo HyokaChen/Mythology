@@ -241,10 +241,7 @@ public sealed class DiagnosisSchedulerTests
         Assert.False(scheduler.Decide(input).ShouldRun);
 
         // L2-4 快照 stale → 解除幂等 → 重新拉基础档信号
-        var stale = input with
-        {
-            SnapshotStale = true,
-        };
+        var stale = input with { SnapshotStale = true };
         var dStale = scheduler.Decide(stale);
         Assert.True(dStale.ShouldRun);
         await scheduler.RunAsync(stale, dStale, CancellationToken.None);
@@ -304,10 +301,7 @@ public sealed class DiagnosisSchedulerTests
         Assert.DoesNotContain("L2-2", scheduler.Decide(withoutName).HitSummary);
 
         // 同章正文改为含角色名 → 记忆化缓存必须失效并重新判定
-        var withName = withoutName with
-        {
-            CurrentContent = "林云握紧拳头。",
-        };
+        var withName = withoutName with { CurrentContent = "林云握紧拳头。" };
         Assert.Contains("L2-2", scheduler.Decide(withName).HitSummary);
     }
 
@@ -504,9 +498,8 @@ public sealed class DiagnosisSchedulerTests
         Assert.Equal(3, ctxKeys.Count);
         Assert.Equal(ctxKeys[0], ctxKeys[1]); // 同输入重试 → 键稳定（幂等仍有效）
         Assert.NotEqual(ctxKeys[0], ctxKeys[2]); // 前文改写（target 未动）→ 新键
-        Assert.All(
-            harness.Calls,
-            call => Assert.True(call.Key.Length <= 200, $"幂等键超长：{call.Key}")
+        Assert.All(harness.Calls, call =>
+            Assert.True(call.Key.Length <= 200, $"幂等键超长：{call.Key}")
         );
     }
 
@@ -1075,9 +1068,8 @@ public sealed class DiagnosisSchedulerTests
         Assert.NotEmpty(requests);
         var check = requests.Single(r => r.Capability == "fiction.story.check");
         Assert.Equal("standard", check.Depth);
-        Assert.All(
-            requests.Where(r => r.Capability != "fiction.story.check"),
-            r => Assert.Equal("quick", r.Depth)
+        Assert.All(requests.Where(r => r.Capability != "fiction.story.check"), r =>
+            Assert.Equal("quick", r.Depth)
         );
         var ctx = requests.Single(r => r.Capability == "fiction.context.retrieve");
         Assert.True(ctx.Options?.IncludeFeatures);
@@ -1306,9 +1298,8 @@ public sealed class DiagnosisSchedulerTests
             "dimensionScores 应包含 节奏 键"
         );
         // signals：high severity 信号已透传（S-1 判定输入）
-        Assert.Contains(
-            round.ContextRetrieve.Signals,
-            s => s.Severity == "high" && s.Dimension == "节奏"
+        Assert.Contains(round.ContextRetrieve.Signals, s =>
+            s.Severity == "high" && s.Dimension == "节奏"
         );
     }
 

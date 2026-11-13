@@ -117,14 +117,11 @@ public sealed class InteractionHubTests
         var cancelled = hub.Cancel(created.Id, "turn-abort", cancelWaiters: false);
         Assert.Equal(SubmitStatus.Accepted, cancelled.Status);
         Assert.Equal(InteractionState.Cancelled, cancelled.Snapshot!.State);
-        Assert.All(
-            cancelled.Snapshot.Questions!.Items,
-            item =>
-            {
-                Assert.Equal(QuestionOutcome.Cancelled, item.Outcome);
-                Assert.False(item.Question.IsAnswered);
-            }
-        );
+        Assert.All(cancelled.Snapshot.Questions!.Items, item =>
+        {
+            Assert.Equal(QuestionOutcome.Cancelled, item.Outcome);
+            Assert.False(item.Question.IsAnswered);
+        });
     }
 
     [Fact]
@@ -204,15 +201,11 @@ public sealed class InteractionHubTests
         using var executor = new VariantEffectExecutor(hub);
         var observed = VariantEffectState.None;
 
-        await executor.ExecuteAsync(
-            created.Id,
-            effect,
-            _ =>
-            {
-                observed = hub.Get(created.Id)!.VariantReview!.EffectState;
-                return Task.CompletedTask;
-            }
-        );
+        await executor.ExecuteAsync(created.Id, effect, _ =>
+        {
+            observed = hub.Get(created.Id)!.VariantReview!.EffectState;
+            return Task.CompletedTask;
+        });
 
         Assert.Equal(VariantEffectState.Running, observed);
         Assert.Equal(VariantEffectState.Applied, hub.Get(created.Id)!.VariantReview!.EffectState);
@@ -233,10 +226,8 @@ public sealed class InteractionHubTests
         using var executor = new VariantEffectExecutor(hub);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            executor.ExecuteAsync(
-                created.Id,
-                effect,
-                _ => throw new InvalidOperationException("boom")
+            executor.ExecuteAsync(created.Id, effect, _ =>
+                throw new InvalidOperationException("boom")
             )
         );
 

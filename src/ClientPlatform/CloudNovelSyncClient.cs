@@ -152,15 +152,12 @@ public sealed class CloudNovelSyncClient(
         var results = new List<SyncDocumentDto>(keys.Count);
         foreach (var batch in keys.Chunk(MaxBatchItems))
         {
-            var response =
-                await SendAsync<FetchResponse>(
-                    HttpMethod.Post,
-                    $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:fetch",
-                    new FetchRequest([
-                        .. batch.Select(key => new FetchKey(key.Type, key.EntityId)),
-                    ]),
-                    ct
-                ) ?? new FetchResponse([]);
+            var response = await SendAsync<FetchResponse>(
+                HttpMethod.Post,
+                $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:fetch",
+                new FetchRequest([.. batch.Select(key => new FetchKey(key.Type, key.EntityId))]),
+                ct
+            ) ?? new FetchResponse([]);
             results.AddRange(response.Documents);
         }
         return results;
@@ -175,13 +172,12 @@ public sealed class CloudNovelSyncClient(
         var results = new List<SyncPushResultDto>(items.Count);
         foreach (var batch in BatchByBytes(items))
         {
-            var response =
-                await SendAsync<PushResponse>(
-                    HttpMethod.Post,
-                    $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:push",
-                    new PushRequest([.. batch]),
-                    ct
-                ) ?? new PushResponse([]);
+            var response = await SendAsync<PushResponse>(
+                HttpMethod.Post,
+                $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:push",
+                new PushRequest([.. batch]),
+                ct
+            ) ?? new PushResponse([]);
             results.AddRange(response.Results);
         }
         return results;
@@ -196,13 +192,12 @@ public sealed class CloudNovelSyncClient(
         var results = new List<SyncDeleteResultDto>(items.Count);
         foreach (var batch in items.Chunk(MaxBatchItems))
         {
-            var response =
-                await SendAsync<DeleteResponse>(
-                    HttpMethod.Post,
-                    $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:delete",
-                    new DeleteRequest([.. batch]),
-                    ct
-                ) ?? new DeleteResponse([]);
+            var response = await SendAsync<DeleteResponse>(
+                HttpMethod.Post,
+                $"/v1/sync/novels/{Uri.EscapeDataString(novelId)}/documents:delete",
+                new DeleteRequest([.. batch]),
+                ct
+            ) ?? new DeleteResponse([]);
             results.AddRange(response.Results);
         }
         return results;

@@ -6,6 +6,7 @@ using Core.Agent;
 using Core.Data;
 using Core.Infrastructure;
 using Core.Shared;
+using Core.Stability;
 using Core.Tools;
 using Core.Vector;
 using Desktop.Services;
@@ -570,10 +571,9 @@ public sealed class SettingsViewModel : ViewModelBase
         {
             Model = providers.DefaultModel;
             ThinkingLevel = providers.ThinkingLevel;
-            ContextWindow =
-                ContextWindowOptions.FirstOrDefault(o =>
-                    ParseWindow(o) == providers.ContextWindowSize
-                ) ?? "128K";
+            ContextWindow = ContextWindowOptions.FirstOrDefault(o =>
+                ParseWindow(o) == providers.ContextWindowSize
+            ) ?? "128K";
 
             ApiKeys.Clear();
             foreach (var key in providers.ApiKeys)
