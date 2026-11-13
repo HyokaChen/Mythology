@@ -35,7 +35,7 @@ public static class PromptAssembly
     /// </summary>
     /// <param name="excludeKeys">要排除的段 Key 集合；null 表示不排除。</param>
     /// <param name="continuation">
-    /// 上下文管理是否为接续模式。只影响 writing 段的第 16 条：compact 让模型建议 /compact，
+    /// 上下文管理是否为接续模式。只影响 writing 段的第 9 条：compact 由宿主自动处理；
     /// 接续让模型直接调用 new_context（两模式互斥，prompt 不得交叉）。
     /// </param>
     public static string Build(IEnumerable<string>? excludeKeys, bool continuation = false)

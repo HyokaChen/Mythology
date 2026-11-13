@@ -441,7 +441,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
     {
         // 回归：RGDecimator 把第 0 轮评为最高分时，旧实现取 topN 最早索引 = 0，
         // 于是 messages.Count → keep = 全部，生成摘要 + 原消息全留（202→202），
-        // 压缩不降反升，后续立刻再触发 85% 压缩提醒。
+        // 压缩不降反升，后续立刻再触发自动压缩。
         await SeedSessionAsync(count: 10, charsPerMessage: 500);
         _agent.MessageScorer = new EarlyTurnScorer();
         var before = _agent.State.Messages.Count;

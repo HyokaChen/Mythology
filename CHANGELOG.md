@@ -53,11 +53,12 @@
   `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_Includes5W1H_AndNext`、
   `ConversationVmContractTests.RetryFromUserMessage_ByEntryId_AfterTwoCompacts_AppendsOnly` /
   `UserMessagePersisted_AssignsEntryIdToLiveBubble`；Core 1645/1645、Desktop 729/729、TUI 904/904（2 skipped）。
-- **不再在 70% 主动建议 `/compact`**：compact 模式本来就会在发送前自动压缩、溢出时自动恢复，
-  模型侧每轮注入的「上下文使用率 >70%，建议压缩」既重复又打断写作。现在：
-  `WritingProcessPrompt` 的 compact 阶段边界改为「上下文由系统自动处理，不向用户征求意见」；
-  `ConversationLoop` 的 nudge 只在 continuation 模式注入（那里模型能直接调 `new_context`）。
-  用户只在真正压缩/失败时看到系统状态行，不再收到 70%/80%/90% 的主动推荐。
+- **不再在 70%/85%/92% 等任何阈值主动建议 `/compact`**：compact 模式本来就会在发送前自动压缩、
+  溢出时自动恢复，模型侧每轮注入的「上下文使用率 >N%，建议压缩」既重复又打断写作，还额外消耗 token。
+  现在 `WritingProcessPrompt` 的 compact 阶段边界改为「上下文由系统自动处理，不向用户提及/解释/征求意见」；
+  `ConversationLoop` 的 nudge 只在 continuation 模式注入（那里模型能直接调 `new_context`）；
+  compact 模式下 pre-flight / 预算耗尽 / provider overflow 也不再发射用户可见的 `AgentError` 错误卡片。
+  用户只在真正压缩开始/完成或恢复失败时看到一次系统状态，不再收到 70/80/90 等临界推荐。
   回归：`ContextWindowLoopTests.PressureNudge_IsContinuationOnly`、
   `PromptsContentTests.WritingProcessPrompt_ContinuationSwapsOnlyStageBoundaryRule` /
   `PromptAssembly_ContinuationSkeleton_IsModeExclusive`；Core 1645/1645。

@@ -860,15 +860,8 @@ public sealed class ConversationLoop(
                 var livePreflightMsg =
                     $"上下文估算接近上限（{_liveContextTokens:N0}/{contextWindow:N0}），需要压缩上下文";
                 await SafelyPersistAsync();
-                await emit(
-                    new AgentError(
-                        livePreflightMsg,
-                        null,
-                        IsContextOverflow: true,
-                        Recoverable: true
-                    ),
-                    CancellationToken.None
-                );
+                // 自动恢复路径不发射 AgentError：UI 不应看到「调用出错 / 需要压缩」卡片，
+                // 只在实际压缩开始/完成或恢复失败时提示。
                 throw new ContextOverflowException(livePreflightMsg);
             }
 
@@ -899,15 +892,7 @@ public sealed class ConversationLoop(
                     // ★ Pre-flight 溢出前落盘：inject/steer 消息已在上方持久化，
                     // 此处再次确认所有 _persistedMessages 已写入（防御性）
                     await SafelyPersistAsync();
-                    await emit(
-                        new AgentError(
-                            preflightMsg,
-                            null,
-                            IsContextOverflow: true,
-                            Recoverable: true
-                        ),
-                        CancellationToken.None
-                    );
+                    // 自动恢复路径不发射 AgentError：避免 UI 在 85%/95% 临界处弹错误卡片。
                     throw new ContextOverflowException(preflightMsg);
                 }
             }
@@ -1955,10 +1940,7 @@ public sealed class ConversationLoop(
             // 必须先把已完成的 tool result 从 Conversation 提交到持久化消息，再压缩/继续。
             CommitCompletedToolResultsForRecovery(messagesBeforeCall, reasoningText.ToString());
             await SafelyPersistAsync();
-            await emit(
-                new AgentError(ex.Message, null, IsContextOverflow: true, Recoverable: true),
-                CancellationToken.None
-            );
+            // 与 pre-flight 一致：自动 compact 会恢复，不把内部预算错误渲染成用户可见卡片。
             throw new ContextOverflowException(ex.Message, ex);
         }
         catch (ContextOverflowException)
@@ -1989,11 +1971,15 @@ public sealed class ConversationLoop(
             CommitCompletedToolResultsForRecovery(messagesBeforeCall, reasoningText.ToString());
             await SafelyPersistAsync();
 
-            // 发射错误事件（ct 可能已部分取消，用 CancellationToken.None 确保事件送达）
-            await emit(
-                new AgentError(rawMessage, httpStatusCode, isContextOverflow, recoverable),
-                CancellationToken.None
-            );
+            // 发射错误事件（ct 可能已部分取消，用 CancellationToken.None 确保事件送达）。
+            // context overflow 例外：外层会自动 compact 并继续，不把内部恢复过程渲染成用户错误。
+            if (!isContextOverflow)
+            {
+                await emit(
+                    new AgentError(rawMessage, httpStatusCode, false, recoverable),
+                    CancellationToken.None
+                );
+            }
 
             // Context overflow 包装为专用异常，供 Desktop/Tui 触发 auto-compact + continue。
             // 已完成 tool result 已在上面提交；没有 tool result 的半成品已丢弃。
@@ -2981,8 +2967,8 @@ public sealed class ConversationLoop(
     private static readonly string PromptSkeleton = PromptAssembly.Build(null);
 
     /// <summary>
-    /// 接续模式的 Prompt 骨架：与 compact 骨架只差 writing 段第 16 条
-    /// （compact 建议 /compact；接续直接调用 new_context，且不得向用户描述机制）。
+    /// 接续模式的 Prompt 骨架：与 compact 骨架只差 writing 段第 9 条
+    /// （接续直接调用 new_context，且不得向用户描述机制）。
     /// </summary>
     private static readonly string PromptSkeletonContinuation = PromptAssembly.Build(
         null,
