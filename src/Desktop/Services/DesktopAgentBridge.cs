@@ -55,7 +55,9 @@ public sealed class DesktopAgentBridge
             ? new MessageStart(
                 new LlmTornado.Chat.ChatMessage(
                     ms.Message.Role ?? LlmTornado.Code.ChatMessageRoles.User,
-                    ms.Message.Content
+                    // Content 是 string?（assistant/tool 消息可为 null）；User 消息快照
+                    // 用空串归一，既满足 ChatMessage 的非空契约，也不改变 UI 语义。
+                    ms.Message.Content ?? string.Empty
                 )
             )
             : evt;

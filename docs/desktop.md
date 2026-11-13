@@ -933,6 +933,33 @@ ChatHistoryService (异步 SQLite)、SettingsView (连接器/MCP/工具/账号)�
 dotnet run --project src/Desktop -- --debug
 ```
 
+#### macOS 运行日志 `IMKCFRunLoopWakeUpReliable`
+
+在 macOS 上 `dotnet run` 可能在首次点击输入框/输入中文时打印：
+
+```text
+MythDesktop[pid:tid] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+```
+
+这不是 .NET / Avalonia / 本项目的异常，而是 macOS InputMethodKit（HIToolbox）在第三方输入法
+与客户端 run loop 之间做 mach port 唤醒时由系统打印的日志。当前开发机启用的输入源是腾讯微信
+输入法（`com.tencent.inputmethod.wetype`）；该现象在只用原生 `NSTextView` 的最小 App 中也能
+复现，Electron 也将其归为 macOS SDK 的已知无害副作用
+（[electron/electron#45002](https://github.com/electron/electron/issues/45002)）。Avalonia 12 已
+修复 IME 不进入组字状态的问题（[AvaloniaUI/Avalonia#22381](https://github.com/AvaloniaUI/Avalonia/issues/22381)），
+但系统仍可能打印这一行。
+
+本项目已做两项 app 侧加固：
+
+1. `Program.InitializeRuntime`（插件扫描 / MCP 连接 / 工具索引 / Agent 钩子）改为在主窗口
+   构造完成后由后台任务执行；UI 线程不再在启动期同步阻塞
+   （`Program.StartRuntimeInitialization` + `MainWindowViewModel.IsInitializing` 遮罩）。
+2. Avalonia 升级到 12.1.6（包含窗口激活顺序与原生资源修复）。
+
+没有在 `stderr` 上过滤该字符串：它是系统级诊断，过滤会连同其他原生日志一起丢失排查信息。
+若终端必须完全安静，可临时切换到 Apple 自带拼音/英文输入源；否则可把它当作 macOS + 第三方
+输入法的已知噪音忽略。
+
 ### 14.2 发布
 
 ```bash

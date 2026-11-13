@@ -71,6 +71,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private long _measureLiveTokens;
 
     private bool _isCompacting;
+    private bool _isShutdown;
     private readonly ContextTokenCalibrator _calibrator;
     private readonly ILogger _log;
 
@@ -123,6 +124,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
+
+    /// <summary>
+    /// 启动装配中：主窗口先显示，遮罩阻止用户在插件/工具索引/Agent 钩子注册完成前交互，
+    /// 避免运行期装配与首条消息并发。
+    /// </summary>
+    public bool IsInitializing
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = true;
 
     /// <summary>忙碌态（写作中或压缩中）：供更新弹窗避让；左下角状态栏展示 spinner + 诗词。</summary>
     public bool IsBusy => IsProcessing || _isCompacting;
@@ -497,6 +508,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>初始化（UI 就绪后调用）。</summary>
     public async Task InitializeAsync()
     {
+        // 启动装配已改为后台执行：窗口可能在装配完成前就被关闭。此时 Shutdown 已释放
+        // 服务，不能再加载小说/弹引导窗。
+        if (_isShutdown)
+        {
+            IsInitializing = false;
+            return;
+        }
+
         try
         {
             var configStore = _services.GetRequiredService<ConfigStore>();
@@ -512,6 +531,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             _cloudInitTask = InitializeCloudAsync();
 
             await RefreshNovelsAsync();
+            if (_isShutdown) return;
             _log.LogInformation("Novels loaded: {Count}", Novels.Count);
 
             if (Program.StartupNovelId is not null)
@@ -536,10 +556,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             // 恢复小说最新会话（含 --session 直达）；无小说则留新会话
             await RestoreLatestSessionForNovelAsync(SelectedNovel?.Id ?? "");
+            if (_isShutdown) return;
 
             StatusText = IdleStatusText;
 
             await SetUpPanel.RefreshAsync();
+            if (_isShutdown) return;
 
             // ── 启动引导（云端登录 → LLM 配置 → 新建项目，对齐 TUI） ──
             await ShowStartupGuidanceAsync();
@@ -547,6 +569,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             _log.LogCritical(ex, "窗口初始化失败");
+        }
+        finally
+        {
+            IsInitializing = false;
         }
     }
 
@@ -581,6 +607,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                 catch (TimeoutException) { }
                 catch (Exception) { }
             }
+
+            if (_isShutdown) return;
 
             // 1. 云端：新用户（无小说+无凭据）或凭据失效 → 登录窗（可跳过）
             var isNewUser = Novels.Count == 0 && _cloudAuth.State == CloudAuthState.SignedOut;
@@ -2053,6 +2081,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>窗口关闭：结算预算 + 中断 Agent。</summary>
     public void Shutdown()
     {
+        if (_isShutdown)
+            return;
+        _isShutdown = true;
+
         try
         {
             // 宿主退出结算（§16.5 方案 C）：同步调用 SettleSession（同步方法，Shutdown 同步上下文合法）

@@ -109,7 +109,7 @@ public class App : Application
                 // 恢复持久化主题（必须在窗口创建后：DynamicResource 消费者已就绪）
                 Program.Services!.GetRequiredService<Services.DesktopThemeService>().Restore();
 
-                _ = vm.InitializeAsync();
+                _ = InitializeAfterRuntimeAsync(vm);
 
                 // 窗口关闭时：取消正在处理的 Agent 请求
                 desktop.Exit += (_, _) => vm.Shutdown();
@@ -122,5 +122,25 @@ public class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// 主窗口构造完成后立即把运行期装配投递到后台；await 让出 UI 线程，窗口得以显示
+    /// 并开始泵事件，最后再加载小说/会话等 UI 状态。IsInitializing 遮罩阻止用户在
+    /// Agent 工具注册完成前发送消息。
+    /// </summary>
+    private static async Task InitializeAfterRuntimeAsync(MainWindowViewModel vm)
+    {
+        try
+        {
+            await Program.StartRuntimeInitialization(Program.Services!);
+        }
+        catch (Exception ex)
+        {
+            // InitializeRuntime 内部已兜底；这里防御 Task.Run 调度失败等极端情况。
+            Program.Services?.GetService<ILogger<App>>()?.LogCritical(ex, "运行时初始化任务失败");
+        }
+
+        await vm.InitializeAsync();
     }
 }

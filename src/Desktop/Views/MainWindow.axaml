@@ -444,5 +444,40 @@
       Grid.RowSpan="4"
       DataContext="{Binding UpdatePrompt}"
     />
+
+    <!-- 启动装配遮罩：运行期初始化（插件/工具索引/Agent 钩子）在后台执行，主 run loop
+         从窗口显示起就保持响应；遮罩阻止用户在装配完成前发送消息。 -->
+    <Border
+      Grid.Row="0"
+      Grid.RowSpan="4"
+      Background="{DynamicResource BrushLinen}"
+      IsVisible="{Binding IsInitializing}"
+    >
+      <StackPanel
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Spacing="14"
+      >
+        <TextBlock
+          Text="Mythology"
+          FontFamily="{StaticResource FontSerif}"
+          FontSize="28"
+          Foreground="{DynamicResource BrushForestInk}"
+          HorizontalAlignment="Center"
+        />
+        <TextBlock
+          Text="正在准备工具与插件…"
+          FontSize="13"
+          Foreground="{DynamicResource BrushSageGray}"
+          HorizontalAlignment="Center"
+        />
+        <ProgressBar
+          Width="220"
+          Height="3"
+          IsIndeterminate="True"
+          Foreground="{DynamicResource BrushOlivePress}"
+        />
+      </StackPanel>
+    </Border>
   </Grid>
 </Window>

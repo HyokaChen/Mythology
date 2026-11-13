@@ -42,6 +42,25 @@ public static class Program
     /// </summary>
     public static Core.Plugins.ContextModeSwitcher? ContextModeSwitcher { get; private set; }
 
+    private static Task? _runtimeInitialization;
+
+    /// <summary>
+    /// 运行期装配任务（插件扫描、MCP 连接、工具索引、Agent 钩子）。主窗口/VM 构造完成后
+    /// 由 App 调用 <see cref="StartRuntimeInitialization"/> 投递到后台执行；绝不阻塞
+    /// macOS 主 run loop。
+    /// </summary>
+    public static Task RuntimeInitialization => _runtimeInitialization ?? Task.CompletedTask;
+
+    /// <summary>
+    /// 启动后台运行期装配。只在主窗口/VM 构造完成后调用：避免 ToolRegistry 注册
+    /// 与 VM 构造并发；重复调用返回同一任务。
+    /// </summary>
+    public static Task StartRuntimeInitialization(IServiceProvider provider)
+    {
+        var task = _runtimeInitialization ??= Task.Run(() => InitializeRuntime(provider));
+        return task;
+    }
+
     // 运行参数（App 构造前已解析）
     public static bool UseDebug { get; private set; }
     public static bool UseMock { get; private set; }
@@ -98,7 +117,9 @@ public static class Program
                 withResolver: provider =>
                 {
                     Services = provider;
-                    InitializeRuntime(provider!).GetAwaiter().GetResult();
+                    // 运行期装配不在这里启动：此时 MainWindowViewModel 还没构造，
+                    // ToolRegistry 的注册会与 VM 构造并发。App 在窗口/VM 就绪后调用
+                    // StartRuntimeInitialization，把耗时工作放到后台线程。
                 }
             );
 
@@ -524,7 +545,8 @@ public static class Program
 
     /// <summary>
     /// 注册全部服务：Core 共享服务（日志/存储/检索/Agent/插件）+ Desktop 特有服务。
-    /// 同步阻塞完成（迁移/检索初始化在 UI 启动前就绪，与 LKK 的启动模式一致）。
+    /// DI 注册同步完成；插件扫描/索引/钩子等运行期装配由 <see cref="RuntimeInitialization"/>
+    /// 在后台完成，主窗口先显示、run loop 保持响应。
     /// </summary>
     private static void ConfigureServices(IServiceCollection services)
     {
