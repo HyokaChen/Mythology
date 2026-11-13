@@ -374,10 +374,10 @@ public sealed class PromptsContentTests
         Assert.Contains("按章分批", WritingProcessPrompt.Full);
         Assert.Contains("同一章全部", WritingProcessPrompt.Full);
         Assert.Contains("不要每改一句", WritingProcessPrompt.Full);
-        Assert.Contains("每章精修批次结束", WritingProcessPrompt.Full);
+        Assert.Contains("批次结束", WritingProcessPrompt.Full);
         Assert.Contains("diagnose_writing", WritingProcessPrompt.Full);
-        Assert.Contains("status=pass", WritingProcessPrompt.Full);
-        Assert.Contains("status=action", WritingProcessPrompt.Full);
+        Assert.Contains("不返工", WritingProcessPrompt.Full);
+        Assert.Contains("repairIntent", WritingProcessPrompt.Full);
         Assert.Contains("不向用户展示内部权重", WritingProcessPrompt.Full);
         Assert.DoesNotContain("未诊断即交付", WritingProcessPrompt.Full);
     }
@@ -407,6 +407,26 @@ public sealed class PromptsContentTests
     {
         Assert.Contains("human_decision_required", PlanningLoopPrompt.Full);
         Assert.Contains("人工裁决超时", PlanningLoopPrompt.Full);
+    }
+
+    [Fact]
+    public void PlanningLoopPrompt_ContainsHarnessGates()
+    {
+        Assert.Contains("自动写作 Harness", PlanningLoopPrompt.Full);
+        Assert.Contains("G0", PlanningLoopPrompt.Full);
+        Assert.Contains("不逐章问", PlanningLoopPrompt.Full);
+        Assert.Contains("Blocking", PlanningLoopPrompt.Full);
+        Assert.Contains("审阅包", PlanningLoopPrompt.Full);
+    }
+
+    [Fact]
+    public void WritingProcessPrompt_ContainsFailurePolicy()
+    {
+        Assert.Contains("失败分级", WritingProcessPrompt.Full);
+        Assert.Contains("Hard fail", WritingProcessPrompt.Full);
+        Assert.Contains("Soft fail", WritingProcessPrompt.Full);
+        Assert.Contains("提交标记", WritingProcessPrompt.Full);
+        Assert.Contains("不伪造 pass", WritingProcessPrompt.Full);
     }
 
     [Fact]

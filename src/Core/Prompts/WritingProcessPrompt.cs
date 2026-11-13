@@ -37,7 +37,6 @@ public static class WritingProcessPrompt
 | 高潮/冲突章 | `evaluate_conflict_intensity` + `analyze_pacing_quality` + `enhance_prose_quality` | 冲突层次≥2 |
 | 过渡/铺垫章 | `analyze_pacing_quality` + `enhance_chapter_hook` | 节奏正常可跳过 |
 | 对话密集章 | `evaluate_immersion_strength`（对话代入感） | 对话自然可跳过 |
-| 超过3000字 | `diagnose_writing(standard)` | AI痕迹已清除 |
 | 伏笔回收章 | `detect_plot_holes` | 无超期伏笔 |
 | **机器化风险密度>阈值** | **宿主自动跑 `story.check` humanizer；收到信号先修 1–3 处** | **云端不可用时至少本地自检** |
 | **★章末无钩子** | **`enhance_chapter_hook`** | **S2风险，建议修复** |
@@ -64,9 +63,8 @@ public static class WritingProcessPrompt
     - [信息信号] (S-1 high severity): 提供背景信息，由 LLM 判断是否影响当前决策。
 #### 云端诊断使用原则
 
-- 精修/改写已有章节：按章分批；同一章全部 `edit_text` 完成后调用一次 `diagnose_writing`（`chapter-ids`=该章）复诊，再下一章。不要每改一句/每个工具调用都诊断；同章同维度一次，跨章/私有设定才升级深度，简单事实修正可跳过说明。
-- 按信号执行：`status=pass` 不返工；`status=action` 按 repairIntent/处方行动并引用证据；`DECISION` / `human_decision_required` 低阈值有 [人工裁决] 按答案/授权，主线/角色/结局等不可逆决策仍停等，其余按注入信号继续可回退步骤，不空等。`warning` 是 action 内严重度，`repair_required` 是修复意图，都不是独立状态。
-- 云端不可用/预算耗尽：本地可继续的继续；若本次任务需要云端判断，交付时标注未完成云端校验；不把基础分伪装成深度结论。
+- 精修/改写已有章节：按章分批；同一章全部 `edit_text` 完成后调用一次 `diagnose_writing`（`chapter-ids`=该章）复诊，再下一章。不要每改一句/每个工具调用都诊断；同章同维度一次，跨章/私有设定才升级深度，简单事实修正可跳过。
+- 按信号执行：`pass` 不返工；`action` 按 repairIntent/处方修并引证；`DECISION`/`human_decision_required` 低阈值有授权则推进，主线/角色/结局仍停；`warning`/`repair_required` 不是独立状态。
 - 诊断报告先给 1~3 条修复和位置；完整报告按需展开，不贴表。
 - 不向用户展示内部权重、阈值、analyzer 名称或算法；只给结论、证据、修复建议和状态。
 - 信号带有「数据年龄/边界」时，先看年龄；过期快照只作参考，不能当当前章事实。
@@ -83,7 +81,9 @@ public static class WritingProcessPrompt
 
 #### 诊断→增强闭环
 
-诊断→增强→复诊：每章精修批次结束 → `diagnose_writing` 复诊 → 发现问题 → `enhance_*` 生成变体 → `AutoEnhance=full` 下 A/B 级自动采用保守版写入；`semi` 返回候选时报告并继续；`none` 才等作者选择 → 复诊；未提升则回退。改写前用 `read_chapter` 取正文，不要先 `read`。
+诊断→增强→复诊：批次结束 → `diagnose_writing` 复诊 → `enhance_*` 生成变体 → `full` 自动采用保守版；`semi` 报告候选；`none` 等作者 → 复诊；未提升回退。改写前 `read_chapter`。
+
+失败分级：Hard fail 修复/阻塞；Soft fail 修 2 轮后提交标记；云端/预算失败本地继续，不伪造 pass。
 
 ### 商业写作十二铁律（必须遵守）
 

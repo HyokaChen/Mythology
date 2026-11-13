@@ -9,7 +9,15 @@ public static class PlanningLoopPrompt
 {
     /// <summary>完整的规划循环规范，拼接到 system prompt。</summary>
     public const string Full =
-        TaskTiers + "\n\n" + AskOrProceed + "\n\n" + LoopSteps + "\n\n" + FallbackRules;
+        TaskTiers
+        + "\n\n"
+        + AskOrProceed
+        + "\n\n"
+        + LoopSteps
+        + "\n\n"
+        + HarnessRules
+        + "\n\n"
+        + FallbackRules;
 
     // ── 任务分级 ──
     // 轻任务直接执行；中任务简述计划；重任务 ask_user 确认
@@ -63,6 +71,17 @@ public static class PlanningLoopPrompt
 
 - 计划在执行中遇到新信息 → 更新计划再继续，不硬走原路
 - 每个中/重任务结束时自检结果；符合预期就继续下一项，只有结果不可逆或需要作者定夺时才停下来确认
+""";
+
+    // ── 自动写作 Harness ──
+    // 作者只在关键节点介入；日常章节自动推进；卷末给审阅包
+
+    private const string HarnessRules = """
+## 自动写作 Harness
+
+- 作者只在 G0 开书、G1 卷纲、G2 不可逆、G3 卷末、G4 发布介入；日常章节自动推进，不逐章问。
+- 只有安全/Canon 硬冲突、删除/覆盖已发布、角色命运/结局/发布等 Blocking 才停；低阈值按授权推进并记账。
+- 每卷给审阅包；每章仍按 WritingProcess 诊断/修复/连续性检查，不跳过验证
 """;
 
     // ── 回退机制 ──
