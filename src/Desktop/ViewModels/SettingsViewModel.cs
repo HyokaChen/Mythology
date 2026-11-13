@@ -579,7 +579,7 @@ public sealed class SettingsViewModel : ViewModelBase
             foreach (var key in providers.ApiKeys)
                 ApiKeys.Add(CreateApiKeyRow(key));
             if (ApiKeys.Count == 0)
-                ApiKeys.Add(new ApiKeyRow("openai", "", "", ""));
+                ApiKeys.Add(NewApiKeyRow());
             RebuildProviderOptions(ProviderOptions, ApiKeys);
             ProviderDisplay = ToProviderDisplay(ProviderOptions, providers.Default);
         }
@@ -612,7 +612,7 @@ public sealed class SettingsViewModel : ViewModelBase
             foreach (var key in _config.Embedding.ApiKeys)
                 EmbeddingApiKeys.Add(CreateApiKeyRow(key));
             if (EmbeddingApiKeys.Count == 0 && !string.IsNullOrWhiteSpace(EmbeddingModel))
-                EmbeddingApiKeys.Add(new ApiKeyRow("openai", "", "", ""));
+                EmbeddingApiKeys.Add(NewApiKeyRow());
             RebuildProviderOptions(EmbeddingProviderOptions, EmbeddingApiKeys);
             EmbeddingProviderDisplay = ToProviderDisplay(
                 EmbeddingProviderOptions,
@@ -701,7 +701,12 @@ public sealed class SettingsViewModel : ViewModelBase
                     new ApiKeyEntry
                     {
                         Provider = row.Provider,
-                        Name = string.IsNullOrWhiteSpace(row.Name) ? null : row.Name.Trim(),
+                        // 名称只属于自定义提供商；预设卡片残留的旧名称不得落盘
+                        Name =
+                            ProviderDefinition.IsCustom(row.Provider)
+                            && !string.IsNullOrWhiteSpace(row.Name)
+                                ? row.Name.Trim()
+                                : null,
                         ApiKey = row.ApiKey,
                         BaseUrl = row.BaseUrl.Length > 0 ? row.BaseUrl.Trim() : null,
                         Protocol = row.Protocol,
@@ -763,7 +768,12 @@ public sealed class SettingsViewModel : ViewModelBase
                     new ApiKeyEntry
                     {
                         Provider = row.Provider,
-                        Name = string.IsNullOrWhiteSpace(row.Name) ? null : row.Name.Trim(),
+                        // 名称只属于自定义提供商；预设卡片残留的旧名称不得落盘
+                        Name =
+                            ProviderDefinition.IsCustom(row.Provider)
+                            && !string.IsNullOrWhiteSpace(row.Name)
+                                ? row.Name.Trim()
+                                : null,
                         ApiKey = row.ApiKey,
                         BaseUrl = row.BaseUrl.Length > 0 ? row.BaseUrl.Trim() : null,
                         Protocol = row.Protocol,
@@ -996,8 +1006,11 @@ public sealed class SettingsViewModel : ViewModelBase
         return display;
     }
 
-    /// <summary>卡片增删 / 改名后同步两个下拉，选中项消失时回退到首个自定义项。</summary>
-    private void SyncProviderOptions()
+    /// <summary>
+    /// 卡片增删 / 改名后同步两个下拉。选中项消失时优先跟随正在编辑的自定义卡片，
+    /// 否则回退到首个具名自定义项。
+    /// </summary>
+    private void SyncProviderOptions(ApiKeyRow? changedRow = null)
     {
         var chatSelected = ProviderDisplay;
         var embeddingSelected = EmbeddingProviderDisplay;
@@ -1011,17 +1024,68 @@ public sealed class SettingsViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(EmbeddingProviderDisplay))
             embeddingSelected = EmbeddingProviderDisplay;
 
+        // 原选中项仍在 → 恢复它；否则顶部下拉会在每次改名时短暂变成空白。
+        if (
+            string.IsNullOrEmpty(ProviderDisplay)
+            && !string.IsNullOrEmpty(chatSelected)
+            && ProviderOptions.Contains(chatSelected)
+        )
+            ProviderDisplay = chatSelected;
+        if (
+            string.IsNullOrEmpty(EmbeddingProviderDisplay)
+            && !string.IsNullOrEmpty(embeddingSelected)
+            && EmbeddingProviderOptions.Contains(embeddingSelected)
+        )
+            EmbeddingProviderDisplay = embeddingSelected;
+
         if (string.IsNullOrEmpty(chatSelected) || !ProviderOptions.Contains(chatSelected))
-            ProviderDisplay = FallbackCustomDisplay(ProviderOptions);
+            ProviderDisplay = ResolveProviderFallback(
+                ProviderOptions,
+                chatSelected,
+                changedRow,
+                ApiKeys
+            );
         if (
             string.IsNullOrEmpty(embeddingSelected)
             || !EmbeddingProviderOptions.Contains(embeddingSelected)
         )
-            EmbeddingProviderDisplay = FallbackCustomDisplay(EmbeddingProviderOptions);
+            EmbeddingProviderDisplay = ResolveProviderFallback(
+                EmbeddingProviderOptions,
+                embeddingSelected,
+                changedRow,
+                EmbeddingApiKeys
+            );
+    }
+
+    /// <summary>选中项消失后的回退：改名中的自定义卡片优先，其次首个具名自定义项。</summary>
+    private static string ResolveProviderFallback(
+        ObservableCollection<string> options,
+        string? selected,
+        ApiKeyRow? changedRow,
+        IReadOnlyList<ApiKeyRow> rows
+    )
+    {
+        // 正在编辑的卡片属于当前下拉，且原先选中的是自定义项 → 跟随它的新显示名，
+        // 避免改名后顶部下拉跳到另一张自定义卡片。
+        if (
+            changedRow is not null
+            && rows.Contains(changedRow)
+            && selected?.StartsWith("自定义", StringComparison.Ordinal) == true
+        )
+        {
+            var changedDisplay = changedRow.ProviderDisplay;
+            if (options.Contains(changedDisplay))
+                return changedDisplay;
+        }
+
+        return FallbackCustomDisplay(options);
     }
 
     private static string FallbackCustomDisplay(ObservableCollection<string> options) =>
         options.FirstOrDefault(o => o.StartsWith("自定义: ", StringComparison.Ordinal)) ?? "自定义";
+
+    /// <summary>新建空白密钥行（订阅变更以同步顶部提供商下拉；供「添加密钥」使用）。</summary>
+    public ApiKeyRow NewApiKeyRow() => CreateApiKeyRow(new ApiKeyEntry { Provider = "openai" });
 
     /// <summary>由配置条目创建密钥行（订阅变更以同步提供商下拉）。</summary>
     private ApiKeyRow CreateApiKeyRow(ApiKeyEntry entry)
@@ -1040,7 +1104,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private void OnApiKeyRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ApiKeyRow.Name) or nameof(ApiKeyRow.Provider))
-            SyncProviderOptions();
+            SyncProviderOptions(sender as ApiKeyRow);
     }
 
     /// <summary>

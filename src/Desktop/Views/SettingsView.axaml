@@ -269,7 +269,7 @@
                           </StackPanel>
                         </Grid>
 
-                        <!-- ── 编辑态：提供商 → 协议 → 地址（仅自定义）→ 密钥 ── -->
+                        <!-- ── 编辑态：提供商 → 名称（仅自定义）→ 协议 → 地址（仅自定义）→ 密钥 ── -->
                         <Grid ColumnDefinitions="Auto,12,*,Auto" IsVisible="{Binding IsEditing}">
                           <TextBlock Classes="Tag" VerticalAlignment="Center" Text="提供商" />
                           <ComboBox
@@ -285,6 +285,16 @@
                             Margin="8,0,0,0"
                             Click="EndEdit_OnClick"
                             Content="完成"
+                          />
+                        </Grid>
+                        <!-- 自定义提供商名称：保存后顶部下拉显示为「自定义: 名称」 -->
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsCustom}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="名称" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline"
+                            Text="{Binding Name}"
+                            PlaceholderText="自定义名称（如 商汤）"
                           />
                         </Grid>
                         <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">
@@ -473,7 +483,7 @@
                           </StackPanel>
                         </Grid>
 
-                        <!-- ── 编辑态：提供商 → 协议 → 地址（仅自定义）→ 密钥 ── -->
+                        <!-- ── 编辑态：提供商 → 名称（仅自定义）→ 协议 → 地址（仅自定义）→ 密钥 ── -->
                         <Grid ColumnDefinitions="Auto,12,*,Auto" IsVisible="{Binding IsEditing}">
                           <TextBlock Classes="Tag" VerticalAlignment="Center" Text="提供商" />
                           <ComboBox
@@ -489,6 +499,16 @@
                             Margin="8,0,0,0"
                             Click="EndEdit_OnClick"
                             Content="完成"
+                          />
+                        </Grid>
+                        <!-- 自定义提供商名称：保存后顶部下拉显示为「自定义: 名称」 -->
+                        <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsCustom}">
+                          <TextBlock Classes="Tag" VerticalAlignment="Center" Text="名称" />
+                          <TextBox
+                            Grid.Column="2"
+                            Classes="Adaline"
+                            Text="{Binding Name}"
+                            PlaceholderText="自定义名称（如 商汤）"
                           />
                         </Grid>
                         <Grid ColumnDefinitions="Auto,12,*" IsVisible="{Binding IsEditing}">

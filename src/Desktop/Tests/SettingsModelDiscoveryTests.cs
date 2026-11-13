@@ -91,6 +91,38 @@ public sealed class SettingsModelDiscoveryTests
         Assert.Contains("{Binding EmbeddingModel, Mode=TwoWay}", bindings);
     }
 
+    /// <summary>
+    /// 自定义提供商必须能填名称（连接器 + 嵌入两个密钥卡片模板），否则顶部下拉
+    /// 只能出现裸「自定义」，多个自定义连接器无法区分。
+    /// </summary>
+    [Fact]
+    public void SettingsView_ApiKeyRows_ExposeCustomNameField()
+    {
+        var templates = LoadSettingsView()
+            .Descendants()
+            .Where(e =>
+                e.Name.LocalName == "DataTemplate"
+                && (string?)
+                    e.Attribute(
+                        XName.Get("DataType", "http://schemas.microsoft.com/winfx/2006/xaml")
+                    ) == "vm:ApiKeyRow"
+            )
+            .ToList();
+
+        Assert.Equal(2, templates.Count);
+        foreach (var template in templates)
+        {
+            var nameBox = template
+                .Descendants()
+                .Single(e =>
+                    e.Name.LocalName == "TextBox"
+                    && (string?)e.Attribute("Text") == "{Binding Name}"
+                );
+            Assert.Equal("Grid", nameBox.Parent?.Name.LocalName);
+            Assert.Equal("{Binding IsCustom}", (string?)nameBox.Parent?.Attribute("IsVisible"));
+        }
+    }
+
     private static XElement LoadSettingsView()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

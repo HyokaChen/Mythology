@@ -149,6 +149,27 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
     }
 
     [Fact]
+    public void NamingCustomKeyRow_UpdatesCardLabelAndTopProviderOptions()
+    {
+        var vm = new SettingsViewModel();
+        // 与「添加密钥」同一路径：必须经 VM 工厂创建，改名事件才会同步顶部下拉
+        var row = vm.NewApiKeyRow();
+        vm.ApiKeys.Add(row);
+
+        row.ProviderDisplay = "自定义";
+        Assert.True(row.IsCustom);
+        Assert.Contains("自定义", vm.ProviderOptions);
+
+        row.Name = "商汤";
+
+        Assert.Equal("自定义: 商汤", row.ProviderDisplay);
+        Assert.Contains("自定义: 商汤", vm.ProviderOptions);
+        Assert.DoesNotContain("自定义", vm.ProviderOptions);
+        // 正在编辑的自定义项改名后，顶部下拉必须跟随，不能跳回裸「自定义」
+        Assert.Equal("自定义: 商汤", vm.ProviderDisplay);
+    }
+
+    [Fact]
     public async Task SelectingPreset_ReplacesCompositeKey()
     {
         var store = new ConfigStore(_dir);

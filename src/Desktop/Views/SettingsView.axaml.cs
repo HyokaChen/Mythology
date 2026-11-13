@@ -40,8 +40,12 @@ public partial class SettingsView : UserControl
 
     private void AddApiKey_OnClick(object? sender, RoutedEventArgs e)
     {
-        // 新卡片直接进入编辑态（展示态无内容可看）
-        Vm?.ApiKeys.Add(new ApiKeyRow("openai", "", "", "") { IsEditing = true });
+        if (Vm is not { } vm)
+            return;
+        // 新卡片直接进入编辑态（展示态无内容可看）；经 VM 工厂创建以订阅改名事件
+        var row = vm.NewApiKeyRow();
+        row.IsEditing = true;
+        vm.ApiKeys.Add(row);
     }
 
     /// <summary>卡片「修改」：切到编辑态（同一时刻只展开一张）。</summary>
@@ -94,7 +98,11 @@ public partial class SettingsView : UserControl
 
     private void AddEmbeddingApiKey_OnClick(object? sender, RoutedEventArgs e)
     {
-        Vm?.EmbeddingApiKeys.Add(new ApiKeyRow("openai", "", "", "") { IsEditing = true });
+        if (Vm is not { } vm)
+            return;
+        var row = vm.NewApiKeyRow();
+        row.IsEditing = true;
+        vm.EmbeddingApiKeys.Add(row);
     }
 
     private void RemoveEmbeddingApiKey_OnClick(object? sender, RoutedEventArgs e)
