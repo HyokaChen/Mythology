@@ -126,7 +126,9 @@
               <ComboBox
                 Theme="{StaticResource AdalineComboBox}"
                 ItemsSource="{Binding ProviderOptions}"
-                SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                SelectedValue="{Binding ProviderDisplay, Mode=TwoWay}"
+                SelectedValueBinding="{ReflectionBinding Display}"
+                DisplayMemberBinding="{ReflectionBinding Display}"
                 HorizontalAlignment="Stretch"
               />
             </StackPanel>
@@ -276,7 +278,9 @@
                             Grid.Column="2"
                             Theme="{StaticResource AdalineComboBox}"
                             ItemsSource="{Binding ProviderOptions}"
-                            SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                            SelectedValue="{Binding ProviderDisplay, Mode=TwoWay}"
+                            SelectedValueBinding="{ReflectionBinding Display}"
+                            DisplayMemberBinding="{ReflectionBinding Display}"
                             HorizontalAlignment="Stretch"
                           />
                           <Button
@@ -361,7 +365,9 @@
               <ComboBox
                 Theme="{StaticResource AdalineComboBox}"
                 ItemsSource="{Binding EmbeddingProviderOptions}"
-                SelectedItem="{Binding EmbeddingProviderDisplay, Mode=TwoWay}"
+                SelectedValue="{Binding EmbeddingProviderDisplay, Mode=TwoWay}"
+                SelectedValueBinding="{ReflectionBinding Display}"
+                DisplayMemberBinding="{ReflectionBinding Display}"
                 HorizontalAlignment="Stretch"
               />
             </StackPanel>
@@ -490,7 +496,9 @@
                             Grid.Column="2"
                             Theme="{StaticResource AdalineComboBox}"
                             ItemsSource="{Binding ProviderOptions}"
-                            SelectedItem="{Binding ProviderDisplay, Mode=TwoWay}"
+                            SelectedValue="{Binding ProviderDisplay, Mode=TwoWay}"
+                            SelectedValueBinding="{ReflectionBinding Display}"
+                            DisplayMemberBinding="{ReflectionBinding Display}"
                             HorizontalAlignment="Stretch"
                           />
                           <Button

@@ -42,10 +42,11 @@ public partial class SettingsView : UserControl
     {
         if (Vm is not { } vm)
             return;
-        // 新卡片直接进入编辑态（展示态无内容可看）；经 VM 工厂创建以订阅改名事件
+        // 新卡片直接进入编辑态（展示态无内容可看）；经 VM 工厂创建以订阅改名事件。
+        // 插到顶部：添加按钮在列表上方，追加到末尾会掉出视口，用户还得滚到底才能填。
         var row = vm.NewApiKeyRow();
         row.IsEditing = true;
-        vm.ApiKeys.Add(row);
+        vm.ApiKeys.Insert(0, row);
     }
 
     /// <summary>卡片「修改」：切到编辑态（同一时刻只展开一张）。</summary>
@@ -100,9 +101,10 @@ public partial class SettingsView : UserControl
     {
         if (Vm is not { } vm)
             return;
+        // 与聊天密钥一致：插到顶部，新卡片就在「添加密钥」按钮下方可见。
         var row = vm.NewApiKeyRow();
         row.IsEditing = true;
-        vm.EmbeddingApiKeys.Add(row);
+        vm.EmbeddingApiKeys.Insert(0, row);
     }
 
     private void RemoveEmbeddingApiKey_OnClick(object? sender, RoutedEventArgs e)
@@ -113,8 +115,11 @@ public partial class SettingsView : UserControl
 
     private void AddMcp_OnClick(object? sender, RoutedEventArgs e)
     {
-        // 新卡片直接进入编辑态（与「添加密钥」一致）
-        Vm?.McpServers.Add(new McpServerRow("", "stdio", "", "", "", true) { IsEditing = true });
+        // 新卡片直接进入编辑态；添加按钮在列表上方，插到顶部才落在视口内。
+        Vm?.McpServers.Insert(
+            0,
+            new McpServerRow("", "stdio", "", "", "", true) { IsEditing = true }
+        );
     }
 
     private void RemoveMcp_OnClick(object? sender, RoutedEventArgs e)

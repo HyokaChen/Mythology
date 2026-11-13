@@ -32,8 +32,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private int _chatModelDiscoveryVersion;
     private int _embeddingModelDiscoveryVersion;
 
-    /// <summary>提供商下拉选项（显示名）。</summary>
-    public ObservableCollection<string> ProviderOptions { get; } = [];
+    /// <summary>提供商下拉选项（显示名；自定义项原地改名，不重建集合 → 选中项不闪）。</summary>
+    public ObservableCollection<ProviderOption> ProviderOptions { get; } = [];
 
     /// <summary>思考级别选项（与 TUI 共用 Core.ThinkingLevelBudgets.Options，排除 Off）。</summary>
     public ObservableCollection<string> ThinkingLevelOptions { get; } =
@@ -89,11 +89,18 @@ public sealed class SettingsViewModel : ViewModelBase
     public string ProviderDisplay
     {
         get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
+        set
+        {
+            // SelectedValue two-way 会在选中项被移除时回写 null；旧值由
+            // SyncProviderOptions 用捕获的选中值重建，不能让保存拿到 null。
+            if (string.IsNullOrEmpty(value))
+                return;
+            this.RaiseAndSetIfChanged(ref field, value);
+        }
     } = "自定义";
 
-    /// <summary>Embedding 提供商下拉选项（显示名）。</summary>
-    public ObservableCollection<string> EmbeddingProviderOptions { get; } = [];
+    /// <summary>Embedding 提供商下拉选项（显示名；同聊天下拉，原地改名）。</summary>
+    public ObservableCollection<ProviderOption> EmbeddingProviderOptions { get; } = [];
 
     /// <summary>Embedding API Key 卡片（独立 embedding 连接器）。</summary>
     public ObservableCollection<ApiKeyRow> EmbeddingApiKeys { get; } = [];
@@ -101,7 +108,12 @@ public sealed class SettingsViewModel : ViewModelBase
     public string EmbeddingProviderDisplay
     {
         get;
-        set => this.RaiseAndSetIfChanged(ref field, value);
+        set
+        {
+            if (string.IsNullOrEmpty(value))
+                return;
+            this.RaiseAndSetIfChanged(ref field, value);
+        }
     } = "OpenAI";
 
     public string Model
@@ -961,48 +973,63 @@ public sealed class SettingsViewModel : ViewModelBase
     /// 重建提供商下拉选项：预设显示名 + 每张具名自定义卡片的「自定义: 名称」。
     /// 泛化「自定义」只在存在未命名自定义卡片（旧配置）时保留——具名卡片已存在时
     /// 再提供裸「自定义」会让选中项显示成无名提供商，LlmApiFactory 也拿不到密钥。
-    /// 与 TUI BuildProviderDisplayItems 语义一致；复用同一集合实例以保证 ComboBox 选中项稳定。
+    /// 与 TUI BuildProviderDisplayItems 语义一致；标签差异只原地改 Display，
+    /// 集合增删仅发生在结构变化时，避免 ComboBox 每敲一个字丢一次选中项。
     /// </summary>
     private static void RebuildProviderOptions(
-        ObservableCollection<string> options,
+        ObservableCollection<ProviderOption> options,
         IReadOnlyList<ApiKeyRow> rows
     )
     {
-        options.Clear();
+        var desired = new List<string>(ProviderDefinition.All.Count() + rows.Count);
         foreach (var def in ProviderDefinition.All)
-            options.Add(def.DisplayName);
+            desired.Add(def.DisplayName);
 
-        foreach (
-            var name in rows.Where(r =>
+        desired.AddRange(
+            rows.Where(r =>
                     ProviderDefinition.IsCustom(r.Provider) && !string.IsNullOrWhiteSpace(r.Name)
                 )
-                .Select(r => r.Name.Trim())
+                .Select(r => $"自定义: {r.Name.Trim()}")
                 .Distinct(StringComparer.Ordinal)
-        )
-            options.Add($"自定义: {name}");
+        );
 
         if (
             rows.Any(r =>
                 ProviderDefinition.IsCustom(r.Provider) && string.IsNullOrWhiteSpace(r.Name)
             )
         )
-            options.Add("自定义");
+            desired.Add("自定义");
+
+        // 按「标签身份」而不是位置对账：仍需要的标签保留原对象（ComboBox 选中项不换人），
+        // 消失的标签空槽只复用给新标签；位置对账会把 B 的槽改成 A，顶部下拉显示 A
+        // 而 ProviderDisplay 仍是 B（保存与实际不一致）。
+        var missing = desired.Where(d => options.All(o => o.Display != d)).ToList();
+        var stale = options.Where(o => !desired.Contains(o.Display)).ToList();
+        for (var i = 0; i < Math.Min(missing.Count, stale.Count); i++)
+            stale[i].Display = missing[i];
+        foreach (var label in missing.Skip(stale.Count))
+            options.Add(new ProviderOption(label));
+        foreach (var option in stale.Skip(missing.Count))
+            options.Remove(option);
     }
 
     /// <summary>配置键 → 下拉显示名（自定义带名 → 「自定义: 名称」；裸 custom 优先落到具名卡片）。</summary>
-    private static string ToProviderDisplay(ObservableCollection<string> options, string configKey)
+    private static string ToProviderDisplay(
+        ObservableCollection<ProviderOption> options,
+        string configKey
+    )
     {
         var display = ProviderDefinition.IsCustom(configKey)
             ? ProviderDefinition.GetCustomName(configKey) is { Length: > 0 } name
                 ? $"自定义: {name.Trim()}"
-                : options.Contains("自定义") // 确有未命名卡片 → 保留裸 custom 语义
+                : options.Any(o => o.Display == "自定义") // 确有未命名卡片 → 保留裸 custom 语义
                     ? "自定义"
                     : FallbackCustomDisplay(options)
             : ProviderDefinition.FindByConfigKey(configKey).DisplayName;
 
         // 兜底：配置里的自定义名称已无对应卡片时仍要能显示
-        if (!options.Contains(display))
-            options.Add(display);
+        if (!ContainsDisplay(options, display))
+            options.Add(new ProviderOption(display));
         return display;
     }
 
@@ -1015,51 +1042,42 @@ public sealed class SettingsViewModel : ViewModelBase
         var chatSelected = ProviderDisplay;
         var embeddingSelected = EmbeddingProviderDisplay;
 
+        // 结构不变时只原地改标签，不触发 CollectionChanged；选中项对象保持同一实例。
         RebuildProviderOptions(ProviderOptions, ApiKeys);
         RebuildProviderOptions(EmbeddingProviderOptions, EmbeddingApiKeys);
 
-        // 重建时 Clear() 会让 ComboBox 回写 null，故以回写后的实际值为准
-        if (!string.IsNullOrEmpty(ProviderDisplay))
-            chatSelected = ProviderDisplay;
-        if (!string.IsNullOrEmpty(EmbeddingProviderDisplay))
-            embeddingSelected = EmbeddingProviderDisplay;
-
-        // 原选中项仍在 → 恢复它；否则顶部下拉会在每次改名时短暂变成空白。
-        if (
-            string.IsNullOrEmpty(ProviderDisplay)
-            && !string.IsNullOrEmpty(chatSelected)
-            && ProviderOptions.Contains(chatSelected)
-        )
-            ProviderDisplay = chatSelected;
-        if (
-            string.IsNullOrEmpty(EmbeddingProviderDisplay)
-            && !string.IsNullOrEmpty(embeddingSelected)
-            && EmbeddingProviderOptions.Contains(embeddingSelected)
-        )
-            EmbeddingProviderDisplay = embeddingSelected;
-
-        if (string.IsNullOrEmpty(chatSelected) || !ProviderOptions.Contains(chatSelected))
-            ProviderDisplay = ResolveProviderFallback(
+        // 改名后旧显示名不再存在时：跟随正在编辑的自定义卡片，其次回退到首个具名项。
+        // 未改名 / 改的是别的卡片 → 原选中项仍在，绝不重置。
+        if (!ContainsDisplay(ProviderOptions, chatSelected))
+            chatSelected = ResolveProviderFallback(
                 ProviderOptions,
                 chatSelected,
                 changedRow,
                 ApiKeys
             );
-        if (
-            string.IsNullOrEmpty(embeddingSelected)
-            || !EmbeddingProviderOptions.Contains(embeddingSelected)
-        )
-            EmbeddingProviderDisplay = ResolveProviderFallback(
+        if (ProviderDisplay != chatSelected)
+            ProviderDisplay = chatSelected;
+
+        if (!ContainsDisplay(EmbeddingProviderOptions, embeddingSelected))
+            embeddingSelected = ResolveProviderFallback(
                 EmbeddingProviderOptions,
                 embeddingSelected,
                 changedRow,
                 EmbeddingApiKeys
             );
+        if (EmbeddingProviderDisplay != embeddingSelected)
+            EmbeddingProviderDisplay = embeddingSelected;
     }
+
+    /// <summary>下拉里是否存在该显示名（选项是对象，不能直接对字符串做 Contains）。</summary>
+    private static bool ContainsDisplay(
+        ObservableCollection<ProviderOption> options,
+        string? display
+    ) => display is not null && options.Any(o => o.Display == display);
 
     /// <summary>选中项消失后的回退：改名中的自定义卡片优先，其次首个具名自定义项。</summary>
     private static string ResolveProviderFallback(
-        ObservableCollection<string> options,
+        ObservableCollection<ProviderOption> options,
         string? selected,
         ApiKeyRow? changedRow,
         IReadOnlyList<ApiKeyRow> rows
@@ -1074,15 +1092,18 @@ public sealed class SettingsViewModel : ViewModelBase
         )
         {
             var changedDisplay = changedRow.ProviderDisplay;
-            if (options.Contains(changedDisplay))
+            if (ContainsDisplay(options, changedDisplay))
                 return changedDisplay;
         }
 
         return FallbackCustomDisplay(options);
     }
 
-    private static string FallbackCustomDisplay(ObservableCollection<string> options) =>
-        options.FirstOrDefault(o => o.StartsWith("自定义: ", StringComparison.Ordinal)) ?? "自定义";
+    private static string FallbackCustomDisplay(ObservableCollection<ProviderOption> options) =>
+        options
+            .FirstOrDefault(o => o.Display.StartsWith("自定义: ", StringComparison.Ordinal))
+            ?.Display
+        ?? "自定义";
 
     /// <summary>新建空白密钥行（订阅变更以同步顶部提供商下拉；供「添加密钥」使用）。</summary>
     public ApiKeyRow NewApiKeyRow() => CreateApiKeyRow(new ApiKeyEntry { Provider = "openai" });
@@ -1197,6 +1218,20 @@ public interface IEditToggleRow
     bool IsEditing { get; set; }
 }
 
+/// <summary>
+/// 提供商下拉选项：显示名不可变集合 + 可变文本。
+/// 自定义项改名只更新 <see cref="Display"/>，不触发集合增删——替换集合项会让
+/// ComboBox 先丢失选中项再重新选回，表现为每敲一个字整块卡片抖一下。
+/// </summary>
+public sealed class ProviderOption(string display) : ReactiveObject
+{
+    public string Display
+    {
+        get;
+        set => this.RaiseAndSetIfChanged(ref field, value);
+    } = display;
+}
+
 /// <summary>API Key 行（可编辑）。自定义提供商显示为「自定义: 名称」（对齐 TUI）。</summary>
 public sealed class ApiKeyRow(
     string provider,
@@ -1207,8 +1242,17 @@ public sealed class ApiKeyRow(
 ) : ReactiveObject, IEditToggleRow
 {
     /// <summary>卡片提供商下拉选项（预设显示名 + 末位自定义项，标签随名称变化）。</summary>
-    public ObservableCollection<string> ProviderOptions { get; } =
-    [.. ProviderDefinition.All.Select(d => d.DisplayName), CustomOption(provider, name)];
+    public ObservableCollection<ProviderOption> ProviderOptions { get; } =
+        BuildProviderOptions(provider, name);
+
+    private static ObservableCollection<ProviderOption> BuildProviderOptions(
+        string provider,
+        string? name
+    ) =>
+        [
+            .. ProviderDefinition.All.Select(d => new ProviderOption(d.DisplayName)),
+            new ProviderOption(CustomOption(provider, name)),
+        ];
 
     /// <summary>线路协议选项（决定请求-响应格式）。</summary>
     public static readonly string[] ProtocolOptions =
@@ -1318,12 +1362,13 @@ public sealed class ApiKeyRow(
             ? $"自定义: {name.Trim()}"
             : "自定义";
 
-    /// <summary>末位自定义项标签跟随提供商 / 名称，保证下拉选中项与绑定值一致。</summary>
+    /// <summary>末位自定义项标签跟随提供商 / 名称，保证下拉显示与绑定值一致。</summary>
     private void SyncCustomOption()
     {
         var label = CustomOption(Provider, Name);
-        if (ProviderOptions.Count > 0 && ProviderOptions[^1] != label)
-            ProviderOptions[^1] = label;
+        var customOption = ProviderOptions[^1];
+        if (customOption.Display != label)
+            customOption.Display = label;
         this.RaisePropertyChanged(nameof(IsCustom));
         this.RaisePropertyChanged(nameof(ProviderDisplay));
     }

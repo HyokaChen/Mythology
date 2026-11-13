@@ -76,9 +76,9 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         var vm = new SettingsViewModel(store, null, null).Refresh();
 
         Assert.Equal("自定义: krb", vm.ProviderDisplay);
-        Assert.Contains("自定义: 商汤", vm.ProviderOptions);
-        Assert.Contains("自定义: krb", vm.ProviderOptions);
-        Assert.DoesNotContain(vm.ProviderOptions, option => option == "自定义");
+        Assert.Contains("自定义: 商汤", vm.ProviderOptions.Select(o => o.Display).ToArray());
+        Assert.Contains("自定义: krb", vm.ProviderOptions.Select(o => o.Display).ToArray());
+        Assert.DoesNotContain("自定义", vm.ProviderOptions.Select(o => o.Display).ToArray());
         Assert.Equal("DeepSeek-V4-Flash", vm.Model);
         Assert.Equal("200K", vm.ContextWindow);
         Assert.Equal("自定义: krb", vm.EmbeddingProviderDisplay);
@@ -141,7 +141,7 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
         var vm = new SettingsViewModel(store, null, null).Refresh();
 
         Assert.Equal("自定义: 商汤", vm.ProviderDisplay);
-        Assert.DoesNotContain(vm.ProviderOptions, option => option == "自定义");
+        Assert.DoesNotContain("自定义", vm.ProviderOptions.Select(o => o.Display).ToArray());
 
         vm.SaveCommand.Execute().Subscribe();
         var saved = await WaitForAsync(store, c => c.Providers.Default == "custom:商汤");
@@ -158,13 +158,27 @@ public sealed class SettingsProviderRoundTripTests : IDisposable
 
         row.ProviderDisplay = "自定义";
         Assert.True(row.IsCustom);
-        Assert.Contains("自定义", vm.ProviderOptions);
+        Assert.Contains("自定义", vm.ProviderOptions.Select(o => o.Display).ToArray());
 
+        // 回归：改名不得重建选项集合。集合替换会让 ComboBox 先丢选中项再选回，
+        // 表现为在「名称」里每敲一个字整块卡片抖一下。
+        var topOption = vm.ProviderOptions.Single(o => o.Display == "自定义");
+        var cardOption = row.ProviderOptions[^1];
+        var topChanges = 0;
+        var cardChanges = 0;
+        vm.ProviderOptions.CollectionChanged += (_, _) => topChanges++;
+        row.ProviderOptions.CollectionChanged += (_, _) => cardChanges++;
+
+        row.Name = "商";
         row.Name = "商汤";
 
         Assert.Equal("自定义: 商汤", row.ProviderDisplay);
-        Assert.Contains("自定义: 商汤", vm.ProviderOptions);
-        Assert.DoesNotContain("自定义", vm.ProviderOptions);
+        Assert.Same(topOption, vm.ProviderOptions.Single(o => o.Display == "自定义: 商汤"));
+        Assert.Same(cardOption, row.ProviderOptions[^1]);
+        Assert.Contains("自定义: 商汤", vm.ProviderOptions.Select(o => o.Display).ToArray());
+        Assert.DoesNotContain("自定义", vm.ProviderOptions.Select(o => o.Display).ToArray());
+        Assert.Equal(0, topChanges);
+        Assert.Equal(0, cardChanges);
         // 正在编辑的自定义项改名后，顶部下拉必须跟随，不能跳回裸「自定义」
         Assert.Equal("自定义: 商汤", vm.ProviderDisplay);
     }
