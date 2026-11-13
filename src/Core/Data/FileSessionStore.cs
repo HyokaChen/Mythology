@@ -2521,6 +2521,7 @@ public sealed class FileSessionStore
                 ParentEntryId = dto.ParentId,
                 CreatedAt = timestamp,
                 EventType = eventType,
+                ErrorCode = dto.ErrorCode,
             },
             DisplayText = eventType switch
             {

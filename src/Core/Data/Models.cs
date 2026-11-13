@@ -987,6 +987,9 @@ public class ChatMessage
     /// </summary>
     public SessionEventType? EventType { get; set; }
 
+    /// <summary>错误码（仅 error 事件有值；如 context_overflow / network / 429）。</summary>
+    public string? ErrorCode { get; set; }
+
     /// <summary>
     /// 该 assistant 消息对应 API 调用时的完整上下文 token 数（Prompt+Completion）。
     /// 持久化为 JSONL contextTokens 字段，会话恢复时作为精确估算锚点。

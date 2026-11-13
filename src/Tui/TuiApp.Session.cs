@@ -186,29 +186,6 @@ public sealed partial class TuiApp
             if (!await TryPersistNewMessagesAsync())
                 return;
 
-            // 持久化 error 事件
-            try
-            {
-                await _sessionStore.SaveSessionEvent(
-                    _sessionId,
-                    _agent.CurrentNovelId ?? "",
-                    new SessionEvent
-                    {
-                        EventType = SessionEventType.Error,
-                        ParentEntryId = _lastParentEntryId,
-                        Order = _nextOrder,
-                        ErrorCode = "context_overflow",
-                        Content = "上下文长度超出限制",
-                    },
-                    ct
-                );
-                _nextOrder++;
-            }
-            catch (Exception ex)
-            {
-                HandleSessionPersistenceFailure(ex);
-            }
-
             if (_sessionPersistenceFaulted)
             {
                 _todoStore.RevertInProgressToPending();
@@ -441,9 +418,12 @@ public sealed partial class TuiApp
         try
         {
             var dbMessages = await _sessionStore.GetActiveMessages(sessionId);
-            return dbMessages.Count == 0
+            // context_overflow 是自动恢复的内部信号；旧会话里可能已持久化，
+            // 成功 compact 后不应恢复成红色错误卡。
+            var visible = dbMessages.Where(m => m.ErrorCode != "context_overflow").ToList();
+            return visible.Count == 0
                 ? null
-                : dbMessages.Select(m => MapDbMessageToChatMessage(m, forDisplay: true)).ToArray();
+                : visible.Select(m => MapDbMessageToChatMessage(m, forDisplay: true)).ToArray();
         }
         catch (Exception ex)
         {

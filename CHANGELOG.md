@@ -35,6 +35,10 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **顶部切换胶囊的长标题不再硬切**：小说名/会话名超过胶囊宽度时改为在标题末尾显示 `…`，
+  右侧下拉 chevron 不再被挤出可见区；短标题仍按内容自适应、不会被撑满。根因是 SukiUI 的
+  Button 模板把内容包在水平 StackPanel 里（按无限宽测量子项），`TextTrimming` 不生效，
+  现给标题 TextBlock 加与胶囊预算一致的 `MaxWidth`（148/178）。回归：`HeaderPillLayoutTests`。
 - **compact 不再 31→30 微型压缩，也不再嵌套旧摘要**：自动/溢出压缩改按模型窗口的
   token 预算（`ScaledKeepRecentTokens`）从尾部反扫切割点，并强制完整 user 轮次；
   压缩区低于 `max(2,000, before/10)` 或预计节省不足时返回 `TooSmall`，不写 JSONL。
@@ -53,6 +57,12 @@
   `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_Includes5W1H_AndNext`、
   `ConversationVmContractTests.RetryFromUserMessage_ByEntryId_AfterTwoCompacts_AppendsOnly` /
   `UserMessagePersisted_AssignsEntryIdToLiveBubble`；Core 1645/1645、Desktop 729/729、TUI 904/904（2 skipped）。
+- **旧会话不再显示“调用出错：上下文长度超出限制”**：`context_overflow` 是自动恢复的内部信号，
+  成功 compact 后不应作为用户错误保留。新溢出不再持久化 error 事件；Desktop 的
+  `SessionMessageMapper` 与 TUI 的历史恢复会过滤旧会话里已存在的 `context_overflow` event，
+  只隐藏该错误码，其他网络/HTTP 错误仍正常显示。
+  回归：`FileNovelStoreSessionTests.GetActiveMessages_ErrorEvent_CarriesErrorCode`、
+  `SessionMessageMapperDisplayTests.MapUi_HidesAutoRecoveredContextOverflowError_ButKeepsOtherErrors`。
 - **429/TPM 限流自动指数退避，不再让用户手工“继续”**：429 从原来的 3 次/30s 扩到
   8 次尝试/5min，退避 1s→60s + jitter；5xx/网络瞬断仍保持 3 次/30s、1s→8s。
   等待期间发 `LlmRateLimitWait`，Desktop/TUI 显示“TPM 限流，等待 N 秒后自动重试”，

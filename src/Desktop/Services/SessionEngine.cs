@@ -803,27 +803,6 @@ public sealed class SessionEngine(
             if (!await TryPersistNewMessagesAsync())
                 return;
 
-            try
-            {
-                await store.SaveSessionEvent(
-                    _sessionId,
-                    agent.CurrentNovelId ?? "",
-                    new SessionEvent
-                    {
-                        EventType = SessionEventType.Error,
-                        ParentEntryId = _lastParentEntryId,
-                        Order = _nextOrder,
-                        ErrorCode = "context_overflow",
-                        Content = "上下文长度超出限制",
-                    },
-                    ct
-                );
-                _nextOrder++;
-            }
-            catch (Exception ex)
-            {
-                HandleSessionPersistenceFailure(ex);
-            }
             if (_sessionPersistenceFaulted)
             {
                 todoStore.RevertInProgressToPending();

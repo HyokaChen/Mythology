@@ -1085,6 +1085,45 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>GetActiveMessages 应保留 error-code，供 UI 过滤已自动恢复的 overflow 事件。</summary>
+    public async Task GetActiveMessages_ErrorEvent_CarriesErrorCode()
+    {
+        var messages = CreateSimpleConversation();
+        var lastEntryId = await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            messages,
+            startOrder: 0
+        );
+
+        const string eventEntryId = "evt00003";
+        await _store.SaveSessionEvent(
+            TestSessionId,
+            TestNovelId,
+            new SessionEvent
+            {
+                EntryId = eventEntryId,
+                EventType = SessionEventType.Error,
+                ErrorCode = "context_overflow",
+                Content = "上下文长度超出限制",
+                ParentEntryId = lastEntryId,
+                Order = 2,
+            }
+        );
+        await _store.SaveSessionLeaf(
+            TestSessionId,
+            TestNovelId,
+            new SessionLeaf { TargetId = eventEntryId }
+        );
+
+        var active = await _store.GetActiveMessages(TestSessionId);
+
+        var error = Assert.Single(active, m => m.EventType == SessionEventType.Error);
+        Assert.Equal("context_overflow", error.ErrorCode);
+        Assert.Equal("❌ context_overflow 上下文长度超出限制", error.Content);
+    }
+
+    [Fact]
     /// <summary>GetActiveMessages 应为 model-change 事件设置 EventType 和正确的 Content。</summary>
     public async Task GetActiveMessages_ModelChangeEvent_HasCorrectContent()
     {

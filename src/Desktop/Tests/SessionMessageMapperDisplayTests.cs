@@ -266,6 +266,31 @@ public sealed class SessionMessageMapperDisplayTests
     }
 
     [Fact]
+    public void MapUi_HidesAutoRecoveredContextOverflowError_ButKeepsOtherErrors()
+    {
+        var ui = SessionMessageMapper.MapUi([
+            new Core.Data.ChatMessage
+            {
+                Role = MessageRole.Unknown,
+                EventType = SessionEventType.Error,
+                ErrorCode = "context_overflow",
+                Content = "❌ context_overflow 上下文长度超出限制",
+            },
+            new Core.Data.ChatMessage
+            {
+                Role = MessageRole.Unknown,
+                EventType = SessionEventType.Error,
+                ErrorCode = "network",
+                Content = "❌ network boom",
+            },
+        ]);
+
+        var msg = Assert.Single(ui);
+        Assert.Equal(MessageSender.System, msg.Sender);
+        Assert.Contains("network", msg.Content.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MapUi_KeepsRealUserMessage_AndDropsEmptyUser()
     {
         var ui = SessionMessageMapper.MapUi([

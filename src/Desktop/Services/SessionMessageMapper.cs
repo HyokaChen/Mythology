@@ -49,6 +49,11 @@ public static class SessionMessageMapper
             var m = msgs[i];
             var text = m.Content ?? "";
 
+            // context_overflow 是自动恢复的内部信号：旧会话里可能已持久化，
+            // 但成功 compact 后不应再作为“调用出错”系统行出现。
+            if (m.ErrorCode == "context_overflow")
+                continue;
+
             switch (m.Role)
             {
                 case MessageRole.User when m.EventType == SessionEventType.Compact:
