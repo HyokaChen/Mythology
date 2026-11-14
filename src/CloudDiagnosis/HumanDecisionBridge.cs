@@ -78,6 +78,13 @@ public sealed class HumanDecisionBridge
     /// <summary>已对低阈值裁决授权“按建议继续自动迭代”的作品；进程会话级。</summary>
     private readonly HashSet<string> _authorizedNovels = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 已由作者回答过的章节裁决（novelId + 章节序 + 问题）；用于阻止同一章在连续
+    /// 批量改写中反复弹同一张决策卡。只在进程内有效，跨进程由 DecisionHistory 统计兜底。
+    /// </summary>
+    private readonly Dictionary<string, string> _answeredDecisions = new(StringComparer.Ordinal);
+    private readonly object _decisionGate = new();
+
     /// <summary>默认模板兜底首项（§5.2）：语义 = 采纳建议（U-2 结构化分类依据）。</summary>
     private const string ContinueOption = "按建议继续自动迭代";
 
@@ -234,6 +241,30 @@ public sealed class HumanDecisionBridge
     }
 
     /// <summary>
+    /// 同一章、同一问题已被作者回答时返回继续文本；调用方应在消费决策名额前先用它，
+    /// 避免连续段落改写把同一张决策卡再弹一次。章节序变化后自然失效。
+    /// </summary>
+    public string? TryGetRepeatedDecision(
+        string? novelId,
+        int chapterOrder,
+        DiagnosisReport outcome
+    )
+    {
+        if (string.IsNullOrEmpty(novelId))
+            return null;
+
+        var key = DecisionKey(novelId, chapterOrder, BuildQuestion(outcome).Question);
+        string? answer;
+        lock (_decisionGate)
+            _answeredDecisions.TryGetValue(key, out answer);
+        if (answer is null)
+            return null;
+
+        return $"{SignalBuilder.Prefix} 本章已按上次人工裁决“{OneLine(answer)}”继续处理，"
+            + "不再重复询问；请继续按该方向修改，不要停下来等待确认。";
+    }
+
+    /// <summary>
     /// 执行人工裁决全流程。返回 InjectQueue 注入文本：
     /// 收到回答 → 「[人工裁决] …」；超时未答 → 挂起轻信号（问题留存 store）。
     /// 用户取消（ct）时 OperationCanceledException 向上抛出（§12 红线 5）。
@@ -241,12 +272,16 @@ public sealed class HumanDecisionBridge
     public async Task<string> DecideAsync(
         DiagnosisReport outcome,
         CancellationToken ct,
-        string? novelId = null
+        string? novelId = null,
+        int chapterOrder = 0
     )
     {
         ct.ThrowIfCancellationRequested();
         if (TryAutoContinue(outcome, novelId) is { } autoVerdict)
             return autoVerdict;
+
+        if (TryGetRepeatedDecision(novelId, chapterOrder, outcome) is { } repeated)
+            return repeated;
 
         var question = BuildQuestion(outcome);
         var created = _hub.CreateQuestionSet(_hub.CurrentContext, [question]);
@@ -291,10 +326,17 @@ public sealed class HumanDecisionBridge
             && outcome.Action == "ask-author"
             && !string.IsNullOrEmpty(novelId)
             && _authorizedNovels.Add(novelId);
+        var answerText = string.Join("、", answers);
+        if (!string.IsNullOrEmpty(novelId))
+        {
+            lock (_decisionGate)
+                _answeredDecisions[DecisionKey(novelId, chapterOrder, question.Question)] =
+                    answerText;
+        }
         RecordDecision(
             novelId ?? "",
             question.Question,
-            string.Join("、", answers),
+            answerText,
             outcome.Score ?? 0,
             answerKind: answerKind
         );
@@ -329,6 +371,19 @@ public sealed class HumanDecisionBridge
             MultiSelect = false,
         };
     }
+
+    /// <summary>同一章同一问题的去重键；章节序变化后旧回答自然失效。</summary>
+    private static string DecisionKey(string novelId, int chapterOrder, string question) =>
+        string.Join(
+            '\u001f',
+            novelId,
+            chapterOrder.ToString(CultureInfo.InvariantCulture),
+            question
+        );
+
+    /// <summary>把答案压成单行，避免自定义答案里的换行污染注入文本。</summary>
+    private static string OneLine(string value) =>
+        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     // ── DecisionHistory 持久化（vectors.db decision_history 表；读写失败告警降级、不动已有表）──
 

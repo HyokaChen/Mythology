@@ -178,6 +178,40 @@ public sealed class HumanDecisionBridgeTests
     }
 
     [Fact]
+    public async Task DecideAsync_SameChapterQuestion_ReusesAnswer()
+    {
+        var store = new DecisionTestStore();
+        var bridge = new HumanDecisionBridge(store, decisionTimeoutSeconds: 120);
+
+        var firstTask = bridge.DecideAsync(Decision, CancellationToken.None, "n1", chapterOrder: 8);
+        for (var i = 0; i < 100 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        var firstPending = Assert.Single(store.GetPending());
+        Assert.True(store.Answer(firstPending.Id, ["先修改本章"]));
+        await firstTask;
+
+        // 同一章、同一问题：不再创建第二张问题，只注入继续文本。
+        var repeated = await bridge.DecideAsync(
+            Decision,
+            CancellationToken.None,
+            "n1",
+            chapterOrder: 8
+        );
+        Assert.Contains("不再重复询问", repeated);
+        Assert.Contains("先修改本章", repeated);
+        Assert.Empty(store.GetPending());
+        Assert.Single(bridge.DecisionHistory);
+
+        // 换章后是新的决策，不继承上一章的回答。
+        var nextTask = bridge.DecideAsync(Decision, CancellationToken.None, "n1", chapterOrder: 9);
+        for (var i = 0; i < 100 && store.GetPending().Count == 0; i++)
+            await Task.Delay(10);
+        var nextPending = Assert.Single(store.GetPending());
+        Assert.True(store.Answer(nextPending.Id, ["先修改本章"]));
+        await nextTask;
+    }
+
+    [Fact]
     public async Task TryAutoContinue_RequiresPriorAuthorization()
     {
         var store = new DecisionTestStore();

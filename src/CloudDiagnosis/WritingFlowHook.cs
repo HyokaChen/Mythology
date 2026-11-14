@@ -598,6 +598,17 @@ public sealed class WritingFlowHook(
                 return true; // 不是人工介入，不 NotifyIntervention
             }
 
+            // 同一章同一问题已经回答过：连续段落改写不再弹第二张决策卡，也不消耗决策名额。
+            if (
+                bridge.TryGetRepeatedDecision(input.NovelId, input.ChapterOrder, decisionOutcome) is
+                { } repeated
+            )
+            {
+                agent.InjectQueue.Enqueue(new LlmChatMessage(ChatMessageRoles.User, repeated));
+                _monotony?.NotifyIntervention();
+                return true;
+            }
+
             // P3 DECISION 前置过滤（§16.2）：角色完整性 + 小说早期（阈值可配，U-3）
             var skipReason = HumanDecisionBridge.ShouldSkipDecision(
                 decisionOutcome,
@@ -633,7 +644,12 @@ public sealed class WritingFlowHook(
                 return true;
             }
 
-            var verdict = await bridge.DecideAsync(decisionOutcome, ct, input.NovelId);
+            var verdict = await bridge.DecideAsync(
+                decisionOutcome,
+                ct,
+                input.NovelId,
+                input.ChapterOrder
+            );
             if (!string.IsNullOrEmpty(verdict))
                 agent.InjectQueue.Enqueue(new LlmChatMessage(ChatMessageRoles.User, verdict));
             _monotony?.NotifyIntervention();
