@@ -44,6 +44,10 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
         var createdNames = new List<string>(args.Locations.Count);
         var failed = new List<string>();
         var existing = await store.GetLocations(args.NovelId, ct);
+        var seenNames = new HashSet<string>(
+            existing.Select(l => l.Name.Trim()),
+            StringComparer.OrdinalIgnoreCase
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个地点草稿，逐个创建
@@ -52,6 +56,12 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
             if (string.IsNullOrWhiteSpace(l.Name))
             {
                 failed.Add("(空名称)");
+                continue;
+            }
+            var name = l.Name.Trim();
+            if (!seenNames.Add(name))
+            {
+                failed.Add($"{name}: 地点名已存在或在本批次重复");
                 continue;
             }
 
@@ -79,7 +89,7 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
             var type = LocationType.City;
             if (!string.IsNullOrWhiteSpace(l.Type))
             {
-                if (!Enum.TryParse<LocationType>(l.Type, ignoreCase: true, out type))
+                if (!NovelEnum.TryParse<LocationType>(l.Type, out type))
                 {
                     failed.Add($"{l.Name.Trim()}: 未知地点类型 {l.Type}");
                     continue;
@@ -90,7 +100,7 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
             var location = new Location
             {
                 NovelId = args.NovelId,
-                Name = l.Name.Trim(),
+                Name = name,
                 Type = type,
                 Atmosphere = l.Atmosphere ?? "",
                 Description = l.Description ?? "",

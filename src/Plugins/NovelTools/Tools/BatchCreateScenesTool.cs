@@ -45,7 +45,18 @@ public sealed class BatchCreateScenesTool(INovelStore store)
         var characters = await store.GetCharacters(args.NovelId, ct);
         var plotlines = await store.GetPlotlines(args.NovelId, ct);
         ThrowIfCancelled(ct);
-        var nextOrder = existingScenes.Count > 0 ? existingScenes.Max(s => s.Order) + 1 : 1;
+        var usedOrdersByChapter = existingScenes
+            .GroupBy(s => s.ChapterId ?? "")
+            .ToDictionary(
+                g => g.Key,
+                g => new HashSet<int>(g.Select(s => s.Order)),
+                StringComparer.Ordinal
+            );
+        var nextOrderByChapter = usedOrdersByChapter.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Count == 0 ? 1 : kvp.Value.Max() + 1,
+            StringComparer.Ordinal
+        );
 
         // 初始化结果收集器
         var createdIds = new List<string>(args.Scenes.Count);
@@ -62,12 +73,13 @@ public sealed class BatchCreateScenesTool(INovelStore store)
                 continue;
             }
 
-            var resolvedChapterId = ResolveChapterId(chapters, s.ChapterId);
-            if (resolvedChapterId is null && !string.IsNullOrWhiteSpace(s.ChapterId))
+            var chapterLookup = NovelReferenceResolver.FindChapterLookup(chapters, s.ChapterId);
+            if (chapterLookup.Value is null && !string.IsNullOrWhiteSpace(s.ChapterId))
             {
-                failed.Add($"{s.Title.Trim()}: 章节 {s.ChapterId} 不存在");
+                failed.Add($"{s.Title.Trim()}: {chapterLookup.Error}");
                 continue;
             }
+            var resolvedChapterId = chapterLookup.Value?.Id;
             var locationId = s.LocationId;
             if (!string.IsNullOrWhiteSpace(locationId))
             {
@@ -116,13 +128,34 @@ public sealed class BatchCreateScenesTool(INovelStore store)
                 sceneType = parsedType;
             }
 
+            var chapterKey = resolvedChapterId ?? "";
+            if (!usedOrdersByChapter.TryGetValue(chapterKey, out var usedOrders))
+            {
+                usedOrders = [];
+                usedOrdersByChapter[chapterKey] = usedOrders;
+                nextOrderByChapter[chapterKey] = 1;
+            }
+            var sceneOrder = s.Order ?? nextOrderByChapter[chapterKey];
+            if (sceneOrder <= 0)
+            {
+                failed.Add($"{s.Title.Trim()}: 场景序号必须从 1 开始");
+                continue;
+            }
+            if (!usedOrders.Add(sceneOrder))
+            {
+                failed.Add($"{s.Title.Trim()}: 场景序号 {sceneOrder} 已存在");
+                continue;
+            }
+            if (sceneOrder >= nextOrderByChapter[chapterKey])
+                nextOrderByChapter[chapterKey] = sceneOrder + 1;
+
             // 构建 SceneDefinition 实体，自动补全默认值
             var scene = new SceneDefinition
             {
                 NovelId = args.NovelId,
                 ChapterId = resolvedChapterId,
                 Title = s.Title.Trim(),
-                Order = s.Order ?? nextOrder + i,
+                Order = sceneOrder,
                 LocationId = locationId,
                 TimeDescription = s.TimeDescription ?? "",
                 ParticipantIds = participantIds,
@@ -167,19 +200,6 @@ public sealed class BatchCreateScenesTool(INovelStore store)
         };
     }
 
-    /// <summary>章节序号或 ID → 当前小说的真实章节 ID；未找到返回 null。</summary>
-    private static string? ResolveChapterId(IReadOnlyList<Chapter> chapters, string? idOrOrder)
-    {
-        if (string.IsNullOrWhiteSpace(idOrOrder))
-            return null;
-        if (int.TryParse(idOrOrder, out var order))
-        {
-            var byOrder = chapters.FirstOrDefault(c => c.Order == order);
-            return byOrder?.Id;
-        }
-        return chapters.FirstOrDefault(c => c.Id == idOrOrder)?.Id;
-    }
-
     /// <summary>把 ID/名称列表解析为真实 ID；任一未找到返回 null。</summary>
     private static List<string>? ResolveEntityIds<T>(
         IReadOnlyList<T> entities,
@@ -204,14 +224,7 @@ public sealed class BatchCreateScenesTool(INovelStore store)
 
     /// <summary>解析场景类型字符串；未知值返回 null，由调用方报错。</summary>
     private static SceneType? ParseSceneType(string? type) =>
-        type?.Trim().ToLowerInvariant() switch
-        {
-            "action" => SceneType.Action,
-            "dialogue" => SceneType.Dialogue,
-            "reflection" => SceneType.Reflection,
-            "transition" => SceneType.Transition,
-            _ => null,
-        };
+        NovelEnum.TryParse<SceneType>(type, out var sceneType) ? sceneType : null;
 }
 
 public sealed record BatchCreateScenesParams

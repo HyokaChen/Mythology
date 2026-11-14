@@ -56,16 +56,16 @@ public sealed class ManageVolumeTool(INovelStore store)
     /// 将卷序号或 ID 解析为真实的分卷。
     /// AI 可能传入序号（如 "2"）而非 ID，与 ManageSceneTool 的序号解析保持一致。
     /// </summary>
-    private async Task<Volume?> ResolveVolume(ManageVolumeParams args)
+    private async Task<NovelReferenceResolver.Lookup<Volume>> ResolveVolume(ManageVolumeParams args)
     {
         if (string.IsNullOrEmpty(args.VolumeId) || string.IsNullOrEmpty(args.NovelId))
-            return null;
-
-        if (!int.TryParse(args.VolumeId, out var order))
-            return await store.GetVolume(args.NovelId, args.VolumeId);
-
-        var volumes = await store.GetVolumes(args.NovelId);
-        return volumes.Find(v => v.Order == order);
+            return new NovelReferenceResolver.Lookup<Volume>(null, "分卷引用为空");
+        return await NovelReferenceResolver.VolumeLookupAsync(
+            store,
+            args.NovelId,
+            args.VolumeId,
+            default
+        );
     }
 
     /// <summary>创建分卷。</summary>
@@ -77,6 +77,17 @@ public sealed class ManageVolumeTool(INovelStore store)
             return Error("创建分卷需要 novel-id");
 
         var volumes = await store.GetVolumes(args.NovelId);
+        var order = args.Order ?? ChapterOrdering.NextVolumeOrder(volumes);
+        if (order <= 0)
+            return Error("卷序号必须从 1 开始");
+        if (volumes.Any(v => v.Order == order))
+            return Error($"第 {order} 卷已存在，卷序号不能重复");
+        if (
+            volumes.Any(v =>
+                string.Equals(v.Name.Trim(), args.Name.Trim(), StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"分卷名「{args.Name.Trim()}」已存在，请换一个名称");
         var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
         if (plotlineIds is null)
             return Error("情节线列表中有情节线不存在");
@@ -86,8 +97,8 @@ public sealed class ManageVolumeTool(INovelStore store)
         var volume = new Volume
         {
             NovelId = args.NovelId,
-            Name = args.Name,
-            Order = args.Order ?? (volumes.Count == 0 ? 1 : volumes.Max(v => v.Order) + 1),
+            Name = args.Name.Trim(),
+            Order = order,
             Summary = args.Summary ?? "",
             Description = args.Description ?? "",
             Goal = args.Goal ?? "",
@@ -109,34 +120,63 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (string.IsNullOrEmpty(args.VolumeId))
             return Error("更新分卷需要 volume-id");
 
-        var volume = await ResolveVolume(args);
+        var lookup = await ResolveVolume(args);
+        var volume = lookup.Value;
         if (volume is null)
-            return Error($"分卷 {args.VolumeId} 不存在（可用 list 查看序号或 ID）");
+            return Error(lookup.Error ?? $"分卷 {args.VolumeId} 不存在");
 
+        var newName = volume.Name;
         if (args.Name is not null)
-            volume.Name = args.Name;
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("分卷名不能为空");
+            newName = args.Name.Trim();
+            var volumes = await store.GetVolumes(args.NovelId);
+            if (
+                volumes.Any(v =>
+                    v.Id != volume.Id
+                    && string.Equals(v.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"分卷名「{newName}」已存在，请换一个名称");
+        }
+        var newOrder = volume.Order;
         if (args.Order is not null)
-            volume.Order = args.Order.Value;
+        {
+            if (args.Order.Value <= 0)
+                return Error("卷序号必须从 1 开始");
+            var volumes = await store.GetVolumes(args.NovelId);
+            if (volumes.Any(v => v.Id != volume.Id && v.Order == args.Order.Value))
+                return Error($"第 {args.Order.Value} 卷已存在，卷序号不能重复");
+            newOrder = args.Order.Value;
+        }
+        List<string>? newPlotlineIds = null;
+        if (args.PlotlineIds is not null)
+        {
+            newPlotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
+            if (newPlotlineIds is null)
+                return Error("情节线列表中有情节线不存在");
+        }
+        List<string>? newCharacterIds = null;
+        if (args.CharacterIds is not null)
+        {
+            newCharacterIds = await ResolveCharacterIds(args.NovelId, args.CharacterIds);
+            if (newCharacterIds is null)
+                return Error("角色列表中有角色不存在");
+        }
+
+        volume.Name = newName;
+        volume.Order = newOrder;
         if (args.Summary is not null)
             volume.Summary = args.Summary;
         if (args.Description is not null)
             volume.Description = args.Description;
         if (args.Goal is not null)
             volume.Goal = args.Goal;
-        if (args.PlotlineIds is not null)
-        {
-            var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
-            if (plotlineIds is null)
-                return Error("情节线列表中有情节线不存在");
-            volume.PlotlineIds = plotlineIds;
-        }
-        if (args.CharacterIds is not null)
-        {
-            var characterIds = await ResolveCharacterIds(args.NovelId, args.CharacterIds);
-            if (characterIds is null)
-                return Error("角色列表中有角色不存在");
-            volume.CharacterIds = characterIds;
-        }
+        if (newPlotlineIds is not null)
+            volume.PlotlineIds = newPlotlineIds;
+        if (newCharacterIds is not null)
+            volume.CharacterIds = newCharacterIds;
         if (args.Notes is not null)
             volume.Notes = args.Notes;
 
@@ -150,9 +190,10 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (string.IsNullOrEmpty(args.VolumeId))
             return Error("删除分卷需要 volume-id");
 
-        var volume = await ResolveVolume(args);
+        var lookup = await ResolveVolume(args);
+        var volume = lookup.Value;
         if (volume is null)
-            return Error($"分卷 {args.VolumeId} 不存在（可用 list 查看序号或 ID）");
+            return Error(lookup.Error ?? $"分卷 {args.VolumeId} 不存在");
 
         var name = volume.Name;
         await store.DeleteVolume(volume.NovelId, volume.Id);
@@ -165,9 +206,10 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (string.IsNullOrEmpty(args.VolumeId))
             return Error("获取分卷需要 volume-id");
 
-        var volume = await ResolveVolume(args);
+        var lookup = await ResolveVolume(args);
+        var volume = lookup.Value;
         if (volume is null)
-            return Error($"分卷 {args.VolumeId} 不存在（可用 list 查看序号或 ID）");
+            return Error(lookup.Error ?? $"分卷 {args.VolumeId} 不存在");
 
         var chapters = (await store.GetChapters(volume.NovelId))
             .Where(c => c.VolumeId == volume.Id)
@@ -219,6 +261,7 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (values is null || values.Count == 0)
             return [];
         var result = new List<string>(values.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in values)
         {
             var plotline = await NovelReferenceResolver.PlotlineAsync(
@@ -229,7 +272,8 @@ public sealed class ManageVolumeTool(INovelStore store)
             );
             if (plotline is null)
                 return null;
-            result.Add(plotline.Id);
+            if (seen.Add(plotline.Id))
+                result.Add(plotline.Id);
         }
         return result;
     }
@@ -242,6 +286,7 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (values is null || values.Count == 0)
             return [];
         var result = new List<string>(values.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in values)
         {
             var character = await NovelReferenceResolver.CharacterAsync(
@@ -252,7 +297,8 @@ public sealed class ManageVolumeTool(INovelStore store)
             );
             if (character is null)
                 return null;
-            result.Add(character.Id);
+            if (seen.Add(character.Id))
+                result.Add(character.Id);
         }
         return result;
     }

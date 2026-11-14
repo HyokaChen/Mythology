@@ -45,9 +45,18 @@ public sealed class CheckWorldRulesTool(INovelStore store, Agent? agent = null)
                 return Error($"未找到小说（novel_id={novelId}）");
 
             var chapters = await store.GetChapters(novelId, ct);
-            var chapter = !string.IsNullOrWhiteSpace(args.ChapterId)
-                ? chapters.FirstOrDefault(c => c.Id == args.ChapterId)
-                : chapters.OrderBy(c => c.Order).LastOrDefault();
+            Chapter? chapter;
+            if (!string.IsNullOrWhiteSpace(args.ChapterId))
+            {
+                var lookup = NovelReferenceResolver.FindChapterLookup(chapters, args.ChapterId);
+                if (lookup.Value is null)
+                    return Error(lookup.Error ?? "没有可检查的章节");
+                chapter = lookup.Value;
+            }
+            else
+            {
+                chapter = chapters.OrderBy(c => c.Order).LastOrDefault();
+            }
             if (chapter is null)
                 return Error("没有可检查的章节");
 

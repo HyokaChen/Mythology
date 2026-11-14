@@ -79,6 +79,15 @@ public sealed class ManageRelationshipTool(INovelStore store)
         if (string.Equals(characterAId, characterBId, StringComparison.Ordinal))
             return Error("关系两端不能是同一个角色");
 
+        var existingRelationships = await store.GetRelationshipsByNovel(args.NovelId);
+        if (
+            existingRelationships.Any(r =>
+                (r.CharacterAId == characterAId && r.CharacterBId == characterBId)
+                || (r.CharacterAId == characterBId && r.CharacterBId == characterAId)
+            )
+        )
+            return Error("这两个角色之间已有关系记录，请更新旧关系而不是重复创建");
+
         var type = RelationshipType.Friend;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
@@ -89,7 +98,7 @@ public sealed class ManageRelationshipTool(INovelStore store)
         var strength = RelationshipStrength.Medium;
         if (!string.IsNullOrWhiteSpace(args.Strength))
         {
-            if (!Enum.TryParse<RelationshipStrength>(args.Strength, ignoreCase: true, out strength))
+            if (!NovelEnum.TryParse<RelationshipStrength>(args.Strength, out strength))
                 return Error($"未知关系强度: {args.Strength}");
         }
 
@@ -122,14 +131,20 @@ public sealed class ManageRelationshipTool(INovelStore store)
 
         var changes = new List<string>();
         var newType = RelationshipTypeExtensions.ParseRelationshipType(args.Type);
+        if (args.Type is not null && newType is null)
+            return Error($"未知关系类型: {args.Type}");
 
-        var newStrength = Enum.TryParse<RelationshipStrength>(
+        var newStrength = NovelEnum.TryParse<RelationshipStrength>(
             args.Strength,
-            ignoreCase: true,
             out var parsedStrength
         )
             ? parsedStrength
             : (RelationshipStrength?)null;
+        if (
+            !string.IsNullOrWhiteSpace(args.Strength)
+            && newStrength is null
+        )
+            return Error($"未知关系强度: {args.Strength}");
 
         if (newType is not null && newType != rel.Type)
             changes.Add($"类型: {rel.Type.ToKebabCaseString()} → {ManageHelper.Diff(args.Type)}");

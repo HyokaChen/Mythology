@@ -47,6 +47,22 @@ public class BatchCreateFactionsToolTests
     /// <summary>有效输入应创建所有组织。</summary>
     public async Task ExecuteAsync_AllValid_CreatesAllFactions()
     {
+        await _store.SaveCharacter(
+            new Core.Data.Character
+            {
+                Id = "c1",
+                NovelId = "novel-1",
+                Name = "张三",
+            }
+        );
+        await _store.SaveCharacter(
+            new Core.Data.Character
+            {
+                Id = "c2",
+                NovelId = "novel-1",
+                Name = "李四",
+            }
+        );
         var tool = CreateTool();
         var args = new BatchCreateFactionsParams
         {
@@ -65,5 +81,8 @@ public class BatchCreateFactionsToolTests
         Assert.Equal(2, details.CreatedCount);
         Assert.Equal(2, details.CreatedIds.Length);
         Assert.Equal(0, details.FailedCount);
+        var factions = await _store.GetFactions("novel-1");
+        Assert.Equal("c1", factions.Single(f => f.Name == "宗门A").Leader);
+        Assert.Equal("c2", factions.Single(f => f.Name == "宗门B").Leader);
     }
 }

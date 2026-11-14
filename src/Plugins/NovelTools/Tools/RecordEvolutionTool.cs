@@ -3,7 +3,6 @@ using Core.Data;
 using Core.Evolution;
 using Core.Shared;
 using Core.Tools;
-using EntityTypeEnum = Core.Data.EntityType;
 
 namespace Plugins.NovelTools.Tools;
 
@@ -41,14 +40,27 @@ public sealed class RecordEvolutionTool(INovelStore store)
         if (string.IsNullOrWhiteSpace(args.ChapterId))
             return Error("必须提供章节 ID（chapter_id）");
 
-        var chapter = await store.GetChapter(args.NovelId, args.ChapterId, ct);
+        var chapterLookup = await NovelReferenceResolver.ChapterLookupAsync(
+            store,
+            args.NovelId,
+            args.ChapterId,
+            ct
+        );
+        var chapter = chapterLookup.Value;
         ThrowIfCancelled(ct);
         if (chapter is null)
-            return Error($"章节 {args.ChapterId} 不存在");
+            return Error(chapterLookup.Error ?? $"章节 {args.ChapterId} 不存在");
 
-        var targetId = await ResolveTargetIdAsync(args.NovelId, args.TargetType, args.TargetId, ct);
+        var targetLookup = await NovelReferenceResolver.EntityIdAsync(
+            store,
+            args.NovelId,
+            args.TargetType,
+            args.TargetId,
+            ct
+        );
+        var targetId = targetLookup.Value;
         if (targetId is null)
-            return Error($"{args.TargetType} {args.TargetId} 不存在");
+            return Error(targetLookup.Error ?? $"{args.TargetType} {args.TargetId} 不存在");
 
         var novel = await store.GetNovel(args.NovelId, ct);
         var chapterChanges = (await store.GetEntityStateChanges(args.NovelId, ct))
@@ -73,13 +85,25 @@ public sealed class RecordEvolutionTool(INovelStore store)
         {
             foreach (var raw in args.Effects)
             {
+                var effectTargetRef = string.IsNullOrWhiteSpace(raw.TargetId)
+                    ? targetId
+                    : raw.TargetId;
+                var effectTargetLookup = await NovelReferenceResolver.EntityIdAsync(
+                    store,
+                    args.NovelId,
+                    raw.TargetType,
+                    effectTargetRef,
+                    ct
+                );
+                if (effectTargetLookup.Value is not { } effectTargetId)
+                    return Error(
+                        $"状态效果目标无效：{effectTargetLookup.Error ?? effectTargetRef}"
+                    );
                 effects.Add(
                     new StateEffect
                     {
                         TargetType = raw.TargetType,
-                        TargetId = string.IsNullOrWhiteSpace(raw.TargetId)
-                            ? targetId
-                            : raw.TargetId,
+                        TargetId = effectTargetId,
                         Field = raw.Field,
                         Operation = raw.Operation,
                         Value = raw.Value,
@@ -96,7 +120,7 @@ public sealed class RecordEvolutionTool(INovelStore store)
                 new StateEffect
                 {
                     TargetType = args.TargetType,
-                    TargetId = args.TargetId,
+                    TargetId = targetId,
                     Field = "status",
                     Operation = StateEffectOperation.Set,
                     Value = args.ToValue ?? args.To,
@@ -109,14 +133,6 @@ public sealed class RecordEvolutionTool(INovelStore store)
             var error = StateEffectValidator.Validate(effect, novel);
             if (error is not null)
                 return Error($"状态效果非法：{error}");
-            var effectTarget = await ResolveTargetIdAsync(
-                args.NovelId,
-                effect.TargetType,
-                effect.TargetId,
-                ct
-            );
-            if (effectTarget is null)
-                return Error($"状态效果目标 {effect.TargetType} {effect.TargetId} 不存在");
         }
 
         // 2. 章内顺序与上下文
@@ -127,9 +143,22 @@ public sealed class RecordEvolutionTool(INovelStore store)
         SceneDefinition? targetScene;
         if (!string.IsNullOrWhiteSpace(args.SceneId))
         {
-            targetScene = scenes.FirstOrDefault(s =>
-                string.Equals(s.Id, args.SceneId, StringComparison.Ordinal)
+            targetScene = NovelReferenceResolver.FindByIdOrName(
+                scenes,
+                args.SceneId,
+                s => s.Id,
+                s => s.Title
             );
+            if (
+                targetScene is null
+                && NovelReferenceResolver.TryParseOrder(args.SceneId, out var sceneOrder)
+            )
+            {
+                var byOrder = scenes.Where(s => s.Order == sceneOrder).ToList();
+                if (byOrder.Count > 1)
+                    return Error($"第 {sceneOrder} 场在本章有 {byOrder.Count} 个，请改用场景 ID");
+                targetScene = byOrder.FirstOrDefault();
+            }
             if (targetScene is null)
                 return Error($"场景 {args.SceneId} 不存在于本章");
         }
@@ -276,7 +305,7 @@ public sealed class RecordEvolutionTool(INovelStore store)
                 Content =
                 [
                     new TextContent(
-                        $"已生效：{args.TargetType} {args.TargetId} @ {chapter.Title} — {summary}"
+                        $"已生效：{args.TargetType} {targetId} @ {chapter.Title} — {summary}"
                             + $"（联动 {result.AppliedSuggestionCount} 条）"
                     ),
                 ],
@@ -297,7 +326,7 @@ public sealed class RecordEvolutionTool(INovelStore store)
             Content =
             [
                 new TextContent(
-                    $"待发布：{args.TargetType} {args.TargetId} @ {chapter.Title} — {summary}"
+                    $"待发布：{args.TargetType} {targetId} @ {chapter.Title} — {summary}"
                         + "（章节发布时统一应用）"
                 ),
             ],
@@ -321,39 +350,6 @@ public sealed class RecordEvolutionTool(INovelStore store)
             _ => ChangeVisibility.Public,
         };
 
-    private async Task<string?> ResolveTargetIdAsync(
-        string novelId,
-        EntityType type,
-        string? id,
-        CancellationToken ct
-    ) =>
-        type switch
-        {
-            EntityTypeEnum.Character => (
-                await NovelReferenceResolver.CharacterAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Location => (
-                await NovelReferenceResolver.LocationAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Faction => (
-                await NovelReferenceResolver.FactionAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Item => (
-                await NovelReferenceResolver.ItemAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Plotline => (
-                await NovelReferenceResolver.PlotlineAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Scene => (
-                await NovelReferenceResolver.SceneAsync(store, novelId, id, ct)
-            )?.Id,
-            EntityTypeEnum.Chapter => (await store.GetChapter(novelId, id ?? "", ct))?.Id,
-            EntityTypeEnum.Relationship => (await store.GetRelationship(novelId, id ?? "", ct))?.Id,
-            EntityTypeEnum.Volume => (await store.GetVolume(novelId, id ?? "", ct))?.Id,
-            EntityTypeEnum.Novel => (await store.GetNovel(id ?? "", ct))?.Id,
-            _ => null,
-        };
-
     private static AgentToolResult<RecordEvolutionDetails> Error(string message) =>
         new() { Content = [new TextContent(message)], IsError = true };
 }
@@ -363,13 +359,13 @@ public sealed record RecordEvolutionParams
     [Description("小说项目ID，留空则自动使用当前项目")]
     public string NovelId { get; init; } = "";
 
-    [Description("目标实体 ID（GUID）")]
+    [Description("目标实体 ID 或名称")]
     public string TargetId { get; init; } = "";
 
     [Description("目标实体类型：character/location/faction/item/plotline/scene/relationship")]
     public EntityType TargetType { get; init; } = EntityType.Character;
 
-    [Description("章节 ID（GUID 或章节号）")]
+    [Description("章节 ID、章节号或标题")]
     public string ChapterId { get; init; } = "";
 
     [Description(
@@ -557,10 +553,21 @@ public sealed class UndoManualStateChangeTool(INovelStore store)
         if (string.IsNullOrWhiteSpace(args.EntityId) || string.IsNullOrWhiteSpace(args.Field))
             return Error("必须提供 entity_type/entity_id/field");
 
+        var entityLookup = await NovelReferenceResolver.EntityAsync(
+            store,
+            args.NovelId,
+            args.EntityType,
+            args.EntityId,
+            ct
+        );
+        if (entityLookup.Value is not { } entity)
+            return Error(entityLookup.Error ?? "实体不存在");
+        var entityId = entity.Id;
+
         var manual = (await store.GetManualStateChanges(args.NovelId, ct))
             .Where(c =>
                 c.TargetEntityType == args.EntityType
-                && string.Equals(c.TargetId, args.EntityId, StringComparison.Ordinal)
+                && string.Equals(c.TargetId, entityId, StringComparison.Ordinal)
                 && c.Effects.Any(e =>
                     string.Equals(
                         StateEffectValidator.Normalize(e).Field,
@@ -585,14 +592,10 @@ public sealed class UndoManualStateChangeTool(INovelStore store)
         if (string.IsNullOrEmpty(effect.From))
             return Error("该设定变更没有记录前值，无法自动撤销");
 
-        var entity = await LoadEntityAsync(args.NovelId, args.EntityType, args.EntityId, ct);
-        if (entity is null)
-            return Error("实体不存在");
-
         var inverse = new StateEffect
         {
             TargetType = args.EntityType,
-            TargetId = args.EntityId,
+            TargetId = entityId,
             Field = effect.Field,
             Operation = StateEffectOperation.Set,
             Value = effect.From,
@@ -622,35 +625,17 @@ public sealed class UndoManualStateChangeTool(INovelStore store)
             Content =
             [
                 new TextContent(
-                    $"已撤销：{args.EntityType.ToKebabCaseString()} {args.EntityId} {effect.Field} {effect.Value} → {effect.From}"
+                    $"已撤销：{args.EntityType.ToKebabCaseString()} {entityId} {effect.Field} {effect.Value} → {effect.From}"
                 ),
             ],
             Details = new UndoManualStateChangeDetails
             {
-                EntityId = args.EntityId,
+                EntityId = entityId,
                 Field = effect.Field,
                 RestoredValue = effect.From,
             },
         };
     }
-
-    private async Task<Entity?> LoadEntityAsync(
-        string novelId,
-        EntityType type,
-        string id,
-        CancellationToken ct
-    ) =>
-        type switch
-        {
-            EntityTypeEnum.Character => await store.GetCharacter(novelId, id, ct),
-            EntityTypeEnum.Faction => await store.GetFaction(novelId, id, ct),
-            EntityTypeEnum.Item => await store.GetItem(novelId, id, ct),
-            EntityTypeEnum.Location => await store.GetLocation(novelId, id, ct),
-            EntityTypeEnum.Plotline => await store.GetPlotline(novelId, id, ct),
-            EntityTypeEnum.Relationship => await store.GetRelationship(novelId, id, ct),
-            EntityTypeEnum.Scene => await store.GetScene(novelId, id, ct),
-            _ => null,
-        };
 
     private static AgentToolResult<UndoManualStateChangeDetails> Error(string message) =>
         new() { Content = [new TextContent(message)], IsError = true };

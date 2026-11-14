@@ -64,20 +64,29 @@ public sealed class ManageItemTool(INovelStore store, RetrievalKernel? kernel = 
         if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建道具需要 name");
 
+        var existingItems = await store.GetItems(args.NovelId, ct);
+        var normalizedName = args.Name.Trim();
+        if (
+            existingItems.Any(i =>
+                string.Equals(i.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"道具名「{normalizedName}」已存在，请换一个名称");
+
         var ownerId = await ResolveOwnerId(args.NovelId, args.OwnerId, ct);
         if (ownerId is null && !string.IsNullOrWhiteSpace(args.OwnerId))
             return Error($"持有者角色 {args.OwnerId} 不存在");
         var type = ItemType.Artifact;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
-            if (!Enum.TryParse<ItemType>(args.Type, ignoreCase: true, out type))
+            if (!NovelEnum.TryParse<ItemType>(args.Type, out type))
                 return Error($"未知道具类型: {args.Type}");
         }
 
         var item = new Item
         {
             NovelId = args.NovelId,
-            Name = args.Name,
+            Name = normalizedName,
             Type = type,
             Description = args.Description ?? "",
             OwnerId = ownerId,
@@ -108,37 +117,54 @@ public sealed class ManageItemTool(INovelStore store, RetrievalKernel? kernel = 
         if (item is null)
             return Error($"道具 {args.ItemId} 不存在（可用 list 查看 ID 或直接传名称）");
 
-        var changes = ManageHelper.DiffFields(
-            ("名称", item.Name, args.Name),
-            ("类型", item.Type.ToString(), args.Type),
-            ("描述", item.Description, args.Description),
-            ("持有者", item.OwnerId, args.OwnerId)
-        );
-
+        var newName = item.Name;
         if (args.Name is not null)
-            item.Name = args.Name;
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("道具 name 不能为空");
+            newName = args.Name.Trim();
+            var items = await store.GetItems(args.NovelId, ct);
+            if (
+                items.Any(i =>
+                    i.Id != item.Id
+                    && string.Equals(i.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"道具名「{newName}」已存在，请换一个名称");
+        }
+        var newType = item.Type;
         if (args.Type is not null)
         {
-            if (!Enum.TryParse<ItemType>(args.Type, ignoreCase: true, out var it))
+            if (!NovelEnum.TryParse<ItemType>(args.Type, out newType))
                 return Error($"未知道具类型: {args.Type}");
-            item.Type = it;
         }
-        if (args.Description is not null)
-            item.Description = args.Description;
+        var newOwnerId = item.OwnerId;
         if (args.OwnerId is not null)
         {
             if (string.IsNullOrWhiteSpace(args.OwnerId))
             {
-                item.OwnerId = null;
+                newOwnerId = null;
             }
             else
             {
-                var ownerId = await ResolveOwnerId(args.NovelId, args.OwnerId, ct);
-                if (ownerId is null)
+                newOwnerId = await ResolveOwnerId(args.NovelId, args.OwnerId, ct);
+                if (newOwnerId is null)
                     return Error($"持有者角色 {args.OwnerId} 不存在");
-                item.OwnerId = ownerId;
             }
         }
+
+        var changes = ManageHelper.DiffFields(
+            ("名称", item.Name, newName),
+            ("类型", item.Type.ToString(), newType.ToString()),
+            ("描述", item.Description, args.Description),
+            ("持有者", item.OwnerId, newOwnerId)
+        );
+
+        item.Name = newName;
+        item.Type = newType;
+        if (args.Description is not null)
+            item.Description = args.Description;
+        item.OwnerId = newOwnerId;
 
         await store.SaveItem(item, ct);
         ThrowIfCancelled(ct);

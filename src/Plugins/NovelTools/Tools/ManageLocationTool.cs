@@ -64,20 +64,29 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
         if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建地点需要 name");
 
+        var existingLocations = await store.GetLocations(args.NovelId, ct);
+        var normalizedName = args.Name.Trim();
+        if (
+            existingLocations.Any(l =>
+                string.Equals(l.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"地点名「{normalizedName}」已存在，请换一个名称");
+
         var parentId = await ResolveParentId(args.NovelId, args.ParentId, ct);
         if (parentId is null && !string.IsNullOrWhiteSpace(args.ParentId))
             return Error($"父地点 {args.ParentId} 不存在");
         var type = LocationType.City;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
-            if (!Enum.TryParse<LocationType>(args.Type, ignoreCase: true, out type))
+            if (!NovelEnum.TryParse<LocationType>(args.Type, out type))
                 return Error($"未知地点类型: {args.Type}");
         }
 
         var location = new Location
         {
             NovelId = args.NovelId,
-            Name = args.Name,
+            Name = normalizedName,
             Type = type,
             Atmosphere = args.Atmosphere ?? "",
             Description = args.Description ?? "",
@@ -113,39 +122,63 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
         if (location is null)
             return Error($"地点 {args.LocationId} 不存在（可用 list 查看 ID 或直接传名称）");
 
-        var changes = ManageHelper.DiffFields(
-            ("名称", location.Name, args.Name),
-            ("类型", location.Type.ToString(), args.Type),
-            ("氛围", location.Atmosphere, args.Atmosphere),
-            ("描述", location.Description, args.Description)
-        );
-
+        var locations = await store.GetLocations(args.NovelId, ct);
+        var newName = location.Name;
         if (args.Name is not null)
-            location.Name = args.Name;
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("地点 name 不能为空");
+            newName = args.Name.Trim();
+            if (
+                locations.Any(l =>
+                    l.Id != location.Id
+                    && string.Equals(l.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"地点名「{newName}」已存在，请换一个名称");
+        }
+
+        var newType = location.Type;
         if (args.Type is not null)
         {
-            if (!Enum.TryParse<LocationType>(args.Type, ignoreCase: true, out var lt))
+            if (!NovelEnum.TryParse<LocationType>(args.Type, out newType))
                 return Error($"未知地点类型: {args.Type}");
-            location.Type = lt;
         }
-        if (args.Atmosphere is not null)
-            location.Atmosphere = args.Atmosphere;
-        if (args.Description is not null)
-            location.Description = args.Description;
+
+        var newParentId = location.ParentId;
         if (args.ParentId is not null)
         {
             if (string.IsNullOrWhiteSpace(args.ParentId))
             {
-                location.ParentId = null;
+                newParentId = null;
             }
             else
             {
                 var parentId = await ResolveParentId(args.NovelId, args.ParentId, ct);
                 if (parentId is null)
                     return Error($"父地点 {args.ParentId} 不存在");
-                location.ParentId = parentId;
+                if (string.Equals(parentId, location.Id, StringComparison.Ordinal))
+                    return Error("父地点不能指向自己");
+                if (WouldCreateCycle(locations, location.Id, parentId))
+                    return Error("父地点链会形成循环，未保存");
+                newParentId = parentId;
             }
         }
+
+        var changes = ManageHelper.DiffFields(
+            ("名称", location.Name, newName),
+            ("类型", location.Type.ToString(), newType.ToString()),
+            ("氛围", location.Atmosphere, args.Atmosphere),
+            ("描述", location.Description, args.Description)
+        );
+
+        location.Name = newName;
+        location.Type = newType;
+        if (args.Atmosphere is not null)
+            location.Atmosphere = args.Atmosphere;
+        if (args.Description is not null)
+            location.Description = args.Description;
+        location.ParentId = newParentId;
 
         await store.SaveLocation(location, ct);
         ThrowIfCancelled(ct);
@@ -242,6 +275,26 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
             return null;
         var parent = await NovelReferenceResolver.LocationAsync(store, novelId, idOrName, ct);
         return parent?.Id;
+    }
+
+    private static bool WouldCreateCycle(
+        IReadOnlyList<Location> locations,
+        string locationId,
+        string parentId
+    )
+    {
+        var byId = locations.ToDictionary(l => l.Id, StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = parentId;
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            if (string.Equals(current, locationId, StringComparison.Ordinal))
+                return true;
+            if (!seen.Add(current))
+                return true;
+            current = byId.TryGetValue(current, out var parent) ? parent.ParentId : null;
+        }
+        return false;
     }
 
     /// <summary>

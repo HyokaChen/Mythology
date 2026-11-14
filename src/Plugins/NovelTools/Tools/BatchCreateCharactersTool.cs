@@ -46,6 +46,11 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
         var createdNames = new List<string>(args.Characters.Count);
         var failed = new List<string>();
         var factions = await store.GetFactions(args.NovelId, ct);
+        var existingCharacters = await store.GetCharacters(args.NovelId, ct);
+        var seenNames = new HashSet<string>(
+            existingCharacters.Select(c => c.Name.Trim()),
+            StringComparer.OrdinalIgnoreCase
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个角色草稿，逐个创建
@@ -54,6 +59,12 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
             if (string.IsNullOrWhiteSpace(c.Name))
             {
                 failed.Add("(空名称)");
+                continue;
+            }
+            var name = c.Name.Trim();
+            if (!seenNames.Add(name))
+            {
+                failed.Add($"{name}: 角色名已存在或在本批次重复");
                 continue;
             }
 
@@ -81,7 +92,7 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
             var role = CharacterRole.Supporting;
             if (!string.IsNullOrWhiteSpace(c.Role))
             {
-                if (!Enum.TryParse<CharacterRole>(c.Role, ignoreCase: true, out role))
+                if (!NovelEnum.TryParse<CharacterRole>(c.Role, out role))
                 {
                     failed.Add($"{c.Name.Trim()}: 未知角色定位 {c.Role}");
                     continue;
@@ -92,7 +103,7 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
             var character = new Character
             {
                 NovelId = args.NovelId,
-                Name = c.Name.Trim(),
+                Name = name,
                 Gender = c.Gender ?? "",
                 Age = c.Age ?? "",
                 Role = role,
@@ -108,7 +119,7 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
             try
             {
                 // 持久化角色并建立向量索引
-                await store.SaveCharacter(character, ct);
+                await EntityFieldWriter.SaveAsync(store, character, new MembershipBefore(), ct);
                 ThrowIfCancelled(ct);
                 if (kernel is not null)
                 {

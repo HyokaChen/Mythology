@@ -2,7 +2,6 @@ using System.ComponentModel;
 using Core.Data;
 using Core.Shared;
 using Core.Tools;
-using EntityTypeEnum = Core.Data.EntityType;
 
 namespace Plugins.NovelTools.Tools;
 
@@ -38,24 +37,58 @@ public sealed class RecordAppearanceTool(INovelStore store)
         if (string.IsNullOrWhiteSpace(args.ChapterId))
             return Error("必须提供章节 ID（chapter_id）");
 
-        var chapter = await store.GetChapter(args.NovelId, args.ChapterId, ct);
+        var chapterLookup = await NovelReferenceResolver.ChapterLookupAsync(
+            store,
+            args.NovelId,
+            args.ChapterId,
+            ct
+        );
+        var chapter = chapterLookup.Value;
         ThrowIfCancelled(ct);
         if (chapter is null)
-            return Error($"章节 {args.ChapterId} 不存在");
+            return Error(chapterLookup.Error ?? $"章节 {args.ChapterId} 不存在");
 
-        if (!await EntityExistsAsync(args.NovelId, args.EntityType, args.EntityId, ct))
-            return Error($"{args.EntityType} {args.EntityId} 不存在");
+        var entityLookup = await NovelReferenceResolver.EntityIdAsync(
+            store,
+            args.NovelId,
+            args.EntityType,
+            args.EntityId,
+            ct
+        );
+        if (entityLookup.Value is not { } entityId)
+            return Error(entityLookup.Error ?? $"{args.EntityType} {args.EntityId} 不存在");
 
         List<string>? sceneIds = null;
         if (args.SceneIds is { Count: > 0 })
         {
             var scenes = await store.GetScenesByChapter(chapter.Id, ct);
             sceneIds = new List<string>(args.SceneIds.Count);
-            foreach (var sceneId in args.SceneIds)
+            foreach (var sceneRef in args.SceneIds)
             {
-                var scene = scenes.FirstOrDefault(s => s.Id == sceneId);
+                if (string.IsNullOrWhiteSpace(sceneRef))
+                    return Error("场景 ID 列表不能包含空值");
+                var scene = NovelReferenceResolver.FindByIdOrName(
+                    scenes,
+                    sceneRef,
+                    s => s.Id,
+                    s => s.Title
+                );
+                if (
+                    scene is null
+                    && NovelReferenceResolver.TryParseOrder(sceneRef, out var sceneOrder)
+                )
+                {
+                    var byOrder = scenes.Where(s => s.Order == sceneOrder).ToList();
+                    if (byOrder.Count > 1)
+                        return Error(
+                            $"第 {sceneOrder} 场在本章有 {byOrder.Count} 个，请改用场景 ID"
+                        );
+                    scene = byOrder.FirstOrDefault();
+                }
                 if (scene is null)
-                    return Error($"场景 {sceneId} 不存在于本章");
+                    return Error($"场景 {sceneRef} 不存在于本章");
+                if (sceneIds.Contains(scene.Id, StringComparer.Ordinal))
+                    return Error($"场景 {sceneRef} 在列表中重复");
                 sceneIds.Add(scene.Id);
             }
         }
@@ -63,11 +96,11 @@ public sealed class RecordAppearanceTool(INovelStore store)
         var record = new AppearanceRecord
         {
             Id = string.IsNullOrWhiteSpace(args.RecordId)
-                ? $"ap_{chapter.Id}_{args.EntityId}_{Guid.NewGuid().ToString("N")[..6]}"
-                : args.RecordId,
+                ? $"ap_{chapter.Id}_{entityId}_{Guid.NewGuid().ToString("N")[..6]}"
+                : args.RecordId.Trim(),
             NovelId = args.NovelId,
             EntityType = args.EntityType,
-            EntityId = args.EntityId,
+            EntityId = entityId,
             ChapterId = chapter.Id,
             Mode = args.Mode,
             SceneIds = sceneIds,
@@ -75,10 +108,13 @@ public sealed class RecordAppearanceTool(INovelStore store)
             Source = AuditSource.Ai,
         };
 
-        // 合并写入：同章 System 打底的该实体旧记录被本条替换（Ai 优先），其余 Ai/User 记录保留
+        // 合并写入：同章同 ID 的旧记录被本条替换；System 打底的该实体旧记录也由 Ai 覆盖
         var existing = await store.GetAppearancesByChapter(args.NovelId, chapter.Id, ct);
         var merged = existing
-            .Where(r => r.Source != AuditSource.System || r.EntityId != args.EntityId)
+            .Where(r =>
+                !string.Equals(r.Id, record.Id, StringComparison.Ordinal)
+                && (r.Source != AuditSource.System || r.EntityId != entityId)
+            )
             .ToList();
         merged.Add(record);
         await store.SaveChapterAppearances(args.NovelId, chapter.Id, merged, ct);
@@ -89,7 +125,7 @@ public sealed class RecordAppearanceTool(INovelStore store)
             Content =
             [
                 new TextContent(
-                    $"已登记出场：{args.EntityType} {args.EntityId} @ {chapter.Title}（{record.Mode}）"
+                    $"已登记出场：{args.EntityType} {entityId} @ {chapter.Title}（{record.Mode}）"
                 ),
             ],
             Details = new RecordAppearanceDetails
@@ -102,59 +138,6 @@ public sealed class RecordAppearanceTool(INovelStore store)
         };
     }
 
-    private async Task<bool> EntityExistsAsync(
-        string novelId,
-        EntityTypeEnum type,
-        string entityId,
-        CancellationToken ct
-    ) =>
-        type switch
-        {
-            EntityTypeEnum.Character => await NovelReferenceResolver.CharacterAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Location => await NovelReferenceResolver.LocationAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Faction => await NovelReferenceResolver.FactionAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Item => await NovelReferenceResolver.ItemAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Plotline => await NovelReferenceResolver.PlotlineAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Scene => await NovelReferenceResolver.SceneAsync(
-                store,
-                novelId,
-                entityId,
-                ct
-            )
-                is not null,
-            _ => false,
-        };
-
     private static AgentToolResult<RecordAppearanceDetails> Error(string message) =>
         new() { Content = [new TextContent(message)], IsError = true };
 }
@@ -164,13 +147,13 @@ public sealed record RecordAppearanceParams
     [Description("小说项目ID，留空则自动使用当前项目")]
     public string NovelId { get; init; } = "";
 
-    [Description("实体 ID（角色/地点/组织/道具的 GUID）")]
+    [Description("实体 ID 或名称（角色/地点/组织/道具/情节线/场景）")]
     public string EntityId { get; init; } = "";
 
     [Description("实体类型：character/location/faction/item/plotline/scene")]
     public EntityType EntityType { get; init; } = EntityType.Character;
 
-    [Description("章节 ID（GUID 或章节号）")]
+    [Description("章节 ID、章节号或标题")]
     public string ChapterId { get; init; } = "";
 
     [Description("出场强度：present=在场有戏份 / mentioned=被提及")]

@@ -57,14 +57,12 @@ internal static class ManageHelper
     {
         if (string.IsNullOrEmpty(input))
             return defaultVal;
-        // 优先按 ID 匹配
-        foreach (var ch in chapters.Where(ch => ch.Id == input))
-        {
-            return ch.Order;
-        }
-
-        // 回退按序号解析
-        return int.TryParse(input, out var parsedOrder) ? parsedOrder : defaultVal;
+        var chapter = NovelReferenceResolver.FindChapter(chapters, input);
+        if (chapter is not null)
+            return chapter.Order;
+        return NovelReferenceResolver.TryParseOrder(input, out var parsedOrder)
+            ? parsedOrder
+            : defaultVal;
     }
 
     /// <summary>
@@ -77,13 +75,8 @@ internal static class ManageHelper
         Func<T, string> getId,
         Func<T, string> getName
     )
-        where T : class
-    {
-        if (string.IsNullOrEmpty(idOrName))
-            return null;
-        return entities.FirstOrDefault(e => getId(e) == idOrName)
-            ?? entities.FirstOrDefault(e => getName(e) == idOrName);
-    }
+        where T : class =>
+        NovelReferenceResolver.FindByIdOrName(entities, idOrName, getId, getName);
 }
 
 // ── 角色管理工具 ─────────────────────────────────────────────────────────
@@ -146,6 +139,15 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
         if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建角色需要 name");
 
+        var existingCharacters = await store.GetCharacters(args.NovelId, ct);
+        var normalizedName = args.Name.Trim();
+        if (
+            existingCharacters.Any(c =>
+                string.Equals(c.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"角色名「{normalizedName}」已存在，请换一个名称");
+
         var factionId = args.FactionId;
         if (!string.IsNullOrWhiteSpace(factionId))
         {
@@ -167,14 +169,14 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
         var role = CharacterRole.Supporting;
         if (!string.IsNullOrWhiteSpace(args.Role))
         {
-            if (!Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out role))
+            if (!NovelEnum.TryParse<CharacterRole>(args.Role, out role))
                 return Error($"未知角色定位: {args.Role}");
         }
 
         var character = new Character
         {
             NovelId = args.NovelId,
-            Name = args.Name,
+            Name = normalizedName,
             Gender = args.Gender ?? "",
             Age = args.Age ?? "",
             Role = role,
@@ -186,7 +188,7 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
             Weakness = args.Weakness ?? "",
             FactionId = factionId,
         };
-        await store.SaveCharacter(character, ct);
+        await EntityFieldWriter.SaveAsync(store, character, new MembershipBefore(), ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)
         {
@@ -216,32 +218,70 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
         if (character is null)
             return Error($"角色 {args.CharacterId} 不存在（可用 list 查看 ID 或直接传名称）");
 
+        var before = EntityFieldWriter.CaptureMembership(character);
+
+        var newName = character.Name;
+        if (args.Name is not null)
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("角色 name 不能为空");
+            newName = args.Name.Trim();
+            var characters = await store.GetCharacters(args.NovelId, ct);
+            if (
+                characters.Any(c =>
+                    c.Id != character.Id
+                    && string.Equals(c.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"角色名「{newName}」已存在，请换一个名称");
+        }
+        var newRole = character.Role;
+        if (args.Role is not null)
+        {
+            if (!NovelEnum.TryParse<CharacterRole>(args.Role, out newRole))
+                return Error($"未知角色定位: {args.Role}");
+        }
+        var newFactionId = character.FactionId;
+        if (args.FactionId is not null)
+        {
+            if (string.IsNullOrWhiteSpace(args.FactionId))
+            {
+                newFactionId = null;
+            }
+            else
+            {
+                var faction = await NovelReferenceResolver.FactionAsync(
+                    store,
+                    args.NovelId,
+                    args.FactionId,
+                    ct
+                );
+                if (faction is null)
+                    return Error($"组织 {args.FactionId} 不存在");
+                newFactionId = faction.Id;
+            }
+        }
+
         var changes = ManageHelper.DiffFields(
-            ("姓名", character.Name, args.Name),
+            ("姓名", character.Name, newName),
             ("性别", character.Gender, args.Gender),
             ("年龄", character.Age, args.Age),
-            ("定位", character.Role.ToString(), args.Role),
+            ("定位", character.Role.ToString(), newRole.ToString()),
             ("性格", character.Personality, args.Personality),
             ("外貌", character.Appearance, args.Appearance),
             ("背景", character.Background, args.Background),
             ("动机", character.Motivation, args.Motivation),
             ("习惯", character.Habits, args.Habits),
             ("弱点", character.Weakness, args.Weakness),
-            ("组织", character.FactionId, args.FactionId)
+            ("组织", character.FactionId, newFactionId)
         );
 
-        if (args.Name is not null)
-            character.Name = args.Name;
+        character.Name = newName;
         if (args.Gender is not null)
             character.Gender = args.Gender;
         if (args.Age is not null)
             character.Age = args.Age;
-        if (args.Role is not null)
-        {
-            if (!Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out var parsedRole))
-                return Error($"未知角色定位: {args.Role}");
-            character.Role = parsedRole;
-        }
+        character.Role = newRole;
         if (args.Personality is not null)
             character.Personality = args.Personality;
         if (args.Appearance is not null)
@@ -254,27 +294,9 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
             character.Habits = args.Habits;
         if (args.Weakness is not null)
             character.Weakness = args.Weakness;
-        if (args.FactionId is not null)
-        {
-            if (string.IsNullOrWhiteSpace(args.FactionId))
-            {
-                character.FactionId = null;
-            }
-            else
-            {
-                var faction = await NovelReferenceResolver.FactionAsync(
-                    store,
-                    args.NovelId,
-                    args.FactionId,
-                    ct
-                );
-                if (faction is null)
-                    return Error($"组织 {args.FactionId} 不存在");
-                character.FactionId = faction.Id;
-            }
-        }
+        character.FactionId = newFactionId;
 
-        await store.SaveCharacter(character, ct);
+        await EntityFieldWriter.SaveAsync(store, character, before, ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)
         {

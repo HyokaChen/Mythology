@@ -59,9 +59,18 @@ public sealed class ManageNovelTool(INovelStore store)
         if (string.IsNullOrWhiteSpace(args.Title))
             return Error("创建小说需要 title");
 
+        var normalizedTitle = args.Title.Trim();
+        var existingNovels = await store.GetAllNovels();
+        if (
+            existingNovels.Any(n =>
+                string.Equals(n.Title.Trim(), normalizedTitle, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"小说标题「{normalizedTitle}」已存在，请换一个标题");
+
         var novel = new Novel
         {
-            Title = args.Title,
+            Title = normalizedTitle,
             Genre = args.Genre ?? "东方玄幻",
             Description = args.Description ?? "",
             WritingStyle = args.WritingStyle ?? "",
@@ -86,7 +95,16 @@ public sealed class ManageNovelTool(INovelStore store)
         var changed = new List<string>();
         if (!string.IsNullOrWhiteSpace(args.Title))
         {
-            novel.Title = args.Title!;
+            var title = args.Title.Trim();
+            var novels = await store.GetAllNovels();
+            if (
+                novels.Any(n =>
+                    n.Id != novel.Id
+                    && string.Equals(n.Title.Trim(), title, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"小说标题「{title}」已存在，请换一个标题");
+            novel.Title = title;
             changed.Add("标题");
         }
         if (!string.IsNullOrWhiteSpace(args.Genre))

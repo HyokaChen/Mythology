@@ -123,13 +123,17 @@ public sealed class ManageWorldRuleTool(INovelStore store)
 
         if (ValidateEnumArgs(args) is { } enumError)
             return Error(enumError);
-        Apply(rule, args);
-        var error = await ValidateAsync(novelId, rule, ct);
+        var candidate = Clone(rule);
+        Apply(candidate, args);
+        var error = await ValidateAsync(novelId, candidate, ct);
         if (error is not null)
             return Error(error);
 
-        await store.SaveWorldRule(novelId, rule, ct);
-        return Ok($"规则已更新: {rule.Id}", new ManageWorldRuleDetails { Id = rule.Id, Count = 1 });
+        await store.SaveWorldRule(novelId, candidate, ct);
+        return Ok(
+            $"规则已更新: {candidate.Id}",
+            new ManageWorldRuleDetails { Id = candidate.Id, Count = 1 }
+        );
     }
 
     private async Task<AgentToolResult<ManageWorldRuleDetails>> DeleteAsync(
@@ -228,99 +232,119 @@ public sealed class ManageWorldRuleTool(INovelStore store)
         if (error is not null)
             return error;
 
-        if (
-            !string.IsNullOrWhiteSpace(rule.EffectiveFromChapterId)
-            || !string.IsNullOrWhiteSpace(rule.EffectiveUntilChapterId)
-        )
+        if (!string.IsNullOrWhiteSpace(rule.EffectiveFromChapterId))
         {
-            var chapters = await store.GetChapters(novelId, ct);
-            var ids = chapters.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
-            if (
-                !string.IsNullOrWhiteSpace(rule.EffectiveFromChapterId)
-                && !ids.Contains(rule.EffectiveFromChapterId)
-            )
-                return $"章节不存在: {rule.EffectiveFromChapterId}";
-            if (
-                !string.IsNullOrWhiteSpace(rule.EffectiveUntilChapterId)
-                && !ids.Contains(rule.EffectiveUntilChapterId)
-            )
-                return $"章节不存在: {rule.EffectiveUntilChapterId}";
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                novelId,
+                rule.EffectiveFromChapterId,
+                ct
+            );
+            if (lookup.Value is null)
+                return lookup.Error ?? $"章节不存在: {rule.EffectiveFromChapterId}";
+            rule.EffectiveFromChapterId = lookup.Value.Id;
+        }
+        if (!string.IsNullOrWhiteSpace(rule.EffectiveUntilChapterId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                novelId,
+                rule.EffectiveUntilChapterId,
+                ct
+            );
+            if (lookup.Value is null)
+                return lookup.Error ?? $"章节不存在: {rule.EffectiveUntilChapterId}";
+            rule.EffectiveUntilChapterId = lookup.Value.Id;
         }
         if (!string.IsNullOrWhiteSpace(rule.SubjectId))
         {
             if (rule.SubjectType is not { } subjectType)
                 return "设置 subject-id 时必须同时提供 subject-type";
-            if (!await EntityExistsAsync(novelId, subjectType, rule.SubjectId, ct))
-                return $"规则主体不存在: {subjectType} {rule.SubjectId}";
+            var lookup = await NovelReferenceResolver.EntityIdAsync(
+                store,
+                novelId,
+                subjectType,
+                rule.SubjectId,
+                ct
+            );
+            if (lookup.Value is not { } subjectId)
+                return lookup.Error ?? $"规则主体不存在: {subjectType} {rule.SubjectId}";
+            rule.SubjectId = subjectId;
         }
 
         if (!string.IsNullOrWhiteSpace(rule.RequiredRelationTargetId))
         {
-            if (
-                await NovelReferenceResolver.CharacterAsync(
-                    store,
-                    novelId,
-                    rule.RequiredRelationTargetId,
-                    ct
-                )
-                is null
-            )
+            var lookup = await NovelReferenceResolver.CharacterAsync(
+                store,
+                novelId,
+                rule.RequiredRelationTargetId,
+                ct
+            );
+            if (lookup is null)
                 return $"关系目标不存在: {rule.RequiredRelationTargetId}";
+            rule.RequiredRelationTargetId = lookup.Id;
         }
 
-        if (
-            rule.Effect is { TargetId.Length: > 0 } effect
-            && !await EntityExistsAsync(novelId, effect.TargetEntityType, effect.TargetId, ct)
-        )
-            return $"规则效果目标不存在: {effect.TargetEntityType} {effect.TargetId}";
+        if (rule.Effect is { TargetId.Length: > 0 } effect)
+        {
+            var lookup = await NovelReferenceResolver.EntityIdAsync(
+                store,
+                novelId,
+                effect.TargetEntityType,
+                effect.TargetId,
+                ct
+            );
+            if (lookup.Value is not { } effectTargetId)
+                return lookup.Error
+                    ?? $"规则效果目标不存在: {effect.TargetEntityType} {effect.TargetId}";
+            effect.TargetId = effectTargetId;
+        }
 
         return null;
     }
 
-    private async Task<bool> EntityExistsAsync(
-        string novelId,
-        EntityTypeEnum type,
-        string id,
-        CancellationToken ct
-    ) =>
-        type switch
+    private static WorldRule Clone(WorldRule source) =>
+        new()
         {
-            EntityTypeEnum.Character => await NovelReferenceResolver.CharacterAsync(
-                store,
-                novelId,
-                id,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Location => await NovelReferenceResolver.LocationAsync(
-                store,
-                novelId,
-                id,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Faction => await NovelReferenceResolver.FactionAsync(
-                store,
-                novelId,
-                id,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Item => await NovelReferenceResolver.ItemAsync(store, novelId, id, ct)
-                is not null,
-            EntityTypeEnum.Plotline => await NovelReferenceResolver.PlotlineAsync(
-                store,
-                novelId,
-                id,
-                ct
-            )
-                is not null,
-            EntityTypeEnum.Scene => await NovelReferenceResolver.SceneAsync(store, novelId, id, ct)
-                is not null,
-            EntityTypeEnum.Chapter => await store.GetChapter(novelId, id, ct) is not null,
-            EntityTypeEnum.Relationship => await store.GetRelationship(novelId, id, ct) is not null,
-            EntityTypeEnum.Volume => await store.GetVolume(novelId, id, ct) is not null,
-            _ => false,
+            Id = source.Id,
+            NovelId = source.NovelId,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
+            EntryKind = source.EntryKind,
+            Category = source.Category,
+            Content = source.Content,
+            Type = source.Type,
+            Value = source.Value,
+            Unit = source.Unit,
+            Description = source.Description,
+            RuleKind = source.RuleKind,
+            SubjectType = source.SubjectType,
+            SubjectId = source.SubjectId,
+            Metric = source.Metric,
+            Operator = source.Operator,
+            Threshold = source.Threshold,
+            Action = source.Action,
+            RequiredState = source.RequiredState,
+            ForbiddenAction = source.ForbiddenAction,
+            Effect = source.Effect is null
+                ? null
+                : new PlannedDelta
+                {
+                    Kind = source.Effect.Kind,
+                    TargetEntityType = source.Effect.TargetEntityType,
+                    TargetId = source.Effect.TargetId,
+                    Aspect = source.Effect.Aspect,
+                    FromSummary = source.Effect.FromSummary,
+                    ToSummary = source.Effect.ToSummary,
+                    Summary = source.Effect.Summary,
+                    RuleId = source.Effect.RuleId,
+                    ActionType = source.Effect.ActionType,
+                },
+            Severity = source.Severity,
+            EffectiveFromChapterId = source.EffectiveFromChapterId,
+            EffectiveUntilChapterId = source.EffectiveUntilChapterId,
+            RequiredRelationType = source.RequiredRelationType,
+            RequiredRelationTargetId = source.RequiredRelationTargetId,
         };
 
     private static string? ValidateEnumArgs(ManageWorldRuleParams args)
@@ -349,18 +373,15 @@ public sealed class ManageWorldRuleTool(INovelStore store)
 
     private static bool IsEnum<T>(string? value)
         where T : struct, Enum =>
-        string.IsNullOrWhiteSpace(value) || Enum.TryParse<T>(NormalizeEnum(value), true, out _);
+        string.IsNullOrWhiteSpace(value) || NovelEnum.TryParse<T>(value, out _);
 
     private static bool IsEntityType(string? value) =>
         string.IsNullOrWhiteSpace(value)
         || EntityTypeExtensions.ParseEntityType(value) is not null
-        || Enum.TryParse<EntityTypeEnum>(NormalizeEnum(value), true, out _);
-
-    private static string NormalizeEnum(string value) => value.Replace("-", "").Replace("_", "");
+        || NovelEnum.TryParse<EntityTypeEnum>(value, out _);
 
     private static T ParseEnum<T>(string value, T fallback)
-        where T : struct, Enum =>
-        Enum.TryParse<T>(NormalizeEnum(value), true, out var parsed) ? parsed : fallback;
+        where T : struct, Enum => NovelEnum.TryParse<T>(value, out var parsed) ? parsed : fallback;
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

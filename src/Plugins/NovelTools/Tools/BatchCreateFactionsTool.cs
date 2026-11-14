@@ -44,6 +44,11 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
         var failed = new List<string>();
         var locations = await store.GetLocations(args.NovelId, ct);
         var characters = await store.GetCharacters(args.NovelId, ct);
+        var existingFactions = await store.GetFactions(args.NovelId, ct);
+        var seenNames = new HashSet<string>(
+            existingFactions.Select(f => f.Name.Trim()),
+            StringComparer.OrdinalIgnoreCase
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个组织草稿，逐个创建
@@ -52,6 +57,12 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
             if (string.IsNullOrWhiteSpace(f.Name))
             {
                 failed.Add("(空名称)");
+                continue;
+            }
+            var name = f.Name.Trim();
+            if (!seenNames.Add(name))
+            {
+                failed.Add($"{name}: 组织名已存在或在本批次重复");
                 continue;
             }
 
@@ -66,7 +77,7 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
                 );
                 if (location is null)
                 {
-                    failed.Add($"{f.Name.Trim()}: 总部地点 {headquartersId} 不存在");
+                    failed.Add($"{name}: 总部地点 {headquartersId} 不存在");
                     continue;
                 }
                 headquartersId = location.Id;
@@ -76,7 +87,25 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
                 headquartersId = null;
             }
 
+            var leaderId = "";
+            if (!string.IsNullOrWhiteSpace(f.Leader))
+            {
+                var leader = ManageHelper.ResolveByIdOrName(
+                    characters,
+                    f.Leader,
+                    c => c.Id,
+                    c => c.Name
+                );
+                if (leader is null)
+                {
+                    failed.Add($"{name}: 首领角色 {f.Leader} 不存在");
+                    continue;
+                }
+                leaderId = leader.Id;
+            }
+
             var members = new List<string>(f.Members?.Count ?? 0);
+            var seenMembers = new HashSet<string>(StringComparer.Ordinal);
             var missingMember = false;
             foreach (var memberId in f.Members ?? [])
             {
@@ -88,11 +117,12 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
                 );
                 if (member is null)
                 {
-                    failed.Add($"{f.Name.Trim()}: 成员角色 {memberId} 不存在");
+                    failed.Add($"{name}: 成员角色 {memberId} 不存在");
                     missingMember = true;
                     break;
                 }
-                members.Add(member.Id);
+                if (seenMembers.Add(member.Id))
+                    members.Add(member.Id);
             }
             if (missingMember)
                 continue;
@@ -100,9 +130,9 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
             var type = FactionType.Sect;
             if (!string.IsNullOrWhiteSpace(f.Type))
             {
-                if (!Enum.TryParse<FactionType>(f.Type, ignoreCase: true, out type))
+                if (!NovelEnum.TryParse<FactionType>(f.Type, out type))
                 {
-                    failed.Add($"{f.Name.Trim()}: 未知组织类型 {f.Type}");
+                    failed.Add($"{name}: 未知组织类型 {f.Type}");
                     continue;
                 }
             }
@@ -111,19 +141,24 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
             var faction = new Faction
             {
                 NovelId = args.NovelId,
-                Name = f.Name.Trim(),
+                Name = name,
                 Type = type,
                 Description = f.Description ?? "",
-                Leader = f.Leader ?? "",
+                Leader = leaderId,
                 HeadquartersId = headquartersId,
                 Goal = f.Goal ?? "",
                 Members = members,
             };
+            if (
+                !string.IsNullOrWhiteSpace(leaderId)
+                && !members.Contains(leaderId, StringComparer.Ordinal)
+            )
+                members.Add(leaderId);
 
             try
             {
                 // 持久化组织并建立向量索引
-                await store.SaveFaction(faction, ct);
+                await EntityFieldWriter.SaveAsync(store, faction, new MembershipBefore(), ct);
                 ThrowIfCancelled(ct);
                 if (kernel is not null)
                 {

@@ -41,12 +41,56 @@ public sealed class EditEntitiesToolTests
                 Status = ChapterStatus.Draft,
             }
         );
+        await store.SaveChapter(
+            new Chapter
+            {
+                Id = "ch2",
+                NovelId = "n1",
+                Title = "第二章",
+                Order = 2,
+                VolumeId = "v1",
+                Status = ChapterStatus.Draft,
+            }
+        );
+        await store.SavePlotline(
+            new Plotline
+            {
+                Id = "p1",
+                NovelId = "n1",
+                Name = "主线",
+            }
+        );
+        await store.SaveItem(
+            new Item
+            {
+                Id = "i1",
+                NovelId = "n1",
+                Name = "剑",
+            }
+        );
+        await store.SaveItem(
+            new Item
+            {
+                Id = "i2",
+                NovelId = "n1",
+                Name = "盾",
+            }
+        );
         await store.SaveCharacter(
             new Character
             {
                 Id = "c1",
                 NovelId = "n1",
                 Name = "小明",
+                Role = CharacterRole.Supporting,
+            }
+        );
+        await store.SaveCharacter(
+            new Character
+            {
+                Id = "c2",
+                NovelId = "n1",
+                Name = "小红",
                 Role = CharacterRole.Supporting,
             }
         );

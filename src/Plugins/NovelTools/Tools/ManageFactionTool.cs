@@ -64,9 +64,21 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
         if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建组织需要 name");
 
+        var existingFactions = await store.GetFactions(args.NovelId, ct);
+        var normalizedName = args.Name.Trim();
+        if (
+            existingFactions.Any(f =>
+                string.Equals(f.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"组织名「{normalizedName}」已存在，请换一个名称");
+
         var headquartersId = await ResolveLocationId(args.NovelId, args.HeadquartersId, ct);
         if (headquartersId is null && !string.IsNullOrWhiteSpace(args.HeadquartersId))
             return Error($"地点 {args.HeadquartersId} 不存在");
+        var leaderId = await ResolveLeaderId(args.NovelId, args.Leader, ct);
+        if (leaderId is null && !string.IsNullOrWhiteSpace(args.Leader))
+            return Error($"首领角色 {args.Leader} 不存在");
         var members = await ResolveMemberIds(args.NovelId, args.Members, ct);
         if (members is null)
             return Error("成员列表中有角色不存在");
@@ -74,22 +86,24 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
         var type = FactionType.Sect;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
-            if (!Enum.TryParse<FactionType>(args.Type, ignoreCase: true, out type))
+            if (!NovelEnum.TryParse<FactionType>(args.Type, out type))
                 return Error($"未知组织类型: {args.Type}");
         }
 
         var faction = new Faction
         {
             NovelId = args.NovelId,
-            Name = args.Name,
+            Name = normalizedName,
             Type = type,
             Description = args.Description ?? "",
-            Leader = args.Leader ?? "",
+            Leader = leaderId ?? "",
             HeadquartersId = headquartersId,
             Goal = args.Goal ?? "",
             Members = members,
         };
-        await store.SaveFaction(faction, ct);
+        if (leaderId is not null && !members.Contains(leaderId, StringComparer.Ordinal))
+            members.Add(leaderId);
+        await EntityFieldWriter.SaveAsync(store, faction, new MembershipBefore(), ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)
         {
@@ -115,52 +129,92 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
         if (faction is null)
             return Error($"组织 {args.FactionId} 不存在（可用 list 查看 ID 或直接传名称）");
 
-        var changes = ManageHelper.DiffFields(
-            ("名称", faction.Name, args.Name),
-            ("类型", faction.Type.ToString(), args.Type),
-            ("描述", faction.Description, args.Description),
-            ("首领", faction.Leader, args.Leader),
-            ("总部", faction.HeadquartersId, args.HeadquartersId),
-            ("目标", faction.Goal, args.Goal)
-        );
+        var before = EntityFieldWriter.CaptureMembership(faction);
 
+        var newName = faction.Name;
         if (args.Name is not null)
-            faction.Name = args.Name;
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("组织 name 不能为空");
+            newName = args.Name.Trim();
+            var factions = await store.GetFactions(args.NovelId, ct);
+            if (
+                factions.Any(f =>
+                    f.Id != faction.Id
+                    && string.Equals(f.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"组织名「{newName}」已存在，请换一个名称");
+        }
+        var newType = faction.Type;
         if (args.Type is not null)
         {
-            if (!Enum.TryParse<FactionType>(args.Type, ignoreCase: true, out var ft))
+            if (!NovelEnum.TryParse<FactionType>(args.Type, out newType))
                 return Error($"未知组织类型: {args.Type}");
-            faction.Type = ft;
         }
-        if (args.Description is not null)
-            faction.Description = args.Description;
+        var newLeader = faction.Leader;
         if (args.Leader is not null)
-            faction.Leader = args.Leader;
+        {
+            if (string.IsNullOrWhiteSpace(args.Leader))
+            {
+                newLeader = "";
+            }
+            else
+            {
+                newLeader = await ResolveLeaderId(args.NovelId, args.Leader, ct);
+                if (newLeader is null)
+                    return Error($"首领角色 {args.Leader} 不存在");
+            }
+        }
+        var newHeadquartersId = faction.HeadquartersId;
         if (args.HeadquartersId is not null)
         {
             if (string.IsNullOrWhiteSpace(args.HeadquartersId))
             {
-                faction.HeadquartersId = null;
+                newHeadquartersId = null;
             }
             else
             {
-                var headquartersId = await ResolveLocationId(args.NovelId, args.HeadquartersId, ct);
-                if (headquartersId is null)
+                newHeadquartersId = await ResolveLocationId(args.NovelId, args.HeadquartersId, ct);
+                if (newHeadquartersId is null)
                     return Error($"地点 {args.HeadquartersId} 不存在");
-                faction.HeadquartersId = headquartersId;
             }
         }
-        if (args.Goal is not null)
-            faction.Goal = args.Goal;
+        List<string>? newMembers = null;
         if (args.Members is not null)
         {
-            var members = await ResolveMemberIds(args.NovelId, args.Members, ct);
-            if (members is null)
+            newMembers = await ResolveMemberIds(args.NovelId, args.Members, ct);
+            if (newMembers is null)
                 return Error("成员列表中有角色不存在");
-            faction.Members = members;
         }
 
-        await store.SaveFaction(faction, ct);
+        var changes = ManageHelper.DiffFields(
+            ("名称", faction.Name, newName),
+            ("类型", faction.Type.ToString(), newType.ToString()),
+            ("描述", faction.Description, args.Description),
+            ("首领", faction.Leader, newLeader),
+            ("总部", faction.HeadquartersId, newHeadquartersId),
+            ("目标", faction.Goal, args.Goal)
+        );
+
+        faction.Name = newName;
+        faction.Type = newType;
+        if (args.Description is not null)
+            faction.Description = args.Description;
+        faction.Leader = newLeader;
+        faction.HeadquartersId = newHeadquartersId;
+        if (args.Goal is not null)
+            faction.Goal = args.Goal;
+        if (newMembers is not null)
+            faction.Members = newMembers;
+
+        if (
+            !string.IsNullOrWhiteSpace(faction.Leader)
+            && !faction.Members.Contains(faction.Leader, StringComparer.Ordinal)
+        )
+            faction.Members.Add(faction.Leader);
+
+        await EntityFieldWriter.SaveAsync(store, faction, before, ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)
         {
@@ -264,14 +318,28 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
         if (members is null || members.Count == 0)
             return [];
         var result = new List<string>(members.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var member in members)
         {
             var character = await NovelReferenceResolver.CharacterAsync(store, novelId, member, ct);
             if (character is null)
                 return null;
-            result.Add(character.Id);
+            if (seen.Add(character.Id))
+                result.Add(character.Id);
         }
         return result;
+    }
+
+    private async Task<string?> ResolveLeaderId(
+        string novelId,
+        string? idOrName,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(idOrName))
+            return null;
+        var character = await NovelReferenceResolver.CharacterAsync(store, novelId, idOrName, ct);
+        return character?.Id;
     }
 
     /// <summary>

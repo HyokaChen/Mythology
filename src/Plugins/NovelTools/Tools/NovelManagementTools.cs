@@ -153,23 +153,39 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
         EditHunk[]? hunks = null;
         var existingChapters = await store.GetChapters(args.NovelId, ct);
         ThrowIfCancelled(ct);
-        var existing = !string.IsNullOrWhiteSpace(args.ChapterId)
-            ? existingChapters.Find(c => c.Id == args.ChapterId)
-            : existingChapters.Find(c => c.Title == args.Title && c.Order == args.Order);
+        Chapter? existing;
+        if (!string.IsNullOrWhiteSpace(args.ChapterId))
+        {
+            var lookup = NovelReferenceResolver.FindChapterLookup(existingChapters, args.ChapterId);
+            if (lookup.Value is null)
+                return VolumeError(
+                    $"{lookup.Error}。可用章节：{FormatChapterChoices(existingChapters)}"
+                );
+            existing = lookup.Value;
+        }
+        else
+        {
+            existing = existingChapters.Find(c => c.Title == args.Title && c.Order == args.Order);
+        }
+
         var volumes = await store.GetVolumes(args.NovelId, ct);
         ThrowIfCancelled(ct);
+        string? volumeId = null;
+        if (!string.IsNullOrWhiteSpace(args.VolumeId))
+        {
+            var lookup = NovelReferenceResolver.FindVolumeLookup(volumes, args.VolumeId);
+            if (lookup.Value is null)
+                return VolumeError(
+                    $"{lookup.Error}，章节未保存。可用分卷：{FormatVolumeChoices(volumes)}"
+                );
+            volumeId = lookup.Value.Id;
+        }
 
         if (existing is not null)
         {
             // 显式传 volume-id = 移动章节；不传则保留原有分卷归属。
-            if (!string.IsNullOrWhiteSpace(args.VolumeId))
-            {
-                if (volumes.All(v => v.Id != args.VolumeId))
-                    return VolumeError(
-                        $"分卷 {args.VolumeId} 不存在，章节未保存。可用分卷：{FormatVolumeChoices(volumes)}"
-                    );
-                existing.VolumeId = args.VolumeId;
-            }
+            if (volumeId is not null)
+                existing.VolumeId = volumeId;
             // 复用已有章节：保留 ID、CreatedAt、Status，只更新内容和元数据
             hunks = [EditHunk.FromFullContent(existing.Content, args.Content)];
             existing.Content = args.Content;
@@ -196,28 +212,29 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
         }
 
         // 新章节才创建：必须有明确分卷，禁止静默落到「未分卷」后让作者手动搬。
-        if (string.IsNullOrWhiteSpace(args.VolumeId))
+        if (volumeId is null)
             return VolumeError(
                 "新建章节必须提供 volume-id，章节未保存。"
                     + $"可用分卷：{FormatVolumeChoices(volumes)}"
-            );
-        if (volumes.All(v => v.Id != args.VolumeId))
-            return VolumeError(
-                $"分卷 {args.VolumeId} 不存在，章节未保存。可用分卷：{FormatVolumeChoices(volumes)}"
             );
         if (args.Order <= 0)
             return VolumeError("新建章节必须提供有效 order（从 1 开始），章节未保存。");
         if (string.IsNullOrWhiteSpace(args.Title))
             return VolumeError("新建章节必须提供 title，章节未保存。");
+        if (existingChapters.Any(c => c.Order == args.Order))
+            return VolumeError(
+                $"第 {args.Order} 章已存在，章节未保存。请换一个全局序号。"
+                    + $"现有章节：{FormatChapterChoices(existingChapters)}"
+            );
 
         var chapter = new Chapter
         {
             NovelId = args.NovelId,
-            Title = args.Title,
+            Title = args.Title.Trim(),
             Order = args.Order,
             Content = args.Content,
             Status = ChapterStatus.Draft,
-            VolumeId = args.VolumeId,
+            VolumeId = volumeId,
         };
         await store.SaveChapter(chapter, ct);
         ThrowIfCancelled(ct);
@@ -250,6 +267,14 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             : string.Join(
                 "、",
                 volumes.OrderBy(v => v.Order).Select(v => $"第{v.Order}卷 {v.Name} [ID:{v.Id}]")
+            );
+
+    private static string FormatChapterChoices(IReadOnlyList<Chapter> chapters) =>
+        chapters.Count == 0
+            ? "当前没有章节"
+            : string.Join(
+                "、",
+                chapters.OrderBy(c => c.Order).Select(c => $"第{c.Order}章 {c.Title} [ID:{c.Id}]")
             );
 }
 
@@ -425,19 +450,25 @@ public sealed class ReadChapterTool(INovelStore store)
     {
         ThrowIfCancelled(ct);
         var chapter = await store.GetChapter(args.ChapterId, ct);
-        if (
-            chapter is null
-            && int.TryParse(args.ChapterId, out var order)
-            && !string.IsNullOrWhiteSpace(args.NovelId)
-        )
-            chapter = await store.GetChapterByOrder(args.NovelId, order, ct);
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                args.NovelId,
+                args.ChapterId,
+                ct
+            );
+            chapter = lookup.Value;
+        }
         ThrowIfCancelled(ct);
         if (chapter is null)
             return new AgentToolResult<ReadChapterDetails>
             {
                 Content =
                 [
-                    new TextContent($"章节 {args.ChapterId} 不存在；传章节号时请同时提供 novel-id"),
+                    new TextContent(
+                        $"章节 {args.ChapterId} 不存在；按序号/标题读取时请同时提供 novel-id"
+                    ),
                 ],
                 IsError = true,
             };
@@ -512,11 +543,26 @@ public sealed class ExportChapterTool(INovelStore store)
     {
         ThrowIfCancelled(ct);
         var chapter = await store.GetChapter(args.ChapterId, ct);
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                args.NovelId,
+                args.ChapterId,
+                ct
+            );
+            chapter = lookup.Value;
+        }
         ThrowIfCancelled(ct);
         if (chapter is null)
             return new AgentToolResult<ExportChapterDetails>
             {
-                Content = [new TextContent($"章节 {args.ChapterId} 不存在")],
+                Content =
+                [
+                    new TextContent(
+                        $"章节 {args.ChapterId} 不存在；按序号/标题导出时请同时提供 novel-id"
+                    ),
+                ],
                 IsError = true,
             };
         var format = args.Format?.ToLowerInvariant() ?? "markdown";
@@ -538,8 +584,11 @@ public sealed class ExportChapterTool(INovelStore store)
 
 public sealed record ExportChapterParams
 {
-    [Description("章节ID（GUID，如 7b2be66d2f56；也支持章节号如 1、2）")]
+    [Description("章节ID（GUID，如 7b2be66d2f56；也支持章节号或标题）")]
     public string ChapterId { get; init; } = "";
+
+    [Description("小说 ID；chapter-id 传章节号/标题时必填")]
+    public string? NovelId { get; init; }
 
     [Description("导出格式，支持 markdown 或 txt")]
     public string? Format { get; init; }
@@ -589,9 +638,19 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
             return Error("编辑文本需要 chapter-id");
 
         var chapter = await store.GetChapter(args.ChapterId, ct);
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                args.NovelId,
+                args.ChapterId,
+                ct
+            );
+            chapter = lookup.Value;
+        }
         ThrowIfCancelled(ct);
         if (chapter is null)
-            return Error($"章节 {args.ChapterId} 不存在");
+            return Error($"章节 {args.ChapterId} 不存在；按序号/标题编辑时请同时提供 novel-id");
 
         var content = chapter.Content;
         var operation = (args.Operation ?? "replace").Trim().ToLowerInvariant();
@@ -685,8 +744,11 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
 
 public sealed record EditTextParams
 {
-    [Description("章节ID（GUID，如 7b2be66d2f56；也支持章节号如 1、2）")]
+    [Description("章节ID；也支持章节号或标题（需同时提供 novel-id）")]
     public string ChapterId { get; init; } = "";
+
+    [Description("小说 ID；chapter-id 传章节号/标题时必填")]
+    public string? NovelId { get; init; }
 
     [Description("操作类型：replace（替换）/ insert（插入）/ delete（删除）")]
     public string? Operation { get; init; }
@@ -751,11 +813,26 @@ public sealed class GetWordCountTool(INovelStore store)
         if (!string.IsNullOrEmpty(args.ChapterId))
         {
             var chapter = await store.GetChapter(args.ChapterId, ct);
+            if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+            {
+                var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                    store,
+                    args.NovelId,
+                    args.ChapterId,
+                    ct
+                );
+                chapter = lookup.Value;
+            }
             ThrowIfCancelled(ct);
             if (chapter is null)
                 return new AgentToolResult<WordCountDetails>
                 {
-                    Content = [new TextContent($"章节 {args.ChapterId} 不存在")],
+                    Content =
+                    [
+                        new TextContent(
+                            $"章节 {args.ChapterId} 不存在；按序号/标题统计时请同时提供 novel-id"
+                        ),
+                    ],
                     IsError = true,
                 };
             return new AgentToolResult<WordCountDetails>
@@ -783,7 +860,7 @@ public sealed record GetWordCountParams
     [Description("小说项目ID，留空则自动使用当前项目")]
     public string NovelId { get; init; } = "";
 
-    [Description("可选：指定章节ID，仅统计该章节字数")]
+    [Description("可选：指定章节ID；也支持章节号或标题（需同时提供 novel-id）")]
     public string? ChapterId { get; init; }
 }
 
@@ -820,12 +897,16 @@ public sealed class SetChapterStatusTool(INovelStore store)
     {
         ThrowIfCancelled(ct);
         var novelId = args.NovelId;
-        var chapter = await store.GetChapter(novelId, args.ChapterId, ct);
-        if (chapter is null && int.TryParse(args.ChapterId, out var order))
-            chapter = await store.GetChapterByOrder(novelId, order, ct);
+        var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+            store,
+            novelId,
+            args.ChapterId,
+            ct
+        );
+        var chapter = lookup.Value;
         ThrowIfCancelled(ct);
         if (chapter is null)
-            return Error($"章节 {args.ChapterId} 不存在");
+            return Error(lookup.Error ?? $"章节 {args.ChapterId} 不存在");
 
         var target = args.Status?.Trim().ToLowerInvariant() switch
         {
@@ -1070,32 +1151,74 @@ public sealed class ReorderChaptersTool(INovelStore store)
     )
     {
         ThrowIfCancelled(ct);
-        var order = 1;
-        var updated = 0;
-        foreach (var chapterId in args.ChapterIds)
+        var requested = (args.ChapterIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .ToArray();
+        if (requested.Length == 0)
+            return Error("至少提供一个章节 ID/序号/标题，不能做空重排");
+        if (requested.Distinct(StringComparer.OrdinalIgnoreCase).Count() != requested.Length)
+            return Error("章节列表包含重复项，未做任何修改");
+
+        var novelId = args.NovelId?.Trim() ?? "";
+        if (novelId.Length == 0)
         {
-            var chapter = await store.GetChapter(chapterId, ct);
-            ThrowIfCancelled(ct);
-            if (chapter is not null)
-            {
-                chapter.Order = order++;
-                await store.SaveChapter(chapter, ct);
-                ThrowIfCancelled(ct);
-                updated++;
-            }
+            var first = await store.GetChapter(requested[0], ct);
+            if (first is null)
+                return Error("无法从第一个章节反推小说；请同时提供 novel-id");
+            novelId = first.NovelId;
         }
+
+        var all = await store.GetChapters(novelId, ct);
+        if (all.Count == 0)
+            return Error("当前小说没有章节，无法重排");
+
+        var resolved = new List<Chapter>(requested.Length);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in requested)
+        {
+            var lookup = NovelReferenceResolver.FindChapterLookup(all, key);
+            if (lookup.Value is null)
+                return Error($"{lookup.Error}，未做任何修改");
+            if (!seen.Add(lookup.Value.Id))
+                return Error($"章节 {key} 解析到重复条目，未做任何修改");
+            resolved.Add(lookup.Value);
+        }
+
+        if (resolved.Count != all.Count)
+        {
+            var missing = all.Where(c => !seen.Contains(c.Id))
+                .OrderBy(c => c.Order)
+                .Select(c => $"第{c.Order}章 {c.Title} [ID:{c.Id}]");
+            return Error(
+                $"重排必须覆盖全部 {all.Count} 章；当前只给了 {resolved.Count} 章。"
+                    + $"未列出的章节：{string.Join("、", missing)}"
+            );
+        }
+
+        var assignments = resolved
+            .Select((chapter, index) => new ChapterOrderAssignment(chapter.Id, index + 1))
+            .ToList();
+        await store.ReorderAllChapters(novelId, assignments, ct);
+        ThrowIfCancelled(ct);
         return new AgentToolResult<ReorderChaptersDetails>
         {
-            Content = [new TextContent($"已重排序 {updated} 个章节")],
-            Details = new ReorderChaptersDetails { Count = updated },
+            Content = [new TextContent($"已重排序 {assignments.Count} 个章节")],
+            Details = new ReorderChaptersDetails { Count = assignments.Count },
         };
     }
+
+    private static AgentToolResult<ReorderChaptersDetails> Error(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
 }
 
 public sealed record ReorderChaptersParams
 {
-    [Description("按新顺序排列的章节ID列表")]
+    [Description("按新顺序排列的章节ID/序号/标题，必须覆盖全部章节且不重复")]
     public string[] ChapterIds { get; init; } = [];
+
+    [Description("小说 ID；章节列表用序号/标题时必填")]
+    public string? NovelId { get; init; }
 }
 
 public sealed record ReorderChaptersDetails
@@ -1160,17 +1283,29 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
                 Details = new OutlineDetails { ChapterCount = 0 },
             };
         }
+        if (titles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != titles.Length)
+        {
+            return new AgentToolResult<OutlineDetails>
+            {
+                Content = [new TextContent("chapter-titles 包含重复标题，未创建任何章节")],
+                IsError = true,
+                Details = new OutlineDetails { ChapterCount = 0 },
+            };
+        }
 
         var existingChapters = await store.GetChapters(args.NovelId, ct);
         ThrowIfCancelled(ct);
         var volumes = await store.GetVolumes(args.NovelId, ct);
         ThrowIfCancelled(ct);
+        string? volumeId = null;
         if (!string.IsNullOrWhiteSpace(args.VolumeId))
         {
-            if (volumes.All(v => v.Id != args.VolumeId))
+            var lookup = NovelReferenceResolver.FindVolumeLookup(volumes, args.VolumeId);
+            if (lookup.Value is null)
                 return Error(
-                    $"分卷 {args.VolumeId} 不存在，未创建章节。可用分卷：{FormatVolumeChoices(volumes)}"
+                    $"{lookup.Error}，未创建章节。可用分卷：{FormatVolumeChoices(volumes)}"
                 );
+            volumeId = lookup.Value.Id;
         }
         else if (volumes.Count > 0)
         {
@@ -1187,7 +1322,9 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
         foreach (var title in titles)
         {
             // 查找是否已有同标题章节，跳过以保留内容和 ID
-            var existing = existingChapters.Find(c => c.Title == title);
+            var existing = existingChapters.Find(c =>
+                string.Equals(c.Title.Trim(), title, StringComparison.OrdinalIgnoreCase)
+            );
             if (existing is not null)
             {
                 skipped++;
@@ -1201,7 +1338,7 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
                 Order = startOrder + created,
                 Content = "",
                 Status = ChapterStatus.Draft,
-                VolumeId = string.IsNullOrWhiteSpace(args.VolumeId) ? null : args.VolumeId,
+                VolumeId = volumeId,
             };
             await store.SaveChapter(chapter, ct);
             ThrowIfCancelled(ct);
@@ -1285,11 +1422,26 @@ public sealed class RewriteSelectionTool(INovelStore store, RetrievalKernel? ker
     {
         ThrowIfCancelled(ct);
         var chapter = await store.GetChapter(args.ChapterId, ct);
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                args.NovelId,
+                args.ChapterId,
+                ct
+            );
+            chapter = lookup.Value;
+        }
         ThrowIfCancelled(ct);
         if (chapter is null)
             return new AgentToolResult<RewriteSelectionDetails>
             {
-                Content = [new TextContent($"章节 {args.ChapterId} 不存在")],
+                Content =
+                [
+                    new TextContent(
+                        $"章节 {args.ChapterId} 不存在；按序号/标题改写时请同时提供 novel-id"
+                    ),
+                ],
                 IsError = true,
             };
 
@@ -1334,8 +1486,11 @@ public sealed class RewriteSelectionTool(INovelStore store, RetrievalKernel? ker
 
 public sealed record RewriteSelectionParams
 {
-    [Description("章节ID（GUID，如 7b2be66d2f56；也支持章节号如 1、2）")]
+    [Description("章节ID（也支持章节号或标题，需同时提供 novel-id）")]
     public string ChapterId { get; init; } = "";
+
+    [Description("小说 ID；chapter-id 传章节号/标题时必填")]
+    public string? NovelId { get; init; }
 
     [Description("要被替换的旧文本")]
     public string OldText { get; init; } = "";
@@ -1485,11 +1640,26 @@ public sealed class DeleteChapterTool(INovelStore store)
     {
         ThrowIfCancelled(ct);
         var chapter = await store.GetChapter(args.ChapterId, ct);
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.NovelId))
+        {
+            var lookup = await NovelReferenceResolver.ChapterLookupAsync(
+                store,
+                args.NovelId,
+                args.ChapterId,
+                ct
+            );
+            chapter = lookup.Value;
+        }
         ThrowIfCancelled(ct);
         if (chapter is null)
             return new AgentToolResult<DeleteChapterDetails>
             {
-                Content = [new TextContent($"章节 {args.ChapterId} 不存在")],
+                Content =
+                [
+                    new TextContent(
+                        $"章节 {args.ChapterId} 不存在；按序号/标题删除时请同时提供 novel-id"
+                    ),
+                ],
                 IsError = true,
             };
         var title = chapter.Title;
@@ -1508,15 +1678,18 @@ public sealed class DeleteChapterTool(INovelStore store)
         return new AgentToolResult<DeleteChapterDetails>
         {
             Content = [new TextContent($"章节「{title}」已删除")],
-            Details = new DeleteChapterDetails { Id = args.ChapterId },
+            Details = new DeleteChapterDetails { Id = chapter.Id },
         };
     }
 }
 
 public sealed record DeleteChapterParams
 {
-    [Description("要删除的章节ID（GUID，如 7b2be66d2f56；也支持章节号如 1、2）")]
+    [Description("要删除的章节ID；也支持章节号或标题（需同时提供 novel-id）")]
     public string ChapterId { get; init; } = "";
+
+    [Description("小说 ID；chapter-id 传章节号/标题时必填")]
+    public string? NovelId { get; init; }
 }
 
 public sealed record DeleteChapterDetails

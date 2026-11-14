@@ -41,6 +41,11 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
         var createdIds = new List<string>(args.Relationships.Count);
         var failed = new List<string>();
         var characters = await store.GetCharacters(args.NovelId, ct);
+        var existingRelationships = await store.GetRelationshipsByNovel(args.NovelId, ct);
+        var seenPairs = new HashSet<string>(
+            existingRelationships.Select(r => PairKey(r.CharacterAId, r.CharacterBId)),
+            StringComparer.Ordinal
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个关系草稿，逐个创建
@@ -78,6 +83,11 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
                 failed.Add($"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 两端相同");
                 continue;
             }
+            if (!seenPairs.Add(PairKey(characterA.Id, characterB.Id)))
+            {
+                failed.Add($"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 关系已存在");
+                continue;
+            }
 
             var type = RelationshipType.Friend;
             if (!string.IsNullOrWhiteSpace(r.Type))
@@ -94,7 +104,7 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
             var strength = RelationshipStrength.Medium;
             if (
                 !string.IsNullOrWhiteSpace(r.Strength)
-                && !Enum.TryParse<RelationshipStrength>(r.Strength, ignoreCase: true, out strength)
+                && !NovelEnum.TryParse<RelationshipStrength>(r.Strength, out strength)
             )
             {
                 failed.Add(
@@ -143,6 +153,9 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
             },
         };
     }
+
+    private static string PairKey(string a, string b) =>
+        string.CompareOrdinal(a, b) <= 0 ? $"{a}|{b}" : $"{b}|{a}";
 }
 
 public sealed record BatchCreateRelationshipsParams

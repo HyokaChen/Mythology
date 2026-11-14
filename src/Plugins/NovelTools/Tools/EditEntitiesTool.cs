@@ -80,7 +80,14 @@ public sealed class EditEntitiesTool(INovelStore store, RetrievalKernel? kernel 
                 var type = ParseSupportedType(item.EntityType);
                 var entity = await LoadEntityAsync(type, item, args.NovelId, ct);
                 var before = EntityFieldWriter.CaptureMembership(entity);
-                var changes = EntityFieldWriter.Apply(entity, type, item.Fields);
+                var changes = await EntityFieldWriter.ApplyAsync(
+                    store,
+                    args.NovelId,
+                    entity,
+                    type,
+                    item.Fields,
+                    ct
+                );
 
                 ThrowIfCancelled(ct);
                 await EntityFieldWriter.SaveAsync(store, entity, before, ct);
@@ -117,7 +124,7 @@ public sealed class EditEntitiesTool(INovelStore store, RetrievalKernel? kernel 
     private static EntityType ParseSupportedType(string value)
     {
         var parsed = EntityTypeExtensions.ParseEntityType(value);
-        if (parsed is null && Enum.TryParse<EntityType>(value, ignoreCase: true, out var enumValue))
+        if (parsed is null && NovelEnum.TryParse<EntityType>(value, out var enumValue))
             parsed = enumValue;
 
         if (parsed is not { } type || Array.IndexOf(SupportedTypes, type) < 0)
@@ -128,7 +135,7 @@ public sealed class EditEntitiesTool(INovelStore store, RetrievalKernel? kernel 
         return type;
     }
 
-    /// <summary>按类型载入实体；名称可解析的集合允许传名称（与 manage_* 同款容忍）。</summary>
+    /// <summary>按类型载入实体；支持 ID、名称、章节/卷序号，未找到时返回解析器的具体错误。</summary>
     private async Task<Entity> LoadEntityAsync(
         EntityType type,
         EntityEditItem item,
@@ -137,64 +144,14 @@ public sealed class EditEntitiesTool(INovelStore store, RetrievalKernel? kernel 
     )
     {
         var id = item.EntityId?.Trim() ?? "";
-        Entity? entity = type switch
-        {
-            EntityTypeEnum.Novel => await LoadNovelAsync(id, novelId, ct),
-            EntityTypeEnum.Volume => ManageHelper.ResolveByIdOrName(
-                await store.GetVolumes(novelId, ct),
-                id,
-                v => v.Id,
-                v => v.Name
-            ),
-            EntityTypeEnum.Chapter => await store.GetChapter(novelId, id, ct),
-            EntityTypeEnum.Character => ManageHelper.ResolveByIdOrName(
-                await store.GetCharacters(novelId, ct),
-                id,
-                c => c.Id,
-                c => c.Name
-            ),
-            EntityTypeEnum.Faction => ManageHelper.ResolveByIdOrName(
-                await store.GetFactions(novelId, ct),
-                id,
-                f => f.Id,
-                f => f.Name
-            ),
-            EntityTypeEnum.Location => ManageHelper.ResolveByIdOrName(
-                await store.GetLocations(novelId, ct),
-                id,
-                l => l.Id,
-                l => l.Name
-            ),
-            EntityTypeEnum.Plotline => ManageHelper.ResolveByIdOrName(
-                await store.GetPlotlines(novelId, ct),
-                id,
-                p => p.Id,
-                p => p.Name
-            ),
-            EntityTypeEnum.Scene => ManageHelper.ResolveByIdOrName(
-                await store.GetScenesByNovel(novelId, ct),
-                id,
-                s => s.Id,
-                s => s.Title
-            ),
-            EntityTypeEnum.Item => ManageHelper.ResolveByIdOrName(
-                await store.GetItems(novelId, ct),
-                id,
-                i => i.Id,
-                i => i.Name
-            ),
-            EntityTypeEnum.Relationship => ManageHelper.ResolveByIdOrName(
-                await store.GetRelationshipsByNovel(novelId, ct),
-                id,
-                r => r.Id,
-                r => r.Id
-            ),
-            _ => null,
-        };
+        if (type is EntityTypeEnum.Novel)
+            return await LoadNovelAsync(id, novelId, ct)
+                ?? throw new InvalidOperationException($"未找到小说 '{id}'");
 
-        return entity
+        var lookup = await NovelReferenceResolver.EntityAsync(store, novelId, type, id, ct);
+        return lookup.Value
             ?? throw new InvalidOperationException(
-                $"未找到{EntityFieldRegistry.Label(type)} '{id}'"
+                lookup.Error ?? $"未找到{EntityFieldRegistry.Label(type)} '{id}'"
             );
     }
 
@@ -278,10 +235,13 @@ internal static class EntityFieldWriter
         };
 
     /// <summary>校验并应用字段补丁；返回可读变更列表。任何字段非法时整条抛错、不修改实体。</summary>
-    internal static IReadOnlyList<string> Apply(
+    internal static async Task<IReadOnlyList<string>> ApplyAsync(
+        INovelStore store,
+        string novelId,
         Entity entity,
         EntityType type,
-        IReadOnlyList<EntityFieldPatch>? patches
+        IReadOnlyList<EntityFieldPatch>? patches,
+        CancellationToken ct
     )
     {
         if (patches is null || patches.Count == 0)
@@ -290,8 +250,11 @@ internal static class EntityFieldWriter
         var assignments = new List<(PropertyInfo Prop, object? Value, string Change)>(
             patches.Count
         );
+        var referenceCache =
+            new Dictionary<(EntityType Type, string Key), NovelReferenceResolver.Lookup<string>>();
         foreach (var patch in patches)
         {
+            ct.ThrowIfCancellationRequested();
             if (patch is null)
                 throw new InvalidOperationException("字段补丁不能为空");
 
@@ -313,8 +276,96 @@ internal static class EntityFieldWriter
 
             var prop = entity.GetType().GetProperty(def.Prop, PropFlags)
                 ?? throw new InvalidOperationException($"模型缺少字段 {def.Prop}");
+            if (assignments.Any(a => a.Prop == prop))
+                throw new InvalidOperationException($"字段 '{name}' 重复提交，未做任何修改");
 
             var value = Coerce(def, prop, patch);
+            if (
+                value is string scalar
+                && IsRequiredText(type, def.Prop)
+                && scalar.Trim().Length == 0
+            )
+                throw new InvalidOperationException($"字段 '{name}' 不能为空");
+
+            if (
+                value is string reference
+                && EntityFieldRegistry.SelectSource(def.Prop) is { } refType
+            )
+            {
+                if (reference.Trim().Length == 0)
+                {
+                    if (IsRequiredReference(type, def.Prop))
+                        throw new InvalidOperationException($"字段 '{name}' 不能为空");
+                }
+                else
+                {
+                    var resolved = await ResolveReferenceIdAsync(
+                        store,
+                        novelId,
+                        refType,
+                        reference,
+                        referenceCache,
+                        ct
+                    );
+                    if (resolved.Value is not { } id)
+                        throw new InvalidOperationException(
+                            $"字段 '{name}' 的{EntityFieldRegistry.Label(refType)}引用无效：{resolved.Error}"
+                        );
+                    if (refType == type && string.Equals(id, entity.Id, StringComparison.Ordinal))
+                        throw new InvalidOperationException($"字段 '{name}' 不能引用实体自身");
+                    value = id;
+                }
+            }
+
+            if (
+                value is List<string> references
+                && EntityFieldRegistry.MultiSelectSource(def.Prop) is { } multiType
+            )
+            {
+                var ids = new List<string>(references.Count);
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var listReference in references)
+                {
+                    if (listReference.Trim().Length == 0)
+                        continue;
+                    var resolved = await ResolveReferenceIdAsync(
+                        store,
+                        novelId,
+                        multiType,
+                        listReference,
+                        referenceCache,
+                        ct
+                    );
+                    if (resolved.Value is not { } id)
+                        throw new InvalidOperationException(
+                            $"字段 '{name}' 的{EntityFieldRegistry.Label(multiType)}引用无效：{resolved.Error}"
+                        );
+                    if (multiType == type && string.Equals(id, entity.Id, StringComparison.Ordinal))
+                        throw new InvalidOperationException($"字段 '{name}' 不能引用实体自身");
+                    if (!seen.Add(id))
+                        throw new InvalidOperationException($"字段 '{name}' 包含重复引用: {id}");
+                    ids.Add(id);
+                }
+                value = ids;
+            }
+
+            if (entity is Novel && def.Prop is "TargetWords" && value is int targetWords)
+            {
+                if (targetWords < 0)
+                    throw new InvalidOperationException("目标字数不能为负数");
+            }
+
+            if (entity is Volume && def.Prop is "Order" && value is int volumeOrder)
+            {
+                if (volumeOrder <= 0)
+                    throw new InvalidOperationException("卷序号必须从 1 开始");
+                var volumes = await store.GetVolumes(novelId, ct);
+                if (volumes.Any(v => v.Id != entity.Id && v.Order == volumeOrder))
+                    throw new InvalidOperationException(
+                        $"第 {volumeOrder} 卷已存在，卷序号不能重复"
+                    );
+            }
+
             var change =
                 $"{Kebab.ConvertName(def.Prop)}: "
                 + $"{ManageHelper.Diff(FormatValue(prop.GetValue(entity)))} → "
@@ -322,10 +373,90 @@ internal static class EntityFieldWriter
             assignments.Add((prop, value, change));
         }
 
+        var finalValues = assignments.ToDictionary(a => a.Prop.Name, a => a.Value);
+        if (entity is Relationship relationship)
+        {
+            var a =
+                finalValues.GetValueOrDefault(nameof(Relationship.CharacterAId)) as string
+                ?? relationship.CharacterAId;
+            var b =
+                finalValues.GetValueOrDefault(nameof(Relationship.CharacterBId)) as string
+                ?? relationship.CharacterBId;
+            if (a.Length == 0 || b.Length == 0)
+                throw new InvalidOperationException("关系两端角色不能为空");
+            if (string.Equals(a, b, StringComparison.Ordinal))
+                throw new InvalidOperationException("关系的两个角色不能相同");
+        }
+
+        if (entity is Location location)
+        {
+            var parentId =
+                finalValues.GetValueOrDefault(nameof(Location.ParentId)) as string
+                ?? location.ParentId;
+            if (!string.IsNullOrWhiteSpace(parentId))
+            {
+                var locations = await store.GetLocations(novelId, ct);
+                var byId = locations.ToDictionary(l => l.Id, StringComparer.Ordinal);
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var current = parentId;
+                while (!string.IsNullOrWhiteSpace(current))
+                {
+                    if (string.Equals(current, location.Id, StringComparison.Ordinal))
+                        throw new InvalidOperationException("父地点不能指向自己或自己的下级");
+                    if (!seen.Add(current))
+                        throw new InvalidOperationException("父地点链存在循环");
+                    current = byId.TryGetValue(current, out var parent) ? parent.ParentId : null;
+                }
+            }
+        }
+
         foreach (var (prop, value, _) in assignments)
             prop.SetValue(entity, value);
         return [.. assignments.Select(a => a.Change)];
     }
+
+    private static async Task<NovelReferenceResolver.Lookup<string>> ResolveReferenceIdAsync(
+        INovelStore store,
+        string novelId,
+        EntityType type,
+        string reference,
+        Dictionary<(EntityType Type, string Key), NovelReferenceResolver.Lookup<string>> cache,
+        CancellationToken ct
+    )
+    {
+        var key = (type, NovelReferenceResolver.NormalizeText(reference));
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+        var resolved = await NovelReferenceResolver.EntityIdAsync(
+            store,
+            novelId,
+            type,
+            reference,
+            ct
+        );
+        cache[key] = resolved;
+        return resolved;
+    }
+
+    private static bool IsRequiredText(EntityType type, string prop) =>
+        prop switch
+        {
+            "Name" => type
+                is EntityTypeEnum.Volume
+                    or EntityTypeEnum.Character
+                    or EntityTypeEnum.Faction
+                    or EntityTypeEnum.Location
+                    or EntityTypeEnum.Plotline
+                    or EntityTypeEnum.Item,
+            "Title" => type
+                is EntityTypeEnum.Chapter
+                    or EntityTypeEnum.Scene
+                    or EntityTypeEnum.Novel,
+            _ => false,
+        };
+
+    private static bool IsRequiredReference(EntityType type, string prop) =>
+        type is EntityTypeEnum.Relationship && prop is "CharacterAId" or "CharacterBId";
 
     /// <summary>按模型属性类型强制转换（不是 FieldType——列表/枚举的真实形状以模型为准）。</summary>
     private static object? Coerce(FieldDef def, PropertyInfo prop, EntityFieldPatch patch)
@@ -363,9 +494,16 @@ internal static class EntityFieldWriter
                 );
 
         if (target == typeof(int))
+        {
+            if (
+                def.Prop is "Order"
+                && NovelReferenceResolver.TryParseOrder(raw, out var orderValue)
+            )
+                return orderValue;
             return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)
                 ? i
                 : throw new InvalidOperationException($"字段 '{name}' 取值 '{raw}' 不是整数");
+        }
 
         if (target == typeof(double))
             return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
@@ -378,9 +516,7 @@ internal static class EntityFieldWriter
                 return RelationshipTypeExtensions.ParseRelationshipType(raw)
                     ?? throw new InvalidOperationException(EnumError(def, target, name, raw));
 
-            // kebab-case 去掉分隔符后即枚举名（如 parent-of → parentof，大小写不敏感）
-            var normalized = raw.Replace("-", "").Replace("_", "");
-            return Enum.TryParse(target, normalized, ignoreCase: true, out var parsed)
+            return NovelEnum.TryParse(target, raw, out var parsed)
                 ? parsed
                 : throw new InvalidOperationException(EnumError(def, target, name, raw));
         }
@@ -399,9 +535,21 @@ internal static class EntityFieldWriter
         if (index >= 0)
             return def.OptionValues[index];
 
-        return def.OptionValues.FirstOrDefault(v =>
+        var stored = def.OptionValues.FirstOrDefault(v =>
             string.Equals(v, raw, StringComparison.OrdinalIgnoreCase)
-        ) ?? raw;
+        );
+        if (stored is not null)
+            return stored;
+
+        if (def.Type == FieldType.Select)
+            throw new InvalidOperationException(
+                $"字段 '{Kebab.ConvertName(def.Prop)}' 取值 '{raw}' 无效。可选: "
+                    + string.Join(
+                        "、",
+                        def.Options.Zip(def.OptionValues, (label, val) => $"{label}={val}")
+                    )
+            );
+        return raw;
     }
 
     private static bool TryParseBool(string raw, out bool value)
@@ -617,7 +765,9 @@ public sealed record EntityEditItem
     )]
     public string EntityType { get; init; } = "";
 
-    [Description("实体ID；character/faction/location/plotline/scene/item/volume 也接受名称")]
+    [Description(
+        "实体ID；volume/chapter/character/faction/location/plotline/scene/item 也接受名称或序号"
+    )]
     public string EntityId { get; init; } = "";
 
     [Description("字段修改列表；字段名用 kebab-case（也可用模型属性名）")]

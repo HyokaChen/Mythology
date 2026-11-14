@@ -169,7 +169,7 @@ public sealed class TrackCharacterArcTool(
 
         if (!string.IsNullOrWhiteSpace(args.FocusRole))
         {
-            if (Enum.TryParse<CharacterRole>(args.FocusRole, true, out var role))
+            if (NovelEnum.TryParse<CharacterRole>(args.FocusRole, out var role))
             {
                 foreach (
                     var name in novel

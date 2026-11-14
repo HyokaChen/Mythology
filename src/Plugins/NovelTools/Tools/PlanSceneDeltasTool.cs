@@ -41,7 +41,7 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
 
         try
         {
-            var scene = await store.GetScene(novelId, sceneId, ct);
+            var scene = await NovelReferenceResolver.SceneAsync(store, novelId, sceneId, ct);
             if (scene is null)
                 return Error($"场景不存在: {sceneId}");
 
@@ -67,6 +67,18 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
                         var built = Build(delta, ruleIds, out var error);
                         if (built is null)
                             return Error(error ?? "计划变化无效");
+                        var target = await NovelReferenceResolver.EntityIdAsync(
+                            store,
+                            novelId,
+                            built.TargetEntityType,
+                            built.TargetId,
+                            ct
+                        );
+                        if (target.Value is not { } targetId)
+                            return Error(
+                                $"计划变化目标无效：{target.Error ?? built.TargetId}，场景未修改"
+                            );
+                        built.TargetId = targetId;
                         parsed.Add(built);
                     }
                 }
@@ -121,6 +133,14 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
         }
 
         var kind = ParseEnum(args.Kind, PlannedDeltaKind.StateChange);
+        if (
+            !string.IsNullOrWhiteSpace(args.Kind)
+            && !NovelEnum.TryParse<PlannedDeltaKind>(args.Kind, out _)
+        )
+        {
+            error = $"未知计划变化类型: {args.Kind}";
+            return null;
+        }
         if (kind == PlannedDeltaKind.RuleTrigger)
         {
             var ruleId = args.RuleId?.Trim() ?? "";
@@ -136,12 +156,33 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
             }
         }
 
-        var targetType = EntityTypeExtensions.ParseEntityType(args.TargetEntityType)
-            ?? ParseEnum(args.TargetEntityType, EntityTypeEnum.Character);
+        EntityTypeEnum targetType;
+        if (string.IsNullOrWhiteSpace(args.TargetEntityType))
+        {
+            targetType = EntityTypeEnum.Character;
+        }
+        else if (EntityTypeExtensions.ParseEntityType(args.TargetEntityType) is { } parsedType)
+        {
+            targetType = parsedType;
+        }
+        else if (NovelEnum.TryParse<EntityTypeEnum>(args.TargetEntityType, out var enumType))
+        {
+            targetType = enumType;
+        }
+        else
+        {
+            error = $"未知计划变化目标类型: {args.TargetEntityType}";
+            return null;
+        }
         EvolutionAspect? aspect = null;
         if (!string.IsNullOrWhiteSpace(args.Aspect))
         {
-            aspect = ParseEnum(args.Aspect, EvolutionAspect.Other);
+            if (!NovelEnum.TryParse<EvolutionAspect>(args.Aspect, out var parsedAspect))
+            {
+                error = $"未知计划变化面: {args.Aspect}";
+                return null;
+            }
+            aspect = parsedAspect;
         }
 
         return new PlannedDelta
@@ -160,8 +201,7 @@ public sealed class PlanSceneDeltasTool(INovelStore store)
 
     private static T ParseEnum<T>(string? value, T fallback)
         where T : struct, Enum =>
-        !string.IsNullOrWhiteSpace(value)
-        && Enum.TryParse<T>(value.Replace("-", "").Replace("_", ""), true, out var parsed)
+        !string.IsNullOrWhiteSpace(value) && NovelEnum.TryParse<T>(value, out var parsed)
             ? parsed
             : fallback;
 
@@ -182,7 +222,7 @@ public sealed record PlanSceneDeltasParams
     [Description("小说项目ID，留空则自动使用当前项目")]
     public string NovelId { get; init; } = "";
 
-    [Description("场景 ID（必填）")]
+    [Description("场景 ID 或标题（必填）")]
     public string SceneId { get; init; } = "";
 
     [Description("replace（替换全部）/ append（追加）/ clear（清空）")]
@@ -206,7 +246,7 @@ public sealed record PlannedDeltaParams
     [Description("目标实体类型：character/faction/location/item/plotline/scene")]
     public string? TargetEntityType { get; init; }
 
-    [Description("目标实体 ID")]
+    [Description("目标实体 ID 或名称")]
     public string? TargetId { get; init; }
 
     [Description(

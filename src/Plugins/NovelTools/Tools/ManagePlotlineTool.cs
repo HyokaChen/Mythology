@@ -64,6 +64,15 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
         if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建情节线需要 name");
 
+        var existingPlotlines = await store.GetPlotlines(args.NovelId, ct);
+        var normalizedName = args.Name.Trim();
+        if (
+            existingPlotlines.Any(p =>
+                string.Equals(p.Name.Trim(), normalizedName, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+            return Error($"情节线名「{normalizedName}」已存在，请换一个名称");
+
         var plannedRevealChapterId = await ResolveChapterId(
             args.NovelId,
             args.PlannedRevealChapterId,
@@ -85,20 +94,20 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
         var type = PlotlineType.Main;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
-            if (!Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out type))
+            if (!NovelEnum.TryParse<PlotlineType>(args.Type, out type))
                 return Error($"未知情节线类型: {args.Type}");
         }
         var tension = PlotlineTension.Medium;
         if (!string.IsNullOrWhiteSpace(args.Tension))
         {
-            if (!Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out tension))
+            if (!NovelEnum.TryParse<PlotlineTension>(args.Tension, out tension))
                 return Error($"未知情节线紧张度: {args.Tension}");
         }
 
         var plotline = new Plotline
         {
             NovelId = args.NovelId,
-            Name = args.Name,
+            Name = normalizedName,
             Description = args.Description ?? "",
             Type = type,
             PlannedRevealChapterId = plannedRevealChapterId,
@@ -136,122 +145,109 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
         if (plotline is null)
             return Error($"情节线 {args.PlotlineId} 不存在（可用 list 查看 ID 或直接传名称）");
 
-        var changes = new List<string>();
-        changes.AddRange(
-            ManageHelper.DiffFields(
-                ("名称", plotline.Name, args.Name),
-                ("描述", plotline.Description, args.Description)
-            )
-        );
-
-        if (
-            args.Type is not null
-            && Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out var parsedType)
-            && parsedType != plotline.Type
-        )
-        {
-            changes.Add($"类型: {plotline.Type} → {args.Type}");
-        }
-
-        var chapters = await store.GetChapters(args.NovelId, ct);
-        var chMap = chapters.ToDictionary(c => c.Id, c => $"第{c.Order}章 {c.Title}");
-
-        if (
-            args.PlannedRevealChapterId != null
-            && args.PlannedRevealChapterId != plotline.PlannedRevealChapterId
-        )
-        {
-            var oldLabel =
-                plotline.PlannedRevealChapterId != null
-                && chMap.TryGetValue(plotline.PlannedRevealChapterId, out var oldCh)
-                    ? oldCh
-                    : "未设定";
-            var newLabel = chMap.TryGetValue(args.PlannedRevealChapterId, out var newCh)
-                ? newCh
-                : args.PlannedRevealChapterId;
-            changes.Add($"计划揭示章节: {oldLabel} → {newLabel}");
-        }
-
-        if (
-            args.Tension is not null
-            && Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out var parsedTension)
-            && parsedTension != plotline.Tension
-        )
-        {
-            changes.Add($"紧张度: {plotline.Tension} → {args.Tension}");
-        }
-
-        if (args.Turnpoints is not null && args.Turnpoints != plotline.Turnpoints)
-        {
-            changes.Add($"关键转折: {ManageHelper.Diff(args.Turnpoints)}");
-        }
-
-        if (
-            args.ResolvedAtChapterId != null
-            && args.ResolvedAtChapterId != plotline.ResolvedAtChapterId
-        )
-        {
-            var oldLabel =
-                plotline.ResolvedAtChapterId != null
-                && chMap.TryGetValue(plotline.ResolvedAtChapterId, out var oldRCh)
-                    ? oldRCh
-                    : "未解决";
-            var newLabel = chMap.TryGetValue(args.ResolvedAtChapterId, out var newRCh)
-                ? newRCh
-                : args.ResolvedAtChapterId;
-            changes.Add($"解决章节: {oldLabel} → {newLabel}");
-        }
-
+        var newName = plotline.Name;
         if (args.Name is not null)
-            plotline.Name = args.Name;
-        if (args.Description is not null)
-            plotline.Description = args.Description;
+        {
+            if (string.IsNullOrWhiteSpace(args.Name))
+                return Error("情节线 name 不能为空");
+            newName = args.Name.Trim();
+            var plotlines = await store.GetPlotlines(args.NovelId, ct);
+            if (
+                plotlines.Any(p =>
+                    p.Id != plotline.Id
+                    && string.Equals(p.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+                return Error($"情节线名「{newName}」已存在，请换一个名称");
+        }
+
+        var newType = plotline.Type;
         if (args.Type is not null)
         {
-            if (!Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out var pt))
+            if (!NovelEnum.TryParse<PlotlineType>(args.Type, out newType))
                 return Error($"未知情节线类型: {args.Type}");
-            plotline.Type = pt;
         }
+        var newTension = plotline.Tension;
+        if (args.Tension is not null)
+        {
+            if (!NovelEnum.TryParse<PlotlineTension>(args.Tension, out newTension))
+                return Error($"未知情节线紧张度: {args.Tension}");
+        }
+
+        var newPlannedRevealChapterId = plotline.PlannedRevealChapterId;
         if (args.PlannedRevealChapterId != null)
         {
             if (string.IsNullOrWhiteSpace(args.PlannedRevealChapterId))
             {
-                plotline.PlannedRevealChapterId = null;
+                newPlannedRevealChapterId = null;
             }
             else
             {
-                var chapterId = await ResolveChapterId(
+                newPlannedRevealChapterId = await ResolveChapterId(
                     args.NovelId,
                     args.PlannedRevealChapterId,
                     ct
                 );
-                if (chapterId is null)
+                if (newPlannedRevealChapterId is null)
                     return Error($"计划揭示章节 {args.PlannedRevealChapterId} 不存在");
-                plotline.PlannedRevealChapterId = chapterId;
             }
         }
-        if (args.Tension is not null)
-        {
-            if (!Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out var ptn))
-                return Error($"未知情节线紧张度: {args.Tension}");
-            plotline.Tension = ptn;
-        }
-        if (args.Turnpoints is not null)
-            plotline.Turnpoints = args.Turnpoints;
+        var newResolvedAtChapterId = plotline.ResolvedAtChapterId;
         if (args.ResolvedAtChapterId != null)
         {
             if (string.IsNullOrWhiteSpace(args.ResolvedAtChapterId))
             {
-                plotline.ResolvedAtChapterId = null;
+                newResolvedAtChapterId = null;
             }
             else
             {
-                var chapterId = await ResolveChapterId(args.NovelId, args.ResolvedAtChapterId, ct);
-                if (chapterId is null)
+                newResolvedAtChapterId = await ResolveChapterId(
+                    args.NovelId,
+                    args.ResolvedAtChapterId,
+                    ct
+                );
+                if (newResolvedAtChapterId is null)
                     return Error($"解决章节 {args.ResolvedAtChapterId} 不存在");
-                plotline.ResolvedAtChapterId = chapterId;
             }
         }
+
+        var changes = new List<string>();
+        changes.AddRange(
+            ManageHelper.DiffFields(
+                ("名称", plotline.Name, newName),
+                ("描述", plotline.Description, args.Description)
+            )
+        );
+        if (newType != plotline.Type)
+            changes.Add($"类型: {plotline.Type} → {newType}");
+        if (newTension != plotline.Tension)
+            changes.Add($"紧张度: {plotline.Tension} → {newTension}");
+        if (newPlannedRevealChapterId != plotline.PlannedRevealChapterId)
+        {
+            changes.Add(
+                $"计划揭示章节: {plotline.PlannedRevealChapterId ?? "未设定"} → "
+                    + $"{newPlannedRevealChapterId ?? "未设定"}"
+            );
+        }
+        if (newResolvedAtChapterId != plotline.ResolvedAtChapterId)
+        {
+            changes.Add(
+                $"解决章节: {plotline.ResolvedAtChapterId ?? "未解决"} → "
+                    + $"{newResolvedAtChapterId ?? "未解决"}"
+            );
+        }
+        if (args.Turnpoints is not null && args.Turnpoints != plotline.Turnpoints)
+            changes.Add($"关键转折: {ManageHelper.Diff(args.Turnpoints)}");
+
+        plotline.Name = newName;
+        if (args.Description is not null)
+            plotline.Description = args.Description;
+        plotline.Type = newType;
+        plotline.Tension = newTension;
+        plotline.PlannedRevealChapterId = newPlannedRevealChapterId;
+        plotline.ResolvedAtChapterId = newResolvedAtChapterId;
+        if (args.Turnpoints is not null)
+            plotline.Turnpoints = args.Turnpoints;
 
         await store.SavePlotline(plotline, ct);
         if (kernel is not null)

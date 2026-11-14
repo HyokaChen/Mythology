@@ -186,25 +186,19 @@ public sealed class ExploreTool(Agent agent, INovelStore store)
 
         if (!string.IsNullOrWhiteSpace(args.ChapterId))
         {
-            // 从 store 查出章节真实 Title/Order，不依赖 LLM 传参
+            // 从 store 查出章节真实 Title/Order，不依赖 LLM 传参；找不到就只返回变体，不写目标。
             var chapters = await store.GetChapters(novelId, ct);
-            var chapter = chapters.FirstOrDefault(c => c.Id == args.ChapterId)
-                ?? chapters.FirstOrDefault(c => c.Order.ToString() == args.ChapterId);
-            applyTarget = chapter is not null
-                ? new VariantApplyTarget
+            var chapter = NovelReferenceResolver.FindChapter(chapters, args.ChapterId);
+            if (chapter is not null)
+            {
+                applyTarget = new VariantApplyTarget
                 {
                     NovelId = novelId,
                     ChapterId = chapter.Id,
                     Title = chapter.Title,
                     Order = chapter.Order,
-                }
-                : new VariantApplyTarget
-                {
-                    NovelId = novelId,
-                    ChapterId = args.ChapterId,
-                    Title = args.ChapterTitle ?? "",
-                    Order = args.ChapterOrder ?? 0,
                 };
+            }
         }
         else if (args is { ChapterTitle: not null, ChapterOrder: not null })
         {

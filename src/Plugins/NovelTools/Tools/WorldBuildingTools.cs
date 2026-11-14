@@ -60,21 +60,33 @@ public sealed class AdvancePlotlineTool(INovelStore store, RetrievalKernel? kern
         var changes = new List<string>();
         var chapters = await store.GetChapters(plotline.NovelId, ct);
         var chMap = chapters.ToDictionary(c => c.Id, c => $"第{c.Order}章 {c.Title}");
-        if (
-            args.ResolvedAtChapterId != null
-            && args.ResolvedAtChapterId != plotline.ResolvedAtChapterId
-        )
+        string? resolvedAtChapterId = plotline.ResolvedAtChapterId;
+        if (!string.IsNullOrWhiteSpace(args.ResolvedAtChapterId))
+        {
+            var chapterLookup = NovelReferenceResolver.FindChapterLookup(
+                chapters,
+                args.ResolvedAtChapterId
+            );
+            if (chapterLookup.Value is null)
+                return new AgentToolResult<PlotlineDetails>
+                {
+                    Content = [new TextContent($"{chapterLookup.Error}，情节线未修改")],
+                    IsError = true,
+                };
+            resolvedAtChapterId = chapterLookup.Value.Id;
+        }
+        if (resolvedAtChapterId != null && resolvedAtChapterId != plotline.ResolvedAtChapterId)
         {
             var oldLabel =
                 plotline.ResolvedAtChapterId != null
                 && chMap.TryGetValue(plotline.ResolvedAtChapterId, out var oldCh)
                     ? oldCh
                     : "未解决";
-            var newLabel = chMap.TryGetValue(args.ResolvedAtChapterId, out var newCh)
+            var newLabel = chMap.TryGetValue(resolvedAtChapterId, out var newCh)
                 ? newCh
-                : args.ResolvedAtChapterId;
+                : resolvedAtChapterId;
             changes.Add($"解决章节: {oldLabel} → {newLabel}");
-            plotline.ResolvedAtChapterId = args.ResolvedAtChapterId;
+            plotline.ResolvedAtChapterId = resolvedAtChapterId;
         }
         if (args.ProgressNote is not null)
         {
@@ -338,10 +350,20 @@ public sealed class UpdateFactionRelationshipTool(INovelStore store)
         if (factionA.Id == factionB.Id)
             return Error("组织关系两端不能是同一个组织");
 
+        var existingRelationships = await store.GetFactionRelationships(args.NovelId, ct);
+        var duplicate = existingRelationships.FirstOrDefault(r =>
+            (r.FactionAId == factionA.Id && r.FactionBId == factionB.Id)
+            || (r.FactionAId == factionB.Id && r.FactionBId == factionA.Id)
+        );
+        if (duplicate is not null)
+            return Error(
+                $"组织「{factionA.Name}」与「{factionB.Name}」已有关系记录 {duplicate.Id}，请先删除或更新旧关系"
+            );
+
         var type = FactionRelationType.Neutral;
         if (!string.IsNullOrWhiteSpace(args.Type))
         {
-            if (!Enum.TryParse<FactionRelationType>(args.Type, ignoreCase: true, out type))
+            if (!NovelEnum.TryParse<FactionRelationType>(args.Type, out type))
                 return Error($"未知组织关系类型: {args.Type}");
         }
 
@@ -557,16 +579,24 @@ public sealed class TransferItemTool(INovelStore store, RetrievalKernel? kernel 
                 ],
                 IsError = true,
             };
+        if (string.IsNullOrWhiteSpace(args.NewOwnerId))
+            return new AgentToolResult<ItemDetails>
+            {
+                Content = [new TextContent("转移道具必须提供 new-owner-id（角色 ID 或名称）")],
+                IsError = true,
+            };
         var oldOwnerId = string.IsNullOrEmpty(item.OwnerId) ? null : item.OwnerId;
         var oldOwner = oldOwnerId is null ? null : await ResolveOwner(args, oldOwnerId, ct);
-        var newOwner = string.IsNullOrEmpty(args.NewOwnerId)
-            ? null
-            : await ResolveOwner(args, args.NewOwnerId, ct);
+        var newOwner = await ResolveOwner(args, args.NewOwnerId, ct);
+        if (newOwner is null)
+            return new AgentToolResult<ItemDetails>
+            {
+                Content = [new TextContent($"新持有者 {args.NewOwnerId} 不存在，道具未修改")],
+                IsError = true,
+            };
         var oldOwnerLabel = oldOwner?.Name ?? oldOwnerId ?? "无人";
-        var newOwnerLabel = newOwner?.Name
-            ?? (string.IsNullOrEmpty(args.NewOwnerId) ? "无人" : args.NewOwnerId);
-        item.OwnerId = newOwner?.Id
-            ?? (string.IsNullOrEmpty(args.NewOwnerId) ? null : args.NewOwnerId);
+        var newOwnerLabel = newOwner.Name;
+        item.OwnerId = newOwner.Id;
         await store.SaveItem(item, ct);
         ThrowIfCancelled(ct);
         if (kernel is not null)

@@ -45,6 +45,11 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
         var createdNames = new List<string>(args.Plotlines.Count);
         var failed = new List<string>();
         var chapters = await store.GetChapters(args.NovelId, ct);
+        var existingPlotlines = await store.GetPlotlines(args.NovelId, ct);
+        var seenNames = new HashSet<string>(
+            existingPlotlines.Select(p => p.Name.Trim()),
+            StringComparer.OrdinalIgnoreCase
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个情节线草稿，逐个创建
@@ -55,27 +60,38 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
                 failed.Add("(空名称)");
                 continue;
             }
+            var name = p.Name.Trim();
+            if (!seenNames.Add(name))
+            {
+                failed.Add($"{name}: 情节线名已存在或在本批次重复");
+                continue;
+            }
 
-            var plannedRevealChapterId = ResolveChapterId(chapters, p.PlannedRevealChapterId);
-            if (
-                plannedRevealChapterId is null
-                && !string.IsNullOrWhiteSpace(p.PlannedRevealChapterId)
-            )
+            var revealLookup = NovelReferenceResolver.FindChapterLookup(
+                chapters,
+                p.PlannedRevealChapterId
+            );
+            if (revealLookup.Value is null && !string.IsNullOrWhiteSpace(p.PlannedRevealChapterId))
             {
-                failed.Add($"{p.Name.Trim()}: 计划揭示章节 {p.PlannedRevealChapterId} 不存在");
+                failed.Add($"{p.Name.Trim()}: {revealLookup.Error}");
                 continue;
             }
-            var resolvedAtChapterId = ResolveChapterId(chapters, p.ResolvedAtChapterId);
-            if (resolvedAtChapterId is null && !string.IsNullOrWhiteSpace(p.ResolvedAtChapterId))
+            var plannedRevealChapterId = revealLookup.Value?.Id;
+            var resolutionLookup = NovelReferenceResolver.FindChapterLookup(
+                chapters,
+                p.ResolvedAtChapterId
+            );
+            if (resolutionLookup.Value is null && !string.IsNullOrWhiteSpace(p.ResolvedAtChapterId))
             {
-                failed.Add($"{p.Name.Trim()}: 解决章节 {p.ResolvedAtChapterId} 不存在");
+                failed.Add($"{p.Name.Trim()}: {resolutionLookup.Error}");
                 continue;
             }
+            var resolvedAtChapterId = resolutionLookup.Value?.Id;
 
             var type = PlotlineType.Main;
             if (!string.IsNullOrWhiteSpace(p.Type))
             {
-                if (!Enum.TryParse<PlotlineType>(p.Type, ignoreCase: true, out type))
+                if (!NovelEnum.TryParse<PlotlineType>(p.Type, out type))
                 {
                     failed.Add($"{p.Name.Trim()}: 未知情节线类型 {p.Type}");
                     continue;
@@ -84,7 +100,7 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
             var tension = PlotlineTension.Medium;
             if (!string.IsNullOrWhiteSpace(p.Tension))
             {
-                if (!Enum.TryParse<PlotlineTension>(p.Tension, ignoreCase: true, out tension))
+                if (!NovelEnum.TryParse<PlotlineTension>(p.Tension, out tension))
                 {
                     failed.Add($"{p.Name.Trim()}: 未知情节线紧张度 {p.Tension}");
                     continue;
@@ -95,7 +111,7 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
             var plotline = new Plotline
             {
                 NovelId = args.NovelId,
-                Name = p.Name.Trim(),
+                Name = name,
                 Description = p.Description ?? "",
                 Type = type,
                 PlannedRevealChapterId = plannedRevealChapterId,
@@ -141,18 +157,6 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
                 FailedCount = failed.Count,
             },
         };
-    }
-
-    private static string? ResolveChapterId(IReadOnlyList<Chapter> chapters, string? idOrOrder)
-    {
-        if (string.IsNullOrWhiteSpace(idOrOrder))
-            return null;
-        if (int.TryParse(idOrOrder, out var order))
-        {
-            var byOrder = chapters.FirstOrDefault(c => c.Order == order);
-            return byOrder?.Id;
-        }
-        return chapters.FirstOrDefault(c => c.Id == idOrOrder)?.Id;
     }
 }
 

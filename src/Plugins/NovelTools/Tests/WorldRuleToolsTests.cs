@@ -140,6 +140,46 @@ public sealed class WorldRuleToolsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ManageWorldRule_Create_ResolvesNamesAndChapterOrder()
+    {
+        await SeedAsync();
+        var tool = new ManageWorldRuleTool(_store);
+
+        var created = await tool.ExecuteAsync(
+            "t1",
+            new ManageWorldRuleParams
+            {
+                Action = "create",
+                NovelId = "n1",
+                EntryKind = "rule",
+                Category = "social",
+                Description = "外门弟子不得御剑",
+                RuleKind = "forbids",
+                SubjectType = "character",
+                SubjectId = "林长歌",
+                ForbiddenAction = "御剑",
+                EffectiveFromChapterId = "第一章",
+                Effect = new RuleEffectParams
+                {
+                    Kind = "state-change",
+                    TargetEntityType = "character",
+                    TargetId = "林长歌",
+                    Aspect = "status",
+                    To = "受罚",
+                    Summary = "被执法堂处罚",
+                },
+            },
+            CancellationToken.None
+        );
+
+        Assert.False(created.IsError);
+        var rule = Assert.Single(await _store.GetWorldRules("n1"));
+        Assert.Equal("lin", rule.SubjectId);
+        Assert.Equal("ch1", rule.EffectiveFromChapterId);
+        Assert.Equal("lin", rule.Effect!.TargetId);
+    }
+
+    [Fact]
     public async Task CheckWorldRules_ReportsConstraintWithSubject()
     {
         await SeedAsync();

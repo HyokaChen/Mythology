@@ -43,6 +43,11 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
         var createdNames = new List<string>(args.Items.Count);
         var failed = new List<string>();
         var characters = await store.GetCharacters(args.NovelId, ct);
+        var existingItems = await store.GetItems(args.NovelId, ct);
+        var seenNames = new HashSet<string>(
+            existingItems.Select(i => i.Name.Trim()),
+            StringComparer.OrdinalIgnoreCase
+        );
         ThrowIfCancelled(ct);
 
         // 遍历每个道具草稿，逐个创建
@@ -51,6 +56,12 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
             if (string.IsNullOrWhiteSpace(item.Name))
             {
                 failed.Add("(空名称)");
+                continue;
+            }
+            var name = item.Name.Trim();
+            if (!seenNames.Add(name))
+            {
+                failed.Add($"{name}: 道具名已存在或在本批次重复");
                 continue;
             }
 
@@ -78,7 +89,7 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
             var type = ItemType.Artifact;
             if (!string.IsNullOrWhiteSpace(item.Type))
             {
-                if (!Enum.TryParse<ItemType>(item.Type, ignoreCase: true, out type))
+                if (!NovelEnum.TryParse<ItemType>(item.Type, out type))
                 {
                     failed.Add($"{item.Name.Trim()}: 未知道具类型 {item.Type}");
                     continue;
@@ -89,7 +100,7 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
             var entity = new Item
             {
                 NovelId = args.NovelId,
-                Name = item.Name.Trim(),
+                Name = name,
                 Type = type,
                 Description = item.Description ?? "",
                 OwnerId = ownerId,
