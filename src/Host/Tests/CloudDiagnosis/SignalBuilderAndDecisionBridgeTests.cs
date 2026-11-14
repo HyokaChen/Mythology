@@ -101,6 +101,43 @@ public sealed class SignalBuilderTests
     }
 
     [Fact]
+    public void FormatAutonomousDecision_DoesNotAskAuthor_AndKeepsBoundedRounds()
+    {
+        var text = SignalBuilder.FormatAutonomousDecision(
+            Report(
+                "ask-author",
+                [Finding()],
+                "要按建议继续，还是先修改本章？",
+                ["按建议继续", "先修改本章"]
+            ),
+            [],
+            round: 1,
+            maxRounds: 3
+        );
+
+        Assert.Contains("Agent 自主处理（1/3）", text);
+        Assert.Contains("不要调用 ask_user", text);
+        Assert.Contains("优先修改本章", text);
+        Assert.Contains("问题 1（角色 · 严重）", text);
+        Assert.DoesNotContain("需要作者决定", text);
+        Assert.DoesNotContain("1. 按建议继续", text);
+    }
+
+    [Fact]
+    public void FormatAutonomousDecision_AtLimit_TellsAgentToContinue()
+    {
+        var text = SignalBuilder.FormatAutonomousDecision(
+            Report("ask-author", []),
+            [],
+            round: 3,
+            maxRounds: 3
+        );
+
+        Assert.Contains("已到本轮自动修复上限", text);
+        Assert.Contains("继续推进", text);
+    }
+
+    [Fact]
     public void Format_LocalFinding_DoesNotLeakTrigger()
     {
         var local = Finding() with

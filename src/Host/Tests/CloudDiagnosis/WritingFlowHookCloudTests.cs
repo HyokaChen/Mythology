@@ -163,6 +163,65 @@ public sealed class WritingFlowHookCloudTests
     }
 
     [Fact]
+    public async Task QualityDecision_Autonomous_DoesNotCreateQuestion()
+    {
+        var store = new MockNovelStore();
+        var questions = new DecisionTestStore();
+        var agent = NewAgent();
+        var harness = new StubHarness(_ => new HarnessResult
+        {
+            Capability = "fiction.scene.plan",
+            Result = JsonSerializer.Deserialize<JsonElement>(DecisionJson),
+        });
+        var options = new CloudDiagnosisOptions
+        {
+            OntologyHarnessEnabled = false,
+            AutonomousDecisions = true,
+            AutonomousRepairMaxRounds = 2,
+        };
+        await store.SaveNovel(
+            new Novel
+            {
+                Id = NovelId,
+                Title = "测试小说",
+                AutoDiagnose = true,
+                Characters =
+                [
+                    new Character { Name = "主角", Role = CharacterRole.Protagonist },
+                    new Character { Name = "配角甲", Role = CharacterRole.Supporting },
+                    new Character { Name = "配角乙", Role = CharacterRole.Supporting },
+                ],
+            }
+        );
+        store.AddChapters(
+            NovelId,
+            new Chapter
+            {
+                Id = "ch_1",
+                Title = "第五章",
+                Order = 5,
+                Content = "少年在山巅睁开眼。",
+            }
+        );
+        var hook = new WritingFlowHook(
+            agent,
+            store,
+            new DiagnosisScheduler(harness, options),
+            new HumanDecisionBridge(questions, decisionTimeoutSeconds: 120),
+            options
+        );
+
+        await hook.AfterToolCallAsync(WriteContext(), CancellationToken.None);
+
+        Assert.Empty(questions.GetPending());
+        Assert.True(agent.InjectQueue.HasPending);
+        var injected = (LlmChatMessage)agent.InjectQueue.DequeueAllWithIds()[0].Message;
+        Assert.Contains("Agent 自主处理（1/2）", injected.Content);
+        Assert.Contains("不要调用 ask_user", injected.Content);
+        Assert.Contains("优先修改本章", injected.Content);
+    }
+
+    [Fact]
     public async Task DecisionOutcome_AfterAuthorization_NoSecondQuestion()
     {
         var store = new MockNovelStore();

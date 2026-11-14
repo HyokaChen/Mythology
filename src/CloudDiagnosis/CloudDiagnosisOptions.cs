@@ -34,6 +34,15 @@ public sealed class CloudDiagnosisOptions
     public int DecisionTimeoutSeconds { get; init; } = 120;
 
     /// <summary>
+    /// 质量未达标时由 Agent 自主决定继续/改写，不创建阻塞式人工裁决。
+    /// 默认关闭以保留显式问答；生产 appsettings 开启（长任务无人值守）。
+    /// </summary>
+    public bool AutonomousDecisions { get; init; }
+
+    /// <summary>同一章连续自动改写的上限；达到后保留问题并继续，避免无限修稿。</summary>
+    public int AutonomousRepairMaxRounds { get; init; } = 3;
+
+    /// <summary>
     /// PASS 判定阈值（百分制；云端 overallScore 为 0-1，解析时 ×100）。
     /// 默认 62 与云端 `Cloud:ScenePlanPassScore`（0.62）对齐——临时人工标定（2026-10-03）：
     /// 普通样本实测带 0.54–0.66，70 使普通样本恒不落 Pass（只有命中充分样本可达）；
@@ -159,6 +168,16 @@ public sealed class CloudDiagnosisOptions
             DecisionTimeoutSeconds = ParseInt(
                 config[ConfigurationKeys.CloudDiagnosisDecisionTimeoutSeconds],
                 120
+            ),
+            AutonomousDecisions =
+                bool.TryParse(
+                    config[ConfigurationKeys.CloudDiagnosisAutonomousDecisions],
+                    out var autonomous
+                ) && autonomous,
+            AutonomousRepairMaxRounds = Math.Clamp(
+                ParseInt(config[ConfigurationKeys.CloudDiagnosisAutonomousRepairMaxRounds], 3),
+                1,
+                10
             ),
             PassScoreThreshold = ParseDouble(
                 config[ConfigurationKeys.CloudDiagnosisPassScoreThreshold],

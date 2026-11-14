@@ -36,6 +36,9 @@ public static class ConfigurationKeys
     public const string CloudDiagnosisLegacyBudgetPerNovel = "CloudDiagnosis:BudgetPerNovel";
     public const string CloudDiagnosisDecisionTimeoutSeconds =
         "CloudDiagnosis:DecisionTimeoutSeconds";
+    public const string CloudDiagnosisAutonomousDecisions = "CloudDiagnosis:AutonomousDecisions";
+    public const string CloudDiagnosisAutonomousRepairMaxRounds =
+        "CloudDiagnosis:AutonomousRepairMaxRounds";
     public const string CloudDiagnosisRequestTimeoutSeconds =
         "CloudDiagnosis:RequestTimeoutSeconds";
     public const string CloudDiagnosisPassScoreThreshold = "CloudDiagnosis:PassScoreThreshold";

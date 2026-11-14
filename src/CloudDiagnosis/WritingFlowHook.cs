@@ -18,7 +18,8 @@ namespace CloudDiagnosis;
 ///
 /// HARNESS-CLOUD P1-G0：新增云端路径（基础档 fiction.scene.plan）——
 /// DiagnosisScheduler 调度 → SignalBuilder 翻译 → PASS/ACTION 直接注入；
-/// DECISION 路由 HumanDecisionBridge（同步阻塞式人工裁决，§5.3）。
+/// DECISION 在无人值守模式下由 Agent 自主决定继续/改写；关闭 AutonomousDecisions 时
+/// 才路由 HumanDecisionBridge（同步阻塞式人工裁决，§5.3）。
 /// 云端任何失败静默降级到既有本地信号路径（§0.2-4）；用户取消 OCE 上抛（§12 红线 5）。
 /// </summary>
 public sealed class WritingFlowHook(
@@ -61,6 +62,14 @@ public sealed class WritingFlowHook(
 
     /// <summary>本会话已注入过素材提示的章节（预取或 harness 捎带，二者互斥）。</summary>
     private string? _hintInjectedChapter;
+
+    /// <summary>
+    /// 无人值守质量决策的自动改写轮次（novelId + 章节序）。
+    /// 达到 AutonomousRepairMaxRounds 后保留问题并继续，避免同一章无限修稿。
+    /// </summary>
+    private readonly Dictionary<string, int> _autonomousDecisionRounds = new(
+        StringComparer.Ordinal
+    );
 
     /// <summary>
     /// 双速自进化：最近一次注入战术块的 novelId#chapter（同章重写不重复注入）。
@@ -629,6 +638,32 @@ public sealed class WritingFlowHook(
                 );
                 _monotony?.NotifyIntervention();
                 return true; // 视为已处理（避免叠加灵感）
+            }
+
+            // 无人值守：质量未达标不创建阻塞式问题，交给 Agent 在「改写本章 / 继续」之间自己决定。
+            // 轮次上限避免同一章反复修稿；达到上限后明确要求继续推进。
+            if (_options is { AutonomousDecisions: true })
+            {
+                var key = string.Join(
+                    '\u001f',
+                    input.NovelId,
+                    input.ChapterOrder.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                );
+                var attempt = _autonomousDecisionRounds.GetValueOrDefault(key) + 1;
+                _autonomousDecisionRounds[key] = attempt;
+                var maxRounds = Math.Clamp(_options.AutonomousRepairMaxRounds, 1, 10);
+                agent.InjectQueue.Enqueue(
+                    new LlmChatMessage(
+                        ChatMessageRoles.User,
+                        SignalBuilder.FormatAutonomousDecision(
+                            decisionOutcome,
+                            localFindings,
+                            attempt,
+                            maxRounds
+                        )
+                    )
+                );
+                return true;
             }
 
             // P3 §16.2 频率红线：每会话最多 DecisionMaxPerSession 次 DECISION

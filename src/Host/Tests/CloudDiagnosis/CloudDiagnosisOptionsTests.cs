@@ -28,6 +28,8 @@ public sealed class CloudDiagnosisOptionsTests
         Assert.Equal(100, options.DeepBudgetPerNovel);
         Assert.Equal(15, options.RequestTimeoutSeconds);
         Assert.Equal(120, options.DecisionTimeoutSeconds);
+        Assert.False(options.AutonomousDecisions);
+        Assert.Equal(3, options.AutonomousRepairMaxRounds);
         Assert.Equal(62, options.PassScoreThreshold);
         Assert.Equal(8, options.MonotonyChapterThreshold);
         Assert.Equal(5, options.MonotonyFlatWindow);
@@ -103,6 +105,8 @@ public sealed class CloudDiagnosisOptionsTests
                 ("CloudDiagnosis:DeepBudgetPerNovel", "10"),
                 ("CloudDiagnosis:RequestTimeoutSeconds", "7"),
                 ("CloudDiagnosis:DecisionTimeoutSeconds", "30"),
+                ("CloudDiagnosis:AutonomousDecisions", "true"),
+                ("CloudDiagnosis:AutonomousRepairMaxRounds", "2"),
                 ("CloudDiagnosis:PassScoreThreshold", "85.5"),
                 ("CloudDiagnosis:MonotonyChapterThreshold", "12"),
                 ("CloudDiagnosis:MonotonyFlatWindow", "3"),
@@ -126,6 +130,8 @@ public sealed class CloudDiagnosisOptionsTests
         Assert.Equal(10, options.DeepBudgetPerNovel);
         Assert.Equal(7, options.RequestTimeoutSeconds);
         Assert.Equal(30, options.DecisionTimeoutSeconds);
+        Assert.True(options.AutonomousDecisions);
+        Assert.Equal(2, options.AutonomousRepairMaxRounds);
         Assert.Equal(85.5, options.PassScoreThreshold);
         Assert.Equal(12, options.MonotonyChapterThreshold);
         Assert.Equal(3, options.MonotonyFlatWindow);
