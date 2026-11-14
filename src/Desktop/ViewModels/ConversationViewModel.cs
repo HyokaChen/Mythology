@@ -1617,16 +1617,7 @@ public sealed class ConversationViewModel : ViewModelBase
             _pendingEchoText = text;
 
             // 创建空白 Agent 消息占位（流式内容落点）；首个正文/步骤到达前显示等待行。
-            _agentMessage = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
-            var localAgentMessage = _agentMessage;
-            _handler = new StreamEventHandler(
-                localAgentMessage,
-                onError: null,
-                onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
-                toolDisplay: _toolDisplay
-            );
-            Messages.Add(localAgentMessage);
-            HasMessages = true;
+            CreateAgentPlaceholder();
             ContextStatsChanged?.Invoke();
 
             // 引擎编排：小说上下文注入 → 压缩预检 → 发送 → 持久化（溢出自动 compact+retry）
@@ -1792,16 +1783,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 HasMessages = true;
             }
 
-            localAgent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
-            _agentMessage = localAgent;
-            _handler = new StreamEventHandler(
-                localAgent,
-                onError: null,
-                onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
-                toolDisplay: _toolDisplay
-            );
-            Messages.Add(localAgent);
-            HasMessages = true;
+            localAgent = CreateAgentPlaceholder();
             ContextStatsChanged?.Invoke();
 
             var started = await _engine.RetryFromUserMessageAsync(
@@ -1900,6 +1882,11 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             case AgentStart:
                 IsProcessing = true;
+                // 溢出恢复首轮没有可见输出时，SetProcessing(false) 会收掉空占位并清空
+                // handler；continuation 的 AgentStart 必须重新建立流式落点，否则后续
+                // StreamChunk/Tool 事件全部被静默丢弃，界面只剩“正在继续”而没内容。
+                if (_agentMessage is null)
+                    CreateAgentPlaceholder();
                 break;
 
             case AgentEnd:
@@ -2007,6 +1994,25 @@ public sealed class ConversationViewModel : ViewModelBase
             if (!_agentMessage.AgentSteps.Any(step => step.IsProcessing))
                 _agentMessage.IsWaiting = true;
         }
+    }
+
+    /// <summary>
+    /// 建立当前回合的 Agent 流式落点。正常发送/重试在建占位时调用；溢出恢复的
+    /// continuation 在首轮空占位被收掉后，由 AgentStart 再次调用。
+    /// </summary>
+    private ChatMessageModel CreateAgentPlaceholder()
+    {
+        var message = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
+        _agentMessage = message;
+        _handler = new StreamEventHandler(
+            message,
+            onError: null,
+            onExploreVariant: ed => ExploreVariantRaised?.Invoke(ed),
+            toolDisplay: _toolDisplay
+        );
+        Messages.Add(message);
+        HasMessages = true;
+        return message;
     }
 
     /// <summary>结束当前 Agent 消息（可选追加文本/标记中断）。</summary>

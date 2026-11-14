@@ -397,6 +397,33 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
+    /// 溢出恢复首轮没有可见输出时，SetProcessing(false) 会收掉空占位；continuation 的
+    /// AgentStart 必须重新建立流式落点，否则后续正文/工具事件全部丢失，界面只剩状态行。
+    /// </summary>
+    [Fact]
+    public async Task AgentStart_AfterRecoveryFinalizedPlaceholder_RecreatesStreamTarget()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        vm.Engine.NewSession();
+
+        await vm.SendEnginePromptAsync("写一段雨中送别");
+        Assert.Contains(vm.Messages, m => m.Sender == MessageSender.Agent);
+
+        // 首轮 ContextOverflow 没有 AgentEnd；错误路径收掉空占位。
+        vm.SetProcessing(false);
+        Assert.DoesNotContain(vm.Messages, m => m.Sender == MessageSender.Agent);
+
+        // continuation 重新开始：必须恢复 handler，后续事件才有落点。
+        vm.HandleAgentEvent(new AgentStart());
+        var agent = Assert.Single(vm.Messages.Where(m => m.Sender == MessageSender.Agent));
+        Assert.True(agent.IsWaiting);
+
+        vm.HandleAgentEvent(new StreamChunk("续写正文", "", StreamContentType.Text));
+        Assert.Equal("续写正文", agent.Content.ToString());
+    }
+
+    /// <summary>
     /// 对话内等待行：发送后立即可见（spinner + 执行中）；首个思考/正文 token 到达即收起，
     /// 回合结束（中断）后不再残留。诗词由左下角状态栏展示，不再进入等待行。
     /// </summary>
