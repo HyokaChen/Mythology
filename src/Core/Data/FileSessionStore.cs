@@ -253,18 +253,27 @@ public sealed class FileSessionStore
         EnsureSessionIndex();
         if (_sessionIndex!.TryGetValue(id, out var info))
         {
+            var sessionDir = info.SessionDir;
+            // 进程内首次写入曾注册活跃分片文件路径；归一化到带 MANIFEST 的会话目录。
+            if (File.Exists(sessionDir) && Path.GetExtension(sessionDir) == ".jsonl")
+            {
+                var parent = Path.GetDirectoryName(sessionDir);
+                if (parent is not null && File.Exists(Path.Combine(parent, "MANIFEST.json")))
+                    sessionDir = parent;
+            }
+
             // 新格式：从 MANIFEST 读取
-            var manifestPath = Path.Combine(info.SessionDir, "MANIFEST.json");
+            var manifestPath = Path.Combine(sessionDir, "MANIFEST.json");
             if (File.Exists(manifestPath))
             {
-                var session = BuildSessionFromManifest(id, info.NovelId, info.SessionDir);
+                var session = BuildSessionFromManifest(id, info.NovelId, sessionDir);
                 if (session is not null)
                     return session;
             }
 
             // 旧格式兼容：从 JSONL 文件读取
-            if (File.Exists(info.SessionDir) && Path.GetExtension(info.SessionDir) == ".jsonl")
-                return await BuildSessionFromJsonlAsync(id, info.NovelId, info.SessionDir);
+            if (File.Exists(sessionDir) && Path.GetExtension(sessionDir) == ".jsonl")
+                return await BuildSessionFromJsonlAsync(id, info.NovelId, sessionDir);
         }
 
         return null;
@@ -532,7 +541,9 @@ public sealed class FileSessionStore
                 checkConflict: !SkipConflictCheck
             );
             AppendToParseCache(path, lines, sessionId, previousMtime);
-            RegisterSessionIndex(sessionId, novelId, path);
+            // 索引必须是会话目录，不是活跃分片文件；否则同进程内 GetSession
+            // 会把 000001.jsonl 当成旧格式单文件，compact 后标题只剩注入消息。
+            RegisterSessionIndex(sessionId, novelId, mgr.SessionDir);
 
             // 更新 MANIFEST
             UpdateManifestSegment(
@@ -3547,7 +3558,7 @@ public sealed class FileSessionStore
             var title = manifest.Title;
             if (string.IsNullOrEmpty(title))
             {
-                title = ReadTitleFromActiveSegment(sessionDir, manifest);
+                title = ReadTitleFromSegments(sessionDir, manifest);
             }
 
             return new AgentSession
@@ -3566,40 +3577,42 @@ public sealed class FileSessionStore
     }
 
     /// <summary>
-    /// 从活跃分片的第一条 user message 提取标题（当 MANIFEST 中 title 为空时降级方案）。
+    /// 从全部分片提取第一条作者消息作为标题（MANIFEST title 为空时）。
+    /// compact 会把作者首条消息留在旧分片，活跃分片只剩注入消息；只扫活跃分片
+    /// 会让会话在第一次 compact 后变成「未命名会话」。按 Seq 从旧到新找即可。
     /// </summary>
-    private static string? ReadTitleFromActiveSegment(string sessionDir, SessionManifest manifest)
+    private static string? ReadTitleFromSegments(string sessionDir, SessionManifest manifest)
     {
-        if (manifest.Segments.Count == 0)
-            return null;
-        var activeFile = manifest.Segments[manifest.ActiveSegment].File;
-        var activePath = Path.Combine(sessionDir, activeFile);
-        if (!File.Exists(activePath))
-            return null;
-
-        try
+        foreach (var segment in manifest.Segments.OrderBy(s => s.Seq))
         {
-            var lines = File.ReadAllLines(activePath);
-            foreach (var line in lines)
+            var path = Path.Combine(sessionDir, segment.File);
+            if (!File.Exists(path))
+                continue;
+
+            try
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                try
+                var lines = File.ReadAllLines(path);
+                foreach (var line in lines)
                 {
-                    var probe = JsonSerializer.Deserialize<JsonlTypeProbe>(line, JsonOpts);
-                    if (probe?.Type != JsonlEntryType.Message)
+                    if (string.IsNullOrWhiteSpace(line))
                         continue;
-                    var msg = JsonSerializer.Deserialize<JsonlMessageEntry>(line, JsonOpts);
-                    if (msg is null || msg.Role != "user")
-                        continue;
-                    var title = SessionInternalMessages.ExtractTitle(msg.Content);
-                    if (title is not null)
-                        return title;
+                    try
+                    {
+                        var probe = JsonSerializer.Deserialize<JsonlTypeProbe>(line, JsonOpts);
+                        if (probe?.Type != JsonlEntryType.Message)
+                            continue;
+                        var msg = JsonSerializer.Deserialize<JsonlMessageEntry>(line, JsonOpts);
+                        if (msg is null || msg.Role != "user")
+                            continue;
+                        var title = SessionInternalMessages.ExtractTitle(msg.Content);
+                        if (title is not null)
+                            return title;
+                    }
+                    catch { }
                 }
-                catch { }
             }
+            catch { }
         }
-        catch { }
         return null;
     }
 

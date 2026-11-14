@@ -248,6 +248,44 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>compact 后首条作者消息留在旧分片，标题扫描不能只看活跃分片。</summary>
+    public async Task GetSession_TitleSurvivesCompact()
+    {
+        await CreateTestNovelAsync();
+        var messages = CreateSimpleConversation("会话标题", "回复");
+        var lastEntryId = await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            messages,
+            startOrder: 0
+        );
+        var (compactEntryId, _) = await _store.CompactSession(
+            TestSessionId,
+            TestNovelId,
+            summary: "摘要",
+            firstKeptEntryId: lastEntryId!,
+            messagesBefore: messages.Count,
+            parentEntryId: null,
+            order: 2
+        );
+        await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            [new LlmChatMessage(ChatMessageRoles.User, "[本体 harness] 注入")],
+            lastParentEntryId: compactEntryId,
+            startOrder: 3
+        );
+
+        var session = await _store.GetSession(TestSessionId);
+
+        Assert.NotNull(session);
+        Assert.Equal("会话标题", session.Title);
+
+        var listed = Assert.Single(await _store.GetSessions(TestNovelId));
+        Assert.Equal("会话标题", listed.Title);
+    }
+
+    [Fact]
     /// <summary>标题应跳过系统注入消息，取第一条作者输入。</summary>
     public async Task GetSession_SkipsInjectedMessages_ForTitle()
     {
