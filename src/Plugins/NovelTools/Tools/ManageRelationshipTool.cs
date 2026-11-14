@@ -140,10 +140,7 @@ public sealed class ManageRelationshipTool(INovelStore store)
         )
             ? parsedStrength
             : (RelationshipStrength?)null;
-        if (
-            !string.IsNullOrWhiteSpace(args.Strength)
-            && newStrength is null
-        )
+        if (!string.IsNullOrWhiteSpace(args.Strength) && newStrength is null)
             return Error($"未知关系强度: {args.Strength}");
 
         if (newType is not null && newType != rel.Type)
