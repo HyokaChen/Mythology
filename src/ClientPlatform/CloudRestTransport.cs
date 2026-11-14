@@ -14,7 +14,8 @@ namespace ClientPlatform;
 /// <para>
 /// 端点路径、请求体与响应形态**留在各自客户端**（wire 语义显式可见、可被 StubHandler
 /// 直测）；<see cref="HttpResponseMessage"/> 由调用方 <c>using</c>——Harness 的 SSE
-/// 要在返回后继续读流。刻意不做泛型/源生成/attribute 驱动（见 ARCHITECTURE §7.1）。
+/// 要在返回后继续读流。传输层只提供两条成功路径：raw 字符串与强类型 JSON；
+/// 不按端点做泛型客户端，也不引入 source-gen/attribute 驱动（见 ARCHITECTURE §7.1）。
 /// </para>
 /// </summary>
 internal sealed class CloudRestTransport
@@ -158,6 +159,45 @@ internal sealed class CloudRestTransport
         var responseText = await ReadBodyAsync(response, timeoutCts.Token);
         EnsureSuccess(response, responseText);
         return responseText;
+    }
+
+    /// <summary>
+    /// 一次完整的「发请求 → 成功时直接从响应流反序列化 → 失败时读体并按统一错误码抛出」。
+    /// 成功路径不构造响应字符串；<c>ResponseHeadersRead</c> 让反序列化直接消费网络流。
+    /// 按请求安全网覆盖到反序列化完成，避免服务端发完头后卡体导致无限挂起。
+    /// </summary>
+    public async Task<T?> SendForJsonAsync<T>(
+        HttpMethod method,
+        string path,
+        object? body,
+        JsonSerializerOptions bodyJson,
+        JsonSerializerOptions responseJson,
+        CancellationToken ct,
+        string? idempotencyKey = null
+    )
+    {
+        using var request = NewRequest(method, path, idempotencyKey);
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body, options: bodyJson);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(_requestTimeout);
+
+        using var response = await SendAsync(
+            request,
+            timeoutCts.Token,
+            HttpCompletionOption.ResponseHeadersRead,
+            requestTimeout: false
+        );
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseText = await ReadBodyAsync(response, timeoutCts.Token);
+            EnsureSuccess(response, responseText);
+        }
+
+        return await response.Content.ReadFromJsonAsync<T>(responseJson, timeoutCts.Token);
     }
 
     /// <summary>

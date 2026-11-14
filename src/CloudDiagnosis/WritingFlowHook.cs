@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ClientPlatform;
 using Core.Agent;
 using Core.Cloud;
@@ -551,26 +550,19 @@ public sealed class WritingFlowHook(
             {
                 content = content[^2000..];
             }
-            var json = await _knowledge.HintAsync(
-                new
-                {
-                    sceneGoal = input.SceneGoal ?? chapter.Title,
-                    currentText = content,
-                    genre = WritingProfile.FromNovel(input.Novel).Genre,
-                    limit = 5,
-                    maxChars = _options.MaterialHintMaxChars,
-                },
+            var response = await _knowledge.HintAsync(
+                new KnowledgeHintRequest(
+                    SceneGoal: input.SceneGoal ?? chapter.Title,
+                    CurrentText: content,
+                    Genre: WritingProfile.FromNovel(input.Novel).Genre,
+                    Limit: 5,
+                    MaxChars: _options.MaterialHintMaxChars
+                ),
                 cts.Token
             );
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            var status = root.TryGetProperty("status", out var statusEl)
-                ? statusEl.GetString()
+            return string.Equals(response.Status, "ok", StringComparison.Ordinal)
+                ? response.PromptBlock
                 : null;
-            var prompt = root.TryGetProperty("prompt-block", out var promptEl)
-                ? promptEl.GetString()
-                : null;
-            return string.Equals(status, "ok", StringComparison.Ordinal) ? prompt : null;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Core.Cloud;
 using Microsoft.Extensions.Http.Resilience;
 using Xunit;
 
@@ -114,19 +115,19 @@ public sealed class KnowledgeRestClientTests
         );
 
         var result = await client.HintAsync(
-            new
-            {
-                sceneGoal = "女主雪夜登场",
-                currentText = "她推门而入。",
-                genre = "古言",
-                limit = 5,
-                maxChars = 600,
-                expand = false,
-            },
+            new KnowledgeHintRequest(
+                SceneGoal: "女主雪夜登场",
+                CurrentText: "她推门而入。",
+                Genre: "古言",
+                Limit: 5,
+                MaxChars: 600,
+                Expand: false
+            ),
             TestContext.Current.CancellationToken
         );
 
-        Assert.Contains("素材参考A", result, StringComparison.Ordinal);
+        Assert.Equal("ok", result.Status);
+        Assert.Equal("素材参考A", result.PromptBlock);
         var request = Assert.Single(requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/v1/knowledge/hint", request.PathAndQuery);
@@ -138,6 +139,54 @@ public sealed class KnowledgeRestClientTests
         Assert.Equal(5, body.GetProperty("limit").GetInt32());
         Assert.Equal(600, body.GetProperty("maxChars").GetInt32());
         Assert.False(body.GetProperty("expand").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Hint_DeserializesTypedHits()
+    {
+        var cardId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var relatedId = Guid.NewGuid();
+        var (client, _) = CreateClient(_ =>
+            Json(
+                $$"""
+                {"status":"ok","prompt-block":"素材参考B","hints":[{"card-id":"{{cardId}}","document-id":"{{documentId}}","title":"卡片","kind":"technique","tags":["对话"],"excerpt":"摘录","suggestion":"建议","score":0.9,"source-title":"来源","source-url":null,"related-card-ids":["{{relatedId}}"],"matched-delta-ids":["d1"]}],"vector-used":true}
+                """
+            )
+        );
+
+        var result = await client.HintAsync(
+            new KnowledgeHintRequest("女主雪夜登场"),
+            TestContext.Current.CancellationToken
+        );
+
+        var hit = Assert.Single(result.Hints);
+        Assert.Equal(cardId, hit.CardId);
+        Assert.Equal(documentId, hit.DocumentId);
+        Assert.Equal("卡片", hit.Title);
+        Assert.Equal("technique", hit.Kind);
+        Assert.Equal(["对话"], hit.Tags);
+        Assert.Equal(0.9, hit.Score);
+        Assert.Equal(relatedId, Assert.Single(hit.RelatedCardIds!));
+        Assert.Equal(["d1"], hit.MatchedDeltaIds!);
+        Assert.True(result.VectorUsed);
+    }
+
+    [Fact]
+    public async Task Hint_ServiceUnavailable_MapsToKnowledgeUnavailable()
+    {
+        var (client, _) = CreateClient(_ =>
+            Problem(HttpStatusCode.ServiceUnavailable, "knowledge_unavailable")
+        );
+
+        var ex = await Assert.ThrowsAsync<CloudApiException>(() =>
+            client.HintAsync(
+                new KnowledgeHintRequest("女主雪夜登场"),
+                TestContext.Current.CancellationToken
+            )
+        );
+
+        Assert.Equal("knowledge_unavailable", ex.Code);
     }
 
     [Fact]

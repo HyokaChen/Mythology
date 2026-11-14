@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace ClientPlatform;
@@ -53,16 +52,16 @@ public sealed class CrawlRestClient
             );
         }
 
-        var json = await _transport.SendForStringAsync(
+        var response = await _transport.SendForJsonAsync<CrawlJobStart>(
             HttpMethod.Post,
             "/v1/retrieval/crawl",
             request,
             ClientJsonDefaults.CamelCaseRequest,
+            ClientJsonDefaults.Cloud,
             ct,
-            idempotencyKey: idempotencyKey,
-            completionOption: HttpCompletionOption.ResponseHeadersRead
+            idempotencyKey: idempotencyKey
         );
-        return JsonSerializer.Deserialize<CrawlJobStart>(json, ClientJsonDefaults.Cloud)
+        return response
             ?? throw new CloudApiException("crawl_failed", "爬取任务启动响应无法解析。");
     }
 

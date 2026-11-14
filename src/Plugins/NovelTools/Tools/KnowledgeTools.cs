@@ -1,5 +1,7 @@
+using System.Text.Json;
 using ClientPlatform;
 using Core.Agent;
+using Core.Cloud;
 using Core.Data;
 using Core.Evolution;
 using Core.Shared;
@@ -126,7 +128,8 @@ public sealed class KnowledgeHintTool(
         {
             return Error("云端知识库客户端未初始化。");
         }
-        if (string.IsNullOrWhiteSpace(args.SceneGoal))
+        var sceneGoal = args.SceneGoal;
+        if (string.IsNullOrWhiteSpace(sceneGoal))
         {
             return Error("sceneGoal 参数必填。");
         }
@@ -135,21 +138,21 @@ public sealed class KnowledgeHintTool(
         {
             onUpdate?.Report(Progress("正在获取素材提示…"));
             var ontology = await TryBuildOntologyAsync(args, ct);
-            var json = await knowledge.HintAsync(
-                new
-                {
-                    sceneGoal = args.SceneGoal,
-                    currentText = args.CurrentText,
-                    genre = args.Genre,
-                    tags = args.Tags,
-                    kinds = args.Kinds,
-                    limit = Math.Clamp(args.Limit ?? 5, 1, 10),
-                    maxChars = Math.Clamp(args.MaxChars ?? 1200, 200, 4000),
-                    expand = args.Expand ?? false,
-                    ontology,
-                },
+            var response = await knowledge.HintAsync(
+                new KnowledgeHintRequest(
+                    SceneGoal: sceneGoal,
+                    CurrentText: args.CurrentText,
+                    Genre: args.Genre,
+                    Tags: args.Tags,
+                    Kinds: args.Kinds,
+                    Limit: Math.Clamp(args.Limit ?? 5, 1, 10),
+                    MaxChars: Math.Clamp(args.MaxChars ?? 1200, 200, 4000),
+                    Expand: args.Expand ?? false,
+                    Ontology: ontology
+                ),
                 ct
             );
+            var json = JsonSerializer.Serialize(response, ClientJsonDefaults.Cloud);
             return new AgentToolResult<KnowledgeHintDetails>
             {
                 Content = [new TextContent(json)],
@@ -178,7 +181,7 @@ public sealed class KnowledgeHintTool(
     /// 自动拼装本体 delta：优先 args 指定章/场景，否则取最新章 + 其全部场景。
     /// 失败静默返回 null（提示仍走纯文本检索）。
     /// </summary>
-    private async Task<object?> TryBuildOntologyAsync(
+    private async Task<KnowledgeHintOntology?> TryBuildOntologyAsync(
         KnowledgeHintParams args,
         CancellationToken ct
     )
@@ -232,23 +235,23 @@ public sealed class KnowledgeHintTool(
             {
                 return null;
             }
-            return new
-            {
-                chapterOrder = chapter.Order,
-                deltas = deltas.Select(d => new
-                {
-                    id = d.Id,
-                    kind = d.Kind.ToString().ToLowerInvariant(),
-                    entityType = d.EntityType.ToKebabCaseString(),
-                    entityId = d.EntityId,
-                    entityName = d.EntityName,
-                    aspect = d.Aspect?.ToString().ToLowerInvariant(),
-                    from = d.From,
-                    to = d.To,
-                    summary = d.Summary,
-                    need = d.Need.ToString().ToLowerInvariant(),
-                }),
-            };
+            return new KnowledgeHintOntology(
+                chapter.Order,
+                deltas
+                    .Select(d => new KnowledgeHintOntologyDelta(
+                        Id: d.Id,
+                        Kind: d.Kind.ToString().ToLowerInvariant(),
+                        EntityType: d.EntityType.ToKebabCaseString(),
+                        EntityId: d.EntityId,
+                        EntityName: d.EntityName,
+                        Aspect: d.Aspect?.ToString().ToLowerInvariant(),
+                        From: d.From,
+                        To: d.To,
+                        Summary: d.Summary,
+                        Need: d.Need.ToString().ToLowerInvariant()
+                    ))
+                    .ToList()
+            );
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

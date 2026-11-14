@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace ClientPlatform;
@@ -85,8 +84,7 @@ public sealed class UsageRestClient
         var query = string.IsNullOrWhiteSpace(period)
             ? ""
             : $"?period={Uri.EscapeDataString(period)}";
-        var json = await GetAsync($"/v1/agent/usage{query}", ct);
-        return Deserialize<UsageSnapshot>(json);
+        return await GetJsonAsync<UsageSnapshot>($"/v1/agent/usage{query}", ct);
     }
 
     /// <summary>逐笔账本（游标翻页；capability 非空时按能力过滤）。</summary>
@@ -105,21 +103,25 @@ public sealed class UsageRestClient
             query.Add($"capability={Uri.EscapeDataString(capability)}");
         if (!string.IsNullOrWhiteSpace(cursor))
             query.Add($"cursor={Uri.EscapeDataString(cursor)}");
-        var json = await GetAsync($"/v1/agent/usage/ledger?{string.Join("&", query)}", ct);
-        return Deserialize<UsageLedgerPage>(json);
+        var json = await GetJsonAsync<UsageLedgerPage>(
+            $"/v1/agent/usage/ledger?{string.Join("&", query)}",
+            ct
+        );
+        return json;
     }
 
-    private Task<string> GetAsync(string path, CancellationToken ct) =>
-        _transport.SendForStringAsync(
+    private async Task<T> GetJsonAsync<T>(string path, CancellationToken ct)
+        where T : class
+    {
+        var result = await _transport.SendForJsonAsync<T>(
             HttpMethod.Get,
             path,
             body: null,
             ClientJsonDefaults.CamelCaseRequest,
-            ct,
-            completionOption: HttpCompletionOption.ResponseHeadersRead
+            ClientJsonDefaults.Cloud,
+            ct
         );
-
-    private static T Deserialize<T>(string json) =>
-        JsonSerializer.Deserialize<T>(json, ClientJsonDefaults.Cloud)
-        ?? throw new CloudApiException("usage_failed", "云端用量响应解析失败（载荷为空）。");
+        return result
+            ?? throw new CloudApiException("usage_failed", "云端用量响应解析失败（载荷为空）。");
+    }
 }

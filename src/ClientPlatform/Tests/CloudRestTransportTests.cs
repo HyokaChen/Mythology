@@ -10,6 +10,8 @@ namespace ClientPlatform.Tests;
 /// </summary>
 public sealed class CloudRestTransportTests
 {
+    private sealed record Payload(string Value);
+
     private sealed class CapturingHandler(HttpResponseMessage response) : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];
@@ -85,6 +87,33 @@ public sealed class CloudRestTransportTests
     /// 修复前本用例不抛异常（读到桩内容自然结束）。
     /// </summary>
     [Fact]
+    public async Task SendForJsonAsync_DeserializesTypedPayload()
+    {
+        var handler = new CapturingHandler(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"value":"ok"}"""),
+            }
+        );
+        var transport = new CloudRestTransport(
+            "http://localhost",
+            () => "mk_test_key",
+            http: new HttpClient(handler)
+        );
+
+        var payload = await transport.SendForJsonAsync<Payload>(
+            HttpMethod.Get,
+            "/v1/test",
+            body: null,
+            ClientJsonDefaults.CamelCaseRequest,
+            ClientJsonDefaults.Cloud,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("ok", payload?.Value);
+    }
+
+    [Fact]
     public async Task HeaderRead_BodyReadIsCoveredByRequestTimeout()
     {
         var transport = new CloudRestTransport(
@@ -102,6 +131,28 @@ public sealed class CloudRestTransportTests
                 ClientJsonDefaults.CamelCaseRequest,
                 CancellationToken.None,
                 completionOption: HttpCompletionOption.ResponseHeadersRead
+            )
+        );
+    }
+
+    [Fact]
+    public async Task SendForJsonAsync_BodyReadIsCoveredByRequestTimeout()
+    {
+        var transport = new CloudRestTransport(
+            "http://localhost",
+            () => "mk_test_key",
+            http: new HttpClient(new StallingBodyHandler(TimeSpan.FromSeconds(2))),
+            requestTimeout: TimeSpan.FromMilliseconds(150)
+        );
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            transport.SendForJsonAsync<Payload>(
+                HttpMethod.Get,
+                "/v1/test",
+                body: null,
+                ClientJsonDefaults.CamelCaseRequest,
+                ClientJsonDefaults.Cloud,
+                CancellationToken.None
             )
         );
     }

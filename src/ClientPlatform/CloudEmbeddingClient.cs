@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core.Vector;
 using Microsoft.Extensions.Logging;
 
@@ -98,16 +97,18 @@ public sealed class CloudEmbeddingClient : IEmbeddingService, IBatchEmbeddingSer
     /// <summary>单批（≤ <see cref="MaxBatchSize"/> 条）一次 HTTP 往返。</summary>
     private async Task<float[][]> EmbedChunkAsync(IReadOnlyList<string> texts, CancellationToken ct)
     {
-        var json = await _transport.SendForStringAsync(
+        var parsed = await _transport.SendForJsonAsync<EmbeddingResponse>(
             HttpMethod.Post,
             "/v1/embedding",
             new { texts },
             ClientJsonDefaults.CamelCaseRequest,
-            ct,
-            completionOption: HttpCompletionOption.ResponseHeadersRead
+            ClientJsonDefaults.Cloud,
+            ct
         );
-        var parsed = JsonSerializer.Deserialize<EmbeddingResponse>(json, ClientJsonDefaults.Cloud)
-            ?? throw new CloudApiException("embedding_failed", "云端 embedding 响应无法解析。");
+        if (parsed is null)
+        {
+            throw new CloudApiException("embedding_failed", "云端 embedding 响应无法解析。");
+        }
 
         if (!parsed.Available)
         {
