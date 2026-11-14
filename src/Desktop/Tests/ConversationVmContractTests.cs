@@ -176,6 +176,44 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
+    /// 状态行指针丢失但可见行仍在时，End 必须复用原行；否则会留下“压缩中…”并在下面新增完成行。
+    /// </summary>
+    [Fact]
+    public void CompactEnd_WithOrphanedStatusRow_ReusesExistingRow()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = (Action)
+            typeof(SessionEngine)
+                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine)!;
+        var end =
+            (Action<string>)
+                typeof(SessionEngine)
+                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(h.Engine)!;
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            var row = Assert.Single(vm.Messages);
+
+            // 模拟看门狗/异常路径：可见行还在，但指针已丢。
+            typeof(ConversationViewModel)
+                .GetField("_compactStatusMessage", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(vm, null);
+
+            end("上下文溢出压缩完成：290 → 4 条");
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Single(vm.Messages);
+            Assert.Equal("上下文溢出压缩完成：290 → 4 条", row.Content.ToString());
+            Assert.False(row.IsSpinnerVisible);
+        });
+    }
+
+    /// <summary>
     /// 压缩 End 事件完全丢失时，Agent 开始/结束处理是兜底对账点：
     /// 引擎已不在压缩，就不能让「上下文压缩中…」继续占着系统行。
     /// </summary>

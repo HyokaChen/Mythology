@@ -1317,12 +1317,18 @@ public sealed class ConversationViewModel : ViewModelBase
 
                 // 原地更新「压缩中…」行：spinner 只在压缩期间转，结束后同一行变结果，
                 // 不再留下两条静态系统消息。
-                _compactStatusMessage ??= new ChatMessageModel(MessageSender.System)
+                _compactStatusMessage = FindReusableCompactStatus()
+                    ?? new ChatMessageModel(MessageSender.System);
+                _compactStatusMessage.IsSpinnerVisible = true;
+                if (
+                    !_compactStatusMessage
+                        .Content.ToString()
+                        .StartsWith("上下文压缩中", StringComparison.Ordinal)
+                )
                 {
-                    IsSpinnerVisible = true,
-                };
-                if (_compactStatusMessage.Content.Length == 0)
+                    _compactStatusMessage.ResetContent();
                     _compactStatusMessage.AppendContent("上下文压缩中…");
+                }
                 if (!Messages.Contains(_compactStatusMessage))
                 {
                     Messages.Add(_compactStatusMessage);
@@ -1342,6 +1348,15 @@ public sealed class ConversationViewModel : ViewModelBase
             {
                 if (_compactStatusMessage is null)
                 {
+                    // 状态行指针可能已被看门狗清掉，但可见行还在：优先复用最后一条压缩状态行，
+                    // 避免“压缩中…”残留 + 新完成行并排出现。
+                    if (FindReusableCompactStatus() is { } stale)
+                    {
+                        _compactStatusMessage = stale;
+                        ApplyCompactEnd(message);
+                        return;
+                    }
+
                     // Start 的 UI action 尚未执行：先挂起，由 Start 收尾。
                     if (_compactStartObserved)
                     {
@@ -1370,6 +1385,31 @@ public sealed class ConversationViewModel : ViewModelBase
         );
         if (local is not null)
             local.EntryId = entryId;
+    }
+
+    /// <summary>
+    /// 查找可复用的压缩状态行。指针丢失但可见行残留时，结束事件仍应落到原行，
+    /// 不能新增一条“完成”行让旧的“压缩中…”继续占位。
+    /// </summary>
+    private ChatMessageModel? FindReusableCompactStatus()
+    {
+        if (_compactStatusMessage is not null)
+            return _compactStatusMessage;
+
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            var message = Messages[i];
+            if (message.Sender != MessageSender.System)
+                continue;
+
+            if (
+                message.IsSpinnerVisible
+                || message.Content.ToString().StartsWith("上下文压缩中", StringComparison.Ordinal)
+            )
+                return message;
+        }
+
+        return null;
     }
 
     /// <summary>把压缩结束事件落到同一条系统状态行，并清掉压缩态。</summary>
