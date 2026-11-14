@@ -262,6 +262,10 @@ public sealed class CompactionEngine(
             $"[上下文摘要 {blockId}]\n{summary}"
         );
         var keptMessages = agent.State.Messages.Skip(cutIndex).ToList();
+        // 保留消息上的 Tokens 是压缩前完整上下文的锚点。压缩后它已不再代表新上下文；
+        // 不清掉会让 token 估算仍返回压缩前大小，溢出恢复误判为“压缩未降低 token”。
+        foreach (var msg in keptMessages)
+            msg.Tokens = null;
         var newMessages = new List<ChatMessage>(keptMessages.Count + 1) { summaryMsg };
         newMessages.AddRange(keptMessages);
         agent.ReplaceMessages(newMessages);

@@ -996,6 +996,9 @@ public class ChatMessage
     /// 仅最后一条 assistant 消息携带，旧数据缺失时为 null（降级为启发式估算）。
     /// </summary>
     public int? Tokens { get; set; }
+
+    /// <summary>浅拷贝，供读取路径剥离已失效的 token 锚点而不污染解析缓存。</summary>
+    internal ChatMessage Clone() => (ChatMessage)MemberwiseClone();
 }
 
 /// <summary>

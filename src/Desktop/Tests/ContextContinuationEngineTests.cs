@@ -473,6 +473,45 @@ public sealed class ContextContinuationEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task RelieveOverflow_CompactMode_ClearsStaleContextAnchors()
+    {
+        // 回归：保留消息带着压缩前的 Tokens 锚点，估算会一直返回旧上下文大小，
+        // 溢出恢复因此在压缩成功后仍判定“token 未下降”，错误提示压缩失败。
+        var messages = new List<LlmChatMessage>();
+        for (var i = 0; i < 12; i++)
+        {
+            messages.Add(
+                new LlmChatMessage(
+                    i % 2 == 0 ? ChatMessageRoles.User : ChatMessageRoles.Assistant,
+                    $"第 {i} 条：{new string('述', 500)}"
+                )
+                {
+                    Tokens = i == 9 ? 18_000 : null,
+                }
+            );
+        }
+        var sessionId = await SeedSessionMessagesAsync(messages);
+        var before = _agent.LiveContextTokens;
+        Assert.True(before > 10_000, "测试前置：保留消息应携带旧上下文锚点");
+
+        Assert.True(await RelieveOverflowAsync(keepRecentTokens: 1_000));
+        var compacted = _agent.LiveContextTokens;
+
+        Assert.True(
+            compacted < before / 2,
+            $"压缩后 token 估算必须下降（before={before}, after={compacted}）"
+        );
+        Assert.All(_agent.State.Messages, message => Assert.Null(message.Tokens));
+
+        // 重启/重新进入会话后，保留消息仍从 JSONL 读取；旧锚点不能在恢复时复活。
+        await _engine.SwitchToAsync(sessionId, NovelId);
+        Assert.True(
+            _agent.LiveContextTokens < before / 2,
+            $"恢复后 token 估算仍须保持压缩后大小（before={before}, after={_agent.LiveContextTokens}）"
+        );
+    }
+
+    [Fact]
     public async Task RelieveOverflow_CompactMode_CompactsWithoutRolling()
     {
         // 长消息才产生「有效压缩」（短消息压完反而更长，会走无效压缩分支返回 false）

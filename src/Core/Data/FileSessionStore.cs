@@ -1594,7 +1594,19 @@ public sealed class FileSessionStore
             if (compactFromOrder >= 0 && entry.Order < compactFromOrder)
                 continue;
 
-            messages.Add(entry.Message);
+            var message = entry.Message;
+            // compact 之后保留的旧消息仍带着压缩前的完整上下文锚点；模型上下文读取时必须剥离，
+            // 否则重启/换会话恢复后 EstimateMessagesTokens 会再次把旧上下文算回来。
+            if (
+                mode == MessageRenderMode.Context
+                && latestCompact is not null
+                && entry.Order < latestCompact.Order
+            )
+            {
+                message = message.Clone();
+                message.Tokens = null;
+            }
+            messages.Add(message);
         }
 
         BackfillToolNames(messages);

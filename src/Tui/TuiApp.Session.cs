@@ -225,7 +225,7 @@ public sealed partial class TuiApp
             ToastService.Error(
                 _contextManagement is { Mode: ContextMode.Continuation }
                     ? "上下文过长，页切换失败。请开启新会话。"
-                    : "上下文过长，压缩失败。请使用 /compact 或开启新会话。"
+                    : "上下文过长，自动恢复未成功。请使用 /compact 或开启新会话。"
             );
             _isPromptPending = false; // 溢出失败：清理
         }
