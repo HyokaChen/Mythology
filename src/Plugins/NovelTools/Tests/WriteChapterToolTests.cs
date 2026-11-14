@@ -162,4 +162,31 @@ public sealed class WriteChapterToolTests
         Assert.False(result.IsError);
         Assert.Equal("v2", (await store.GetChapter("ch1"))!.VolumeId);
     }
+
+    [Fact]
+    public async Task Create_WithStandaloneSeparators_StripsThemAndReportsCleanup()
+    {
+        var store = await SeedAsync();
+        var tool = new WriteChapterTool(store);
+
+        var result = await tool.ExecuteAsync(
+            "call",
+            new WriteChapterParams
+            {
+                NovelId = NovelId,
+                Title = "第一章",
+                Order = 1,
+                VolumeId = "v1",
+                Content = "第一段。\n\n---\n\n第二段。\n\n***\n\n第三段。",
+            },
+            CancellationToken.None
+        );
+
+        Assert.False(result.IsError);
+        var chapter = await store.GetChapterByOrder(NovelId, 1);
+        Assert.NotNull(chapter);
+        Assert.Equal("第一段。\n\n第二段。\n\n第三段。", chapter.Content);
+        var text = string.Join("", result.Content.OfType<TextContent>().Select(c => c.Text));
+        Assert.Contains("已清理 2 处独立分隔符", text);
+    }
 }

@@ -16,7 +16,7 @@ public static class SignalBuilder
     /// <summary>云端不可用时的本地自检提醒（不伪造 findings）。</summary>
     public const string HumanizerUnavailableMessage =
         "[本地自检] 云端去AI味校验未完成。交付前按写作风格规范自检"
-        + "（对举/结论冒号/口头禅/翻译腔/同义称呼/同骨架构句），"
+        + "（对举/结论冒号/口头禅/翻译腔/同义称呼/同骨架构句/独立分隔符），"
         + "并在回复中标注「云端去AI味校验未完成」；不要伪造检测结果。";
 
     public static string Format(

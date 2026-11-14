@@ -123,4 +123,20 @@ public sealed class EditTextToolTests
         Assert.False(result.IsError);
         Assert.Equal("旧到的文本！", (await store.GetChapter(ChapterId))!.Content);
     }
+
+    [Fact]
+    public async Task InsertStandaloneSeparator_IsCleanedBeforeSave()
+    {
+        var (store, tool) = await SeedAsync();
+        var result = await tool.ExecuteAsync(
+            "call",
+            Args("insert", newText: "\n\n---\n\n新段落", position: 999),
+            CancellationToken.None
+        );
+
+        Assert.False(result.IsError);
+        Assert.Equal("旧到的文本\n\n新段落", (await store.GetChapter(ChapterId))!.Content);
+        var text = string.Join("", result.Content.OfType<TextContent>().Select(c => c.Text));
+        Assert.Contains("已清理 1 处独立分隔符", text);
+    }
 }

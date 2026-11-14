@@ -5,7 +5,7 @@ namespace Core.Vector;
 /// <summary>
 /// 中文文本语义分块器：约 300 个汉字目标长度，语义边界优先。
 ///
-/// 边界优先级：章节小标题 > 场景分隔 > 空行段落 > 句末标点 > 保底字符切分。
+/// 边界优先级：章节小标题 > 历史稿场景分隔 > 空行段落 > 句末标点 > 保底字符切分。
 /// 相邻块保留约 40-60 个汉字的上下文重叠。
 /// 短段落合并，长段落按句子切分。
 /// </summary>
@@ -23,7 +23,10 @@ public sealed class ChineseTextChunker
     /// <summary>相邻块重叠长度。</summary>
     public int OverlapLength { get; init; } = 50;
 
-    /// <summary>场景分隔标记。</summary>
+    /// <summary>
+    /// 历史稿/导入稿的场景分隔标记，仅用于兼容分块。
+    /// 新生成正文禁止独立分隔符；保存入口由 ProseFormatGuard 统一清理。
+    /// </summary>
     private static readonly string[] SceneBreakPatterns = ["***", "---", "* * *", "— — —"];
 
     /// <summary>中文句末标点。</summary>
@@ -103,8 +106,9 @@ public sealed class ChineseTextChunker
 
     /// <summary>
     /// 将文本分割为段落列表。
-    /// 先检测场景分隔标记（*** / --- / * * * / — — —），这些标记强制分块阻断；
-    /// 再检测 Markdown 小标题（# 开头）；最后按空行分割普通段落。
+    /// 先检测历史稿/导入稿的场景分隔标记（*** / --- / * * * / — — —），这些标记强制分块阻断；
+    /// 新生成正文不得包含这类独立分隔符（见 ProseFormatGuard）；再检测 Markdown 小标题（# 开头）；
+    /// 最后按空行分割普通段落。
     /// </summary>
     private List<Paragraph> SplitParagraphs(ReadOnlySpan<char> span)
     {
