@@ -274,15 +274,22 @@ public sealed class ManageWorldRuleTool(INovelStore store)
 
         if (!string.IsNullOrWhiteSpace(rule.RequiredRelationTargetId))
         {
-            var lookup = await NovelReferenceResolver.CharacterAsync(
+            if (string.IsNullOrWhiteSpace(rule.RequiredRelationType))
+                return "设置关系目标时必须同时提供 required-relation-type";
+            var targetType = RelationTargetType(rule.RequiredRelationType);
+            if (targetType is null)
+                return $"未知关系类型: {rule.RequiredRelationType}";
+            var lookup = await NovelReferenceResolver.EntityIdAsync(
                 store,
                 novelId,
+                targetType.Value,
                 rule.RequiredRelationTargetId,
                 ct
             );
-            if (lookup is null)
-                return $"关系目标不存在: {rule.RequiredRelationTargetId}";
-            rule.RequiredRelationTargetId = lookup.Id;
+            if (lookup.Value is not { } targetId)
+                return lookup.Error
+                    ?? $"关系目标不存在: {targetType.Value.ToKebabCaseString()} {rule.RequiredRelationTargetId}";
+            rule.RequiredRelationTargetId = targetId;
         }
 
         if (rule.Effect is { TargetId.Length: > 0 } effect)
@@ -345,6 +352,33 @@ public sealed class ManageWorldRuleTool(INovelStore store)
             EffectiveUntilChapterId = source.EffectiveUntilChapterId,
             RequiredRelationType = source.RequiredRelationType,
             RequiredRelationTargetId = source.RequiredRelationTargetId,
+        };
+
+    private static EntityTypeEnum? RelationTargetType(string relationType) =>
+        relationType.Trim().ToLowerInvariant() switch
+        {
+            "member-of" or "membership" => EntityTypeEnum.Faction,
+            "has-member" or "leadership" or "relationship" or "ownership" =>
+                EntityTypeEnum.Character,
+            "owns" => EntityTypeEnum.Item,
+            "owned-by" => EntityTypeEnum.Character,
+            "parent"
+            or "adjacent"
+            or "adjacent-to"
+            or "headquarters"
+            or "contains"
+            or "located-at" => EntityTypeEnum.Location,
+            "faction-relationship" => EntityTypeEnum.Faction,
+            "appears-in" => EntityTypeEnum.Scene,
+            "belongs-to" or "advances" => EntityTypeEnum.Plotline,
+            "in-chapter" or "reveals-at" or "resolves-at" or "occurs-in" or "evolves" =>
+                EntityTypeEnum.Chapter,
+            "in-volume" => EntityTypeEnum.Volume,
+            "features" => EntityTypeEnum.Character,
+            "constrains" => EntityTypeEnum.Novel,
+            _ => RelationshipOntology.ByTokenOrNull(relationType) is not null
+                ? EntityTypeEnum.Character
+                : null,
         };
 
     private static string? ValidateEnumArgs(ManageWorldRuleParams args)

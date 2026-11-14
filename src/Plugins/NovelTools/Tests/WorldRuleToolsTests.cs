@@ -49,6 +49,14 @@ public sealed class WorldRuleToolsTests : IAsyncDisposable
                 Name = "林长歌",
             }
         );
+        await _store.SaveFaction(
+            new Faction
+            {
+                Id = "f1",
+                NovelId = "n1",
+                Name = "青云宗",
+            }
+        );
         await _store.SaveScene(
             new SceneDefinition
             {
@@ -177,6 +185,46 @@ public sealed class WorldRuleToolsTests : IAsyncDisposable
         Assert.Equal("lin", rule.SubjectId);
         Assert.Equal("ch1", rule.EffectiveFromChapterId);
         Assert.Equal("lin", rule.Effect!.TargetId);
+    }
+
+    [Fact]
+    public async Task ManageWorldRule_ResolvesRelationTargetByType()
+    {
+        await SeedAsync();
+        var tool = new ManageWorldRuleTool(_store);
+
+        var created = await tool.ExecuteAsync(
+            "t1",
+            new ManageWorldRuleParams
+            {
+                Action = "create",
+                NovelId = "n1",
+                EntryKind = "rule",
+                Category = "social",
+                Description = "必须是青云宗弟子",
+                RuleKind = "requires",
+                SubjectType = "character",
+                SubjectId = "林长歌",
+                RuleAction = "入门",
+                RequiredState = "青云宗",
+                RequiredRelationType = "member-of",
+                RequiredRelationTargetId = "青云宗",
+                Effect = new RuleEffectParams
+                {
+                    Kind = "state-change",
+                    TargetEntityType = "character",
+                    TargetId = "林长歌",
+                    Aspect = "status",
+                    To = "入宗",
+                    Summary = "成为青云宗弟子",
+                },
+            },
+            CancellationToken.None
+        );
+
+        Assert.False(created.IsError, Core.Tools.ToolDispatcher.ExtractText(created.Content));
+        var rule = Assert.Single(await _store.GetWorldRules("n1"));
+        Assert.Equal("f1", rule.RequiredRelationTargetId);
     }
 
     [Fact]

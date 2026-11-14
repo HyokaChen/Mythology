@@ -603,6 +603,7 @@ internal static class NovelEnum
             [typeof(FactionRelationType)] = new Dictionary<string, string>
             {
                 ["同盟"] = "Ally",
+                ["盟友"] = "Ally",
                 ["敌对"] = "Enemy",
                 ["中立"] = "Neutral",
                 ["贸易"] = "Trade",
