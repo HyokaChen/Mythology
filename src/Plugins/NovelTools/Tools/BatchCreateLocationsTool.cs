@@ -43,6 +43,8 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
         var createdIds = new List<string>(args.Locations.Count);
         var createdNames = new List<string>(args.Locations.Count);
         var failed = new List<string>();
+        var existing = await store.GetLocations(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个地点草稿，逐个创建
         foreach (var l in args.Locations)
@@ -53,17 +55,46 @@ public sealed class BatchCreateLocationsTool(INovelStore store, RetrievalKernel?
                 continue;
             }
 
+            var parentId = l.ParentId;
+            if (!string.IsNullOrWhiteSpace(parentId))
+            {
+                var parent = ManageHelper.ResolveByIdOrName(
+                    existing,
+                    parentId,
+                    e => e.Id,
+                    e => e.Name
+                );
+                if (parent is null)
+                {
+                    failed.Add($"{l.Name.Trim()}: 父地点 {parentId} 不存在");
+                    continue;
+                }
+                parentId = parent.Id;
+            }
+            else
+            {
+                parentId = null;
+            }
+
+            var type = LocationType.City;
+            if (!string.IsNullOrWhiteSpace(l.Type))
+            {
+                if (!Enum.TryParse<LocationType>(l.Type, ignoreCase: true, out type))
+                {
+                    failed.Add($"{l.Name.Trim()}: 未知地点类型 {l.Type}");
+                    continue;
+                }
+            }
+
             // 构建 Location 实体，自动补全默认值
             var location = new Location
             {
                 NovelId = args.NovelId,
                 Name = l.Name.Trim(),
-                Type = Enum.TryParse<LocationType>(l.Type ?? "city", ignoreCase: true, out var lt)
-                    ? lt
-                    : LocationType.City,
+                Type = type,
                 Atmosphere = l.Atmosphere ?? "",
                 Description = l.Description ?? "",
-                ParentId = l.ParentId,
+                ParentId = parentId,
             };
 
             try

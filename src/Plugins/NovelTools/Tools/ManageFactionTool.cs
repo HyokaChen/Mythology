@@ -61,21 +61,33 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
         CancellationToken ct
     )
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建组织需要 name");
+
+        var headquartersId = await ResolveLocationId(args.NovelId, args.HeadquartersId, ct);
+        if (headquartersId is null && !string.IsNullOrWhiteSpace(args.HeadquartersId))
+            return Error($"地点 {args.HeadquartersId} 不存在");
+        var members = await ResolveMemberIds(args.NovelId, args.Members, ct);
+        if (members is null)
+            return Error("成员列表中有角色不存在");
+
+        var type = FactionType.Sect;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (!Enum.TryParse<FactionType>(args.Type, ignoreCase: true, out type))
+                return Error($"未知组织类型: {args.Type}");
+        }
 
         var faction = new Faction
         {
             NovelId = args.NovelId,
             Name = args.Name,
-            Type = Enum.TryParse<FactionType>(args.Type ?? "sect", ignoreCase: true, out var ft)
-                ? ft
-                : FactionType.Sect,
+            Type = type,
             Description = args.Description ?? "",
             Leader = args.Leader ?? "",
-            HeadquartersId = args.HeadquartersId,
+            HeadquartersId = headquartersId,
             Goal = args.Goal ?? "",
-            Members = args.Members ?? [],
+            Members = members,
         };
         await store.SaveFaction(faction, ct);
         ThrowIfCancelled(ct);
@@ -114,21 +126,39 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
 
         if (args.Name is not null)
             faction.Name = args.Name;
-        if (
-            args.Type is not null
-            && Enum.TryParse<FactionType>(args.Type, ignoreCase: true, out var ft)
-        )
+        if (args.Type is not null)
+        {
+            if (!Enum.TryParse<FactionType>(args.Type, ignoreCase: true, out var ft))
+                return Error($"未知组织类型: {args.Type}");
             faction.Type = ft;
+        }
         if (args.Description is not null)
             faction.Description = args.Description;
         if (args.Leader is not null)
             faction.Leader = args.Leader;
         if (args.HeadquartersId is not null)
-            faction.HeadquartersId = args.HeadquartersId;
+        {
+            if (string.IsNullOrWhiteSpace(args.HeadquartersId))
+            {
+                faction.HeadquartersId = null;
+            }
+            else
+            {
+                var headquartersId = await ResolveLocationId(args.NovelId, args.HeadquartersId, ct);
+                if (headquartersId is null)
+                    return Error($"地点 {args.HeadquartersId} 不存在");
+                faction.HeadquartersId = headquartersId;
+            }
+        }
         if (args.Goal is not null)
             faction.Goal = args.Goal;
         if (args.Members is not null)
-            faction.Members = args.Members;
+        {
+            var members = await ResolveMemberIds(args.NovelId, args.Members, ct);
+            if (members is null)
+                return Error("成员列表中有角色不存在");
+            faction.Members = members;
+        }
 
         await store.SaveFaction(faction, ct);
         ThrowIfCancelled(ct);
@@ -209,6 +239,39 @@ public sealed class ManageFactionTool(INovelStore store, RetrievalKernel? kernel
             return null;
         var factions = await store.GetFactions(args.NovelId);
         return ManageHelper.ResolveByIdOrName(factions, args.FactionId, f => f.Id, f => f.Name);
+    }
+
+    /// <summary>解析总部地点；空输入返回 null，非空但不存在也返回 null（调用方按输入区分）。</summary>
+    private async Task<string?> ResolveLocationId(
+        string novelId,
+        string? idOrName,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(idOrName))
+            return null;
+        var location = await NovelReferenceResolver.LocationAsync(store, novelId, idOrName, ct);
+        return location?.Id;
+    }
+
+    /// <summary>解析全部成员角色；任意一个不存在则返回 null。</summary>
+    private async Task<List<string>?> ResolveMemberIds(
+        string novelId,
+        IReadOnlyList<string>? members,
+        CancellationToken ct
+    )
+    {
+        if (members is null || members.Count == 0)
+            return [];
+        var result = new List<string>(members.Count);
+        foreach (var member in members)
+        {
+            var character = await NovelReferenceResolver.CharacterAsync(store, novelId, member, ct);
+            if (character is null)
+                return null;
+            result.Add(character.Id);
+        }
+        return result;
     }
 
     /// <summary>

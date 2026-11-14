@@ -42,6 +42,8 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
         var createdIds = new List<string>(args.Items.Count);
         var createdNames = new List<string>(args.Items.Count);
         var failed = new List<string>();
+        var characters = await store.GetCharacters(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个道具草稿，逐个创建
         foreach (var item in args.Items)
@@ -52,20 +54,45 @@ public sealed class BatchCreateItemsTool(INovelStore store, RetrievalKernel? ker
                 continue;
             }
 
+            var ownerId = item.OwnerId;
+            if (!string.IsNullOrWhiteSpace(ownerId))
+            {
+                var owner = ManageHelper.ResolveByIdOrName(
+                    characters,
+                    ownerId,
+                    c => c.Id,
+                    c => c.Name
+                );
+                if (owner is null)
+                {
+                    failed.Add($"{item.Name.Trim()}: 持有者角色 {ownerId} 不存在");
+                    continue;
+                }
+                ownerId = owner.Id;
+            }
+            else
+            {
+                ownerId = null;
+            }
+
+            var type = ItemType.Artifact;
+            if (!string.IsNullOrWhiteSpace(item.Type))
+            {
+                if (!Enum.TryParse<ItemType>(item.Type, ignoreCase: true, out type))
+                {
+                    failed.Add($"{item.Name.Trim()}: 未知道具类型 {item.Type}");
+                    continue;
+                }
+            }
+
             // 构建 Item 实体，自动补全默认值
             var entity = new Item
             {
                 NovelId = args.NovelId,
                 Name = item.Name.Trim(),
-                Type = Enum.TryParse<ItemType>(
-                    item.Type ?? "artifact",
-                    ignoreCase: true,
-                    out var it
-                )
-                    ? it
-                    : ItemType.Artifact,
+                Type = type,
                 Description = item.Description ?? "",
-                OwnerId = item.OwnerId,
+                OwnerId = ownerId,
             };
 
             try

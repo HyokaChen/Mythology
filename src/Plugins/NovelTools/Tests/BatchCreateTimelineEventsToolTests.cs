@@ -14,6 +14,22 @@ public class BatchCreateTimelineEventsToolTests
     /// <summary>创建被测工具实例。</summary>
     private BatchCreateTimelineEventsTool CreateTool() => new(_store);
 
+    private async Task SeedChaptersAsync()
+    {
+        foreach (var (id, order) in new[] { ("ch1", 1), ("ch5", 5) })
+        {
+            await _store.SaveChapter(
+                new Core.Data.Chapter
+                {
+                    Id = id,
+                    NovelId = "novel-1",
+                    Title = id,
+                    Order = order,
+                }
+            );
+        }
+    }
+
     [Fact]
     /// <summary>空列表应返回错误。</summary>
     public async Task ExecuteAsync_EmptyList_ReturnsError()
@@ -47,6 +63,7 @@ public class BatchCreateTimelineEventsToolTests
     /// <summary>有效输入应创建所有事件。</summary>
     public async Task ExecuteAsync_AllValid_CreatesAllEvents()
     {
+        await SeedChaptersAsync();
         var tool = CreateTool();
         var args = new BatchCreateTimelineEventsParams
         {

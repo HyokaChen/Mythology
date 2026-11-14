@@ -41,6 +41,8 @@ public sealed class BatchCreateTimelineEventsTool(INovelStore store)
         var createdIds = new List<string>(args.Events.Count);
         var createdTitles = new List<string>(args.Events.Count);
         var failed = new List<string>();
+        var chapters = await store.GetChapters(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个事件草稿，逐个创建
         foreach (var evt in args.Events)
@@ -51,13 +53,20 @@ public sealed class BatchCreateTimelineEventsTool(INovelStore store)
                 continue;
             }
 
+            var chapterId = ResolveChapterId(chapters, evt.ChapterId);
+            if (chapterId is null && !string.IsNullOrWhiteSpace(evt.ChapterId))
+            {
+                failed.Add($"{evt.Title.Trim()}: 章节 {evt.ChapterId} 不存在");
+                continue;
+            }
+
             // 构建 TimelineEvent 实体，自动补全默认值
             var entity = new TimelineEvent
             {
                 NovelId = args.NovelId,
                 Title = evt.Title.Trim(),
                 Description = evt.Description ?? "",
-                ChapterId = evt.ChapterId,
+                ChapterId = chapterId,
             };
 
             try
@@ -90,6 +99,15 @@ public sealed class BatchCreateTimelineEventsTool(INovelStore store)
                 FailedCount = failed.Count,
             },
         };
+    }
+
+    private static string? ResolveChapterId(IReadOnlyList<Chapter> chapters, string? idOrOrder)
+    {
+        if (string.IsNullOrWhiteSpace(idOrOrder))
+            return null;
+        if (int.TryParse(idOrOrder, out var order))
+            return chapters.FirstOrDefault(c => c.Order == order)?.Id;
+        return chapters.FirstOrDefault(c => c.Id == idOrOrder)?.Id;
     }
 }
 

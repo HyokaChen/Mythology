@@ -42,6 +42,9 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
         var createdIds = new List<string>(args.Factions.Count);
         var createdNames = new List<string>(args.Factions.Count);
         var failed = new List<string>();
+        var locations = await store.GetLocations(args.NovelId, ct);
+        var characters = await store.GetCharacters(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个组织草稿，逐个创建
         foreach (var f in args.Factions)
@@ -52,19 +55,69 @@ public sealed class BatchCreateFactionsTool(INovelStore store, RetrievalKernel? 
                 continue;
             }
 
+            var headquartersId = f.HeadquartersId;
+            if (!string.IsNullOrWhiteSpace(headquartersId))
+            {
+                var location = ManageHelper.ResolveByIdOrName(
+                    locations,
+                    headquartersId,
+                    l => l.Id,
+                    l => l.Name
+                );
+                if (location is null)
+                {
+                    failed.Add($"{f.Name.Trim()}: 总部地点 {headquartersId} 不存在");
+                    continue;
+                }
+                headquartersId = location.Id;
+            }
+            else
+            {
+                headquartersId = null;
+            }
+
+            var members = new List<string>(f.Members?.Count ?? 0);
+            var missingMember = false;
+            foreach (var memberId in f.Members ?? [])
+            {
+                var member = ManageHelper.ResolveByIdOrName(
+                    characters,
+                    memberId,
+                    c => c.Id,
+                    c => c.Name
+                );
+                if (member is null)
+                {
+                    failed.Add($"{f.Name.Trim()}: 成员角色 {memberId} 不存在");
+                    missingMember = true;
+                    break;
+                }
+                members.Add(member.Id);
+            }
+            if (missingMember)
+                continue;
+
+            var type = FactionType.Sect;
+            if (!string.IsNullOrWhiteSpace(f.Type))
+            {
+                if (!Enum.TryParse<FactionType>(f.Type, ignoreCase: true, out type))
+                {
+                    failed.Add($"{f.Name.Trim()}: 未知组织类型 {f.Type}");
+                    continue;
+                }
+            }
+
             // 构建 Faction 实体，自动补全默认值
             var faction = new Faction
             {
                 NovelId = args.NovelId,
                 Name = f.Name.Trim(),
-                Type = Enum.TryParse<FactionType>(f.Type ?? "sect", ignoreCase: true, out var ft)
-                    ? ft
-                    : FactionType.Sect,
+                Type = type,
                 Description = f.Description ?? "",
                 Leader = f.Leader ?? "",
-                HeadquartersId = f.HeadquartersId,
+                HeadquartersId = headquartersId,
                 Goal = f.Goal ?? "",
-                Members = f.Members ?? [],
+                Members = members,
             };
 
             try

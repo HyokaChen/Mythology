@@ -14,6 +14,22 @@ public class BatchCreatePlotlinesToolTests
     /// <summary>创建被测工具实例。</summary>
     private BatchCreatePlotlinesTool CreateTool() => new(_store);
 
+    private async Task SeedChaptersAsync()
+    {
+        foreach (var (id, order) in new[] { ("ch10", 10), ("ch20", 20) })
+        {
+            await _store.SaveChapter(
+                new Core.Data.Chapter
+                {
+                    Id = id,
+                    NovelId = "novel-1",
+                    Title = id,
+                    Order = order,
+                }
+            );
+        }
+    }
+
     [Fact]
     /// <summary>空列表应返回错误。</summary>
     public async Task ExecuteAsync_EmptyList_ReturnsError()
@@ -47,6 +63,7 @@ public class BatchCreatePlotlinesToolTests
     /// <summary>有效输入应创建所有情节线。</summary>
     public async Task ExecuteAsync_AllValid_CreatesAllPlotlines()
     {
+        await SeedChaptersAsync();
         var tool = CreateTool();
         var args = new BatchCreatePlotlinesParams
         {

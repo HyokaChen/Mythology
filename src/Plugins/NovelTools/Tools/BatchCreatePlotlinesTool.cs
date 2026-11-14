@@ -44,6 +44,8 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
         var createdIds = new List<string>(args.Plotlines.Count);
         var createdNames = new List<string>(args.Plotlines.Count);
         var failed = new List<string>();
+        var chapters = await store.GetChapters(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个情节线草稿，逐个创建
         foreach (var p in args.Plotlines)
@@ -54,25 +56,52 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
                 continue;
             }
 
+            var plannedRevealChapterId = ResolveChapterId(chapters, p.PlannedRevealChapterId);
+            if (
+                plannedRevealChapterId is null
+                && !string.IsNullOrWhiteSpace(p.PlannedRevealChapterId)
+            )
+            {
+                failed.Add($"{p.Name.Trim()}: 计划揭示章节 {p.PlannedRevealChapterId} 不存在");
+                continue;
+            }
+            var resolvedAtChapterId = ResolveChapterId(chapters, p.ResolvedAtChapterId);
+            if (resolvedAtChapterId is null && !string.IsNullOrWhiteSpace(p.ResolvedAtChapterId))
+            {
+                failed.Add($"{p.Name.Trim()}: 解决章节 {p.ResolvedAtChapterId} 不存在");
+                continue;
+            }
+
+            var type = PlotlineType.Main;
+            if (!string.IsNullOrWhiteSpace(p.Type))
+            {
+                if (!Enum.TryParse<PlotlineType>(p.Type, ignoreCase: true, out type))
+                {
+                    failed.Add($"{p.Name.Trim()}: 未知情节线类型 {p.Type}");
+                    continue;
+                }
+            }
+            var tension = PlotlineTension.Medium;
+            if (!string.IsNullOrWhiteSpace(p.Tension))
+            {
+                if (!Enum.TryParse<PlotlineTension>(p.Tension, ignoreCase: true, out tension))
+                {
+                    failed.Add($"{p.Name.Trim()}: 未知情节线紧张度 {p.Tension}");
+                    continue;
+                }
+            }
+
             // 构建 Plotline 实体，自动补全默认值
             var plotline = new Plotline
             {
                 NovelId = args.NovelId,
                 Name = p.Name.Trim(),
                 Description = p.Description ?? "",
-                Type = Enum.TryParse<PlotlineType>(p.Type, ignoreCase: true, out var t)
-                    ? t
-                    : PlotlineType.Main, // 默认主线
-                PlannedRevealChapterId = p.PlannedRevealChapterId,
-                Tension = Enum.TryParse<PlotlineTension>(
-                    p.Tension ?? "medium",
-                    ignoreCase: true,
-                    out var tn
-                )
-                    ? tn
-                    : PlotlineTension.Medium,
+                Type = type,
+                PlannedRevealChapterId = plannedRevealChapterId,
+                Tension = tension,
                 Turnpoints = p.Turnpoints ?? "",
-                ResolvedAtChapterId = p.ResolvedAtChapterId,
+                ResolvedAtChapterId = resolvedAtChapterId,
             };
 
             try
@@ -112,6 +141,18 @@ public sealed class BatchCreatePlotlinesTool(INovelStore store, RetrievalKernel?
                 FailedCount = failed.Count,
             },
         };
+    }
+
+    private static string? ResolveChapterId(IReadOnlyList<Chapter> chapters, string? idOrOrder)
+    {
+        if (string.IsNullOrWhiteSpace(idOrOrder))
+            return null;
+        if (int.TryParse(idOrOrder, out var order))
+        {
+            var byOrder = chapters.FirstOrDefault(c => c.Order == order);
+            return byOrder?.Id;
+        }
+        return chapters.FirstOrDefault(c => c.Id == idOrOrder)?.Id;
     }
 }
 

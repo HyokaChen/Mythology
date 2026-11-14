@@ -31,12 +31,44 @@ public sealed class BuildSceneTool(INovelStore store)
     {
         ThrowIfCancelled(ct);
         // 参数校验：构思描述为必填项
-        if (string.IsNullOrEmpty(args.Concept))
+        if (string.IsNullOrWhiteSpace(args.Concept))
             return new AgentToolResult<BuildSceneDetails>
             {
                 Content = [new TextContent("请提供场景构思描述")],
                 IsError = true,
             };
+
+        var chapter = await NovelReferenceResolver.ChapterAsync(
+            store,
+            args.NovelId,
+            args.ChapterId,
+            ct
+        );
+        if (chapter is null && !string.IsNullOrWhiteSpace(args.ChapterId))
+            return Error($"章节 {args.ChapterId} 不存在");
+        var location = await NovelReferenceResolver.LocationAsync(
+            store,
+            args.NovelId,
+            args.LocationId,
+            ct
+        );
+        if (location is null && !string.IsNullOrWhiteSpace(args.LocationId))
+            return Error($"地点 {args.LocationId} 不存在");
+        if (args.ParticipantIds is not { Count: > 0 })
+            return Error("场景至少需要一个参与角色（participant-ids）");
+        var participantIds = new List<string>(args.ParticipantIds.Count);
+        foreach (var participant in args.ParticipantIds)
+        {
+            var character = await NovelReferenceResolver.CharacterAsync(
+                store,
+                args.NovelId,
+                participant,
+                ct
+            );
+            if (character is null)
+                return Error($"参与角色 {participant} 不存在");
+            participantIds.Add(character.Id);
+        }
 
         // 获取已有场景数，确定新场景的序号
         var existingScenes = await store.GetScenesByNovel(args.NovelId, ct);
@@ -49,17 +81,14 @@ public sealed class BuildSceneTool(INovelStore store)
         var sceneType = InferSceneType(args.Concept); // 推断场景类型
         var emotionalArc = InferEmotionalArc(sceneType); // 推断情绪弧线
 
-        // 组装参与角色列表
-        var participantIds = args.ParticipantIds ?? [];
-
         // 构建场景定义实体
         var scene = new SceneDefinition
         {
             NovelId = args.NovelId,
-            ChapterId = args.ChapterId,
+            ChapterId = chapter?.Id,
             Title = title,
             Order = nextOrder,
-            LocationId = args.LocationId,
+            LocationId = location?.Id,
             TimeDescription = "",
             ParticipantIds = participantIds,
             Conflict = conflict,
@@ -105,6 +134,9 @@ public sealed class BuildSceneTool(INovelStore store)
             },
         };
     }
+
+    private static AgentToolResult<BuildSceneDetails> Error(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
 
     /// <summary>
     /// 从构思描述中推断场景标题 — 取前12个字作为暂定标题。

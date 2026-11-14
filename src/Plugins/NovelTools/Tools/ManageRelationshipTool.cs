@@ -59,29 +59,47 @@ public sealed class ManageRelationshipTool(INovelStore store)
         ManageRelationshipParams args
     )
     {
-        if (string.IsNullOrEmpty(args.CharacterAId) || string.IsNullOrEmpty(args.CharacterBId))
-            return Error("创建关系需要 character_a_id 和 character-b-id");
+        if (
+            string.IsNullOrWhiteSpace(args.CharacterAId)
+            || string.IsNullOrWhiteSpace(args.CharacterBId)
+        )
+            return Error("创建关系需要 character_a_id 和 character_b_id");
 
-        // 容忍传角色名称而非 ID（与 manage_character 一致）
-        var characterAId = await ResolveCharacterId(args.NovelId, args.CharacterAId)
-            ?? args.CharacterAId;
-        var characterBId = await ResolveCharacterId(args.NovelId, args.CharacterBId)
-            ?? args.CharacterBId;
+        // 角色引用必须真实存在：不允许把未解析的名称/ID 原样写进关系，制造悬空引用。
+        var characterAId = await ResolveCharacterId(args.NovelId, args.CharacterAId);
+        if (characterAId is null)
+            return Error(
+                $"角色 {args.CharacterAId} 不存在（可用 manage_character list 查看 ID 或名称）"
+            );
+        var characterBId = await ResolveCharacterId(args.NovelId, args.CharacterBId);
+        if (characterBId is null)
+            return Error(
+                $"角色 {args.CharacterBId} 不存在（可用 manage_character list 查看 ID 或名称）"
+            );
+        if (string.Equals(characterAId, characterBId, StringComparison.Ordinal))
+            return Error("关系两端不能是同一个角色");
+
+        var type = RelationshipType.Friend;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (RelationshipTypeExtensions.ParseRelationshipType(args.Type) is not { } parsedType)
+                return Error($"未知关系类型: {args.Type}");
+            type = parsedType;
+        }
+        var strength = RelationshipStrength.Medium;
+        if (!string.IsNullOrWhiteSpace(args.Strength))
+        {
+            if (!Enum.TryParse<RelationshipStrength>(args.Strength, ignoreCase: true, out strength))
+                return Error($"未知关系强度: {args.Strength}");
+        }
 
         var rel = new Relationship
         {
             NovelId = args.NovelId,
             CharacterAId = characterAId,
             CharacterBId = characterBId,
-            Type = RelationshipTypeExtensions.ParseRelationshipType(args.Type)
-                ?? RelationshipType.Friend,
-            Strength = Enum.TryParse<RelationshipStrength>(
-                args.Strength ?? "medium",
-                ignoreCase: true,
-                out var rs
-            )
-                ? rs
-                : RelationshipStrength.Medium,
+            Type = type,
+            Strength = strength,
             Description = args.Description ?? "",
         };
         await store.SaveRelationship(rel);

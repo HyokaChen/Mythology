@@ -125,6 +125,14 @@ public sealed class EntityEvolutionGenerationTests
             Content = "正文",
         };
         await store.SaveChapter(chapter);
+        await store.SaveCharacter(
+            new Character
+            {
+                Id = "c1",
+                NovelId = novelId,
+                Name = "林长歌",
+            }
+        );
         // System 打底：另一实体
         await store.SaveChapterAppearances(
             novelId,
@@ -180,6 +188,14 @@ public sealed class EntityEvolutionGenerationTests
             Content = "正文",
         };
         await store.SaveChapter(chapter);
+        await store.SaveCharacter(
+            new Character
+            {
+                Id = "c1",
+                NovelId = novelId,
+                Name = "林长歌",
+            }
+        );
 
         var tool = new RecordEvolutionTool(store);
         var result = await tool.ExecuteAsync(

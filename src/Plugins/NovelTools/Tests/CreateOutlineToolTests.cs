@@ -55,4 +55,55 @@ public sealed class CreateOutlineToolTests
         Assert.Equal(2, chapters.Count);
         Assert.Equal(["第一章", "第二章"], chapters.OrderBy(c => c.Order).Select(c => c.Title));
     }
+
+    [Fact]
+    public async Task WithVolumes_MissingVolumeId_IsRejected()
+    {
+        var store = new FakeNovelStore();
+        await store.SaveNovel(new Novel { Id = "n1", Title = "书" });
+        await store.SaveVolume(
+            new Volume
+            {
+                Id = "v1",
+                NovelId = "n1",
+                Name = "第一卷",
+                Order = 1,
+            }
+        );
+        var tool = new CreateOutlineTool(store);
+
+        var args = JsonDocument
+            .Parse("""{"novel-id":"n1","chapter-titles":["第一章"]}""")
+            .RootElement;
+        var result = await tool.ExecuteAsync("call1", args, CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Empty(await store.GetChapters("n1", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task WithVolume_AssignsOutlineChapters()
+    {
+        var store = new FakeNovelStore();
+        await store.SaveNovel(new Novel { Id = "n1", Title = "书" });
+        await store.SaveVolume(
+            new Volume
+            {
+                Id = "v1",
+                NovelId = "n1",
+                Name = "第一卷",
+                Order = 1,
+            }
+        );
+        var tool = new CreateOutlineTool(store);
+
+        var args = JsonDocument
+            .Parse("""{"novel-id":"n1","volume-id":"v1","chapter-titles":["第一章","第二章"]}""")
+            .RootElement;
+        var result = await tool.ExecuteAsync("call1", args, CancellationToken.None);
+
+        Assert.False(result.IsError);
+        var chapters = await store.GetChapters("n1", TestContext.Current.CancellationToken);
+        Assert.All(chapters, c => Assert.Equal("v1", c.VolumeId));
+    }
 }

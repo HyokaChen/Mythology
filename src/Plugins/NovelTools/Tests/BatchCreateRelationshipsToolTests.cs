@@ -14,6 +14,21 @@ public class BatchCreateRelationshipsToolTests
     /// <summary>创建被测工具实例。</summary>
     private BatchCreateRelationshipsTool CreateTool() => new(_store);
 
+    private async Task SeedCharactersAsync()
+    {
+        foreach (var id in new[] { "char-1", "char-2", "char-3" })
+        {
+            await _store.SaveCharacter(
+                new Core.Data.Character
+                {
+                    Id = id,
+                    NovelId = "novel-1",
+                    Name = id,
+                }
+            );
+        }
+    }
+
     [Fact]
     /// <summary>空列表应返回错误。</summary>
     public async Task ExecuteAsync_EmptyList_ReturnsError()
@@ -47,6 +62,7 @@ public class BatchCreateRelationshipsToolTests
     /// <summary>有效输入应创建所有关系。</summary>
     public async Task ExecuteAsync_AllValid_CreatesAllRelationships()
     {
+        await SeedCharactersAsync();
         var tool = CreateTool();
         var args = new BatchCreateRelationshipsParams
         {
@@ -81,6 +97,7 @@ public class BatchCreateRelationshipsToolTests
     /// <summary>缺少角色 ID 应跳过无效项。</summary>
     public async Task ExecuteAsync_MissingCharacterId_SkipsInvalid()
     {
+        await SeedCharactersAsync();
         var tool = CreateTool();
         var args = new BatchCreateRelationshipsParams
         {
@@ -98,5 +115,26 @@ public class BatchCreateRelationshipsToolTests
         var details = (BatchCreateRelationshipsDetails)result.Details!;
         Assert.Equal(1, details.CreatedCount);
         Assert.Equal(1, details.FailedCount);
+    }
+
+    [Fact]
+    /// <summary>角色不存在时该条应失败，不写悬空关系。</summary>
+    public async Task ExecuteAsync_UnknownCharacter_RecordsFailure()
+    {
+        await SeedCharactersAsync();
+        var tool = CreateTool();
+        var args = new BatchCreateRelationshipsParams
+        {
+            NovelId = "novel-1",
+            Relationships = [new() { CharacterAId = "char-1", CharacterBId = "missing" }],
+        };
+
+        var result = await tool.ExecuteAsync("call-1", args, CancellationToken.None);
+
+        Assert.False(result.IsError);
+        var details = (BatchCreateRelationshipsDetails)result.Details!;
+        Assert.Equal(0, details.CreatedCount);
+        Assert.Equal(1, details.FailedCount);
+        Assert.Empty(await _store.GetRelationshipsByNovel("novel-1"));
     }
 }

@@ -61,18 +61,26 @@ public sealed class ManageItemTool(INovelStore store, RetrievalKernel? kernel = 
         CancellationToken ct
     )
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建道具需要 name");
+
+        var ownerId = await ResolveOwnerId(args.NovelId, args.OwnerId, ct);
+        if (ownerId is null && !string.IsNullOrWhiteSpace(args.OwnerId))
+            return Error($"持有者角色 {args.OwnerId} 不存在");
+        var type = ItemType.Artifact;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (!Enum.TryParse<ItemType>(args.Type, ignoreCase: true, out type))
+                return Error($"未知道具类型: {args.Type}");
+        }
 
         var item = new Item
         {
             NovelId = args.NovelId,
             Name = args.Name,
-            Type = Enum.TryParse<ItemType>(args.Type ?? "artifact", ignoreCase: true, out var it)
-                ? it
-                : ItemType.Artifact,
+            Type = type,
             Description = args.Description ?? "",
-            OwnerId = args.OwnerId,
+            OwnerId = ownerId,
         };
         await store.SaveItem(item, ct);
         ThrowIfCancelled(ct);
@@ -109,15 +117,28 @@ public sealed class ManageItemTool(INovelStore store, RetrievalKernel? kernel = 
 
         if (args.Name is not null)
             item.Name = args.Name;
-        if (
-            args.Type is not null
-            && Enum.TryParse<ItemType>(args.Type, ignoreCase: true, out var it)
-        )
+        if (args.Type is not null)
+        {
+            if (!Enum.TryParse<ItemType>(args.Type, ignoreCase: true, out var it))
+                return Error($"未知道具类型: {args.Type}");
             item.Type = it;
+        }
         if (args.Description is not null)
             item.Description = args.Description;
         if (args.OwnerId is not null)
-            item.OwnerId = args.OwnerId;
+        {
+            if (string.IsNullOrWhiteSpace(args.OwnerId))
+            {
+                item.OwnerId = null;
+            }
+            else
+            {
+                var ownerId = await ResolveOwnerId(args.NovelId, args.OwnerId, ct);
+                if (ownerId is null)
+                    return Error($"持有者角色 {args.OwnerId} 不存在");
+                item.OwnerId = ownerId;
+            }
+        }
 
         await store.SaveItem(item, ct);
         ThrowIfCancelled(ct);
@@ -197,6 +218,18 @@ public sealed class ManageItemTool(INovelStore store, RetrievalKernel? kernel = 
             return null;
         var items = await store.GetItems(args.NovelId);
         return ManageHelper.ResolveByIdOrName(items, args.ItemId, i => i.Id, i => i.Name);
+    }
+
+    private async Task<string?> ResolveOwnerId(
+        string novelId,
+        string? idOrName,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(idOrName))
+            return null;
+        var character = await NovelReferenceResolver.CharacterAsync(store, novelId, idOrName, ct);
+        return character?.Id;
     }
 
     /// <summary>

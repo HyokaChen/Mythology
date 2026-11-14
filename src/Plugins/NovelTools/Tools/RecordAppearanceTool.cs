@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Core.Data;
 using Core.Shared;
 using Core.Tools;
+using EntityTypeEnum = Core.Data.EntityType;
 
 namespace Plugins.NovelTools.Tools;
 
@@ -42,6 +43,23 @@ public sealed class RecordAppearanceTool(INovelStore store)
         if (chapter is null)
             return Error($"章节 {args.ChapterId} 不存在");
 
+        if (!await EntityExistsAsync(args.NovelId, args.EntityType, args.EntityId, ct))
+            return Error($"{args.EntityType} {args.EntityId} 不存在");
+
+        List<string>? sceneIds = null;
+        if (args.SceneIds is { Count: > 0 })
+        {
+            var scenes = await store.GetScenesByChapter(chapter.Id, ct);
+            sceneIds = new List<string>(args.SceneIds.Count);
+            foreach (var sceneId in args.SceneIds)
+            {
+                var scene = scenes.FirstOrDefault(s => s.Id == sceneId);
+                if (scene is null)
+                    return Error($"场景 {sceneId} 不存在于本章");
+                sceneIds.Add(scene.Id);
+            }
+        }
+
         var record = new AppearanceRecord
         {
             Id = string.IsNullOrWhiteSpace(args.RecordId)
@@ -52,7 +70,7 @@ public sealed class RecordAppearanceTool(INovelStore store)
             EntityId = args.EntityId,
             ChapterId = chapter.Id,
             Mode = args.Mode,
-            SceneIds = args.SceneIds is { Count: > 0 } ? args.SceneIds.ToList() : null,
+            SceneIds = sceneIds,
             EvidenceSpan = args.Evidence,
             Source = AuditSource.Ai,
         };
@@ -83,6 +101,59 @@ public sealed class RecordAppearanceTool(INovelStore store)
             },
         };
     }
+
+    private async Task<bool> EntityExistsAsync(
+        string novelId,
+        EntityTypeEnum type,
+        string entityId,
+        CancellationToken ct
+    ) =>
+        type switch
+        {
+            EntityTypeEnum.Character => await NovelReferenceResolver.CharacterAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Location => await NovelReferenceResolver.LocationAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Faction => await NovelReferenceResolver.FactionAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Item => await NovelReferenceResolver.ItemAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Plotline => await NovelReferenceResolver.PlotlineAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Scene => await NovelReferenceResolver.SceneAsync(
+                store,
+                novelId,
+                entityId,
+                ct
+            )
+                is not null,
+            _ => false,
+        };
 
     private static AgentToolResult<RecordAppearanceDetails> Error(string message) =>
         new() { Content = [new TextContent(message)], IsError = true };

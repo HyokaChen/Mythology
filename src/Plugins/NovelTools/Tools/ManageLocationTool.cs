@@ -61,19 +61,27 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
         CancellationToken ct
     )
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建地点需要 name");
+
+        var parentId = await ResolveParentId(args.NovelId, args.ParentId, ct);
+        if (parentId is null && !string.IsNullOrWhiteSpace(args.ParentId))
+            return Error($"父地点 {args.ParentId} 不存在");
+        var type = LocationType.City;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (!Enum.TryParse<LocationType>(args.Type, ignoreCase: true, out type))
+                return Error($"未知地点类型: {args.Type}");
+        }
 
         var location = new Location
         {
             NovelId = args.NovelId,
             Name = args.Name,
-            Type = Enum.TryParse<LocationType>(args.Type ?? "city", ignoreCase: true, out var lt)
-                ? lt
-                : LocationType.City,
+            Type = type,
             Atmosphere = args.Atmosphere ?? "",
             Description = args.Description ?? "",
-            ParentId = args.ParentId,
+            ParentId = parentId,
         };
         await store.SaveLocation(location, ct);
         ThrowIfCancelled(ct);
@@ -114,15 +122,30 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
 
         if (args.Name is not null)
             location.Name = args.Name;
-        if (
-            args.Type is not null
-            && Enum.TryParse<LocationType>(args.Type, ignoreCase: true, out var lt)
-        )
+        if (args.Type is not null)
+        {
+            if (!Enum.TryParse<LocationType>(args.Type, ignoreCase: true, out var lt))
+                return Error($"未知地点类型: {args.Type}");
             location.Type = lt;
+        }
         if (args.Atmosphere is not null)
             location.Atmosphere = args.Atmosphere;
         if (args.Description is not null)
             location.Description = args.Description;
+        if (args.ParentId is not null)
+        {
+            if (string.IsNullOrWhiteSpace(args.ParentId))
+            {
+                location.ParentId = null;
+            }
+            else
+            {
+                var parentId = await ResolveParentId(args.NovelId, args.ParentId, ct);
+                if (parentId is null)
+                    return Error($"父地点 {args.ParentId} 不存在");
+                location.ParentId = parentId;
+            }
+        }
 
         await store.SaveLocation(location, ct);
         ThrowIfCancelled(ct);
@@ -207,6 +230,18 @@ public sealed class ManageLocationTool(INovelStore store, RetrievalKernel? kerne
             return null;
         var locations = await store.GetLocations(args.NovelId);
         return ManageHelper.ResolveByIdOrName(locations, args.LocationId, l => l.Id, l => l.Name);
+    }
+
+    private async Task<string?> ResolveParentId(
+        string novelId,
+        string? idOrName,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(idOrName))
+            return null;
+        var parent = await NovelReferenceResolver.LocationAsync(store, novelId, idOrName, ct);
+        return parent?.Id;
     }
 
     /// <summary>

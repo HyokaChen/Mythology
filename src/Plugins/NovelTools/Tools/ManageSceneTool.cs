@@ -59,17 +59,10 @@ public sealed class ManageSceneTool(INovelStore store)
     /// </summary>
     private async Task<string?> ResolveChapterId(string novelId, string? chapterId)
     {
-        if (string.IsNullOrEmpty(chapterId))
+        if (string.IsNullOrWhiteSpace(chapterId))
             return null;
-
-        // 如果不是纯数字，假设已经是 ID 格式，直接返回
-        if (!int.TryParse(chapterId, out var order))
-            return chapterId;
-
-        // 按序号查找章节的真实 ID
-        var chapters = await store.GetChapters(novelId);
-        var chapter = chapters.Find(c => c.Order == order);
-        return chapter?.Id; // 找不到则返回 null，而非原始序号字符串
+        var chapter = await NovelReferenceResolver.ChapterAsync(store, novelId, chapterId, default);
+        return chapter?.Id;
     }
 
     /// <summary>
@@ -106,10 +99,29 @@ public sealed class ManageSceneTool(INovelStore store)
     /// </summary>
     private async Task<AgentToolResult<ManageSceneDetails>> Create(ManageSceneParams args)
     {
-        if (string.IsNullOrEmpty(args.Title))
+        if (string.IsNullOrWhiteSpace(args.Title))
             return Error("创建场景需要 title");
 
         var resolvedChapterId = await ResolveChapterId(args.NovelId, args.ChapterId);
+        if (resolvedChapterId is null && !string.IsNullOrWhiteSpace(args.ChapterId))
+            return Error($"章节 {args.ChapterId} 不存在");
+
+        var locationId = await ResolveLocationId(args.NovelId, args.LocationId);
+        if (locationId is null && !string.IsNullOrWhiteSpace(args.LocationId))
+            return Error($"地点 {args.LocationId} 不存在");
+        var participantIds = await ResolveCharacterIds(args.NovelId, args.ParticipantIds);
+        if (participantIds is null)
+            return Error("参与角色列表中有角色不存在");
+        var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
+        if (plotlineIds is null)
+            return Error("情节线列表中有情节线不存在");
+        var sceneType = SceneType.Dialogue;
+        if (!string.IsNullOrWhiteSpace(args.SceneType))
+        {
+            if (ParseSceneType(args.SceneType) is not { } parsedType)
+                return Error($"未知场景类型: {args.SceneType}");
+            sceneType = parsedType;
+        }
 
         var scene = new SceneDefinition
         {
@@ -117,14 +129,14 @@ public sealed class ManageSceneTool(INovelStore store)
             ChapterId = resolvedChapterId,
             Title = args.Title,
             Order = args.Order ?? 1,
-            LocationId = args.LocationId,
+            LocationId = locationId,
             TimeDescription = args.TimeDescription ?? "",
-            ParticipantIds = args.ParticipantIds ?? [],
-            PlotlineIds = args.PlotlineIds ?? [],
+            ParticipantIds = participantIds,
+            PlotlineIds = plotlineIds,
             Conflict = args.Conflict ?? "",
             Goal = args.Goal ?? "",
             EmotionalArc = args.EmotionalArc ?? "",
-            SceneType = ParseSceneType(args.SceneType),
+            SceneType = sceneType,
             Notes = args.Notes ?? "",
         };
         await store.SaveScene(scene);
@@ -144,20 +156,57 @@ public sealed class ManageSceneTool(INovelStore store)
             return Error($"场景 {args.SceneId} 不存在（可用 list 查看序号或 ID）");
 
         if (args.Title is not null)
+        {
+            if (string.IsNullOrWhiteSpace(args.Title))
+                return Error("场景 title 不能为空");
             scene.Title = args.Title;
+        }
         if (args.Order is not null)
             scene.Order = args.Order.Value;
         if (args.ChapterId is not null)
-            scene.ChapterId = await ResolveChapterId(args.NovelId, args.ChapterId)
-                ?? scene.ChapterId; // 序号解析失败时保留原章节，避免误清空
+        {
+            if (string.IsNullOrWhiteSpace(args.ChapterId))
+            {
+                scene.ChapterId = null;
+            }
+            else
+            {
+                var chapterId = await ResolveChapterId(args.NovelId, args.ChapterId);
+                if (chapterId is null)
+                    return Error($"章节 {args.ChapterId} 不存在");
+                scene.ChapterId = chapterId;
+            }
+        }
         if (args.LocationId is not null)
-            scene.LocationId = args.LocationId;
+        {
+            if (string.IsNullOrWhiteSpace(args.LocationId))
+            {
+                scene.LocationId = null;
+            }
+            else
+            {
+                var locationId = await ResolveLocationId(args.NovelId, args.LocationId);
+                if (locationId is null)
+                    return Error($"地点 {args.LocationId} 不存在");
+                scene.LocationId = locationId;
+            }
+        }
         if (args.TimeDescription is not null)
             scene.TimeDescription = args.TimeDescription;
         if (args.ParticipantIds is not null)
-            scene.ParticipantIds = args.ParticipantIds;
+        {
+            var participantIds = await ResolveCharacterIds(args.NovelId, args.ParticipantIds);
+            if (participantIds is null)
+                return Error("参与角色列表中有角色不存在");
+            scene.ParticipantIds = participantIds;
+        }
         if (args.PlotlineIds is not null)
-            scene.PlotlineIds = args.PlotlineIds;
+        {
+            var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
+            if (plotlineIds is null)
+                return Error("情节线列表中有情节线不存在");
+            scene.PlotlineIds = plotlineIds;
+        }
         if (args.Conflict is not null)
             scene.Conflict = args.Conflict;
         if (args.Goal is not null)
@@ -165,7 +214,11 @@ public sealed class ManageSceneTool(INovelStore store)
         if (args.EmotionalArc is not null)
             scene.EmotionalArc = args.EmotionalArc;
         if (args.SceneType is not null)
-            scene.SceneType = ParseSceneType(args.SceneType);
+        {
+            if (ParseSceneType(args.SceneType) is not { } sceneType)
+                return Error($"未知场景类型: {args.SceneType}");
+            scene.SceneType = sceneType;
+        }
         if (args.Notes is not null)
             scene.Notes = args.Notes;
 
@@ -235,7 +288,10 @@ public sealed class ManageSceneTool(INovelStore store)
         List<SceneDefinition> scenes;
         if (!string.IsNullOrEmpty(args.ChapterId))
         {
-            scenes = await store.GetScenesByChapter(args.ChapterId);
+            var chapterId = await ResolveChapterId(args.NovelId, args.ChapterId);
+            if (chapterId is null)
+                return Error($"章节 {args.ChapterId} 不存在");
+            scenes = await store.GetScenesByChapter(chapterId);
         }
         else if (!string.IsNullOrEmpty(args.NovelId))
         {
@@ -268,19 +324,76 @@ public sealed class ManageSceneTool(INovelStore store)
     }
 
     /// <summary>
-    /// 解析场景类型字符串
+    /// 解析场景类型字符串；未知值返回 null，调用方决定报错还是用默认值。
     /// </summary>
-    /// <param name="type">场景类型字符串</param>
-    /// <returns>场景类型枚举</returns>
-    private static SceneType ParseSceneType(string? type) =>
-        type?.ToLowerInvariant() switch
+    private static SceneType? ParseSceneType(string? type) =>
+        type?.Trim().ToLowerInvariant() switch
         {
             "action" => SceneType.Action,
             "dialogue" => SceneType.Dialogue,
             "reflection" => SceneType.Reflection,
             "transition" => SceneType.Transition,
-            _ => SceneType.Dialogue,
+            _ => null,
         };
+
+    private async Task<string?> ResolveLocationId(string novelId, string? idOrName)
+    {
+        if (string.IsNullOrWhiteSpace(idOrName))
+            return null;
+        var location = await NovelReferenceResolver.LocationAsync(
+            store,
+            novelId,
+            idOrName,
+            default
+        );
+        return location?.Id;
+    }
+
+    private async Task<List<string>?> ResolveCharacterIds(
+        string novelId,
+        IReadOnlyList<string>? idsOrNames
+    )
+    {
+        if (idsOrNames is null || idsOrNames.Count == 0)
+            return [];
+        var result = new List<string>(idsOrNames.Count);
+        foreach (var value in idsOrNames)
+        {
+            var character = await NovelReferenceResolver.CharacterAsync(
+                store,
+                novelId,
+                value,
+                default
+            );
+            if (character is null)
+                return null;
+            result.Add(character.Id);
+        }
+        return result;
+    }
+
+    private async Task<List<string>?> ResolvePlotlineIds(
+        string novelId,
+        IReadOnlyList<string>? idsOrNames
+    )
+    {
+        if (idsOrNames is null || idsOrNames.Count == 0)
+            return [];
+        var result = new List<string>(idsOrNames.Count);
+        foreach (var value in idsOrNames)
+        {
+            var plotline = await NovelReferenceResolver.PlotlineAsync(
+                store,
+                novelId,
+                value,
+                default
+            );
+            if (plotline is null)
+                return null;
+            result.Add(plotline.Id);
+        }
+        return result;
+    }
 
     /// <summary>
     /// 构建成功响应

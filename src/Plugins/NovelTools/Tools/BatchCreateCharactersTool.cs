@@ -45,6 +45,8 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
         var createdIds = new List<string>(args.Characters.Count);
         var createdNames = new List<string>(args.Characters.Count);
         var failed = new List<string>();
+        var factions = await store.GetFactions(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个角色草稿，逐个创建
         foreach (var c in args.Characters)
@@ -55,6 +57,37 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
                 continue;
             }
 
+            var factionId = c.FactionId;
+            if (!string.IsNullOrWhiteSpace(factionId))
+            {
+                var faction = ManageHelper.ResolveByIdOrName(
+                    factions,
+                    factionId,
+                    f => f.Id,
+                    f => f.Name
+                );
+                if (faction is null)
+                {
+                    failed.Add($"{c.Name.Trim()}: 组织 {factionId} 不存在");
+                    continue;
+                }
+                factionId = faction.Id;
+            }
+            else
+            {
+                factionId = null;
+            }
+
+            var role = CharacterRole.Supporting;
+            if (!string.IsNullOrWhiteSpace(c.Role))
+            {
+                if (!Enum.TryParse<CharacterRole>(c.Role, ignoreCase: true, out role))
+                {
+                    failed.Add($"{c.Name.Trim()}: 未知角色定位 {c.Role}");
+                    continue;
+                }
+            }
+
             // 构建 Character 实体，自动补全默认值
             var character = new Character
             {
@@ -62,16 +95,14 @@ public sealed class BatchCreateCharactersTool(INovelStore store, RetrievalKernel
                 Name = c.Name.Trim(),
                 Gender = c.Gender ?? "",
                 Age = c.Age ?? "",
-                Role = Enum.TryParse<CharacterRole>(c.Role, ignoreCase: true, out var cr)
-                    ? cr
-                    : CharacterRole.Supporting, // 默认配角
+                Role = role,
                 Personality = c.Personality ?? "",
                 Appearance = c.Appearance ?? "",
                 Background = c.Background ?? "",
                 Motivation = c.Motivation ?? "",
                 Habits = c.Habits ?? "",
                 Weakness = c.Weakness ?? "",
-                FactionId = c.FactionId,
+                FactionId = factionId,
             };
 
             try

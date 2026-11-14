@@ -41,14 +41,9 @@ public sealed class EnhanceDimensionTool(
     {
         ThrowIfCancelled(ct);
 
-        var novelId = args.NovelId;
-        if (string.IsNullOrEmpty(novelId))
-        {
-            var novels = await store.GetAllNovels(ct);
-            novelId = novels.FirstOrDefault()?.Id;
-            if (novelId is null)
-                return ErrorResult("未找到小说项目");
-        }
+        var novelId = string.IsNullOrWhiteSpace(args.NovelId) ? agent.CurrentNovelId : args.NovelId;
+        if (string.IsNullOrWhiteSpace(novelId))
+            return ErrorResult("未指定小说项目；请提供 novel-id 或先打开小说");
 
         var novel = await store.GetNovel(novelId, ct);
         if (novel is null)

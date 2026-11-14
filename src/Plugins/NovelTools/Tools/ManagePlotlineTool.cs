@@ -61,27 +61,50 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
         CancellationToken ct
     )
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建情节线需要 name");
+
+        var plannedRevealChapterId = await ResolveChapterId(
+            args.NovelId,
+            args.PlannedRevealChapterId,
+            ct
+        );
+        if (
+            plannedRevealChapterId is null
+            && !string.IsNullOrWhiteSpace(args.PlannedRevealChapterId)
+        )
+            return Error($"计划揭示章节 {args.PlannedRevealChapterId} 不存在");
+        var resolvedAtChapterId = await ResolveChapterId(
+            args.NovelId,
+            args.ResolvedAtChapterId,
+            ct
+        );
+        if (resolvedAtChapterId is null && !string.IsNullOrWhiteSpace(args.ResolvedAtChapterId))
+            return Error($"解决章节 {args.ResolvedAtChapterId} 不存在");
+
+        var type = PlotlineType.Main;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (!Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out type))
+                return Error($"未知情节线类型: {args.Type}");
+        }
+        var tension = PlotlineTension.Medium;
+        if (!string.IsNullOrWhiteSpace(args.Tension))
+        {
+            if (!Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out tension))
+                return Error($"未知情节线紧张度: {args.Tension}");
+        }
 
         var plotline = new Plotline
         {
             NovelId = args.NovelId,
             Name = args.Name,
             Description = args.Description ?? "",
-            Type = Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out var t)
-                ? t
-                : PlotlineType.Main,
-            PlannedRevealChapterId = args.PlannedRevealChapterId,
-            Tension = Enum.TryParse<PlotlineTension>(
-                args.Tension ?? "medium",
-                ignoreCase: true,
-                out var tn
-            )
-                ? tn
-                : PlotlineTension.Medium,
+            Type = type,
+            PlannedRevealChapterId = plannedRevealChapterId,
+            Tension = tension,
             Turnpoints = args.Turnpoints ?? "",
-            ResolvedAtChapterId = args.ResolvedAtChapterId,
+            ResolvedAtChapterId = resolvedAtChapterId,
         };
         await store.SavePlotline(plotline, ct);
         ThrowIfCancelled(ct);
@@ -183,22 +206,52 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
             plotline.Name = args.Name;
         if (args.Description is not null)
             plotline.Description = args.Description;
-        if (
-            args.Type is not null
-            && Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out var pt)
-        )
+        if (args.Type is not null)
+        {
+            if (!Enum.TryParse<PlotlineType>(args.Type, ignoreCase: true, out var pt))
+                return Error($"未知情节线类型: {args.Type}");
             plotline.Type = pt;
+        }
         if (args.PlannedRevealChapterId != null)
-            plotline.PlannedRevealChapterId = args.PlannedRevealChapterId;
-        if (
-            args.Tension is not null
-            && Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out var ptn)
-        )
+        {
+            if (string.IsNullOrWhiteSpace(args.PlannedRevealChapterId))
+            {
+                plotline.PlannedRevealChapterId = null;
+            }
+            else
+            {
+                var chapterId = await ResolveChapterId(
+                    args.NovelId,
+                    args.PlannedRevealChapterId,
+                    ct
+                );
+                if (chapterId is null)
+                    return Error($"计划揭示章节 {args.PlannedRevealChapterId} 不存在");
+                plotline.PlannedRevealChapterId = chapterId;
+            }
+        }
+        if (args.Tension is not null)
+        {
+            if (!Enum.TryParse<PlotlineTension>(args.Tension, ignoreCase: true, out var ptn))
+                return Error($"未知情节线紧张度: {args.Tension}");
             plotline.Tension = ptn;
+        }
         if (args.Turnpoints is not null)
             plotline.Turnpoints = args.Turnpoints;
         if (args.ResolvedAtChapterId != null)
-            plotline.ResolvedAtChapterId = args.ResolvedAtChapterId;
+        {
+            if (string.IsNullOrWhiteSpace(args.ResolvedAtChapterId))
+            {
+                plotline.ResolvedAtChapterId = null;
+            }
+            else
+            {
+                var chapterId = await ResolveChapterId(args.NovelId, args.ResolvedAtChapterId, ct);
+                if (chapterId is null)
+                    return Error($"解决章节 {args.ResolvedAtChapterId} 不存在");
+                plotline.ResolvedAtChapterId = chapterId;
+            }
+        }
 
         await store.SavePlotline(plotline, ct);
         if (kernel is not null)
@@ -282,6 +335,18 @@ public sealed class ManagePlotlineTool(INovelStore store, RetrievalKernel? kerne
             return null;
         var plotlines = await store.GetPlotlines(args.NovelId);
         return ManageHelper.ResolveByIdOrName(plotlines, args.PlotlineId, p => p.Id, p => p.Name);
+    }
+
+    private async Task<string?> ResolveChapterId(
+        string novelId,
+        string? idOrOrder,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(idOrOrder))
+            return null;
+        var chapter = await NovelReferenceResolver.ChapterAsync(store, novelId, idOrOrder, ct);
+        return chapter?.Id;
     }
 
     /// <summary>

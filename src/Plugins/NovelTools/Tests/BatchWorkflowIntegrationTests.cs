@@ -25,6 +25,18 @@ public class BatchWorkflowIntegrationTests
             Description = "一个测试用的小说",
         };
         await _store.SaveNovel(novel);
+        foreach (var (id, order) in new[] { ("ch20", 20), ("ch25", 25), ("ch30", 30) })
+        {
+            await _store.SaveChapter(
+                new Core.Data.Chapter
+                {
+                    Id = id,
+                    NovelId = "novel-1",
+                    Title = id,
+                    Order = order,
+                }
+            );
+        }
 
         // ── 步骤 2: 批量创建 3 个角色 ──
         var charTool = new BatchCreateCharactersTool(_store);
@@ -257,6 +269,17 @@ public class BatchWorkflowIntegrationTests
     /// <summary>缺少 ID 时应记录失败。</summary>
     public async Task BatchCreateRelationships_WithMissingIds_RecordsFailure()
     {
+        foreach (var id in new[] { "char-1", "char-2", "char-3" })
+        {
+            await _store.SaveCharacter(
+                new Core.Data.Character
+                {
+                    Id = id,
+                    NovelId = "novel-1",
+                    Name = id,
+                }
+            );
+        }
         var tool = new BatchCreateRelationshipsTool(_store);
         var result = await tool.ExecuteAsync(
             "call-1",

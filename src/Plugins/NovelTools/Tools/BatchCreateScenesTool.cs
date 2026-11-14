@@ -40,6 +40,10 @@ public sealed class BatchCreateScenesTool(INovelStore store)
 
         // 获取已有场景数，确定新场景的起始序号
         var existingScenes = await store.GetScenesByNovel(args.NovelId, ct);
+        var chapters = await store.GetChapters(args.NovelId, ct);
+        var locations = await store.GetLocations(args.NovelId, ct);
+        var characters = await store.GetCharacters(args.NovelId, ct);
+        var plotlines = await store.GetPlotlines(args.NovelId, ct);
         ThrowIfCancelled(ct);
         var nextOrder = existingScenes.Count > 0 ? existingScenes.Max(s => s.Order) + 1 : 1;
 
@@ -58,8 +62,59 @@ public sealed class BatchCreateScenesTool(INovelStore store)
                 continue;
             }
 
-            // 解析章节 ID（AI 可能传入序号而非 GUID）
-            var resolvedChapterId = await ResolveChapterId(args.NovelId, s.ChapterId);
+            var resolvedChapterId = ResolveChapterId(chapters, s.ChapterId);
+            if (resolvedChapterId is null && !string.IsNullOrWhiteSpace(s.ChapterId))
+            {
+                failed.Add($"{s.Title.Trim()}: 章节 {s.ChapterId} 不存在");
+                continue;
+            }
+            var locationId = s.LocationId;
+            if (!string.IsNullOrWhiteSpace(locationId))
+            {
+                var location = ManageHelper.ResolveByIdOrName(
+                    locations,
+                    locationId,
+                    l => l.Id,
+                    l => l.Name
+                );
+                if (location is null)
+                {
+                    failed.Add($"{s.Title.Trim()}: 地点 {locationId} 不存在");
+                    continue;
+                }
+                locationId = location.Id;
+            }
+            else
+            {
+                locationId = null;
+            }
+            var participantIds = ResolveEntityIds(
+                characters,
+                s.ParticipantIds,
+                c => c.Id,
+                c => c.Name
+            );
+            if (participantIds is null)
+            {
+                failed.Add($"{s.Title.Trim()}: 参与角色不存在");
+                continue;
+            }
+            var plotlineIds = ResolveEntityIds(plotlines, s.PlotlineIds, p => p.Id, p => p.Name);
+            if (plotlineIds is null)
+            {
+                failed.Add($"{s.Title.Trim()}: 情节线不存在");
+                continue;
+            }
+            var sceneType = SceneType.Dialogue;
+            if (!string.IsNullOrWhiteSpace(s.SceneType))
+            {
+                if (ParseSceneType(s.SceneType) is not { } parsedType)
+                {
+                    failed.Add($"{s.Title.Trim()}: 未知场景类型 {s.SceneType}");
+                    continue;
+                }
+                sceneType = parsedType;
+            }
 
             // 构建 SceneDefinition 实体，自动补全默认值
             var scene = new SceneDefinition
@@ -68,14 +123,14 @@ public sealed class BatchCreateScenesTool(INovelStore store)
                 ChapterId = resolvedChapterId,
                 Title = s.Title.Trim(),
                 Order = s.Order ?? nextOrder + i,
-                LocationId = s.LocationId,
+                LocationId = locationId,
                 TimeDescription = s.TimeDescription ?? "",
-                ParticipantIds = s.ParticipantIds ?? [],
-                PlotlineIds = s.PlotlineIds ?? [],
+                ParticipantIds = participantIds,
+                PlotlineIds = plotlineIds,
                 Conflict = s.Conflict ?? "",
                 Goal = s.Goal ?? "",
                 EmotionalArc = s.EmotionalArc ?? "",
-                SceneType = ParseSceneType(s.SceneType),
+                SceneType = sceneType,
                 Notes = s.Notes ?? "",
             };
 
@@ -112,34 +167,50 @@ public sealed class BatchCreateScenesTool(INovelStore store)
         };
     }
 
-    /// <summary>
-    /// 将章节序号或 ID 解析为真实的章节 ID。
-    /// AI 可能传入序号（如 "2"）而非 ID，需要转换为实际 ID 以保证关联正确。
-    /// </summary>
-    private async Task<string?> ResolveChapterId(string novelId, string? chapterId)
+    /// <summary>章节序号或 ID → 当前小说的真实章节 ID；未找到返回 null。</summary>
+    private static string? ResolveChapterId(IReadOnlyList<Chapter> chapters, string? idOrOrder)
     {
-        if (string.IsNullOrEmpty(chapterId))
+        if (string.IsNullOrWhiteSpace(idOrOrder))
             return null;
-
-        if (!int.TryParse(chapterId, out var order))
-            return chapterId;
-
-        var chapters = await store.GetChapters(novelId);
-        var chapter = chapters.Find(c => c.Order == order);
-        return chapter?.Id;
+        if (int.TryParse(idOrOrder, out var order))
+        {
+            var byOrder = chapters.FirstOrDefault(c => c.Order == order);
+            return byOrder?.Id;
+        }
+        return chapters.FirstOrDefault(c => c.Id == idOrOrder)?.Id;
     }
 
-    /// <summary>
-    /// 解析场景类型字符串。
-    /// </summary>
-    private static SceneType ParseSceneType(string? type) =>
-        type?.ToLowerInvariant() switch
+    /// <summary>把 ID/名称列表解析为真实 ID；任一未找到返回 null。</summary>
+    private static List<string>? ResolveEntityIds<T>(
+        IReadOnlyList<T> entities,
+        IReadOnlyList<string>? values,
+        Func<T, string> getId,
+        Func<T, string> getName
+    )
+        where T : class
+    {
+        if (values is null || values.Count == 0)
+            return [];
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            var entity = ManageHelper.ResolveByIdOrName(entities, value, getId, getName);
+            if (entity is null)
+                return null;
+            result.Add(getId(entity));
+        }
+        return result;
+    }
+
+    /// <summary>解析场景类型字符串；未知值返回 null，由调用方报错。</summary>
+    private static SceneType? ParseSceneType(string? type) =>
+        type?.Trim().ToLowerInvariant() switch
         {
             "action" => SceneType.Action,
             "dialogue" => SceneType.Dialogue,
             "reflection" => SceneType.Reflection,
             "transition" => SceneType.Transition,
-            _ => SceneType.Dialogue, // 默认对话场景
+            _ => null,
         };
 }
 

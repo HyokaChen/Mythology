@@ -40,11 +40,13 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
         // 初始化结果收集器
         var createdIds = new List<string>(args.Relationships.Count);
         var failed = new List<string>();
+        var characters = await store.GetCharacters(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         // 遍历每个关系草稿，逐个创建
         foreach (var r in args.Relationships)
         {
-            // 校验：必须提供两个角色ID
+            // 校验：必须提供两个角色，且都能在当前小说中解析到真实 ID
             if (
                 string.IsNullOrWhiteSpace(r.CharacterAId)
                 || string.IsNullOrWhiteSpace(r.CharacterBId)
@@ -54,21 +56,61 @@ public sealed class BatchCreateRelationshipsTool(INovelStore store)
                 continue;
             }
 
+            var characterA = ManageHelper.ResolveByIdOrName(
+                characters,
+                r.CharacterAId,
+                c => c.Id,
+                c => c.Name
+            );
+            var characterB = ManageHelper.ResolveByIdOrName(
+                characters,
+                r.CharacterBId,
+                c => c.Id,
+                c => c.Name
+            );
+            if (characterA is null || characterB is null)
+            {
+                failed.Add($"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 角色不存在");
+                continue;
+            }
+            if (characterA.Id == characterB.Id)
+            {
+                failed.Add($"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 两端相同");
+                continue;
+            }
+
+            var type = RelationshipType.Friend;
+            if (!string.IsNullOrWhiteSpace(r.Type))
+            {
+                if (RelationshipTypeExtensions.ParseRelationshipType(r.Type) is not { } parsedType)
+                {
+                    failed.Add(
+                        $"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 未知关系类型 {r.Type}"
+                    );
+                    continue;
+                }
+                type = parsedType;
+            }
+            var strength = RelationshipStrength.Medium;
+            if (
+                !string.IsNullOrWhiteSpace(r.Strength)
+                && !Enum.TryParse<RelationshipStrength>(r.Strength, ignoreCase: true, out strength)
+            )
+            {
+                failed.Add(
+                    $"{r.CharacterAId.Trim()} ↔ {r.CharacterBId.Trim()}: 未知关系强度 {r.Strength}"
+                );
+                continue;
+            }
+
             // 构建 Relationship 实体，自动补全默认值
             var rel = new Relationship
             {
                 NovelId = args.NovelId,
-                CharacterAId = r.CharacterAId.Trim(),
-                CharacterBId = r.CharacterBId.Trim(),
-                Type = RelationshipTypeExtensions.ParseRelationshipType(r.Type)
-                    ?? RelationshipType.Friend, // 默认朋友
-                Strength = Enum.TryParse<RelationshipStrength>(
-                    r.Strength ?? "medium",
-                    ignoreCase: true,
-                    out var rs
-                )
-                    ? rs
-                    : RelationshipStrength.Medium, // 默认中等强度
+                CharacterAId = characterA.Id,
+                CharacterBId = characterB.Id,
+                Type = type,
+                Strength = strength,
                 Description = r.Description ?? "",
             };
 
@@ -118,10 +160,10 @@ public sealed record BatchCreateRelationshipsParams
 public sealed record RelationshipDraft
 {
     [Description("第一个角色ID（必填）")]
-    public string? CharacterAId { get; init; } // 第一个角色ID（必填）
+    public string CharacterAId { get; init; } = ""; // 第一个角色ID（必填）
 
     [Description("第二个角色ID（必填）")]
-    public string? CharacterBId { get; init; } // 第二个角色ID（必填）
+    public string CharacterBId { get; init; } = ""; // 第二个角色ID（必填）
 
     [Description("关系类型：friend/rival/family/lover/enemy/mentor/master_servant/fellow_disciple")]
     public string? Type { get; init; } // 关系类型

@@ -143,8 +143,33 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
         CancellationToken ct
     )
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建角色需要 name");
+
+        var factionId = args.FactionId;
+        if (!string.IsNullOrWhiteSpace(factionId))
+        {
+            var faction = await NovelReferenceResolver.FactionAsync(
+                store,
+                args.NovelId,
+                factionId,
+                ct
+            );
+            if (faction is null)
+                return Error($"组织 {args.FactionId} 不存在");
+            factionId = faction.Id;
+        }
+        else
+        {
+            factionId = null;
+        }
+
+        var role = CharacterRole.Supporting;
+        if (!string.IsNullOrWhiteSpace(args.Role))
+        {
+            if (!Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out role))
+                return Error($"未知角色定位: {args.Role}");
+        }
 
         var character = new Character
         {
@@ -152,16 +177,14 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
             Name = args.Name,
             Gender = args.Gender ?? "",
             Age = args.Age ?? "",
-            Role = Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out var cr)
-                ? cr
-                : CharacterRole.Supporting,
+            Role = role,
             Personality = args.Personality ?? "",
             Appearance = args.Appearance ?? "",
             Background = args.Background ?? "",
             Motivation = args.Motivation ?? "",
             Habits = args.Habits ?? "",
             Weakness = args.Weakness ?? "",
-            FactionId = args.FactionId,
+            FactionId = factionId,
         };
         await store.SaveCharacter(character, ct);
         ThrowIfCancelled(ct);
@@ -213,11 +236,12 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
             character.Gender = args.Gender;
         if (args.Age is not null)
             character.Age = args.Age;
-        if (
-            args.Role is not null
-            && Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out var parsedRole)
-        )
+        if (args.Role is not null)
+        {
+            if (!Enum.TryParse<CharacterRole>(args.Role, ignoreCase: true, out var parsedRole))
+                return Error($"未知角色定位: {args.Role}");
             character.Role = parsedRole;
+        }
         if (args.Personality is not null)
             character.Personality = args.Personality;
         if (args.Appearance is not null)
@@ -231,7 +255,24 @@ public sealed class ManageCharacterTool(INovelStore store, RetrievalKernel? kern
         if (args.Weakness is not null)
             character.Weakness = args.Weakness;
         if (args.FactionId is not null)
-            character.FactionId = args.FactionId;
+        {
+            if (string.IsNullOrWhiteSpace(args.FactionId))
+            {
+                character.FactionId = null;
+            }
+            else
+            {
+                var faction = await NovelReferenceResolver.FactionAsync(
+                    store,
+                    args.NovelId,
+                    args.FactionId,
+                    ct
+                );
+                if (faction is null)
+                    return Error($"组织 {args.FactionId} 不存在");
+                character.FactionId = faction.Id;
+            }
+        }
 
         await store.SaveCharacter(character, ct);
         ThrowIfCancelled(ct);

@@ -254,10 +254,47 @@ public class ManageToolsTests
     }
 
     [Fact]
+    public async Task ManageRelationshipTool_Create_UnknownCharacter_ReturnsError()
+    {
+        var store = new FakeNovelStore();
+        await store.SaveNovel(new Novel { Id = "n1", Title = "T" });
+        await store.SaveCharacter(
+            new Character
+            {
+                Id = "c1",
+                NovelId = "n1",
+                Name = "A",
+            }
+        );
+
+        var result = await new ManageRelationshipTool(store).ExecuteAsync(
+            "call1",
+            JsonDocument
+                .Parse(
+                    """{"action":"create","novel-id":"n1","character-a-id":"c1","character-b-id":"missing","type":"friend"}"""
+                )
+                .RootElement,
+            CancellationToken.None
+        );
+
+        Assert.True(result.IsError);
+        Assert.Empty(await store.GetRelationshipsByNovel("n1"));
+    }
+
+    [Fact]
     public async Task ManageSceneTool_Create_AddsScene()
     {
         var store = new FakeNovelStore();
         await store.SaveNovel(new Novel { Id = "n1", Title = "T" });
+        await store.SaveChapter(
+            new Chapter
+            {
+                Id = "c1",
+                NovelId = "n1",
+                Title = "第一章",
+                Order = 1,
+            }
+        );
         var tool = new ManageSceneTool(store);
 
         var args = JsonDocument
@@ -279,6 +316,15 @@ public class ManageToolsTests
     {
         var store = new FakeNovelStore();
         await store.SaveNovel(new Novel { Id = "n1", Title = "T" });
+        await store.SaveChapter(
+            new Chapter
+            {
+                Id = "ch1",
+                NovelId = "n1",
+                Title = "第一章",
+                Order = 1,
+            }
+        );
         await store.SaveScene(
             new SceneDefinition
             {
@@ -372,6 +418,15 @@ public class ManageToolsTests
     {
         var store = new FakeNovelStore();
         await store.SaveNovel(new Novel { Id = "n1", Title = "T" });
+        await store.SaveChapter(
+            new Chapter
+            {
+                Id = "ch1",
+                NovelId = "n1",
+                Title = "第一章",
+                Order = 1,
+            }
+        );
         await store.SaveScene(
             new SceneDefinition
             {

@@ -242,8 +242,82 @@ public sealed class ManageWorldRuleTool(INovelStore store)
             )
                 return $"章节不存在: {rule.EffectiveUntilChapterId}";
         }
+        if (!string.IsNullOrWhiteSpace(rule.SubjectId))
+        {
+            if (rule.SubjectType is not { } subjectType)
+                return "设置 subject-id 时必须同时提供 subject-type";
+            if (!await EntityExistsAsync(novelId, subjectType, rule.SubjectId, ct))
+                return $"规则主体不存在: {subjectType} {rule.SubjectId}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(rule.RequiredRelationTargetId))
+        {
+            if (
+                await NovelReferenceResolver.CharacterAsync(
+                    store,
+                    novelId,
+                    rule.RequiredRelationTargetId,
+                    ct
+                )
+                is null
+            )
+                return $"关系目标不存在: {rule.RequiredRelationTargetId}";
+        }
+
+        if (
+            rule.Effect is { TargetId.Length: > 0 } effect
+            && !await EntityExistsAsync(novelId, effect.TargetEntityType, effect.TargetId, ct)
+        )
+            return $"规则效果目标不存在: {effect.TargetEntityType} {effect.TargetId}";
+
         return null;
     }
+
+    private async Task<bool> EntityExistsAsync(
+        string novelId,
+        EntityTypeEnum type,
+        string id,
+        CancellationToken ct
+    ) =>
+        type switch
+        {
+            EntityTypeEnum.Character => await NovelReferenceResolver.CharacterAsync(
+                store,
+                novelId,
+                id,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Location => await NovelReferenceResolver.LocationAsync(
+                store,
+                novelId,
+                id,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Faction => await NovelReferenceResolver.FactionAsync(
+                store,
+                novelId,
+                id,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Item => await NovelReferenceResolver.ItemAsync(store, novelId, id, ct)
+                is not null,
+            EntityTypeEnum.Plotline => await NovelReferenceResolver.PlotlineAsync(
+                store,
+                novelId,
+                id,
+                ct
+            )
+                is not null,
+            EntityTypeEnum.Scene => await NovelReferenceResolver.SceneAsync(store, novelId, id, ct)
+                is not null,
+            EntityTypeEnum.Chapter => await store.GetChapter(novelId, id, ct) is not null,
+            EntityTypeEnum.Relationship => await store.GetRelationship(novelId, id, ct) is not null,
+            EntityTypeEnum.Volume => await store.GetVolume(novelId, id, ct) is not null,
+            _ => false,
+        };
 
     private static T ParseEnum<T>(string value, T fallback)
         where T : struct, Enum =>

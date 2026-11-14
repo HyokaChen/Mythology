@@ -314,21 +314,48 @@ public sealed class UpdateFactionRelationshipTool(INovelStore store)
     )
     {
         ThrowIfCancelled(ct);
+        if (
+            string.IsNullOrWhiteSpace(args.FactionAId) || string.IsNullOrWhiteSpace(args.FactionBId)
+        )
+            return Error("建立组织关系需要 faction-a-id 和 faction-b-id");
+
+        var factionA = await NovelReferenceResolver.FactionAsync(
+            store,
+            args.NovelId,
+            args.FactionAId,
+            ct
+        );
+        var factionB = await NovelReferenceResolver.FactionAsync(
+            store,
+            args.NovelId,
+            args.FactionBId,
+            ct
+        );
+        if (factionA is null)
+            return Error($"组织 {args.FactionAId} 不存在");
+        if (factionB is null)
+            return Error($"组织 {args.FactionBId} 不存在");
+        if (factionA.Id == factionB.Id)
+            return Error("组织关系两端不能是同一个组织");
+
+        var type = FactionRelationType.Neutral;
+        if (!string.IsNullOrWhiteSpace(args.Type))
+        {
+            if (!Enum.TryParse<FactionRelationType>(args.Type, ignoreCase: true, out type))
+                return Error($"未知组织关系类型: {args.Type}");
+        }
+
         var rel = new FactionRelationship
         {
             NovelId = args.NovelId,
-            FactionAId = args.FactionAId,
-            FactionBId = args.FactionBId,
-            Type = Enum.TryParse<FactionRelationType>(args.Type, ignoreCase: true, out var t)
-                ? t
-                : FactionRelationType.Neutral,
+            FactionAId = factionA.Id,
+            FactionBId = factionB.Id,
+            Type = type,
             Description = args.Description ?? "",
         };
         await store.SaveFactionRelationship(rel, ct);
         ThrowIfCancelled(ct);
-        var summary = args.Type is not null
-            ? $"组织关系已建立: {args.FactionAId} ↔ {args.FactionBId} ({rel.Type})"
-            : $"组织关系已建立: {args.FactionAId} ↔ {args.FactionBId}";
+        var summary = $"组织关系已建立: {factionA.Name} ↔ {factionB.Name} ({rel.Type})";
         if (args.Description is not null)
             summary += $"\n描述: {ManageHelper.Diff(args.Description)}";
         return new AgentToolResult<FactionRelationshipDetails>
@@ -337,6 +364,9 @@ public sealed class UpdateFactionRelationshipTool(INovelStore store)
             Details = new FactionRelationshipDetails { Id = rel.Id },
         };
     }
+
+    private static AgentToolResult<FactionRelationshipDetails> Error(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
 }
 
 public sealed record UpdateFactionRelationshipParams

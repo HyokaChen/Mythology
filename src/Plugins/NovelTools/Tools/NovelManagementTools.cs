@@ -585,41 +585,47 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
     )
     {
         ThrowIfCancelled(ct);
+        if (string.IsNullOrWhiteSpace(args.ChapterId))
+            return Error("编辑文本需要 chapter-id");
+
         var chapter = await store.GetChapter(args.ChapterId, ct);
         ThrowIfCancelled(ct);
         if (chapter is null)
-            return new AgentToolResult<EditTextDetails>
-            {
-                Content = [new TextContent($"章节 {args.ChapterId} 不存在")],
-                IsError = true,
-            };
+            return Error($"章节 {args.ChapterId} 不存在");
 
         var content = chapter.Content;
-        var operation = args.Operation ?? "replace";
+        var operation = (args.Operation ?? "replace").Trim().ToLowerInvariant();
         var oldText = args.OldText ?? "";
         var newText = args.NewText ?? "";
         EditHunk? hunk = null;
 
         switch (operation)
         {
-            case "replace" when !string.IsNullOrEmpty(oldText):
+            case "replace":
             {
+                if (string.IsNullOrEmpty(oldText))
+                    return Error("replace 操作需要 old-text");
+                if (!content.Contains(oldText, StringComparison.Ordinal))
+                    return Error("未找到匹配的旧文本");
+                if (oldText == newText)
+                    return Error("旧文本与新文本相同，未产生修改");
+
                 var idx = content.IndexOf(oldText, StringComparison.Ordinal);
-                if (idx >= 0)
+                var oldStartLine = content[..idx].Count(c => c == '\n') + 1;
+                hunk = new EditHunk
                 {
-                    var oldStartLine = content[..idx].Count(c => c == '\n') + 1;
-                    hunk = new EditHunk
-                    {
-                        OldStartLine = oldStartLine,
-                        OldText = oldText,
-                        NewText = newText,
-                    };
-                }
-                content = content.Replace(oldText, newText);
+                    OldStartLine = oldStartLine,
+                    OldText = oldText,
+                    NewText = newText,
+                };
+                content = content.Replace(oldText, newText, StringComparison.Ordinal);
                 break;
             }
             case "insert":
             {
+                if (string.IsNullOrEmpty(newText))
+                    return Error("insert 操作需要 new-text");
+
                 var pos = Math.Clamp(args.Position ?? content.Length, 0, content.Length);
                 var oldStartLine =
                     content[..Math.Min(pos, content.Length)].Count(c => c == '\n') + 1;
@@ -632,22 +638,26 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
                 content = string.Concat(content.AsSpan(0, pos), newText, content.AsSpan(pos));
                 break;
             }
-            case "delete" when !string.IsNullOrEmpty(oldText):
+            case "delete":
             {
+                if (string.IsNullOrEmpty(oldText))
+                    return Error("delete 操作需要 old-text");
+                if (!content.Contains(oldText, StringComparison.Ordinal))
+                    return Error("未找到匹配的旧文本");
+
                 var idx = content.IndexOf(oldText, StringComparison.Ordinal);
-                if (idx >= 0)
+                var oldStartLine = content[..idx].Count(c => c == '\n') + 1;
+                hunk = new EditHunk
                 {
-                    var oldStartLine = content[..idx].Count(c => c == '\n') + 1;
-                    hunk = new EditHunk
-                    {
-                        OldStartLine = oldStartLine,
-                        OldText = oldText,
-                        NewText = "",
-                    };
-                }
-                content = content.Replace(oldText, "");
+                    OldStartLine = oldStartLine,
+                    OldText = oldText,
+                    NewText = "",
+                };
+                content = content.Replace(oldText, "", StringComparison.Ordinal);
                 break;
             }
+            default:
+                return Error($"未知 operation: {args.Operation}。支持 replace/insert/delete");
         }
 
         chapter.Content = content;
@@ -668,6 +678,9 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
             },
         };
     }
+
+    private static AgentToolResult<EditTextDetails> Error(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
 }
 
 public sealed record EditTextParams
@@ -1150,6 +1163,22 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
 
         var existingChapters = await store.GetChapters(args.NovelId, ct);
         ThrowIfCancelled(ct);
+        var volumes = await store.GetVolumes(args.NovelId, ct);
+        ThrowIfCancelled(ct);
+        if (!string.IsNullOrWhiteSpace(args.VolumeId))
+        {
+            if (volumes.All(v => v.Id != args.VolumeId))
+                return Error(
+                    $"分卷 {args.VolumeId} 不存在，未创建章节。可用分卷：{FormatVolumeChoices(volumes)}"
+                );
+        }
+        else if (volumes.Count > 0)
+        {
+            return Error(
+                "新建章节必须提供 volume-id，未创建章节。"
+                    + $"可用分卷：{FormatVolumeChoices(volumes)}"
+            );
+        }
 
         var created = 0;
         var skipped = 0;
@@ -1195,6 +1224,17 @@ public sealed class CreateOutlineTool(INovelStore store, RetrievalKernel? kernel
             Details = new OutlineDetails { ChapterCount = created },
         };
     }
+
+    private static AgentToolResult<OutlineDetails> Error(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
+
+    private static string FormatVolumeChoices(IReadOnlyList<Volume> volumes) =>
+        volumes.Count == 0
+            ? "当前没有分卷"
+            : string.Join(
+                "、",
+                volumes.OrderBy(v => v.Order).Select(v => $"第{v.Order}卷 {v.Name} [ID:{v.Id}]")
+            );
 }
 
 public sealed record CreateOutlineParams
@@ -1205,7 +1245,7 @@ public sealed record CreateOutlineParams
     [Description("按顺序排列的章节标题列表")]
     public string[] ChapterTitles { get; init; } = [];
 
-    [Description("归属分卷 ID（大纲二层；留空 = 未分卷。可先用 manage_volume 建卷）")]
+    [Description("归属分卷 ID（有分卷时必填；从 <novel_context> 或 get_outline 的 [ID:…] 读取）")]
     public string? VolumeId { get; init; }
 }
 

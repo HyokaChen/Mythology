@@ -56,7 +56,7 @@ public sealed class ManageNovelTool(INovelStore store)
     /// </summary>
     private async Task<AgentToolResult<ManageNovelDetails>> Create(ManageNovelParams args)
     {
-        if (string.IsNullOrEmpty(args.Title))
+        if (string.IsNullOrWhiteSpace(args.Title))
             return Error("创建小说需要 title");
 
         var novel = new Novel

@@ -46,6 +46,10 @@ public sealed class RecordEvolutionTool(INovelStore store)
         if (chapter is null)
             return Error($"章节 {args.ChapterId} 不存在");
 
+        var targetId = await ResolveTargetIdAsync(args.NovelId, args.TargetType, args.TargetId, ct);
+        if (targetId is null)
+            return Error($"{args.TargetType} {args.TargetId} 不存在");
+
         var novel = await store.GetNovel(args.NovelId, ct);
         var chapterChanges = (await store.GetEntityStateChanges(args.NovelId, ct))
             .Where(c => string.Equals(c.ChapterId, chapter.Id, StringComparison.Ordinal))
@@ -74,7 +78,7 @@ public sealed class RecordEvolutionTool(INovelStore store)
                     {
                         TargetType = raw.TargetType,
                         TargetId = string.IsNullOrWhiteSpace(raw.TargetId)
-                            ? args.TargetId
+                            ? targetId
                             : raw.TargetId,
                         Field = raw.Field,
                         Operation = raw.Operation,
@@ -105,6 +109,14 @@ public sealed class RecordEvolutionTool(INovelStore store)
             var error = StateEffectValidator.Validate(effect, novel);
             if (error is not null)
                 return Error($"状态效果非法：{error}");
+            var effectTarget = await ResolveTargetIdAsync(
+                args.NovelId,
+                effect.TargetType,
+                effect.TargetId,
+                ct
+            );
+            if (effectTarget is null)
+                return Error($"状态效果目标 {effect.TargetType} {effect.TargetId} 不存在");
         }
 
         // 2. 章内顺序与上下文
@@ -112,32 +124,86 @@ public sealed class RecordEvolutionTool(INovelStore store)
             ?? (chapterChanges.Count == 0 ? 1 : chapterChanges.Max(c => c.Sequence) + 1);
 
         var scenes = await store.GetScenesByChapter(chapter.Id, ct);
-        var targetScene = (
-            args.SceneId is null
-                ? null
-                : scenes.FirstOrDefault(s =>
-                    string.Equals(s.Id, args.SceneId, StringComparison.Ordinal)
-                )
-        )
-            ?? scenes.FirstOrDefault(s =>
-                s.ParticipantIds.Contains(args.TargetId, StringComparer.Ordinal)
-            )
-            ?? scenes.FirstOrDefault();
+        SceneDefinition? targetScene;
+        if (!string.IsNullOrWhiteSpace(args.SceneId))
+        {
+            targetScene = scenes.FirstOrDefault(s =>
+                string.Equals(s.Id, args.SceneId, StringComparison.Ordinal)
+            );
+            if (targetScene is null)
+                return Error($"场景 {args.SceneId} 不存在于本章");
+        }
+        else
+        {
+            targetScene = scenes.FirstOrDefault(s =>
+                s.ParticipantIds.Contains(targetId, StringComparer.Ordinal)
+            ) ?? scenes.FirstOrDefault();
+        }
 
-        var locationId = args.LocationId ?? targetScene?.LocationId;
-        var sceneId = args.SceneId ?? targetScene?.Id;
+        string? locationId = null;
+        if (!string.IsNullOrWhiteSpace(args.LocationId))
+        {
+            var location = await NovelReferenceResolver.LocationAsync(
+                store,
+                args.NovelId,
+                args.LocationId,
+                ct
+            );
+            if (location is null)
+                return Error($"地点 {args.LocationId} 不存在");
+            locationId = location.Id;
+        }
+        else
+        {
+            locationId = targetScene?.LocationId;
+        }
+
+        List<string> plotlineIds;
+        if (args.PlotlineIds is { Count: > 0 })
+        {
+            plotlineIds = new List<string>(args.PlotlineIds.Count);
+            foreach (var plotlineId in args.PlotlineIds)
+            {
+                var plotline = await NovelReferenceResolver.PlotlineAsync(
+                    store,
+                    args.NovelId,
+                    plotlineId,
+                    ct
+                );
+                if (plotline is null)
+                    return Error($"情节线 {plotlineId} 不存在");
+                plotlineIds.Add(plotline.Id);
+            }
+        }
+        else
+        {
+            plotlineIds = targetScene is { PlotlineIds.Count: > 0 }
+                ? targetScene.PlotlineIds
+                : chapter.PlotlineIds;
+        }
+
+        var witnessIds = new List<string>(args.WitnessIds?.Count ?? 0);
+        foreach (var witnessId in args.WitnessIds ?? [])
+        {
+            var witness = await NovelReferenceResolver.CharacterAsync(
+                store,
+                args.NovelId,
+                witnessId,
+                ct
+            );
+            if (witness is null)
+                return Error($"见证角色 {witnessId} 不存在");
+            witnessIds.Add(witness.Id);
+        }
+
+        var sceneId = targetScene?.Id;
         var timeDescription = args.TimeDescription ?? targetScene?.TimeDescription;
-        var plotlineIds =
-            args.PlotlineIds is { Count: > 0 } ? args.PlotlineIds
-            : targetScene is { PlotlineIds.Count: > 0 } ? targetScene.PlotlineIds
-            : chapter.PlotlineIds;
-
         var visibility = ParseVisibility(args.Visibility);
 
         var toValue = effects.FirstOrDefault()?.Value ?? args.ToValue ?? args.To;
         var summary = string.IsNullOrWhiteSpace(args.Summary)
             ? effects.Count == 0
-                ? $"{args.TargetType.ToKebabCaseString()} {args.TargetId} 变化"
+                ? $"{args.TargetType.ToKebabCaseString()} {targetId} 变化"
                 : $"{effects[0].Field}: {args.From ?? "?"} → {toValue ?? "?"}"
             : args.Summary;
 
@@ -145,11 +211,11 @@ public sealed class RecordEvolutionTool(INovelStore store)
         var change = new EntityStateChange
         {
             Id = string.IsNullOrWhiteSpace(args.ChangeId)
-                ? $"ev_{chapter.Id}_{args.TargetId}_{Guid.NewGuid().ToString("N")[..6]}"
+                ? $"ev_{chapter.Id}_{targetId}_{Guid.NewGuid().ToString("N")[..6]}"
                 : args.ChangeId,
             NovelId = args.NovelId,
             TargetEntityType = args.TargetType,
-            TargetId = args.TargetId,
+            TargetId = targetId,
             ChapterId = chapter.Id,
             Aspect = args.Aspect,
             FromSummary = args.From,
@@ -161,7 +227,7 @@ public sealed class RecordEvolutionTool(INovelStore store)
             Sequence = sequence,
             Cause = args.Cause,
             Visibility = visibility,
-            WitnessIds = args.WitnessIds ?? [],
+            WitnessIds = witnessIds,
             LocationId = locationId,
             SceneId = sceneId,
             TimeDescription = timeDescription,
@@ -253,6 +319,39 @@ public sealed class RecordEvolutionTool(INovelStore store)
             "secret" or "秘密" => ChangeVisibility.Secret,
             "private" or "私密" => ChangeVisibility.Private,
             _ => ChangeVisibility.Public,
+        };
+
+    private async Task<string?> ResolveTargetIdAsync(
+        string novelId,
+        EntityType type,
+        string? id,
+        CancellationToken ct
+    ) =>
+        type switch
+        {
+            EntityTypeEnum.Character => (
+                await NovelReferenceResolver.CharacterAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Location => (
+                await NovelReferenceResolver.LocationAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Faction => (
+                await NovelReferenceResolver.FactionAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Item => (
+                await NovelReferenceResolver.ItemAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Plotline => (
+                await NovelReferenceResolver.PlotlineAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Scene => (
+                await NovelReferenceResolver.SceneAsync(store, novelId, id, ct)
+            )?.Id,
+            EntityTypeEnum.Chapter => (await store.GetChapter(novelId, id ?? "", ct))?.Id,
+            EntityTypeEnum.Relationship => (await store.GetRelationship(novelId, id ?? "", ct))?.Id,
+            EntityTypeEnum.Volume => (await store.GetVolume(novelId, id ?? "", ct))?.Id,
+            EntityTypeEnum.Novel => (await store.GetNovel(id ?? "", ct))?.Id,
+            _ => null,
         };
 
     private static AgentToolResult<RecordEvolutionDetails> Error(string message) =>

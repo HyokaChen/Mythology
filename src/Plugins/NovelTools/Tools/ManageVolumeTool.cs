@@ -71,12 +71,18 @@ public sealed class ManageVolumeTool(INovelStore store)
     /// <summary>创建分卷。</summary>
     private async Task<AgentToolResult<ManageVolumeDetails>> Create(ManageVolumeParams args)
     {
-        if (string.IsNullOrEmpty(args.Name))
+        if (string.IsNullOrWhiteSpace(args.Name))
             return Error("创建分卷需要 name");
-        if (string.IsNullOrEmpty(args.NovelId))
+        if (string.IsNullOrWhiteSpace(args.NovelId))
             return Error("创建分卷需要 novel-id");
 
         var volumes = await store.GetVolumes(args.NovelId);
+        var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
+        if (plotlineIds is null)
+            return Error("情节线列表中有情节线不存在");
+        var characterIds = await ResolveCharacterIds(args.NovelId, args.CharacterIds);
+        if (characterIds is null)
+            return Error("角色列表中有角色不存在");
         var volume = new Volume
         {
             NovelId = args.NovelId,
@@ -85,8 +91,8 @@ public sealed class ManageVolumeTool(INovelStore store)
             Summary = args.Summary ?? "",
             Description = args.Description ?? "",
             Goal = args.Goal ?? "",
-            PlotlineIds = args.PlotlineIds ?? [],
-            CharacterIds = args.CharacterIds ?? [],
+            PlotlineIds = plotlineIds,
+            CharacterIds = characterIds,
             Notes = args.Notes ?? "",
         };
         await store.SaveVolume(volume);
@@ -118,9 +124,19 @@ public sealed class ManageVolumeTool(INovelStore store)
         if (args.Goal is not null)
             volume.Goal = args.Goal;
         if (args.PlotlineIds is not null)
-            volume.PlotlineIds = args.PlotlineIds;
+        {
+            var plotlineIds = await ResolvePlotlineIds(args.NovelId, args.PlotlineIds);
+            if (plotlineIds is null)
+                return Error("情节线列表中有情节线不存在");
+            volume.PlotlineIds = plotlineIds;
+        }
         if (args.CharacterIds is not null)
-            volume.CharacterIds = args.CharacterIds;
+        {
+            var characterIds = await ResolveCharacterIds(args.NovelId, args.CharacterIds);
+            if (characterIds is null)
+                return Error("角色列表中有角色不存在");
+            volume.CharacterIds = characterIds;
+        }
         if (args.Notes is not null)
             volume.Notes = args.Notes;
 
@@ -193,6 +209,52 @@ public sealed class ManageVolumeTool(INovelStore store)
         });
         var text = volumes.Count == 0 ? "暂无分卷" : string.Join("\n", lines);
         return Ok(text, count: volumes.Count);
+    }
+
+    private async Task<List<string>?> ResolvePlotlineIds(
+        string novelId,
+        IReadOnlyList<string>? values
+    )
+    {
+        if (values is null || values.Count == 0)
+            return [];
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            var plotline = await NovelReferenceResolver.PlotlineAsync(
+                store,
+                novelId,
+                value,
+                default
+            );
+            if (plotline is null)
+                return null;
+            result.Add(plotline.Id);
+        }
+        return result;
+    }
+
+    private async Task<List<string>?> ResolveCharacterIds(
+        string novelId,
+        IReadOnlyList<string>? values
+    )
+    {
+        if (values is null || values.Count == 0)
+            return [];
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            var character = await NovelReferenceResolver.CharacterAsync(
+                store,
+                novelId,
+                value,
+                default
+            );
+            if (character is null)
+                return null;
+            result.Add(character.Id);
+        }
+        return result;
     }
 
     /// <summary>构建成功响应。</summary>
