@@ -178,7 +178,7 @@ public sealed class CloudAuthServiceTests
         var logger = new CaptureLogger();
         var svc = NewService(
             store,
-            new StubHandler(_ => Json("""{"contract-version":"2.0","capabilities":[]}""")),
+            new StubHandler(_ => Json("""{"contract-version":"1.0","capabilities":[]}""")),
             logger: logger
         );
 
@@ -188,7 +188,7 @@ public sealed class CloudAuthServiceTests
         Assert.Equal(CloudAuthState.SignedIn, state);
         Assert.True(svc.IsSignedIn);
         Assert.Contains(logger.Warnings, w => w.Contains("契约版本", StringComparison.Ordinal));
-        Assert.Contains(logger.Warnings, w => w.Contains("2.0", StringComparison.Ordinal));
+        Assert.Contains(logger.Warnings, w => w.Contains("1.0", StringComparison.Ordinal));
         svc.Dispose();
     }
 

@@ -1485,7 +1485,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 CloudAuthState.Invalid => LucideIconKind.Lock,
                 CloudAuthState.Offline
                 or CloudAuthState.RateLimited
-                or CloudAuthState.QuotaExceeded => LucideIconKind.TriangleAlert,
+                or CloudAuthState.QuotaExceeded => LucideIconKind.TriangleExclamationPoint,
                 _ => LucideIconKind.CloudOff,
             };
 

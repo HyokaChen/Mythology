@@ -30,7 +30,7 @@ public sealed class SetupFindingItem : ViewModelBase
         Verdict switch
         {
             "conflict" => LucideIconKind.OctagonX,
-            "anomaly" => LucideIconKind.TriangleAlert,
+            "anomaly" => LucideIconKind.TriangleExclamationPoint,
             "undetermined" => LucideIconKind.CircleDotDashed,
             _ => LucideIconKind.Circle,
         };
