@@ -132,7 +132,7 @@ public sealed class UsageWarningHookTests
         await hook.AfterToolCallAsync(WriteContext("ch_2"), CancellationToken.None);
 
         var messages = CollectMessages(agent);
-        Assert.Equal(1, messages.Count(m => m.Contains("云端额度预警"))); // 两轮仅提示一次
+        Assert.Equal(1, messages.Count(m => m.Contains("云端额度不足"))); // 两轮仅提示一次
     }
 
     [Fact]
@@ -221,8 +221,8 @@ public sealed class UsageWarningHookTests
         await hook.AfterToolCallAsync(WriteContext("ch_1"), CancellationToken.None);
 
         var messages = CollectMessages(agent);
-        var budgetMessage = Assert.Single(messages, m => m.Contains("深度诊断本地预算已耗尽"));
-        Assert.Contains("服务端本月剩余 4880 单位", budgetMessage);
+        var budgetMessage = Assert.Single(messages, m => m.Contains("深度检查次数已用完"));
+        Assert.DoesNotContain("单位", budgetMessage);
     }
 
     private static List<string> CollectMessages(Agent agent) =>

@@ -288,41 +288,7 @@ public abstract class CloudAnalysisTool<TParams, TDetails>(
         return ParseIssueArray(array);
     }
 
-    /// <summary>
-    /// 从云端结果解析维度分数。
-    /// </summary>
-    protected static Dictionary<string, double> ParseDimensionScores(JsonElement element)
-    {
-        var scores = new Dictionary<string, double>();
-        if (
-            element.TryGetProperty("dimension-scores", out var dims)
-            && dims.ValueKind == JsonValueKind.Object
-        )
-        {
-            foreach (
-                var prop in dims.EnumerateObject()
-                    .Where(prop => prop.Value.ValueKind == JsonValueKind.Number)
-            )
-            {
-                scores[prop.Name] = prop.Value.GetDouble();
-            }
-        }
-        return scores;
-    }
-
-    /// <summary>
-    /// 从云端结果解析问题列表。
-    /// </summary>
-    protected static List<CloudIssue> ParseCloudIssues(JsonElement element)
-    {
-        if (
-            element.TryGetProperty("signals", out var signals)
-            && signals.ValueKind == JsonValueKind.Array
-        )
-            return ParseIssueArray(signals);
-        return [];
-    }
-
+    /// <summary>从云端返回的问题数组解析问题条目。</summary>
     private static List<CloudIssue> ParseIssueArray(JsonElement array)
     {
         var issues = new List<CloudIssue>();

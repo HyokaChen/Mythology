@@ -445,7 +445,7 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
         if (details.L0Only)
         {
             sb.AppendLine(
-                "> 基础档（quick）：仅执行基础结构检查（L0）。提高分析深度（standard/deep）可获得时间线、关系与大纲趣味性分析。"
+                "> 基础检查：仅执行基础结构检查。提高检查深度可获得时间线、关系与大纲趣味性分析。"
             );
             sb.AppendLine();
         }
@@ -467,7 +467,7 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
                 sb.AppendLine($"**{icon} {VerdictLabel(group.Key)}（{group.Count()}）**");
                 foreach (var f in group)
                 {
-                    sb.AppendLine($"- `{f.Id}` {f.Description}");
+                    sb.AppendLine($"- {f.Description}");
                     if (!string.IsNullOrWhiteSpace(f.Suggestion))
                         sb.AppendLine($"  - 建议：{f.Suggestion}");
                 }
@@ -495,13 +495,13 @@ public sealed class CheckSetupTool(INovelStore store, IFictionHarnessClient? clo
         {
             sb.AppendLine("**变更影响**");
             sb.AppendLine(
-                $"- 本轮修改：{string.Join("、", impact.Changed.Select(c => $"{ChangeImpactDetails.KindLabel(c.Kind)}「{c.Id}」"))}"
+                $"- 本轮修改：{string.Join("、", impact.Changed.GroupBy(c => c.Kind).Select(g => $"{ChangeImpactDetails.KindLabel(g.Key)} {g.Count()}"))}"
             );
             sb.AppendLine($"- 受影响：{impact.DescribeImpacted()}");
             if (impact.OmittedSources.Count > 0)
                 sb.AppendLine("- 说明：未同步卷/章细纲文档，大纲层级联动不可用");
             foreach (var finding in impact.Findings)
-                sb.AppendLine($"  - 受牵连 `{finding.FindingId}` {finding.Suggestion}");
+                sb.AppendLine($"  - 受牵连：{finding.Suggestion}");
         }
         return sb.ToString();
     }

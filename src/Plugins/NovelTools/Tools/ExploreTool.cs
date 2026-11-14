@@ -3,6 +3,7 @@ using System.Text;
 using ClientPlatform;
 using Core.Agent;
 using Core.Data;
+using Core.Prompts;
 using Core.Shared;
 using Core.Tools;
 using LlmTornado;
@@ -72,7 +73,7 @@ public sealed class ExploreTool(Agent agent, INovelStore store)
 
         // 获取当前上下文快照
         var state = agent.State;
-        var systemPrompt = state.SystemPrompt;
+        var systemPrompt = PromptAssembly.BuildAuxiliaryWritingSystemPrompt(state.SystemPrompt);
         var modelName = state.ModelName;
         var historicalMessages = state.Messages;
 
@@ -258,11 +259,7 @@ public sealed class ExploreTool(Agent agent, INovelStore store)
         };
 
         var conversation = api.Chat.CreateConversation(request);
-        conversation.AddSystemMessage(
-            string.IsNullOrEmpty(systemPrompt)
-                ? "你是一个小说创作助手。请根据用户指定的方向进行创作探索。"
-                : systemPrompt
-        );
+        conversation.AddSystemMessage(systemPrompt);
 
         return conversation;
     }

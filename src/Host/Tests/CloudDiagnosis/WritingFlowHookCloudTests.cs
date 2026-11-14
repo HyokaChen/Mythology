@@ -25,7 +25,7 @@ public sealed class WritingFlowHookCloudTests
     private const string NovelId = "novel_test";
 
     private static readonly string DecisionJson =
-        """{"verdict":"需要作者决定","action":"ask-author","summary":"本章质量低于自动规划阈值。","score":38,"findings":[],"decision-question":"要按建议继续，还是先修改本章？","decision-options":["按建议继续","先修改本章"],"snapshot":null,"strengths":null}""";
+        """{"verdict":"需要作者决定","action":"ask-author","summary":"本章质量未达到自动推进要求。","score":38,"findings":[],"decision-question":"要按建议继续，还是先修改本章？","decision-options":["按建议继续","先修改本章"],"snapshot":null,"strengths":null}""";
 
     private static readonly string PassJson =
         """{"verdict":"通过","action":"proceed","summary":"本章可按计划推进。","score":88,"findings":[],"decision-question":null,"decision-options":null,"snapshot":null,"strengths":null}""";
@@ -1033,7 +1033,8 @@ public sealed class WritingFlowHookCloudTests
                 .Select(m => ((LlmChatMessage)m.Message).Content)
                 .ToList();
             var block = Assert.Single(firstMessages, m => m.StartsWith("[写作战术 · 历史验证]"));
-            Assert.Contains("A-4", block);
+            Assert.Contains("暗线密度", block);
+            Assert.DoesNotContain("A-4", block);
             Assert.Contains("胜率 50% · 0 次", block); // 首次观测：Laplace 0.5 / 0 次使用
 
             var firstRows = ReadLedgerRows(dir);

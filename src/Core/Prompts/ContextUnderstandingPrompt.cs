@@ -77,7 +77,7 @@ public static class ContextUnderstandingPrompt
     private const string MemoryDiscipline = """
 ## 记忆纪律
 
-- Agent 记忆只存长期偏好/纠正/约束/契约；不存完成工作、临时计划、正文已有事实或云端推断。
+- 助手记忆只存长期偏好/纠正/约束/契约；不存完成工作、临时计划、正文已有事实或云端推断。
 - 记忆是快照；小说事实以正文/设定/工具为准，冲突时更新或删除。
 - 存前用 `memory_recall` 查重；确认错误/被作者否定的记忆才用 `memory_forget` 删除，不确定则保留并标注。
 - 「记住/以后都…」→ 长期；「这次/临时」→ 本次会话；只用 `memory_*`，不读记忆文件；本地文件只在用户当前消息明确引用时读取。

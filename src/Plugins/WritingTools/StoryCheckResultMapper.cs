@@ -273,9 +273,9 @@ internal static class StoryCheckResultMapper
                 ? h.GetDouble()
                 : 0;
             if (density > 0)
-                strengths.Add($"TextRank 金句密度 {density:F2} 句/千字");
+                strengths.Add($"金句密度 {density:F2} 句/千字");
             if (hook > 0)
-                strengths.Add($"章末钩子势能 {hook:F2}（TextRank）");
+                strengths.Add($"章末钩子势能 {hook:F2}");
         }
     }
 

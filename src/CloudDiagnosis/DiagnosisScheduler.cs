@@ -220,7 +220,7 @@ public sealed class DiagnosisScheduler(
             return new DiagnosisDecision(
                 false,
                 false,
-                $"当前章实质性内容不足（{substantiveChars} 字 < {options.MinTargetContentChars}），跳过云端诊断",
+                "本轮跳过：当前章实质性内容不足，未执行云端检查。",
                 ""
             );
 
@@ -290,8 +290,7 @@ public sealed class DiagnosisScheduler(
             return new DiagnosisDecision(
                 false,
                 false,
-                $"本轮跳过（非关键节点，距上次全量诊断 {Math.Max(0, maxOrder - _lastCheckedMaxOrder)} 章 / "
-                    + $"预算剩余 {options.DeepBudgetPerSession - _deepUsed} 次）",
+                "本轮跳过：最近已检查过，或深度检查额度不足。",
                 ""
             );
 

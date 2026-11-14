@@ -594,7 +594,7 @@ public sealed class SnapshotL2_4IntegrationTests
             .InjectQueue.DequeueAllWithIds()
             .Select(item => ((LlmChatMessage)item.Message).Content ?? "")
             .ToList();
-        Assert.Contains(messages, m => m.Contains("快照数据年龄 11 章"));
+        Assert.Contains(messages, m => m.Contains("参考数据来自 11 章前"));
     }
 
     private static HarnessRequest NewSnapshotRequest(Novel novel) =>

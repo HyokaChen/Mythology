@@ -347,7 +347,7 @@ public sealed class DiagnoseWritingTool(
                         textFindings.Any(i => i.Severity == Severity.High) ? "high"
                         : textFindings.Any(i => i.Severity == Severity.Medium) ? "medium"
                         : "low",
-                    Notes = ["这是云端规则审计，不是 AI 作者判定；比喻/声音需人审。"],
+                    Notes = ["这是云端文字检查，不是 AI 作者判定；比喻和语气需要作者判断。"],
                 },
             };
         }
@@ -419,7 +419,6 @@ public sealed class DiagnoseWritingTool(
             .Select(issue => new DeAiFinding
             {
                 SubType = issue.SubType ?? "",
-                Level = issue.Level ?? "",
                 Severity = issue.Severity,
                 Description = issue.Description,
                 Evidence = issue.Evidence,
@@ -442,7 +441,7 @@ public sealed class DiagnoseWritingTool(
                 FullReport = fullReport,
                 CloudAuditAvailable = true,
                 RiskLevel = RiskLevel(score, actionable),
-                Notes = ["这是云端规则审计，不是 AI 作者判定；比喻/声音需人审。"],
+                Notes = ["这是云端文字检查，不是 AI 作者判定；比喻和语气需要作者判断。"],
             },
         };
     }
@@ -478,7 +477,7 @@ public sealed class DiagnoseWritingTool(
     {
         var audit = report.DeAi ?? new DeAiAudit();
         var sb = new StringBuilder();
-        sb.AppendLine("## 去 AI 味检测（云端 humanizer）");
+        sb.AppendLine("## 去 AI 味检测（云端）");
         sb.AppendLine();
         sb.AppendLine(
             $"**审计章节**: {chapter.Title}（第 {chapter.Order} 章，{chapter.Content?.Length ?? 0} 字）"
@@ -507,7 +506,7 @@ public sealed class DiagnoseWritingTool(
         }
 
         sb.AppendLine(
-            $"检测到 {audit.Findings.Count + audit.SuppressedCount} 处高信号问题，按影响先给 {audit.Findings.Count} 处。"
+            $"检测到 {audit.Findings.Count + audit.SuppressedCount} 处文字问题，按影响先给 {audit.Findings.Count} 处。"
         );
         sb.AppendLine();
 
@@ -518,10 +517,7 @@ public sealed class DiagnoseWritingTool(
             var finding = shown[i];
             var location =
                 finding.ParagraphIndex >= 0 ? $"（第{finding.ParagraphIndex + 1}段）" : "";
-            var level = string.IsNullOrWhiteSpace(finding.Level)
-                ? ""
-                : $"[{LevelLabel(finding.Level)}] ";
-            sb.AppendLine($"{i + 1}. **{level}{finding.Description}**{location}");
+            sb.AppendLine($"{i + 1}. **{finding.Description}**{location}");
             if (!string.IsNullOrWhiteSpace(finding.Evidence))
                 sb.AppendLine($"   原文：「{finding.Evidence}」");
             if (!string.IsNullOrWhiteSpace(finding.Suggestion))
@@ -533,7 +529,7 @@ public sealed class DiagnoseWritingTool(
             sb.AppendLine($"另有 {audit.SuppressedCount} 处可执行问题未展开（同类或低优先级）。");
         if (audit.NoChangeCount > 0)
             sb.AppendLine(
-                $"另有 {audit.NoChangeCount} 处为只报告/指纹/人审/已否决，不自动改，"
+                $"另有 {audit.NoChangeCount} 处只需报告、保留或由作者判断，不自动改，"
                     + "避免把正常写法当 AI 味清理。"
             );
         if (audit.SuppressedCount > 0 || audit.NoChangeCount > 0)
@@ -545,18 +541,6 @@ public sealed class DiagnoseWritingTool(
     private static bool IsActionableIssue(DiagnosticIssue issue) =>
         (string.IsNullOrEmpty(issue.Level) || issue.Level is "A" or "B" or "F")
         && issue.SubType is not ("dash_density_high" or "semicolon_density_high");
-
-    private static string LevelLabel(string level) =>
-        level switch
-        {
-            "A" => "机械改",
-            "B" => "建议改",
-            "C" => "只报告",
-            "F" => "指纹",
-            "H" => "人审",
-            "X" => "不改",
-            _ => "",
-        };
 
     private static int SeverityRank(string severity) =>
         severity switch
@@ -655,7 +639,7 @@ public sealed class DiagnoseWritingTool(
 
         sb.AppendLine("## 🔍 写作诊断报告");
         sb.AppendLine();
-        sb.AppendLine($"**诊断深度**: {depthLabel} | **分析章节**: {chapterCount} 章");
+        sb.AppendLine($"**检查深度**: {depthLabel} | **检查章节**: {chapterCount} 章");
 
         // 云端不可用时直接显示错误
         if (report is { OverallScore: 0, DimensionScores.Count: 0, Issues.Count: > 0 })
@@ -676,15 +660,15 @@ public sealed class DiagnoseWritingTool(
         sb.AppendLine();
 
         // 维度评分表
-        sb.AppendLine("### 维度评分");
+        sb.AppendLine("### 评分");
         sb.AppendLine();
-        sb.AppendLine("| 维度 | 分数 | 状态 | 阈值 |");
-        sb.AppendLine("|------|------|------|------|");
+        sb.AppendLine("| 维度 | 分数 | 状态 |");
+        sb.AppendLine("|------|------|------|");
 
         foreach (var (dim, score) in report.DimensionScores)
         {
             var emoji = ScoreEmoji(score);
-            sb.AppendLine($"| {dim} | {score:F1} | {emoji} | - |");
+            sb.AppendLine($"| {dim} | {score:F1} | {emoji} |");
         }
         sb.AppendLine();
 
@@ -726,7 +710,7 @@ public sealed class DiagnoseWritingTool(
         }
 
         sb.AppendLine("---");
-        sb.AppendLine($"> 诊断深度: {depthLabel}。使用 enhance_* 工具可针对具体维度进行增强。");
+        sb.AppendLine($"> 检查深度: {depthLabel}。可针对具体方向继续增强。");
         return sb.ToString();
     }
 

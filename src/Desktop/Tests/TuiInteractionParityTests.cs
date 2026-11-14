@@ -165,10 +165,14 @@ public sealed class TuiInteractionParityTests
         Assert.True(int.Parse(Attr(root, "Width")) >= 800);
         Assert.Equal("True", Attr(root, "CanResize"));
         Assert.Equal("Height", Attr(root, "SizeToContent"));
-        var optionsCard = Descendants(root, "Border").Single(b => Attr(b, "Classes") == "Card");
-        Assert.Equal("360", Attr(optionsCard, "MaxHeight"));
-        var optionsScroll = Descendants(root, "ScrollViewer").Single();
-        Assert.Equal("Disabled", Attr(optionsScroll, "HorizontalScrollBarVisibility"));
+        var questionsPanel = Descendants(root, "StackPanel")
+            .Single(panel => Attr(panel, "Name") == "QuestionsPanel");
+        Assert.Equal("18", Attr(questionsPanel, "Spacing"));
+        // 每题的 360px Card 由 code-behind 动态构建，高度契约由
+        // ConversationRenderingTests.AskUserWindow_FewOptionsDoNotStretchOptionsCard 覆盖。
+        var questionsScroll = Descendants(root, "ScrollViewer")
+            .Single(scroll => Attr(scroll, "MaxHeight") == "620");
+        Assert.Equal("Disabled", Attr(questionsScroll, "HorizontalScrollBarVisibility"));
     }
 
     [Fact]

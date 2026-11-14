@@ -293,9 +293,8 @@ public sealed class ScanHallucinationTool(
         var sb = new StringBuilder();
         sb.Append("幻觉扫描完成：风险 ")
             .Append(LevelLabel(details.RiskLevel))
-            .Append($"（漂移分 {details.RDriftScore:F3}）")
             .Append(
-                $"；扫描 {details.ChaptersScanned} 章 / {details.AttributesChecked} 组断言 / {details.EntitiesCovered} 个实体。"
+                $"；扫描 {details.ChaptersScanned} 章 / {details.AttributesChecked} 组断言 / {details.EntitiesCovered} 个条目。"
             );
         if (details.ChaptersScanned < availableChapters)
             sb.Append($"（正文超出云端上限，仅取最近 {details.ChaptersScanned} 章）");
@@ -312,7 +311,7 @@ public sealed class ScanHallucinationTool(
             sb.AppendLine("发现明细：");
             foreach (var f in details.Findings.Take(20))
             {
-                sb.AppendLine($"- [{f.Verdict}] {f.Id}：{f.Description}");
+                sb.AppendLine($"- {VerdictLabel(f.Verdict)}：{f.Description}");
                 if (!string.IsNullOrWhiteSpace(f.Evidence))
                     sb.AppendLine($"  证据：{f.Evidence}");
                 if (!string.IsNullOrWhiteSpace(f.Suggestion))
@@ -328,11 +327,11 @@ public sealed class ScanHallucinationTool(
                     + string.Join(
                         "；",
                         details.AttributeGroups.Select(g =>
-                            $"{g.Attribute}({g.RDrift:F2}，{g.ObservationCount} 观测"
+                            $"{g.Attribute}（{g.ObservationCount} 次观测"
                             + (
                                 string.IsNullOrWhiteSpace(g.DominantValue)
-                                    ? ")"
-                                    : $"，主导 {g.DominantValue})"
+                                    ? "）"
+                                    : $"，主导值 {g.DominantValue}）"
                             )
                         )
                     )
@@ -340,6 +339,14 @@ public sealed class ScanHallucinationTool(
         }
         return sb.ToString();
     }
+
+    private static string VerdictLabel(string verdict) =>
+        verdict switch
+        {
+            "conflict" => "矛盾",
+            "undetermined" => "待定",
+            _ => "发现",
+        };
 
     private static string LevelLabel(string riskLevel) =>
         riskLevel switch

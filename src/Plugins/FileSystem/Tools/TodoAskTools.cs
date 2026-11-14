@@ -341,7 +341,7 @@ public sealed class AskUserTool(InteractionHub hub) : AgentTool<AskUserParams, A
     public override string Name => "ask_user";
     public override string Label => "询问用户";
     public override string Description =>
-        "仅在不可逆/高代价且无法从上下文推断时使用；不要用来确认是否继续或选择已有推荐项。TUI 会弹出交互面板，等待用户回复后返回答案";
+        "仅在不可逆/高代价且无法从上下文推断时使用；不要用来确认是否继续或选择已有推荐项。同一轮要问的相关问题必须合并进一次调用（1-4 个），不要拆成多次 ask_user 连续弹窗。TUI 会弹出交互面板，等待用户回复后返回答案";
 
     public override ToolCategory Category => ToolCategory.Generic;
     public override ToolExecutionMode ExecutionMode => ToolExecutionMode.Sequential; // 写入问题存储+阻塞等待用户：强制串行
@@ -442,7 +442,7 @@ public sealed class AskUserTool(InteractionHub hub) : AgentTool<AskUserParams, A
 /// </summary>
 public sealed record AskUserParams
 {
-    [Description("要向用户提出的问题列表（1-4 个）")]
+    [Description("同一轮要问的相关问题列表（1-4 个），必须合并到这一次调用")]
     public AskQuestion[] Questions { get; init; } = [];
 }
 

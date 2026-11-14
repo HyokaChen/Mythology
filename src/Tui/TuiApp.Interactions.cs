@@ -133,13 +133,13 @@ public sealed partial class TuiApp
             var current = _interactionHub!.Get(snapshot.Id);
             if (current is null || current.IsTerminal || current.Claim?.HostId != TuiHostId)
                 return;
-            var item = current.Questions?.Items.FirstOrDefault(i =>
-                i.Outcome == QuestionOutcome.Unanswered
-            );
-            if (item is null)
+            var items = current
+                .Questions?.Items.Where(i => i.Outcome == QuestionOutcome.Unanswered)
+                .ToList();
+            if (items is not { Count: > 0 })
                 return;
 
-            await AskUserDialog.ShowAsync(_interactionHub, current.Id, lease, item);
+            await AskUserDialog.ShowAsync(_interactionHub, current.Id, lease, items);
             // 对话框关闭后再次读 Core：可能已回答/取消/会话切走。
         }
     }

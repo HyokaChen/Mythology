@@ -151,13 +151,13 @@ public sealed class InteractionPresenter : IDisposable
                     || current.State != InteractionState.Claimed
                 )
                     return;
-                var item = current.Questions?.Items.FirstOrDefault(i =>
-                    i.Outcome == QuestionOutcome.Unanswered
-                );
-                if (item is null)
+                var items = current
+                    .Questions?.Items.Where(i => i.Outcome == QuestionOutcome.Unanswered)
+                    .ToList();
+                if (items is not { Count: > 0 })
                     return;
 
-                var win = new AskUserWindow(_hub, current.Id, lease, item);
+                var win = new AskUserWindow(_hub, current.Id, lease, items);
                 _questionWindows[current.Id] = win;
                 var owner = _owner();
                 if (owner is not null)

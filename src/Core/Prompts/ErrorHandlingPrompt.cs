@@ -19,7 +19,7 @@ public static class ErrorHandlingPrompt
 
 1. 读错误信息，判断是参数问题还是数据问题
 2. 参数问题 → 修正参数重试（最多 2 次）
-3. 数据问题（查无此角色、章节不存在）→ 先探索确认正确名称/ID，再重试
+3. 数据问题（查无此角色、章节不存在）→ 先探索确认正确名称或编号，再重试
 4. 仍失败 → 换等价路径（如 evaluate_immersion_strength 失败 → 用 diagnose_writing 综合诊断代替）
 5. 全部失败 → 如实告知用户，提供可操作选项
 """;
@@ -30,7 +30,7 @@ public static class ErrorHandlingPrompt
     private const string QualityFailure = """
 ## 质检不达标
 
-- 诊断分数低于阈值 → 调用对应 enhance_* 生成变体
+- 诊断分数低于阈值 → 调用对应的增强工具生成变体
 - 变体仍不达标 → 保留较优者，向用户说明取舍（分数、差异点）
 - 质检—增强闭环最多 2 轮，不做无休止的「改→测→改」
 """;

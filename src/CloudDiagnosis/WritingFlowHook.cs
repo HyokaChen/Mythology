@@ -285,14 +285,7 @@ public sealed class WritingFlowHook(
                     agent.InjectQueue.Enqueue(
                         new LlmChatMessage(
                             ChatMessageRoles.User,
-                            $"{SignalBuilder.Prefix} 深度诊断本地预算已耗尽（会话内 "
-                                + $"{_options?.DeepBudgetPerSession ?? 100} 次且小说预算池/银行均无余量）；"
-                                + "云端积分未变，重置本地预算后恢复深度诊断。"
-                                + (
-                                    usageSnapshot is { } balance
-                                        ? $"（服务端本月剩余 {balance.RemainingUnits} 单位）"
-                                        : ""
-                                )
+                            $"{SignalBuilder.Prefix} 深度检查次数已用完；本轮仅使用基础检查。"
                         )
                     );
                 }
@@ -305,8 +298,7 @@ public sealed class WritingFlowHook(
                     agent.InjectQueue.Enqueue(
                         new LlmChatMessage(
                             ChatMessageRoles.User,
-                            $"{SignalBuilder.Prefix} 云端积分已耗尽（本月 Cloud Writing Credits 用尽），"
-                                + "所有云端调用（基础与深度）暂停；本地写作与本地信号不受影响，新账期或充值后自动恢复。"
+                            $"{SignalBuilder.Prefix} 云端积分已耗尽；所有云端检查暂停，本地写作不受影响，充值或新账期后恢复。"
                         )
                     );
                 }
@@ -322,9 +314,9 @@ public sealed class WritingFlowHook(
                     agent.InjectQueue.Enqueue(
                         new LlmChatMessage(
                             ChatMessageRoles.User,
-                            $"{SignalBuilder.Prefix} 云端额度预警：本月剩余 {usageNow.RemainingUnits}/"
-                                + $"{usageNow.IncludedUnits} 单位（已用 {usageNow.UsedUnits}，在途 {usageNow.ReservedUnits}）；"
-                                + "额度耗尽后所有云端调用（基础与深度）都会暂停。"
+                            $"{SignalBuilder.Prefix} 云端额度不足：本月剩余 {usageNow.RemainingUnits}/"
+                                + $"{usageNow.IncludedUnits} 点（已用 {usageNow.UsedUnits}）；"
+                                + "额度耗尽后云端检查会暂停。"
                         )
                     );
                 }
@@ -683,7 +675,7 @@ public sealed class WritingFlowHook(
         var hasAction = report is { Action: not "proceed" };
 
         if (round.DeepDenied)
-            text += "\n备注: 深度诊断被拒（凭据/权限问题），本轮仅基础信号";
+            text += "\n备注：本轮未执行深度检查，仅使用基础检查。";
         if (round.BudgetOverrun)
             text += "\n备注: 本轮深度检查次数已用完，但为后半段质量保护已执行一次深度检查。";
         if (round.DeepUnits > 0)
@@ -697,7 +689,7 @@ public sealed class WritingFlowHook(
         )
         {
             var age = input.ChapterOrder - snapshotEntry.FetchedAtChapterOrder;
-            text += $"\n边界: 快照数据年龄 {age} 章（上次刷新未成功，沿用旧值）";
+            text += $"\n备注：参考数据来自 {age} 章前，可能已过时。";
         }
 
         // harness 捎带：预取未成功时，context.retrieve 的 material-hints 兜底注入（同章只一次）。
@@ -893,7 +885,7 @@ public sealed class WritingFlowHook(
         foreach (var pick in picks)
         {
             var line =
-                $"- [{pick.Trigger} · 胜率 {pick.WinRate * 100:F0}% · {pick.Uses} 次] {pick.Prescription}";
+                $"- [{TriggerLabel(pick.Trigger)} · 胜率 {pick.WinRate * 100:F0}% · {pick.Uses} 次] {pick.Prescription}";
             if (included.Count > 0 && total + line.Length + 1 > TacticBlockCharBudget)
                 break;
             lines.Add(line);
@@ -902,6 +894,16 @@ public sealed class WritingFlowHook(
         }
         return (string.Join("\n", lines), included);
     }
+
+    /// <summary>战术块的作者可读触发标签；内部规则码只留在账本。</summary>
+    private static string TriggerLabel(string trigger) =>
+        trigger switch
+        {
+            "A-3" => "伏笔回收",
+            "A-4" => "暗线密度",
+            "A-5" => "信息差",
+            _ => "写作问题",
+        };
 
     /// <summary>
     /// I4 灵感供给（§7.2）：自然停顿点 + 双信号到期 + 配额未耗尽 + 无待决 DECISION →

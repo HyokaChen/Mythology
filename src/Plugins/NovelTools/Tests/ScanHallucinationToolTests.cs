@@ -178,9 +178,10 @@ public sealed class ScanHallucinationToolTests
 
         Assert.False(result.IsError);
         var text = ExtractText(result.Content);
-        Assert.Contains("HS.conflict.status.c1", text);
+        Assert.DoesNotContain("HS.conflict.status.c1", text);
+        Assert.DoesNotContain("漂移分", text);
+        Assert.Contains("- 矛盾：", text);
         Assert.Contains("已死亡", text);
-        Assert.Contains("漂移分 0.456", text);
 
         var details = Assert.IsType<HallucinationScanDetails>(result.Details);
         Assert.Equal("high", details.RiskLevel);

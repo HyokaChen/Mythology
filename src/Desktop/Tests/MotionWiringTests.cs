@@ -518,17 +518,6 @@ public sealed class MotionWiringTests
     }
 
     [Fact]
-    public void AskUserCustomPanel_PlaysEnterWithSmallRise()
-    {
-        var panel = Single(Load("Controls/AskUserWindow.axaml"), e =>
-            e.Name.LocalName == "StackPanel" && AttrPlain(e, "Name") == "CustomPanel"
-        );
-
-        Assert.Equal("True", Attr(panel, "Motion.Enter"));
-        Assert.Equal("4", Attr(panel, "Motion.EnterRise"));
-    }
-
-    [Fact]
     public void TodoCompletedLabel_FadesIn()
     {
         var text = Single(Load("Views/TodoPanelView.axaml"), e =>

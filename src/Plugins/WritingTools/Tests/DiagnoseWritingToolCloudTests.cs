@@ -686,6 +686,7 @@ public sealed class DiagnoseWritingToolCloudTests
         Assert.Equal("high", report.DeAi.RiskLevel);
         var text = result.Content[0].ToString();
         Assert.Contains("去 AI 味检测", text);
+        Assert.DoesNotContain("humanizer", text);
         Assert.Contains("模板问题 1", text);
         Assert.DoesNotContain("综合评分", text);
     }

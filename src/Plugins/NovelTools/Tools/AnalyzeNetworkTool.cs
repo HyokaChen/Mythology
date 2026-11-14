@@ -20,12 +20,12 @@ public sealed class AnalyzeNetworkTool(
 {
     public override string Name => "analyze_network_structure";
     public override string[] Aliases =>
-        ["网络结构", "角色网络", "PageRank", "枢纽章", "伏笔网络", "金句密度"];
+        ["网络结构", "角色网络", "角色中心度", "枢纽章", "伏笔网络", "金句密度"];
     public override string[] ExampleQueries =>
         ["分析角色网络结构重要性", "检查是否有主角被边缘化", "找出章节枢纽与金句密度"];
     public override string Label => "网络结构分析";
     public override string Description =>
-        "人物 PageRank 结构重要性、章节枢纽图、伏笔网络、主角PR边缘化、TextRank 金句密度与章末钩子";
+        "人物关系网络的结构重要性、章节枢纽、伏笔网络、主角存在感、金句密度与章末钩子";
     public override ToolCategory Category => ToolCategory.EntityRead;
     protected override string Capability => StoryCheckCapability;
     protected override string Dimension => "网络结构";
@@ -95,7 +95,7 @@ public sealed class AnalyzeNetworkTool(
                     Code = "N1",
                     Severity = Severity.High,
                     Description =
-                        $"PageRank 榜首为「{GetDimensionString(characterPageRank, "top-character")}」（主角排名第 {GetDimensionInt(characterPageRank, "protagonist-rank")}），配角喧宾夺主",
+                        $"网络中心度榜首为「{GetDimensionString(characterPageRank, "top-character")}」（主角排名第 {GetDimensionInt(characterPageRank, "protagonist-rank")}），配角喧宾夺主",
                 }
             );
         if (
@@ -108,7 +108,7 @@ public sealed class AnalyzeNetworkTool(
                     Code = "N2",
                     Severity = Severity.Medium,
                     Description =
-                        $"PageRank Gini {GetDimensionScore(characterPageRank, "rank-gini"):F2}，网络过度集中于单一角色",
+                        $"网络集中度 {GetDimensionScore(characterPageRank, "rank-gini"):F2}，关系过度集中于单一角色",
                 }
             );
         if (
@@ -145,7 +145,7 @@ public sealed class AnalyzeNetworkTool(
                     Code = "N3",
                     Severity = Severity.High,
                     Description =
-                        $"主角 PR 排名连续 {GetDimensionInt(protagonistArc, "sliding-decline-chapters")} 章下滑，存在边缘化风险",
+                        $"主角网络中心度连续 {GetDimensionInt(protagonistArc, "sliding-decline-chapters")} 章下滑，存在边缘化风险",
                 }
             );
 
@@ -240,17 +240,17 @@ public sealed class AnalyzeNetworkTool(
 
         if (d.CharacterPageRank is { } pr)
         {
-            sb.AppendLine("### 人物 PageRank");
+            sb.AppendLine("### 人物网络中心度");
             sb.AppendLine();
             sb.AppendLine(
-                $"**结构重要性榜首**: **{pr.TopCharacter}** | 主角排名: **{pr.ProtagonistRank}**"
+                $"**关注度榜首**: **{pr.TopCharacter}** | 主角排名: **{pr.ProtagonistRank}**"
             );
-            sb.AppendLine($"**Rank Gini**: {pr.RankGini:F3} | **Hub Ratio**: {pr.HubRatio:F2}");
+            sb.AppendLine($"**集中度**: {pr.RankGini:F3} | **枢纽占比**: {pr.HubRatio:F2}");
             sb.AppendLine();
         }
         else
         {
-            sb.AppendLine("> ⚠️ 人物不足 2 个或缺少段落数据，无法计算角色 PageRank。");
+            sb.AppendLine("> ⚠️ 人物不足 2 个或缺少段落数据，无法计算角色网络中心度。");
             sb.AppendLine();
         }
 
@@ -258,9 +258,7 @@ public sealed class AnalyzeNetworkTool(
         {
             sb.AppendLine("### 章节枢纽");
             sb.AppendLine();
-            sb.AppendLine(
-                $"**枢纽章数**: **{hubs.HubChapterCount}** | Rank Gini: {hubs.RankGini:F3}"
-            );
+            sb.AppendLine($"**枢纽章数**: **{hubs.HubChapterCount}** | 集中度: {hubs.RankGini:F3}");
             if (hubs.HubTitles.Count > 0)
                 sb.AppendLine($"枢纽章: {string.Join("、", hubs.HubTitles)}");
             sb.AppendLine();
@@ -268,20 +266,20 @@ public sealed class AnalyzeNetworkTool(
 
         if (d.ForeshadowingNetwork is { } fs)
         {
-            sb.AppendLine("### 伏笔网络（PR）");
+            sb.AppendLine("### 伏笔网络（中心度）");
             sb.AppendLine();
             foreach (var rank in fs.PlotlineRanks)
                 sb.AppendLine($"- **{rank.Name}**: {rank.Rank:F3}");
             sb.AppendLine();
         }
 
-        sb.AppendLine("### 主角 PR 时序");
+        sb.AppendLine("### 主角中心度变化");
         sb.AppendLine(
             $"连续下滑: **{d.ProtagonistArc.SlidingDeclineChapters}** 章 | 边缘化: {(d.ProtagonistArc.N3ProtagonistMarginalized ? "⚠️ 是" : "否")}"
         );
         sb.AppendLine();
 
-        sb.AppendLine("### 金句 / 章末钩子（TextRank）");
+        sb.AppendLine("### 金句 / 章末钩子");
         sb.AppendLine(
             $"金句密度: **{d.GoldenSentences.GoldenSentenceDensityPerThousand:F2}** 句/千字 | 章末钩子势能: **{d.GoldenSentences.LastSentenceHookScore:F2}**"
         );
@@ -289,17 +287,15 @@ public sealed class AnalyzeNetworkTool(
 
         if (d.Issues.Count > 0)
         {
-            sb.AppendLine("### N 系列风险");
+            sb.AppendLine("### 结构风险");
             sb.AppendLine();
             foreach (var issue in d.Issues)
-                sb.AppendLine(
-                    $"{IssueEmoji(issue.Severity)} **[{issue.Code}]** {issue.Description}"
-                );
+                sb.AppendLine($"{IssueEmoji(issue.Severity)} {issue.Description}");
             sb.AppendLine();
         }
 
         sb.AppendLine("---");
-        sb.AppendLine("> 网络层（PageRank / TextRank）数值阈值仍标记为待校准，结果用于诊断参考。");
+        sb.AppendLine("> 结构指标用于诊断参考，不作为评分阈值。");
         return sb.ToString();
     }
 }

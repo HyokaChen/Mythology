@@ -285,6 +285,14 @@ public sealed class CloudAnalysisStoryCheckTests
         Assert.Equal(2, details.ForeshadowingNetwork!.PlotlineRanks.Count);
         Assert.Equal(1.2, details.GoldenSentences.GoldenSentenceDensityPerThousand, 1);
         Assert.Contains(details.Issues, i => i.Code == "N3");
+
+        var text = ToolDispatcher.ExtractText(result.Content);
+        Assert.Contains("人物网络中心度", text);
+        Assert.DoesNotContain("PageRank", text);
+        Assert.DoesNotContain("Rank Gini", text);
+        Assert.DoesNotContain("Hub Ratio", text);
+        Assert.DoesNotContain("TextRank", text);
+        Assert.DoesNotContain("[N3]", text);
     }
 
     private static HarnessResult JsonResult(string json)

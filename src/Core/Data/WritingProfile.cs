@@ -113,7 +113,7 @@ public sealed record WritingProfile
     {
         var profileBlock = ToContextString();
         var densityWarning =
-            aiBuzzwordDensity > 1.0 ? $"\n- ⚠️ AI味密度: {aiBuzzwordDensity:F1}/千字 (高于1.0阈值)"
+            aiBuzzwordDensity > 1.0 ? $"\n- ⚠️ AI味密度: {aiBuzzwordDensity:F1}/千字（偏高）"
             : aiBuzzwordDensity > 0 ? $"\n- AI味密度: {aiBuzzwordDensity:F1}/千字"
             : "";
         var hookLine = hookType is not null
@@ -129,8 +129,8 @@ public sealed record WritingProfile
 
 ## 创作配置
 {profileBlock}
-## 你的判断权限
-你是诊断的调度者，不是固定流程执行者。请根据章节特征判断哪些维度值得诊断、是否需要增强。
+## 处理方式
+根据章节特征决定先检查什么、是否需要增强。
 可用工具: diagnose_writing / evaluate_immersion / evaluate_satisfaction / enhance_immersion / enhance_satisfaction / enhance_humanizer / enhance_prose_quality / enhance_chapter_hook / ...
 直接行动，不要确认。
 """;

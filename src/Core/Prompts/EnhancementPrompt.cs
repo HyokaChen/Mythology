@@ -273,11 +273,11 @@ public static class EnhancementPrompt
                 - 能安全拆成句号时拆；确有并列层级时保留
                 """,
             "personification" => """
-                - 人审区：默认保留，不自动改
+                - 需要作者判断的地方：默认保留，不自动改
                 - 用户明确要求时，平实陈述工具/系统实际做了什么
                 """,
             "summary_substitution" or "this_means" or "empty_colon_list" or "ordinal_heading" => """
-                - X 级已否决：实测不是 AI 味，永不改
+                - 已确认不是 AI 味的情况：实测正常，永不改
                 """,
             "same_skeleton" => """
                 - 连续同骨架句 → 只改其中一两句，保留其余节奏

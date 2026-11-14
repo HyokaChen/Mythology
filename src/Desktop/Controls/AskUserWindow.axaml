@@ -13,48 +13,26 @@
   Background="{DynamicResource BrushLinen}"
   motion:Motion.Enter="True"
 >
-  <!-- 选项 Card 按内容高度自适应；超过 360 才滚动。空余高度留给 Card 与动作条之间的留白，不让 Card 自己撑成空白板。 -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="24,20,24,20">
-    <!-- 问题文本 -->
-    <TextBlock
-      x:Name="QuestionText"
+  <!-- 一次 ask_user 可能问 1-4 个问题：全部放进同一个窗口，题目按 Header 分组，整组提交。 -->
+  <Grid RowDefinitions="*,Auto" Margin="24,20,24,20">
+    <ScrollViewer
       Grid.Row="0"
-      FontSize="16"
-      FontWeight="Medium"
-      Foreground="{DynamicResource BrushForestInk}"
-      TextWrapping="Wrap"
-    />
-
-    <!-- 选项区（Card 包裹，填满可用高度） -->
-    <Border Grid.Row="1" Classes="Card" Padding="20" Margin="0,16,0,0" MaxHeight="360">
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel x:Name="OptionsPanel" Spacing="8" />
-      </ScrollViewer>
-    </Border>
-
-    <!-- 自定义输入区（单选时显示） -->
-    <StackPanel
-      x:Name="CustomPanel"
-      Grid.Row="2"
-      Spacing="6"
-      IsVisible="False"
-      Margin="0,12,0,0"
-      motion:Motion.Enter="True"
-      motion:Motion.EnterRise="4"
+      MaxHeight="620"
+      VerticalScrollBarVisibility="Auto"
+      HorizontalScrollBarVisibility="Disabled"
     >
-      <TextBox x:Name="CustomInput" Classes="Adaline" PlaceholderText="输入自定义答案…" />
-      <TextBlock
-        Text="Enter 确认 · Esc 取消"
-        FontSize="10"
-        Foreground="{DynamicResource BrushSageMist}"
-        FontFamily="{StaticResource FontMono}"
-        LetterSpacing="0.2"
-        Margin="2,2,0,0"
-      />
-    </StackPanel>
+      <StackPanel x:Name="QuestionsPanel" Spacing="18" />
+    </ScrollViewer>
 
     <!-- 动作条（右下） -->
-    <StackPanel Grid.Row="4" Spacing="12" Margin="0,16,0,0">
+    <StackPanel Grid.Row="1" Spacing="10" Margin="0,16,0,0">
+      <TextBlock
+        x:Name="ValidationText"
+        IsVisible="False"
+        Text="请先回答所有问题"
+        FontSize="12"
+        Foreground="{DynamicResource BrushCrimsonSpecimen}"
+      />
       <Border Height="1" Background="{DynamicResource BrushMist}" />
       <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
         <Button x:Name="CancelButton" Classes="Ghost" FontSize="14" Content="取消" />

@@ -290,7 +290,7 @@ public sealed class EnhancementEngine
 
         var state = _agent.State;
         var modelName = state.ModelName;
-        var systemPrompt = state.SystemPrompt;
+        var systemPrompt = PromptAssembly.BuildAuxiliaryWritingSystemPrompt(state.SystemPrompt);
 
         var prompt = EnhancementPrompt.Build(
             location.Dimension,
@@ -520,11 +520,7 @@ public sealed class EnhancementEngine
         };
 
         var conversation = api.Chat.CreateConversation(request);
-        conversation.AddSystemMessage(
-            string.IsNullOrEmpty(systemPrompt)
-                ? "你是一个小说写作增强助手。请根据指定维度的问题，生成改写变体。"
-                : systemPrompt
-        );
+        conversation.AddSystemMessage(systemPrompt);
 
         return conversation;
     }

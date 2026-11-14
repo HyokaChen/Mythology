@@ -33,7 +33,7 @@ public sealed class TacticStat(
     /// <summary>战术 ID（<c>tt-</c> + trigger|genre 内容哈希前 8 位）。</summary>
     public string Id { get; } = id;
 
-    /// <summary>触发该战术的行动项规则码（SignalRules.ActionItem.Code）。</summary>
+    /// <summary>触发该战术的内部规则码；只用于账本与结算，不进入模型文本。</summary>
     public string Trigger { get; } = trigger;
 
     /// <summary>来源题材（空 = 跨题材通用）。</summary>

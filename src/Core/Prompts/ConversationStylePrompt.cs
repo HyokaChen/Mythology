@@ -47,8 +47,8 @@ public static class ConversationStylePrompt
 ```
 
 ### 代码块
-- JSON/YAML 数据、配置、代码用代码块包裹
-- 指定语言标记：```json、```yaml、```csharp
+- JSON/YAML 数据、配置用代码块包裹
+- 指定语言标记：```json、```yaml
 
 ### 链接与引用
 - 提及章节、角色、文档时用 `[链接](path)` 格式

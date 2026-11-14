@@ -15,7 +15,7 @@ public static class SignalBuilder
 
     /// <summary>云端不可用时的本地自检提醒（不伪造 findings）。</summary>
     public const string HumanizerUnavailableMessage =
-        "[本地自检] 云端去AI味校验未完成。交付前按 HumanizerPrompt 自检"
+        "[本地自检] 云端去AI味校验未完成。交付前按写作风格规范自检"
         + "（对举/结论冒号/口头禅/翻译腔/同义称呼/同骨架构句），"
         + "并在回复中标注「云端去AI味校验未完成」；不要伪造检测结果。";
 
@@ -26,7 +26,7 @@ public static class SignalBuilder
     {
         var builder = new StringBuilder();
         builder.Append(Prefix).Append(" 结果：").Append(report.Verdict);
-        builder.Append('\n').Append("检查：云端故事检查");
+        builder.Append('\n').Append("检查：云端诊断");
         builder.Append('\n').Append("结论：").Append(OneLine(report.Summary));
 
         if (report.Action == "proceed")

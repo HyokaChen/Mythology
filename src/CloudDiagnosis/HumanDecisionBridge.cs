@@ -86,7 +86,7 @@ public sealed class HumanDecisionBridge
 
     /// <summary>首次授权后的持续授权句；追加到既有 [人工裁决] 文本里，不新增信号类型。</summary>
     private const string AuthorizationSentence =
-        "本作品后续低阈值场景规划裁决按建议继续自动迭代，不再逐次询问。"
+        "本作品后续低风险、可回退的场景规划按建议继续自动迭代，不再逐次询问。"
         + "仅覆盖可回退的写作推进；删除/覆盖/改结局等不可逆动作仍需确认。";
 
     /// <summary>TUI 走答案追加链路时，bridge 只补这一条带 [人工裁决] 前缀的授权块。</summary>
@@ -119,11 +119,11 @@ public sealed class HumanDecisionBridge
     {
         // 条件1：角色完整性不足（结构化角色数 < DecisionMinCharacters）
         if (characterCount < minCharacters)
-            return $"角色信息不足（{characterCount} 个结构化角色），场景规划质量评估可能不准，按建议继续";
+            return $"角色信息不足（目前 {characterCount} 个角色），场景规划的判断可能不准，先按建议继续";
 
         // 条件2：小说早期（Order < DecisionMinChapterOrder）
         if (currentOrder < minChapterOrder)
-            return $"小说早期（前 {minChapterOrder} 章），设定未充分展开，按建议继续";
+            return $"目前仍是小说早期（前 {minChapterOrder} 章），设定还没充分展开，先按建议继续";
 
         // 条件3：历史稳定性——连续 3 次 scene.plan score >= 0.6 且当前 score 在 [下沿, 0.55) 临界区
         // → 系统更信任自动决策，跳过 DECISION（临界区上沿 = 云端 warning 阈值 0.55；
@@ -143,7 +143,7 @@ public sealed class HumanDecisionBridge
                     ComputeProfile(recent) == DecisionProfileKind.Trusting ? 0.35 : 0.4;
                 var score = (outcome.Score ?? 0) / 100.0;
                 if (score >= lowerBound && score < 0.55)
-                    return $"历史 scene.plan 得分连续稳定（≥0.6），当前得分处于临界区，按建议继续自动迭代";
+                    return "前几次场景规划一直稳定，本章也接近可继续的范围，先按建议继续。";
             }
         }
 

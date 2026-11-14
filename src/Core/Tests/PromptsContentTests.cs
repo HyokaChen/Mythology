@@ -24,13 +24,13 @@ public sealed class PromptsContentTests
         Assert.Contains("本地文件/正文中的既定事实", RoleDefinitionPrompt.Full);
         Assert.Contains("云端报告的结论", RoleDefinitionPrompt.Full);
         Assert.Contains("read_chapter", RoleDefinitionPrompt.Full);
-        Assert.Contains("Agent 记忆", RoleDefinitionPrompt.Full);
+        Assert.Contains("助手记忆", RoleDefinitionPrompt.Full);
     }
 
     [Fact]
     public void RoleDefinitionPrompt_ContainsAgentMemoryPrecedence()
     {
-        Assert.Contains("Agent 记忆是写入时快照", RoleDefinitionPrompt.Full);
+        Assert.Contains("助手记忆是写入时快照", RoleDefinitionPrompt.Full);
         Assert.Contains("不作小说事实", RoleDefinitionPrompt.Full);
         Assert.Contains("冲突时以本地事实为准", RoleDefinitionPrompt.Full);
     }
@@ -322,6 +322,27 @@ public sealed class PromptsContentTests
     }
 
     [Fact]
+    public void PromptAssembly_AuxiliaryWritingSystemPrompt_IncludesWritingStyleLast()
+    {
+        var result = PromptAssembly.BuildAuxiliaryWritingSystemPrompt("小说上下文");
+
+        Assert.StartsWith("小说上下文", result);
+        Assert.Contains("<writing_style>", result);
+        Assert.Contains("结构预防", result);
+        Assert.Contains("翻案腔", result);
+        Assert.True(
+            result.IndexOf("<writing_style>", StringComparison.Ordinal)
+                > result.IndexOf("小说上下文", StringComparison.Ordinal)
+        );
+        Assert.DoesNotContain("<role_definition>", result);
+        Assert.DoesNotContain("HumanizerPrompt", result);
+
+        var styleOnly = PromptAssembly.BuildAuxiliaryWritingSystemPrompt("");
+        Assert.StartsWith("<writing_style>", styleOnly);
+        Assert.Contains("结构预防", styleOnly);
+    }
+
+    [Fact]
     public void PromptAssembly_Build_Exclude_RemovesSegment()
     {
         var result = PromptAssembly.Build(excludeKeys: ["tooling"]);
@@ -367,12 +388,27 @@ public sealed class PromptsContentTests
                 "units",
                 "WritingProfile",
                 "scope",
+                "ConversationStylePrompt",
+                "WritingProcessPrompt",
+                "HumanizerPrompt",
+                "commercial",
+                "literary",
+                "A-3",
+                "A-4",
+                "A-5",
+                "beat",
+                "Draft",
+                "Published",
             }
         )
             Assert.DoesNotContain(forbidden, prompt);
 
         Assert.Contains("结果：通过", prompt);
         Assert.Contains("结果：需要修改", prompt);
+        Assert.Contains("有风险", prompt);
+        Assert.Contains("未通过", prompt);
+        Assert.Contains("缺少创作目标", prompt);
+        Assert.Contains("内容不足", prompt);
         Assert.Contains("需要作者决定", prompt);
         Assert.Contains("直接修改", prompt);
         Assert.Contains("只报告", prompt);
@@ -428,6 +464,35 @@ public sealed class PromptsContentTests
         Assert.Contains("不等用户问", WritingProcessPrompt.Full);
         Assert.Contains("每章最多两次", WritingProcessPrompt.Full);
         Assert.Contains("云端去AI味校验未完成", WritingProcessPrompt.Full);
+    }
+
+    [Fact]
+    public void EnhancementPrompt_HumanizerGuides_DoNotExposeInternalLevels()
+    {
+        var profile = new Data.WritingProfile();
+        var personification = EnhancementPrompt.Build(
+            DimensionKeys.Humanizer,
+            "原文",
+            "前文",
+            "后文",
+            "问题描述",
+            profile,
+            "personification"
+        );
+        var confirmed = EnhancementPrompt.Build(
+            DimensionKeys.Humanizer,
+            "原文",
+            "前文",
+            "后文",
+            "问题描述",
+            profile,
+            "summary_substitution"
+        );
+
+        Assert.DoesNotContain("人审", personification);
+        Assert.DoesNotContain("X 级", confirmed);
+        Assert.Contains("需要作者判断", personification);
+        Assert.Contains("已确认不是 AI 味", confirmed);
     }
 
     [Fact]
@@ -495,7 +560,7 @@ public sealed class PromptsContentTests
     public void ContextUnderstandingPrompt_ContainsMemoryDiscipline()
     {
         Assert.Contains("记忆纪律", ContextUnderstandingPrompt.Full);
-        Assert.Contains("Agent 记忆只存长期偏好", ContextUnderstandingPrompt.Full);
+        Assert.Contains("助手记忆只存长期偏好", ContextUnderstandingPrompt.Full);
         Assert.Contains("memory_recall", ContextUnderstandingPrompt.Full);
         Assert.Contains("memory_forget", ContextUnderstandingPrompt.Full);
         Assert.Contains("不读记忆文件", ContextUnderstandingPrompt.Full);

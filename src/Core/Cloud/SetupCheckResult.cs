@@ -96,8 +96,8 @@ public sealed record SetupGraphInfo(string Source, int NodeCount, int EdgeCount)
     /// <summary>可读来源标签（工具报告与面板共用，避免两处文案漂移）。</summary>
     public string Describe() =>
         Source == "graph"
-            ? $"同步图（节点 {NodeCount} / 边 {EdgeCount}）"
-            : $"设定摘要（未同步卷/章细纲，卷级大纲检查不可用；节点 {NodeCount} / 边 {EdgeCount}）";
+            ? $"同步图（条目 {NodeCount} / 关联 {EdgeCount}）"
+            : $"设定摘要（未同步卷/章细纲，卷级大纲检查不可用；条目 {NodeCount} / 关联 {EdgeCount}）";
 }
 
 /// <summary>分卷大纲指标（SetupOutlineMetrics.Volumes 的客户端镜像）。</summary>
@@ -118,15 +118,15 @@ public sealed record VolumeOutlineEntry
     /// <summary>单行可读摘要（工具报告与面板共用）。</summary>
     public string Describe()
     {
-        var text = $"{Name}：{ChapterCount} 章 · {BeatCount} beats";
+        var text = $"{Name}：{ChapterCount} 章 · {BeatCount} 个情节节点";
         if (BeatCount > 0)
             text += $" · 张力 {TensionMean:F2}（{TensionMin:F2}–{TensionMax:F2}）";
         if (!string.IsNullOrWhiteSpace(ArcShape) && ArcShape != "unknown")
             text += $" · 弧线 {ArcShape}";
         if (HookCoverage > 0)
-            text += $" · 峰值覆盖 {HookCoverage:P0}";
+            text += $" · 章末钩子覆盖 {HookCoverage:P0}";
         if (FlatLine)
-            text += " · ⚠ 平坦（张力差 <0.1）";
+            text += " · ⚠ 平坦（张力变化过小）";
         return text;
     }
 }

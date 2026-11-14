@@ -50,7 +50,7 @@ public static class ToolCallingPrompt
 - 写入类工具按依赖顺序执行：先建实体，再建关系
   （先 manage_character 再 manage_relationship；先 create_timeline_event 再引用它）
 - 后一个工具的参数需要前一个工具的结果时，必须等待结果返回，不得猜测参数
-- 增强类工具（enhance_*）依赖诊断类工具（evaluate_*/diagnose_writing）的结果，先诊断后增强
+- 增强类工具依赖诊断类工具（如 diagnose_writing）的结果，先诊断后增强
 """;
 
     // ── 写入串行 + 批量优先 ──
@@ -60,8 +60,8 @@ public static class ToolCallingPrompt
     private const string BatchAndWriteRules = """
 ## 工具调用：写入串行、批量优先
 
-- 同一轮最多发起一个写入类工具（manage_* / write_* / edit_text / create_outline / batch_create_* 等会落盘的工具），禁止同一轮并行发起多个写入工具
-- 需要创建 2 个及以上同类实体时，必须使用 batch_create_* 批量工具一次完成，不要多次调用 manage_* 逐个创建
+- 同一轮最多发起一个会落盘的写入类工具（如 edit_text、create_outline、批量创建工具），禁止同一轮并行发起多个写入工具
+- 需要创建 2 个及以上同类实体时，必须使用批量创建工具一次完成，不要逐个调用单个创建工具
 - 多个写入工具并发会读改写同一文件导致冲突/丢数据；批量工具在一次调用内串行落盘
 """;
 
@@ -72,7 +72,7 @@ public static class ToolCallingPrompt
 ## 工具调用前自检
 
 - 数据已在上下文中 → 不再调用工具重复请求
-- 不确定参数值（角色名、地点名、章节 ID）→ 先查后调，不猜
+- 不确定参数值（角色名、地点名、章节编号）→ 先查后调，不猜
 - 工具执行可能破坏数据（删除、覆盖、批量修改）→ 先 ask_user 确认
 - 修改章节/选段前，先用 `read_chapter` 读该章正文；用户手稿与记忆冲突以文件为准；不覆盖未完成内容；大改前说明将改动什么
 """;
@@ -112,7 +112,7 @@ public static class ToolCallingPrompt
 - `read` 只读用户当前消息中明确给出的路径；禁止构造路径、列目录或扫描工作区。
 - 章节正文 → `read_chapter`；诊断/去AI味/check 直接读章节，不要先 `read`；角色/设定用小说工具。
 - 写文件 → `write`，编辑 → `edit`，禁止用 bash 的重定向符（>、>>、echo >）改文件
-- 诊断/增强/检索/网络搜索等已有专用工具的能力，禁止用 bash 调用 CLI 或脚本复现（如 npx mythology diagnose_writing → 直接调用 diagnose_writing 工具）
+- 诊断/增强/检索/网络搜索等已有专用工具的能力，禁止用 bash 调用命令行工具或脚本复现（如用命令行跑写作诊断 → 直接调用 diagnose_writing 工具）
 - bash 工具在 Windows 上是 PowerShell 5.x（不是 bash）：不支持 ls -la、&&、单引号字符串、grep；用 Get-ChildItem（dir）、; 分隔、双引号
 - 能用专用工具完成的操作，不得改用 bash 绕道
 """;
@@ -143,7 +143,7 @@ public static class ToolCallingPrompt
 - 开始某一步：创建时可直接标为进行中（一步到位，推荐）；或更新为进行中（可描述当前动作）
 - 完成某一步：把该任务标为已完成
 - 全部步骤完成时：对每个未完成任务逐一标为已完成收尾，清单不得遗留未完成项
-- 步骤有先后依赖：建立或追加任务时标注依赖关系，TUI 会展示依赖链
+- 步骤有先后依赖：建立或追加任务时标注依赖关系，终端界面会展示依赖链
 - 用户改方向/放弃：整批替换建立新批次；不要逐条删除旧任务
 - 任务清单最后一项是验收：事实对来源、数字重算、文件打开看、章节按请求逐项核对
 - 轻任务不建清单；快速回答即使查了资料也不需要清单

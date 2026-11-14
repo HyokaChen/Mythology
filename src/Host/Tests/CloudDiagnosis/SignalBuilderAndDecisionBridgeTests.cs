@@ -63,11 +63,22 @@ public sealed class SignalBuilderTests
         var text = SignalBuilder.Format(Report(), []);
 
         Assert.Contains("结果：需要修改", text);
+        Assert.Contains("检查：云端诊断", text);
         Assert.Contains("问题 1（角色 · 严重）", text);
         Assert.DoesNotContain("A-1", text);
         Assert.DoesNotContain("status=", text);
         Assert.DoesNotContain("story.check", text);
+        Assert.DoesNotContain("云端故事检查", text);
         Assert.DoesNotContain("f_0123456789abcdef", text);
+    }
+
+    [Fact]
+    public void HumanizerUnavailableMessage_DoesNotLeakClassName()
+    {
+        var text = SignalBuilder.HumanizerUnavailableMessage;
+
+        Assert.Contains("写作风格规范", text);
+        Assert.DoesNotContain("HumanizerPrompt", text);
     }
 
     [Fact]
@@ -112,7 +123,7 @@ public sealed class HumanDecisionBridgeTests
         new(
             "需要作者决定",
             "ask-author",
-            "本章质量低于自动规划阈值。",
+            "本章质量未达到自动推进要求。",
             38,
             [],
             "要按建议继续，还是先修改本章？",
@@ -132,7 +143,7 @@ public sealed class HumanDecisionBridgeTests
             null,
             minCharacters: 6
         );
-        Assert.Contains("5 个结构化角色", characterSkip);
+        Assert.Contains("5 个角色", characterSkip);
         var orderSkip = HumanDecisionBridge.ShouldSkipDecision(
             Decision,
             5,
@@ -161,7 +172,7 @@ public sealed class HumanDecisionBridgeTests
         var verdict = await task;
 
         Assert.StartsWith("[人工裁决]", verdict);
-        Assert.Contains("结论：本章质量低于自动规划阈值。", verdict);
+        Assert.Contains("结论：本章质量未达到自动推进要求。", verdict);
         Assert.DoesNotContain("repairIntent", verdict);
         Assert.Single(bridge.DecisionHistory);
     }

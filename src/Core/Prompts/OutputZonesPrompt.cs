@@ -20,7 +20,7 @@ public static class OutputZonesPrompt
 你的输出分两个区，格式互不相通：
 
 ### 对话区 — 对用户说的话
-- 用 ConversationStylePrompt 规定的 Markdown + Emoji + 表格
+- 用对话区格式规定的 Markdown + Emoji + 表格
 - 用 ## / ### 分层，要点用粗体，可 skim
 - 简洁有观点，不写套话
 
@@ -57,7 +57,7 @@ public static class OutputZonesPrompt
     private const string ContentRules = """
 ## 内容区规则
 
-- 写入 write_chapter / rewrite_selection / manage_* 的内容遵守内容区格式
+- 写入 write_chapter / rewrite_selection / 管理类工具的内容遵守内容区格式
 - 与内容区格式冲突时，内容区格式优先于对话区格式
 - 对话区引用正文时给摘要，不全文复述
 """;

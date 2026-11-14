@@ -213,7 +213,7 @@ public sealed class CheckSetupToolTests
 
         Assert.False(result.IsError);
         var text = ExtractText(result.Content);
-        Assert.Contains("L0.dangling.relation.target.ghost", text);
+        Assert.DoesNotContain("L0.dangling.relation.target.ghost", text);
         Assert.Contains("关系 c1→ghost 的终点引用不存在的实体", text);
         Assert.Contains("灰姑娘", text);
     }
@@ -355,7 +355,7 @@ public sealed class CheckSetupToolTests
         Assert.Equal(12, first.ChapterCount);
         Assert.Equal(18, first.BeatCount);
         Assert.Contains("man-in-a-hole", first.Describe());
-        Assert.Contains("峰值覆盖", first.Describe());
+        Assert.Contains("章末钩子覆盖", first.Describe());
         Assert.Contains("平坦", details.Volumes[1].Describe()); // flat-line=true → 显式提示
 
         // 报告（LLM 可见文本）必须含两段：设定图来源 + 分卷指标

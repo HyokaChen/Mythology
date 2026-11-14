@@ -120,9 +120,7 @@ public sealed class CheckWorldRulesTool(INovelStore store, Agent? agent = null)
                     _ => "提示",
                 };
                 lines.Add($"[{label}] 规则「{rule.Description}」");
-                lines.Add(
-                    $"  主体：{delta.EntityType.ToKebabCaseString()}「{delta.EntityName}」| 后果：{delta.Summary}"
-                );
+                lines.Add($"  主体：「{delta.EntityName}」| 后果：{delta.Summary}");
             }
 
             return Ok(

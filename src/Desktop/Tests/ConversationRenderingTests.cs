@@ -1327,7 +1327,10 @@ public class ConversationRenderingTests
                 Assert.All(radios, r =>
                     Assert.Equal(14, Assert.IsType<TextBlock>(r.Content).FontSize)
                 );
-                var question = window.FindControl<TextBlock>("QuestionText")!;
+                var question = window
+                    .GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Single(text => text.Text == "想写哪种？");
                 Assert.Equal(16, question.FontSize);
                 radios[1].IsChecked = true;
 
@@ -1337,6 +1340,99 @@ public class ConversationRenderingTests
                 var answered = hub.Get(interaction.Id)!.Questions!.Items[0].Question;
                 Assert.True(answered.IsAnswered);
                 Assert.Equal(["仙侠"], answered.SelectedAnswers);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void AskUserWindow_CustomPanel_UsesEnterMotion()
+    {
+        Ui.Value.Run(() =>
+        {
+            var (_, _, window) = CreateAskUserWindow([
+                new QuestionDef
+                {
+                    Header = "方向",
+                    Question = "想写哪种？",
+                    Options = ["都市修真", "仙侠"],
+                },
+            ]);
+            window.Show();
+            try
+            {
+                Pump();
+                var input = window.GetVisualDescendants().OfType<TextBox>().Single();
+                var panel = input.GetVisualAncestors().OfType<StackPanel>().First();
+                Assert.True(Desktop.Styles.Motion.GetEnter(panel));
+                Assert.Equal(4d, Desktop.Styles.Motion.GetEnterRise(panel));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void AskUserWindow_MultipleQuestionsShareOneWindow_AndSubmitTogether()
+    {
+        Ui.Value.Run(() =>
+        {
+            var (hub, interaction, window) = CreateAskUserWindow([
+                new QuestionDef
+                {
+                    Header = "方向",
+                    Question = "想写哪种？",
+                    Options = ["都市修真", "仙侠"],
+                },
+                new QuestionDef
+                {
+                    Header = "视角",
+                    Question = "用第几人称？",
+                    Options = ["第一人称", "第三人称"],
+                },
+                new QuestionDef
+                {
+                    Header = "线索",
+                    Question = "保留哪些线索？",
+                    Options = ["身世", "旧案"],
+                    MultiSelect = true,
+                },
+            ]);
+            window.Show();
+            try
+            {
+                var texts = window
+                    .GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Select(text => text.Text)
+                    .Where(text => text is not null)
+                    .ToList();
+                Assert.Contains("方向", texts);
+                Assert.Contains("视角", texts);
+                Assert.Contains("线索", texts);
+
+                // 两道单选题各有 2 个选项 + 自定义输入；不同题不能共享 radio GroupName。
+                var radios = window.GetVisualDescendants().OfType<RadioButton>().ToList();
+                Assert.Equal(6, radios.Count);
+                radios.Single(radio => (string?)radio.Tag == "仙侠").IsChecked = true;
+                radios.Single(radio => (string?)radio.Tag == "第三人称").IsChecked = true;
+
+                var checks = window.GetVisualDescendants().OfType<CheckBox>().ToList();
+                Assert.Equal(2, checks.Count);
+                checks.Single(check => (string?)check.Tag == "身世").IsChecked = true;
+
+                var confirm = window.FindControl<Button>("ConfirmButton")!;
+                confirm.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                var items = hub.Get(interaction.Id)!.Questions!.Items;
+                Assert.Equal(["仙侠"], items[0].Question.SelectedAnswers);
+                Assert.Equal(["第三人称"], items[1].Question.SelectedAnswers);
+                Assert.Equal(["身世"], items[2].Question.SelectedAnswers);
             }
             finally
             {
@@ -2347,7 +2443,7 @@ public class ConversationRenderingTests
             hub,
             interaction.Id,
             claimed!.Claim!.LeaseId,
-            interaction.Questions!.Items[0]
+            interaction.Questions!.Items
         );
         return (hub, interaction, window);
     }

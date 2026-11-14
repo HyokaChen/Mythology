@@ -7,6 +7,8 @@
 /// </summary>
 public static class PromptAssembly
 {
+    private const string WritingStyleTag = "writing_style";
+
     /// <summary>骨架段（Key, Tag, Content）有序集合。Key 为段标识，Tag 为装配时的 XML 包裹标签。</summary>
     private static readonly (string Key, string Tag, string Content)[] s_segments =
     [
@@ -19,7 +21,7 @@ public static class PromptAssembly
         ("planning", "planning_loop", PlanningLoopPrompt.Full),
         ("errors", "error_handling", ErrorHandlingPrompt.Full),
         ("writing", "writing_process", WritingProcessPrompt.Full),
-        ("humanizer", "writing_style", HumanizerPrompt.Full),
+        ("humanizer", WritingStyleTag, HumanizerPrompt.Full),
     ];
 
     /// <summary>全部段 Key（有序），用于测试与文档。</summary>
@@ -58,6 +60,19 @@ public static class PromptAssembly
 
     /// <summary>writing 段的 Key（模式相关内容的定位锚点）。</summary>
     private const string WritingSegmentKey = "writing";
+
+    /// <summary>
+    /// 工具内部独立调用 LLM 时的系统提示：用户/小说上下文 + 写作风格段。
+    /// 增强（EnhancementEngine）和探索（ExploreTool）不经过主对话骨架，
+    /// 必须显式带上 HumanizerPrompt，否则云端审查不可用时本地改写会失去去 AI 味约束。
+    /// </summary>
+    public static string BuildAuxiliaryWritingSystemPrompt(string? systemPrompt)
+    {
+        var writingStyle = $"<{WritingStyleTag}>\n{HumanizerPrompt.Full}\n</{WritingStyleTag}>";
+        return string.IsNullOrWhiteSpace(systemPrompt)
+            ? writingStyle
+            : string.Concat(systemPrompt, "\n\n", writingStyle);
+    }
 
     /// <summary>
     /// 骨架字符量估算（汉字≈1 token，用于粗略上限监控，非精确计费）。

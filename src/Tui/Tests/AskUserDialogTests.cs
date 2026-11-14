@@ -42,7 +42,7 @@ public sealed class AskUserDialogTests : TerminalUiFixture
 
         await OnUiAsync(() =>
         {
-            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, slot);
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, [slot]);
             return 0;
         });
 
@@ -109,7 +109,7 @@ public sealed class AskUserDialogTests : TerminalUiFixture
 
         await OnUiAsync(() =>
         {
-            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, slot);
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, [slot]);
             return 0;
         });
 
@@ -125,11 +125,167 @@ public sealed class AskUserDialogTests : TerminalUiFixture
         Assert.Same(list, await OnUiAsync(() => App!.FocusedElement));
 
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
         Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
 
         var answered = await hub.WaitForQuestionAnswerAsync(interaction.Id, questionId)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(["第三人称"], answered);
+    }
+
+    [Fact]
+    public async Task SingleSelect_EnterOnCustomOption_OpensInputAndSubmitsTypedAnswer()
+    {
+        var (hub, interaction, lease) = CreateClaimed([
+            new QuestionDef
+            {
+                Header = "方向",
+                Question = "选择方向",
+                Options = ["都市修真", "仙侠"],
+            },
+        ]);
+        var slot = interaction.Questions!.Items[0];
+        var questionId = slot.Question.Id;
+
+        await OnUiAsync(() =>
+        {
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, [slot]);
+            return 0;
+        });
+
+        var list = await WaitForValueAsync(
+            () =>
+                App!
+                    .Root.EnumerateVisualsDepthFirst()
+                    .OfType<RadioButtonList<string>>()
+                    .FirstOrDefault(),
+            "单选列表已渲染"
+        );
+        Assert.NotNull(list);
+        Assert.Same(list, await OnUiAsync(() => App!.FocusedElement));
+
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+
+        var input = await WaitForValueAsync(
+            () => App!.FocusedElement as MaskedInput,
+            "Enter 打开并聚焦自定义输入框"
+        );
+        Assert.NotNull(input);
+
+        await OnUiAsync(() =>
+        {
+            input!.Value = "赛博仙侠";
+            return 0;
+        });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+
+        var answered = await hub.WaitForQuestionAnswerAsync(interaction.Id, questionId)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(["赛博仙侠"], answered);
+    }
+
+    [Fact]
+    public async Task MultipleQuestions_ShareOneDialog_AndSubmitTogether()
+    {
+        var (hub, interaction, lease) = CreateClaimed([
+            new QuestionDef
+            {
+                Header = "方向",
+                Question = "选择方向",
+                Options = ["都市修真", "仙侠"],
+            },
+            new QuestionDef
+            {
+                Header = "视角",
+                Question = "选择叙事视角",
+                Options = ["第一人称", "第三人称"],
+            },
+            new QuestionDef
+            {
+                Header = "线索",
+                Question = "选择要保留的线索",
+                Options = ["身世", "旧案"],
+                MultiSelect = true,
+            },
+        ]);
+        var items = interaction.Questions!.Items;
+
+        await OnUiAsync(() =>
+        {
+            _ = AskUserDialog.ShowAsync(hub, interaction.Id, lease, items);
+            return 0;
+        });
+
+        await WaitForConditionAsync(
+            () =>
+                App!.Root.EnumerateVisualsDepthFirst().OfType<RadioButtonList<string>>().Count()
+                    == 2
+                && App.Root.EnumerateVisualsDepthFirst().OfType<SelectionList<string>>().Any(),
+            "三道题渲染在同一个对话框"
+        );
+        var singleLists = await OnUiAsync(() =>
+            App!.Root.EnumerateVisualsDepthFirst().OfType<RadioButtonList<string>>().ToList()
+        );
+        var multiList = await OnUiAsync(() =>
+            App!.Root.EnumerateVisualsDepthFirst().OfType<SelectionList<string>>().Single()
+        );
+        var titles = await OnUiAsync(() =>
+            App!
+                .Root.EnumerateVisualsDepthFirst()
+                .OfType<Markup>()
+                .Select(markup => markup.Text)
+                .ToList()
+        );
+        Assert.Contains(titles, title => title.Contains("方向"));
+        Assert.Contains(titles, title => title.Contains("视角"));
+        Assert.Contains(titles, title => title.Contains("线索"));
+
+        Assert.Same(singleLists[0], await OnUiAsync(() => App!.FocusedElement));
+
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+        await WaitForConditionAsync(
+            () => App!.FocusedElement == singleLists[1],
+            "Enter 跳到未答的第二题"
+        );
+
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Down });
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+        await WaitForConditionAsync(
+            () => App!.FocusedElement == multiList,
+            "Enter 跳到未答的多选题"
+        );
+
+        var frame = await CaptureFrameAsync();
+        Assert.Contains(frame, line => line.Contains("线索"));
+
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Space });
+        await WaitForConditionAsync(() => multiList.Checked[0], "空格勾选第一项");
+
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Tab });
+        await WaitForConditionAsync(
+            () =>
+                App!.FocusedElement is Button button
+                && button.Content is Markup markup
+                && markup.Text.Trim() == "确认",
+            "Tab 聚焦确认按钮"
+        );
+        Backend.PushEvent(new TerminalKeyEvent { Key = TerminalKey.Enter });
+
+        var answers = await Task.WhenAll(
+                items.Select(item =>
+                    hub.WaitForQuestionAnswerAsync(interaction.Id, item.Question.Id)
+                )
+            )
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["都市修真"], answers[0]);
+        Assert.Equal(["第三人称"], answers[1]);
+        Assert.Equal(["身世"], answers[2]);
     }
 
     private static (

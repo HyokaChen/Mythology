@@ -29,7 +29,7 @@ public sealed record DiagnosticIssue
     /// <summary>问题子类型（如 humanizer 的 formulaic_pattern / ai_buzzword）。</summary>
     public string? SubType { get; init; }
 
-    /// <summary>去 AI 味分层：A/B/C/F/X/H。</summary>
+    /// <summary>内部增强分层；只用于增强选择，不进入作者报告。</summary>
     public string? Level { get; init; }
 
     public string Severity { get; init; } = "";
@@ -58,7 +58,7 @@ public sealed record DiagnosticReport
     public DeAiAudit? DeAi { get; init; }
 }
 
-/// <summary>去 AI 味审计结果 — 云端 humanizer 维度的报告视图。</summary>
+/// <summary>去 AI 味审计结果 — 云端文字检查的报告视图。</summary>
 public sealed record DeAiAudit
 {
     public List<DeAiFinding> Findings { get; init; } = [];
@@ -74,7 +74,6 @@ public sealed record DeAiAudit
 public sealed record DeAiFinding
 {
     public string SubType { get; init; } = "";
-    public string Level { get; init; } = "";
     public string Severity { get; init; } = "";
     public string Description { get; init; } = "";
     public string Evidence { get; init; } = "";
