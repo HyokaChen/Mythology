@@ -13,6 +13,7 @@ public sealed class ContextGaugeFreshnessTests
     [InlineData(1000, 1000, true)] // 未变化
     [InlineData(900, 1000, true)] // 轻微下降（测量误差）
     [InlineData(700, 1000, false)] // compact/裁剪：旧实测已过期
+    [InlineData(22_980, 183_700, false)] // 实际 compact 后：仪表必须改用新上下文，不能复用旧 PromptTokens
     [InlineData(1200, 1000, false)] // 继续增长：旧实测已过期
     [InlineData(0, 0, false)] // 无采样
     public void IsContextMeasureFresh_RejectsStaleSamples(

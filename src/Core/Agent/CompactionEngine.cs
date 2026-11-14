@@ -562,7 +562,7 @@ public sealed class CompactionEngine(
         prompt.AppendLine("## 新增对话（按时间顺序）");
         prompt.AppendLine(dialogue);
 
-        var request = new ChatRequest { MaxTokens = 2_048 };
+        var request = BuildSummaryRequest(modelName);
         var conversation = api.Chat.CreateConversation(request);
         conversation.AddSystemMessage(
             "你是小说写作的上下文检查点编辑器。只输出 5W1H 检查点，保留可执行的下一步。使用中文。"
@@ -583,6 +583,10 @@ public sealed class CompactionEngine(
         var result = summaryBuilder.ToString().Trim();
         return string.IsNullOrEmpty(result) ? null : Truncate(result, 32_000);
     }
+
+    /// <summary>AI 摘要必须沿用当前会话模型，不能让服务端回退到 provider 默认模型。</summary>
+    internal static ChatRequest BuildSummaryRequest(string modelName) =>
+        new() { Model = modelName, MaxTokens = 2_048 };
 
     private static string BuildCompressedDialogue(IReadOnlyList<ChatMessage> messages, int cutIndex)
     {

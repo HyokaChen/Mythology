@@ -10,6 +10,14 @@ namespace Core.Tests;
 public sealed class CompactionCheckpointTests
 {
     [Fact]
+    public void SummaryRequest_UsesActiveModel()
+    {
+        var request = CompactionEngine.BuildSummaryRequest("DeepSeek-V4-Flash");
+
+        Assert.Equal("DeepSeek-V4-Flash", (string)request.Model!);
+    }
+
+    [Fact]
     public void CompactSummary_TwoPasses_AreSingleCheckpoint()
     {
         var messages = new List<LlmChatMessage>();
