@@ -826,10 +826,10 @@ public sealed class SessionEngine(
             {
                 OnSystemNotice?.Invoke(
                     _contextManagement is { Mode: ContextMode.Continuation }
-                        ? "上下文过长，已开启新的上下文页并重试..."
-                        : "上下文溢出，已压缩并重试..."
+                        ? "上下文过长，已开启新的上下文页，正在继续..."
+                        : "上下文溢出，已压缩，正在继续..."
                 );
-                _ = retryAfterOverflow(overflowRetryCount + 1, ct);
+                await retryAfterOverflow(overflowRetryCount + 1, ct);
                 return;
             }
             todoStore.RevertInProgressToPending();
