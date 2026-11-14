@@ -129,7 +129,8 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
 
     /// <summary>工具显示名称</summary>
     public override string Label => "写章节";
-    public override string Description => "创建或更新章节内容";
+    public override string Description =>
+        "创建或更新章节内容；新建章节必须传 volume-id，不能落到未分卷";
     public override ToolExecutionMode ExecutionMode => ToolExecutionMode.Sequential; // 写入类：强制串行防并发写冲突
     public override ToolCategory Category => ToolCategory.FileEdit;
 
@@ -155,9 +156,20 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
         var existing = !string.IsNullOrWhiteSpace(args.ChapterId)
             ? existingChapters.Find(c => c.Id == args.ChapterId)
             : existingChapters.Find(c => c.Title == args.Title && c.Order == args.Order);
+        var volumes = await store.GetVolumes(args.NovelId, ct);
+        ThrowIfCancelled(ct);
 
         if (existing is not null)
         {
+            // 显式传 volume-id = 移动章节；不传则保留原有分卷归属。
+            if (!string.IsNullOrWhiteSpace(args.VolumeId))
+            {
+                if (volumes.All(v => v.Id != args.VolumeId))
+                    return VolumeError(
+                        $"分卷 {args.VolumeId} 不存在，章节未保存。可用分卷：{FormatVolumeChoices(volumes)}"
+                    );
+                existing.VolumeId = args.VolumeId;
+            }
             // 复用已有章节：保留 ID、CreatedAt、Status，只更新内容和元数据
             hunks = [EditHunk.FromFullContent(existing.Content, args.Content)];
             existing.Content = args.Content;
@@ -183,7 +195,21 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             };
         }
 
-        // 新章节才创建
+        // 新章节才创建：必须有明确分卷，禁止静默落到「未分卷」后让作者手动搬。
+        if (string.IsNullOrWhiteSpace(args.VolumeId))
+            return VolumeError(
+                "新建章节必须提供 volume-id，章节未保存。"
+                    + $"可用分卷：{FormatVolumeChoices(volumes)}"
+            );
+        if (volumes.All(v => v.Id != args.VolumeId))
+            return VolumeError(
+                $"分卷 {args.VolumeId} 不存在，章节未保存。可用分卷：{FormatVolumeChoices(volumes)}"
+            );
+        if (args.Order <= 0)
+            return VolumeError("新建章节必须提供有效 order（从 1 开始），章节未保存。");
+        if (string.IsNullOrWhiteSpace(args.Title))
+            return VolumeError("新建章节必须提供 title，章节未保存。");
+
         var chapter = new Chapter
         {
             NovelId = args.NovelId,
@@ -191,6 +217,7 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             Order = args.Order,
             Content = args.Content,
             Status = ChapterStatus.Draft,
+            VolumeId = args.VolumeId,
         };
         await store.SaveChapter(chapter, ct);
         ThrowIfCancelled(ct);
@@ -213,6 +240,17 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             },
         };
     }
+
+    private static AgentToolResult<ChapterDetails> VolumeError(string message) =>
+        new() { Content = [new TextContent(message)], IsError = true };
+
+    private static string FormatVolumeChoices(IReadOnlyList<Volume> volumes) =>
+        volumes.Count == 0
+            ? "当前没有分卷，请先调用 manage_volume 建卷"
+            : string.Join(
+                "、",
+                volumes.OrderBy(v => v.Order).Select(v => $"第{v.Order}卷 {v.Name} [ID:{v.Id}]")
+            );
 }
 
 public sealed record WriteChapterParams
@@ -228,6 +266,11 @@ public sealed record WriteChapterParams
 
     [Description("章节序号（从 1 开始）")]
     public int Order { get; init; }
+
+    [Description(
+        "所属分卷 ID（新章节必填；从 <novel_context> 或 get_outline 的 [ID:…] 读取。更新已有章节时留空则保留原分卷）"
+    )]
+    public string VolumeId { get; init; } = "";
 
     [Description(
         "章节正文内容。必须去除 AI 味道：不用「此外/至关重要/充满活力的/标志着/象征着」等词"
@@ -306,7 +349,7 @@ public sealed class GetOutlineTool(INovelStore store) : AgentTool<GetOutlinePara
             var inVolume = chapters.Where(c => c.VolumeId == volume.Id).OrderBy(c => c.Order);
             var chapterLines = inVolume.Select(FormatChapterLine).ToList();
             lines.Add(
-                $"📦 第{volume.Order}卷 {volume.Name}（{chapterLines.Count}章）{FormatVolumeBrief(volume)}"
+                $"📦 第{volume.Order}卷 {volume.Name}（{chapterLines.Count}章）{FormatVolumeBrief(volume)} [ID:{volume.Id}]"
             );
             lines.AddRange(chapterLines.Select(l => "  " + l));
         }

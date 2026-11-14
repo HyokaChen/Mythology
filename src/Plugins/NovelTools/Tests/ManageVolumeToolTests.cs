@@ -212,6 +212,7 @@ public sealed class ManageVolumeToolTests
 
         var text = string.Join("", result.Content.OfType<TextContent>().Select(t => t.Text));
         Assert.Contains("📦 第1卷 风起（1章）", text);
+        Assert.Contains("[ID:", text); // 模型创建章节时可直接复用卷 ID
         Assert.Contains("第1章 [ch1]: 雨夜寄北", text);
         Assert.Contains("发现密信", text); // 细纲梗概
         Assert.Contains("（未分卷）", text);

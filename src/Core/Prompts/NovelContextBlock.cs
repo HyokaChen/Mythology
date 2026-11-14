@@ -155,6 +155,7 @@ public static class NovelContextBlock
                 sb.Append("— ").Append(Excerpt(v.Summary, VolumeBriefMaxChars));
             else if (!string.IsNullOrWhiteSpace(v.Goal))
                 sb.Append("— 目标: ").Append(Excerpt(v.Goal, VolumeBriefMaxChars));
+            sb.Append(" [ID:").Append(v.Id).Append(']');
             lines.Add(sb.ToString());
         }
 
