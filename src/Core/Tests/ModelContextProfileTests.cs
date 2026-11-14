@@ -60,35 +60,41 @@ public sealed class ModelContextProfileTests
         foreach (var window in new long[] { 8_000, 128_000, 1_000_000 })
         {
             var profile = new ModelContextProfile { ContextWindowTokens = window };
-            Assert.InRange(profile.RollAdvicePercent, 0.50, 0.85);
-            Assert.InRange(profile.AutoRollPercent, 0.60, 0.95);
-            // 一开页不会立刻触发（阈值不低于 50%）
-            Assert.True(profile.RollAdvicePercent >= 0.50);
+            Assert.InRange(profile.RollAdvicePercent, 0.25, 0.85);
+            Assert.InRange(profile.AutoRollPercent, 0.40, 0.95);
+            // 一开页不会立刻触发（64K output 下小窗口的阈值已相应下移）
+            Assert.True(profile.RollAdvicePercent >= 0.25);
         }
     }
 
     [Fact]
     public void NudgeCritical_AlwaysReachableBeforePreflight_SmallWindow()
     {
-        // 8K 模型：preflight=85%，critical 必须 < 85%（原先硬编码 92% 不可达）
+        // 8K 模型 + 64K output：preflight≈52%，critical 必须仍低于它
         var small = new ModelContextProfile { ContextWindowTokens = 8_000 };
         Assert.True(small.NudgeCriticalPercent < 0.85);
-        Assert.True(small.NudgeInfoPercent >= 0.50, "info 不低于下限 0.50");
+        Assert.True(small.NudgeInfoPercent >= 0.30, "info 不低于下限 0.30");
     }
 
     // ── 总窗口预算：input + output，不能把 200K 当 input-only ──
 
     [Theory]
-    [InlineData(8_000, 1_000)]
-    [InlineData(32_000, 4_000)]
-    [InlineData(128_000, 16_000)]
-    [InlineData(200_000, 16_384)]
-    [InlineData(1_000_000, 16_384)]
+    [InlineData(8_000, 2_666)]
+    [InlineData(32_000, 10_666)]
+    [InlineData(128_000, 42_666)]
+    [InlineData(200_000, 65_536)]
+    [InlineData(1_000_000, 65_536)]
     public void OutputTokenBudget_IsReservedFromTotalWindow(long contextWindow, int expected)
     {
         var profile = new ModelContextProfile { ContextWindowTokens = contextWindow };
         Assert.Equal(expected, profile.OutputTokenBudget);
         Assert.Equal(contextWindow - expected, profile.InputTokenBudget);
+    }
+
+    [Fact]
+    public void MaxOutputTokens_DefaultsTo64K()
+    {
+        Assert.Equal(65_536, new ModelContextProfile().MaxOutputTokens);
     }
 
     [Fact]

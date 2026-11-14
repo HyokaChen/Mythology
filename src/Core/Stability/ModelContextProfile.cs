@@ -27,17 +27,18 @@ public sealed record ModelContextProfile
     /// <summary>
     /// 单次请求允许的 completion 上限。上下文窗口是 input + output 的总预算，
     /// 这个值必须从总窗口里扣掉，否则会在“输入看似没满”时被 provider 拒绝。
-    /// 默认 16K：足够小说章节（约 2.4 万汉字）与 high thinking；
-    /// 小窗口模型按窗口比例自动收紧，避免 output 挤掉输入。
+    /// 默认 64K：现代模型普遍支持 64K 输出，足够完整章节 + 高 thinking；
+    /// 小窗口模型仍由 <see cref="OutputTokenBudget"/> 按窗口比例收紧。
     /// </summary>
-    public int MaxOutputTokens { get; init; } = 16_384;
+    public int MaxOutputTokens { get; init; } = 65_536;
 
     /// <summary>
     /// 真正从总窗口中预留的 output token 数（同时用于 ChatRequest.MaxTokens）。
-    /// 上限为窗口的 1/8，避免 8K/32K 窗口被固定的 16K output 预算挤空输入。
+    /// 上限为窗口的 1/3：既允许 200K 窗口用满 64K 输出，又避免 8K/32K
+    /// 窗口被过大的 output 预算挤空输入。pre-flight 会再按该值计算可用输入。
     /// </summary>
     public int OutputTokenBudget =>
-        (int)Math.Clamp(MaxOutputTokens, 1, Math.Max(1, ContextWindowTokens / 8));
+        (int)Math.Clamp(MaxOutputTokens, 1, Math.Max(1, ContextWindowTokens / 3));
 
     /// <summary>留给 prompt/历史的输入预算（总窗口扣除 output 预留）。</summary>
     public long InputTokenBudget => Math.Max(1, ContextWindowTokens - OutputTokenBudget);
@@ -228,7 +229,7 @@ public sealed record ModelContextProfile
     /// <summary>
     /// Compact 阈值：上下文 token 使用达到总窗口的多少百分比时触发主动压缩。
     /// 复用 Pre-flight 阈值的计算逻辑，确保 compact 和 pre-flight 使用一致的百分比。
-    /// 200K → ~89%, 128K → ~84%, 1M → ~97.6%, 8K → ~72.5%。
+    /// 64K output 下约：200K → 64%, 128K → 63%, 1M → 93%, 8K → 52%。
     /// 余量 = 预留 output（provider 会按 max_tokens 扣总窗口）+ 1.5 × TypicalTurnTokens。
     /// </summary>
     public double CompactThresholdPercent => PreflightThresholdPercent;
@@ -251,34 +252,54 @@ public sealed record ModelContextProfile
     /// <summary>
     /// 接续模式的分级换页提醒阈值（P0）：从 PreflightThresholdPercent 向下推导，
     /// 确保提醒先于 pre-flight 拦截触发。compact 模式不注入 nudge，由宿主自动压缩。
-    /// 修复：原先硬编码 70%/85%/92% 与 pre-flight 动态阈值层级矛盾——
-    /// 8K 模型 pre-flight=85%，92% 提醒在其拦截后永远不可达（死代码）。
-    /// 1M 模型 pre-flight=99.25%，92% 提醒远早于上限、过度打扰。
-    /// 三级：info（建议换页）→ warn（收尾后换页）→ critical（立即调用 new_context），
-    /// 分别 = preflight − 15% / − 8% / − 3%，并 clamp 到合理区间。
-    /// 不变量：NudgeInfo < NudgeWarn < NudgeCritical < PreflightThresholdPercent。
+    /// 64K output 会把 preflight 拉低到 ~52%–64%（小窗口/200K），旧的固定
+    /// 50/60/70% 下限会让 critical/warn 落到 preflight 之后；这里用动态下限，
+    /// 保证任何窗口下都仍有 info &lt; warn &lt; critical &lt; preflight。
     /// </summary>
-    public double NudgeInfoPercent => Math.Clamp(PreflightThresholdPercent - 0.15, 0.50, 0.90);
+    public double NudgeInfoPercent =>
+        Math.Clamp(
+            PreflightThresholdPercent - 0.15,
+            Math.Min(0.50, PreflightThresholdPercent - 0.20),
+            0.90
+        );
 
-    public double NudgeWarnPercent => Math.Clamp(PreflightThresholdPercent - 0.08, 0.60, 0.95);
+    public double NudgeWarnPercent =>
+        Math.Clamp(
+            PreflightThresholdPercent - 0.08,
+            Math.Min(0.60, PreflightThresholdPercent - 0.15),
+            0.95
+        );
 
-    public double NudgeCriticalPercent => Math.Clamp(PreflightThresholdPercent - 0.03, 0.70, 0.99);
+    public double NudgeCriticalPercent =>
+        Math.Clamp(
+            PreflightThresholdPercent - 0.03,
+            Math.Min(0.70, PreflightThresholdPercent - 0.05),
+            0.99
+        );
 
     /// <summary>
     /// 接续换页的「建议换页」阈值（usage 比例）：到这一档就提醒模型「可以开新页」。
-    /// 同样从 PreflightThresholdPercent 向下推导——绝对 token 阈值在不同窗口的模型上没有可比性
-    /// （8K 窗口的 20000 token 永远不可达；1M 窗口的 20000 token 一开页就触发）。
-    /// 1M ≈ 79%, 128K ≈ 76.5%, 8K ≈ 65%。
+    /// 同样从 PreflightThresholdPercent 向下推导；动态下限保证小窗口在
+    /// 64K output 下仍能先建议、再自动、最后 preflight。
     /// 不变量：RollAdvicePercent &lt; AutoRollPercent &lt; PreflightThresholdPercent。
     /// </summary>
-    public double RollAdvicePercent => Math.Clamp(PreflightThresholdPercent - 0.20, 0.50, 0.85);
+    public double RollAdvicePercent =>
+        Math.Clamp(
+            PreflightThresholdPercent - 0.20,
+            Math.Min(0.50, PreflightThresholdPercent - 0.25),
+            0.85
+        );
 
     /// <summary>
     /// 接续换页的「自动换页」阈值（usage 比例）：循环自己触发换页，先于 pre-flight 溢出。
-    /// 与建议阈值留 15% 间隔，让模型有机会在更自然的接缝上先自己换页。
-    /// 1M ≈ 94%, 128K ≈ 91.5%, 8K ≈ 80%。
+    /// 与建议阈值保持间隔，让模型有机会在更自然的接缝上先自己换页。
     /// </summary>
-    public double AutoRollPercent => Math.Clamp(PreflightThresholdPercent - 0.05, 0.60, 0.95);
+    public double AutoRollPercent =>
+        Math.Clamp(
+            PreflightThresholdPercent - 0.05,
+            Math.Min(0.60, PreflightThresholdPercent - 0.10),
+            0.95
+        );
 
     /// <summary>
     /// VSA 漂移检查频率：每 N 轮检查一次上下文漂移。
