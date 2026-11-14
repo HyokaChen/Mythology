@@ -30,6 +30,111 @@ public sealed class ConversationLoopStaticTests
         return (JsonElement)method!.Invoke(null, [args, novelId])!;
     }
 
+    // ══════════════════════════════════════════════════════
+    //  ClassifyOutputStop — 截断/仅 reasoning/空回合
+    // ══════════════════════════════════════════════════════
+
+    [Fact]
+    public void ClassifyOutputStop_LengthWithReasoningOnly_ReturnsTruncated()
+    {
+        // 真实案例：16K completion 全耗在 reasoning，assistant content 为空。
+        var stop = ConversationLoop.ClassifyOutputStop(
+            hadText: false,
+            toolCallCount: 0,
+            hadReasoning: true,
+            newMessageCount: 1,
+            ChatMessageFinishReasons.Length
+        );
+
+        Assert.NotNull(stop);
+        Assert.Equal("output_truncated", stop.Code);
+        Assert.Contains("token 上限", stop.Message);
+    }
+
+    [Fact]
+    public void ClassifyOutputStop_LengthWithPartialText_ReturnsTruncated()
+    {
+        var stop = ConversationLoop.ClassifyOutputStop(
+            hadText: true,
+            toolCallCount: 0,
+            hadReasoning: false,
+            newMessageCount: 1,
+            ChatMessageFinishReasons.Length
+        );
+
+        Assert.NotNull(stop);
+        Assert.Equal("output_truncated", stop.Code);
+    }
+
+    [Fact]
+    public void ClassifyOutputStop_ContextWindowExceeded_ReturnsTruncated()
+    {
+        var stop = ConversationLoop.ClassifyOutputStop(
+            hadText: false,
+            toolCallCount: 0,
+            hadReasoning: true,
+            newMessageCount: 1,
+            ChatMessageFinishReasons.ContextWindowExceeded
+        );
+
+        Assert.NotNull(stop);
+        Assert.Equal("output_truncated", stop.Code);
+        Assert.Contains("上下文窗口", stop.Message);
+    }
+
+    [Fact]
+    public void ClassifyOutputStop_ReasoningOnlyWithNormalFinish_ReturnsReasoningWithoutAnswer()
+    {
+        var stop = ConversationLoop.ClassifyOutputStop(
+            hadText: false,
+            toolCallCount: 0,
+            hadReasoning: true,
+            newMessageCount: 1,
+            ChatMessageFinishReasons.EndTurn
+        );
+
+        Assert.NotNull(stop);
+        Assert.Equal("reasoning_without_answer", stop.Code);
+    }
+
+    [Fact]
+    public void ClassifyOutputStop_EmptyConversation_ReturnsEmptyTurn()
+    {
+        var stop = ConversationLoop.ClassifyOutputStop(
+            hadText: false,
+            toolCallCount: 0,
+            hadReasoning: false,
+            newMessageCount: 0,
+            ChatMessageFinishReasons.EndTurn
+        );
+
+        Assert.NotNull(stop);
+        Assert.Equal("empty_turn", stop.Code);
+    }
+
+    [Fact]
+    public void ClassifyOutputStop_TextOrToolCalls_ReturnsNull()
+    {
+        Assert.Null(
+            ConversationLoop.ClassifyOutputStop(
+                hadText: true,
+                toolCallCount: 0,
+                hadReasoning: false,
+                newMessageCount: 1,
+                ChatMessageFinishReasons.EndTurn
+            )
+        );
+        Assert.Null(
+            ConversationLoop.ClassifyOutputStop(
+                hadText: false,
+                toolCallCount: 1,
+                hadReasoning: false,
+                newMessageCount: 1,
+                ChatMessageFinishReasons.ToolCalls
+            )
+        );
+    }
+
     [Fact]
     public void InjectNovelId_NonObject_ReturnsAsIs()
     {

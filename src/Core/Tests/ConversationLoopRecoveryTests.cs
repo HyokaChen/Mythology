@@ -27,6 +27,32 @@ public sealed class ConversationLoopRecoveryTests
         );
 
     [Fact]
+    public async Task ContinueAfterNoVisibleOutput_InjectsReminderOnlyOnce()
+    {
+        var loop = CreateLoop();
+        loop.RestoreFromMessages([new ChatMessage(ChatMessageRoles.User, "任务")]);
+        var newMessages = new List<ChatMessage>();
+
+        var first = await loop.TryContinueAfterNoVisibleOutputAsync(
+            newMessages,
+            TestContext.Current.CancellationToken
+        );
+        var second = await loop.TryContinueAfterNoVisibleOutputAsync(
+            newMessages,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(first);
+        Assert.False(second);
+        var reminder = Assert.Single(newMessages);
+        Assert.Equal(ChatMessageRoles.Assistant, reminder.Role);
+        var text = Assert.Single(reminder.Parts!).Text;
+        Assert.Contains("不要", text);
+        Assert.Contains("工具", text);
+        Assert.Same(reminder, loop.PersistedMessages[^1]);
+    }
+
+    [Fact]
     public void CommitCompletedToolResults_CommitsAssistantAndToolResult()
     {
         var loop = CreateLoop();

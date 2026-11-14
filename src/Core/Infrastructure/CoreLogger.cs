@@ -34,12 +34,27 @@ internal static partial class CoreLogger
         bool hadText
     );
 
-    /// <summary>记录空回合（流无输出且无工具调用）。</summary>
+    /// <summary>记录无可见输出（空回合、仅 reasoning、输出被截断）。</summary>
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "空回合（无输出/无工具调用），iteration={Iteration}"
+        Message = "无可见输出：code={Code} finish={FinishReason} toolCalls={ToolCallCount} hadText={HadText} hadReasoning={HadReasoning} newMessages={NewMessageCount}"
     )]
-    public static partial void LoopEmptyTurn(ILogger logger, int iteration);
+    public static partial void LoopNoVisibleOutput(
+        ILogger logger,
+        string code,
+        string finishReason,
+        int toolCallCount,
+        bool hadText,
+        bool hadReasoning,
+        int newMessageCount
+    );
+
+    /// <summary>仅 reasoning/输出截断时注入继续提醒（每 run 至多一次）。</summary>
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "无可见输出：已注入继续提醒（第 {Count} 次），提示模型直接调用工具"
+    )]
+    public static partial void LoopOutputContinued(ILogger logger, int count);
 
     /// <summary>记录工具已执行但循环未继续的异常。</summary>
     [LoggerMessage(

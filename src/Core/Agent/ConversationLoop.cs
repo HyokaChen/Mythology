@@ -19,7 +19,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Core.Agent;
 
-/// <summary>循环以可恢复原因停止的记录（非异常路径）。Code 取值：empty_turn / tool_calls_not_continued / stability_tripped。</summary>
+/// <summary>循环以可恢复原因停止的记录（非异常路径）。Code 取值：empty_turn / output_truncated / reasoning_without_answer / tool_calls_not_continued / stability_tripped。</summary>
 public sealed record LoopStop(string Code, string Message);
 
 /// <summary>
@@ -74,6 +74,9 @@ public sealed class ConversationLoop(
 
     /// <summary>本 run 已注入「未完成，继续」提醒的次数（每 run 重置）。</summary>
     private int _stopContinuations;
+
+    /// <summary>本 run 因输出截断/仅 reasoning 注入继续提醒的次数（每 run 至多一次）。</summary>
+    private int _outputContinuations;
 
     /// <summary>本 run 已推翻稳定性断路的次数（每 run 至多一次，防止无限续跑）。</summary>
     private int _stabilityOverrides;
@@ -764,6 +767,7 @@ public sealed class ConversationLoop(
 
         // ★ 循环判定计数只在产生它的 run 内有效（新任务 = 新的复核预算）
         _stopContinuations = 0;
+        _outputContinuations = 0;
         _stabilityOverrides = 0;
 
         // ★ 换页登记只在产生它的 run 内有效：上一次 run 被中断/异常时未执行，
@@ -905,20 +909,52 @@ public sealed class ConversationLoop(
                 break;
             }
 
-            // ★ 空回合检测：流无文本、无工具调用、Conversation 无新增消息——真实异常（模型侧空响应）
-            if (outcome is { NewMessageCount: 0, HadText: false, ToolCallCount: 0 })
+            // ★ 无可见输出检测：模型可能只产出 reasoning（思考）而没有 content/tool call。
+            // 2026-11-14 实际案例：16K completion 预算全部耗在 reasoning 上，流以
+            // finish_reason=length 结束，assistant 消息 content 为空、无工具调用；
+            // 旧逻辑因 NewMessageCount>0 漏掉空回合检测，随后按“自然收尾”静默退出。
+            var outputStop = ClassifyOutputStop(
+                outcome.HadText,
+                outcome.ToolCallCount,
+                outcome.HadReasoning,
+                outcome.NewMessageCount,
+                outcome.FinishReason
+            );
+            if (outputStop is not null)
             {
-                CoreLogger.LoopEmptyTurn(logger.Safe(), iteration);
+                // 仅 reasoning、无文本/工具：先给模型一次“直接动手”的机会。
+                // 输出预算被思考吃光时，重试同一上下文通常仍会截断；提醒它把下一步
+                // 写成工具调用、不要在一次思考里生成全部内容，才可能跳出循环。
+                if (
+                    outputStop.Code is "output_truncated" or "reasoning_without_answer"
+                    && outcome is { HadText: false, ToolCallCount: 0, HadReasoning: true }
+                    && outcome.FinishReason != ChatMessageFinishReasons.ContextWindowExceeded
+                    && await TryContinueAfterNoVisibleOutputAsync(newMessages, ct)
+                )
+                {
+                    continue;
+                }
+
+                CoreLogger.LoopNoVisibleOutput(
+                    logger.Safe(),
+                    outputStop.Code,
+                    outcome.FinishReason.ToString(),
+                    outcome.ToolCallCount,
+                    outcome.HadText,
+                    outcome.HadReasoning,
+                    outcome.NewMessageCount
+                );
                 await emit(
                     new AgentError(
-                        "本轮模型未产生任何输出（空回合），已停止。",
+                        outputStop.Message,
                         null,
-                        IsContextOverflow: false,
+                        IsContextOverflow: outcome.FinishReason
+                            == ChatMessageFinishReasons.ContextWindowExceeded,
                         Recoverable: true
                     ),
                     CancellationToken.None
                 );
-                LastStop = new LoopStop("empty_turn", "本轮模型未产生任何输出（空回合），已停止。");
+                LastStop = outputStop;
                 break;
             }
 
@@ -1382,8 +1418,36 @@ public sealed class ConversationLoop(
     }
 
     /// <summary>
+    /// 仅 reasoning、没有最终回答时注入一次“直接动手”提醒。
+    /// 每 run 至多一次；第二次仍无输出则走 AgentError，避免无限重试。
+    /// </summary>
+    internal const string OutputTruncatedNotice =
+        "[系统提醒] 上一条回复把输出预算用在思考上，没有生成最终回答。请直接继续当前任务：先调用工具写入下一步，不要在思考中一次性生成全部章节或细纲。";
+
+    internal async Task<bool> TryContinueAfterNoVisibleOutputAsync(
+        List<ChatMessage> newMessages,
+        CancellationToken ct
+    )
+    {
+        if (_outputContinuations >= 1)
+            return false;
+
+        _outputContinuations++;
+        var reminderMsg = new ChatMessage(
+            ChatMessageRoles.Assistant,
+            [new ChatMessagePart { Type = ChatMessageTypes.Text, Text = OutputTruncatedNotice }]
+        );
+        _conversation!.AddMessage(reminderMsg);
+        _persistedMessages.Add(reminderMsg);
+        newMessages.Add(reminderMsg);
+        await NotifyMessagesReadyAsync(ct);
+        CoreLogger.LoopOutputContinued(logger.Safe(), _outputContinuations);
+        return true;
+    }
+
+    /// <summary>
     /// VSA 漂移复核：判定仍在角色/任务范围内（p ≥ `loop.drift-check.min-probability`）时返回 true，
-    /// 调用方据此压制本次漂移告警与提醒（误报）。失败/未启用一律 false → 保留既有 VSA 行为。
+    /// 调用方据此压制本次漂移告警或提醒（误报）。失败/未启用一律 false → 保留既有 VSA 行为。
     /// </summary>
     internal async Task<bool> JudgeDriftVetoAsync(
         double drift,
@@ -1469,6 +1533,7 @@ public sealed class ConversationLoop(
         var reasoningText = new StringBuilder(512);
         var toolCallsCollected = new List<(string Id, string Name, string Arguments)>(4);
         var toolStreamTracker = new ToolCallStreamTracker();
+        var finishReason = ChatMessageFinishReasons.Unknown;
 
         // 记录调用前的消息数量，用于后续同步新增消息（必须在 nudge 注入之前）
         var messagesBeforeCall = _conversation?.Messages.Count ?? 0;
@@ -1700,6 +1765,7 @@ public sealed class ConversationLoop(
                 if (ct.IsCancellationRequested)
                     return;
 
+                finishReason = data.FinishReason;
                 await emit(
                     new LlmStreamFinished(
                         data.FinishReason,
@@ -1927,7 +1993,9 @@ public sealed class ConversationLoop(
             return new TurnOutcome(
                 toolCallsCollected.Count,
                 fullText.Length > 0,
-                newMessages.Count
+                reasoningText.Length > 0,
+                newMessages.Count,
+                finishReason
             );
         }
         catch (OperationCanceledException)
@@ -3159,6 +3227,61 @@ public sealed class ConversationLoop(
         return args; // novel_id 已有值，不覆盖
     }
 
+    /// <summary>
+    /// 判断本轮是否应因“没有可见输出”而停止。
+    /// 可见输出 = 文本或工具调用；只有 reasoning 不算完成。
+    /// finish_reason=length/context_window_exceeded 即使已有部分文本也视为截断，
+    /// 不能当作自然收尾——否则用户会看到半截回答却没有任何提示。
+    /// </summary>
+    internal static LoopStop? ClassifyOutputStop(
+        bool hadText,
+        int toolCallCount,
+        bool hadReasoning,
+        int newMessageCount,
+        ChatMessageFinishReasons finishReason
+    )
+    {
+        if (finishReason == ChatMessageFinishReasons.Length)
+        {
+            return new LoopStop(
+                "output_truncated",
+                "模型输出达到 token 上限，本轮回答不完整，已停止。请重试，或降低思考级别后重试。"
+            );
+        }
+
+        if (finishReason == ChatMessageFinishReasons.ContextWindowExceeded)
+        {
+            return new LoopStop(
+                "output_truncated",
+                "模型输出触达上下文窗口上限，本轮回答不完整，已停止。请压缩上下文后重试。"
+            );
+        }
+
+        if (hadText || toolCallCount > 0)
+            return null;
+
+        if (newMessageCount == 0)
+        {
+            return new LoopStop("empty_turn", "本轮模型未产生任何输出（空回合），已停止。");
+        }
+
+        if (hadReasoning)
+        {
+            return new LoopStop(
+                "reasoning_without_answer",
+                "模型只生成了思考内容，没有生成最终回答，已停止。请重试。"
+            );
+        }
+
+        return new LoopStop("empty_turn", "本轮模型未产生任何可显示输出（空回合），已停止。");
+    }
+
     /// <summary>单个 LLM 回合的摘要，供 RunLoopAsync 检测异常停止路径。</summary>
-    private sealed record TurnOutcome(int ToolCallCount, bool HadText, int NewMessageCount);
+    private sealed record TurnOutcome(
+        int ToolCallCount,
+        bool HadText,
+        bool HadReasoning,
+        int NewMessageCount,
+        ChatMessageFinishReasons FinishReason
+    );
 }
