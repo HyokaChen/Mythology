@@ -94,6 +94,8 @@ public sealed class ManageWorldRuleTool(INovelStore store)
         CancellationToken ct
     )
     {
+        if (ValidateEnumArgs(args) is { } enumError)
+            return Error(enumError);
         var rule = new WorldRule { Id = NewId(), NovelId = novelId };
         Apply(rule, args);
         var error = await ValidateAsync(novelId, rule, ct);
@@ -119,6 +121,8 @@ public sealed class ManageWorldRuleTool(INovelStore store)
         if (rule is null)
             return Error($"规则不存在: {ruleId}");
 
+        if (ValidateEnumArgs(args) is { } enumError)
+            return Error(enumError);
         Apply(rule, args);
         var error = await ValidateAsync(novelId, rule, ct);
         if (error is not null)
@@ -319,11 +323,44 @@ public sealed class ManageWorldRuleTool(INovelStore store)
             _ => false,
         };
 
+    private static string? ValidateEnumArgs(ManageWorldRuleParams args)
+    {
+        if (!IsEnum<WorldRuleEntryKind>(args.EntryKind))
+            return $"未知规则条目类型: {args.EntryKind}";
+        if (!IsEnum<WorldRuleCategory>(args.Category))
+            return $"未知规则分类: {args.Category}";
+        if (!IsEnum<RuleKind>(args.RuleKind))
+            return $"未知规则类型: {args.RuleKind}";
+        if (!IsEnum<RuleSeverity>(args.Severity))
+            return $"未知规则严重度: {args.Severity}";
+        if (!IsEntityType(args.SubjectType))
+            return $"未知规则主体类型: {args.SubjectType}";
+        if (args.Effect is { } effect)
+        {
+            if (!IsEnum<PlannedDeltaKind>(effect.Kind))
+                return $"未知效果类型: {effect.Kind}";
+            if (!IsEntityType(effect.TargetEntityType))
+                return $"未知效果目标类型: {effect.TargetEntityType}";
+            if (!IsEnum<EvolutionAspect>(effect.Aspect))
+                return $"未知效果变化面: {effect.Aspect}";
+        }
+        return null;
+    }
+
+    private static bool IsEnum<T>(string? value)
+        where T : struct, Enum =>
+        string.IsNullOrWhiteSpace(value) || Enum.TryParse<T>(NormalizeEnum(value), true, out _);
+
+    private static bool IsEntityType(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+        || EntityTypeExtensions.ParseEntityType(value) is not null
+        || Enum.TryParse<EntityTypeEnum>(NormalizeEnum(value), true, out _);
+
+    private static string NormalizeEnum(string value) => value.Replace("-", "").Replace("_", "");
+
     private static T ParseEnum<T>(string value, T fallback)
         where T : struct, Enum =>
-        Enum.TryParse<T>(value.Replace("-", "").Replace("_", ""), true, out var parsed)
-            ? parsed
-            : fallback;
+        Enum.TryParse<T>(NormalizeEnum(value), true, out var parsed) ? parsed : fallback;
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
