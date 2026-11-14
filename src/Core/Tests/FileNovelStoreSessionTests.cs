@@ -330,6 +330,29 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>同一批 burst 写入的 entryId 必须唯一；16 bit 随机数在同一毫秒会碰撞。</summary>
+    public async Task SaveSessionMessages_BurstEntryIdsAreUnique()
+    {
+        var messages = Enumerable
+            .Range(0, 2_000)
+            .Select(i => new LlmChatMessage(ChatMessageRoles.Tool, $"工具结果 {i}"))
+            .ToList();
+        await _store.SaveSessionMessages(TestSessionId, TestNovelId, messages, startOrder: 0);
+
+        var lines = await ReadJsonlLinesAsync();
+        var ids = lines
+            .Select(l =>
+            {
+                using var d = JsonDocument.Parse(l);
+                return d.RootElement.GetProperty("id").GetString();
+            })
+            .ToList();
+
+        Assert.Equal(messages.Count, ids.Count);
+        Assert.Equal(messages.Count, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     /// <summary>SaveSessionMessages 空消息列表应返回 lastParentEntryId。</summary>
     public async Task SaveSessionMessages_EmptyList_ReturnsLastParentEntryId()
     {
@@ -1853,6 +1876,54 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     // ═══════════════════════════════════════════════════════════
     //  Dedup by order
     // ═══════════════════════════════════════════════════════════
+
+    [Fact]
+    /// <summary>
+    /// 历史数据里同一毫秒生成的重复 entryId 会让后一条 parent-id 指向自己。
+    /// 活跃路径必须用首次出现的 parent 回溯，否则会从该点截断，首条 user 消失。
+    /// </summary>
+    public async Task GetActiveMessages_DuplicateIdSelfParent_KeepsAncestors()
+    {
+        var messages = CreateSimpleConversation("第一问", "第一答");
+        await _store.SaveSessionMessages(TestSessionId, TestNovelId, messages, startOrder: 0);
+
+        var lines = await ReadJsonlLinesAsync();
+        var secondId = lines
+            .Select(l =>
+            {
+                using var d = JsonDocument.Parse(l);
+                return d.RootElement.TryGetProperty("order", out var o) && o.GetInt32() == 1
+                    ? d.RootElement.GetProperty("id").GetString()
+                    : null;
+            })
+            .First(id => id is not null)!;
+
+        var duplicate = new Dictionary<string, object?>
+        {
+            ["type"] = "message",
+            ["id"] = secondId,
+            ["parent-id"] = secondId,
+            ["timestamp"] = DateTime.UtcNow.ToString("O"),
+            ["role"] = "tool",
+            ["content"] = "重复工具结果",
+            ["order"] = 2,
+        };
+        await AtomicFile.AppendTextLockedAsync(
+            GetSegmentPath(0),
+            JsonSerializer.Serialize(duplicate) + "\n",
+            checkConflict: false,
+            TestContext.Current.CancellationToken
+        );
+        await _store.SaveSessionLeaf(
+            TestSessionId,
+            TestNovelId,
+            new SessionLeaf { TargetId = secondId }
+        );
+
+        var active = await _store.GetActiveMessages(TestSessionId);
+        Assert.Contains(active, m => m.Content == "第一问");
+        Assert.Contains(active, m => m.Content == "重复工具结果");
+    }
 
     [Fact]
     /// <summary>GetActiveMessages 应按 order 去重（取最后一条）。</summary>

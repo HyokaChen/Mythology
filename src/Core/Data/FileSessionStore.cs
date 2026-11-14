@@ -2641,11 +2641,14 @@ public sealed class FileSessionStore
             return null;
 
         // Build a minimal id→parentId map for backtracking only
+        // 历史数据可能因旧的 16-bit 随机 entryId 碰撞出现重复 ID。重复行的
+        // parent-id 可能自指；保留首次出现（其 parent 链有效），否则回溯会在
+        // 碰撞点断开，首条 user 消息从活跃路径消失。
         var parentMap = new Dictionary<string, string?>(entries.Count);
         foreach (var e in entries)
         {
             if (e.EntryId is not null)
-                parentMap[e.EntryId] = e.ParentEntryId;
+                parentMap.TryAdd(e.EntryId, e.ParentEntryId);
         }
 
         var activeIds = new HashSet<string>();
@@ -2674,11 +2677,13 @@ public sealed class FileSessionStore
         Dictionary<string, ParsedEntry> IdMap
     ) ResolveActivePath(List<ParsedEntry> entries, string? leafTargetId)
     {
+        // 同上：重复 entryId 时首次出现的 parent 链才是可回溯的；后出现的
+        // 自指 parent 会把路径截断在碰撞点。
         var idMap = new Dictionary<string, ParsedEntry>(entries.Count);
         foreach (var e in entries)
         {
             if (e.EntryId is not null)
-                idMap[e.EntryId] = e;
+                idMap.TryAdd(e.EntryId, e);
         }
 
         if (leafTargetId is null)
@@ -3685,15 +3690,18 @@ public sealed class FileSessionStore
     private static string SanitizeFileName(string name) => StoreHelper.SanitizeFileName(name);
 
     /// <summary>
-    /// 生成 uuidv7 风格的 12 字符 hex 条目 ID（48 bit，降低碰撞风险）。
-    /// 前 32 bit = 时间戳低 32 位，后 16 bit = 随机数。
+    /// 生成 12 字符 hex 条目 ID（48 bit）。前 32 bit = 时间戳低 32 位，
+    /// 后 16 bit = 进程内单调序号。不能用纯随机：同一毫秒批量写入 3 条消息时
+    /// 16 bit 随机仍有可观测的碰撞概率，重复 ID 会让 parent-id 自指并截断活跃路径。
     /// </summary>
     private static string GenerateEntryId()
     {
         var timestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var random = (ushort)Random.Shared.Next();
-        return $"{timestamp:x8}{random:x4}";
+        var sequence = (ushort)Interlocked.Increment(ref s_entrySequence);
+        return $"{timestamp:x8}{sequence:x4}";
     }
+
+    private static int s_entrySequence = Random.Shared.Next();
 
     /// <summary>
     /// 修复多个 JSON 对象拼接在同一行的问题（如 leaf 条目后缺少换行符）。
