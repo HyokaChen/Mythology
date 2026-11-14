@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -893,10 +894,7 @@ public partial class EntityEditWindow : Window
                 switch (control)
                 {
                     case TextBox { AcceptsReturn: false } tb:
-                        prop.SetValue(
-                            _entity,
-                            CoerceValue(prop.PropertyType, tb.Text?.Trim() ?? "")
-                        );
+                        prop.SetValue(_entity, CoerceValue(prop, tb.Text?.Trim() ?? ""));
                         break;
                     case TextBox tb when def.Type is FieldType.FreeTag:
                         prop.SetValue(
@@ -908,17 +906,14 @@ public partial class EntityEditWindow : Window
                         );
                         break;
                     case TextBox tb:
-                        prop.SetValue(
-                            _entity,
-                            CoerceValue(prop.PropertyType, tb.Text?.Trim() ?? "")
-                        );
+                        prop.SetValue(_entity, CoerceValue(prop, tb.Text?.Trim() ?? ""));
                         break;
                     case ComboBox combo:
                         var display = combo.SelectedItem as string ?? "";
                         var raw = _selectMaps.TryGetValue(def.Prop, out var map)
                             ? map.GetValueOrDefault(display, display)
                             : display;
-                        prop.SetValue(_entity, CoerceValue(prop.PropertyType, raw));
+                        prop.SetValue(_entity, CoerceValue(prop, raw));
                         break;
                 }
             }
@@ -1090,6 +1085,7 @@ public partial class EntityEditWindow : Window
         if (_store is FileNovelStore fns)
         {
             using (fns.BeginManualWrite())
+            {
                 await RelationWriteThrough.ApplyAllAsync(
                     _store,
                     _novelId,
@@ -1097,6 +1093,7 @@ public partial class EntityEditWindow : Window
                     _membershipSnapshot,
                     edits
                 );
+            }
         }
         else
         {
@@ -1111,10 +1108,15 @@ public partial class EntityEditWindow : Window
     }
 
     /// <summary>字符串 → 目标类型（字符串 / 枚举 / 整数 / 浮点 / 布尔）。</summary>
-    private static object? CoerceValue(Type targetType, string value)
+    /// <remarks>
+    /// 空字符串只在目标属性声明为可空引用类型（如 <c>string?</c>）时转成 null；
+    /// 非空 string 属性保持空串，避免把 <c>""</c> 写成 null 后在 frontmatter 序列化中崩溃。
+    /// </remarks>
+    internal static object? CoerceValue(PropertyInfo prop, string value)
     {
+        var targetType = prop.PropertyType;
         if (targetType == typeof(string))
-            return value.Length == 0 ? null : value;
+            return value.Length == 0 && IsNullableString(prop) ? null : value;
         if (targetType.IsEnum)
             return Enum.TryParse(targetType, value, ignoreCase: true, out var parsed)
                 ? parsed
@@ -1141,4 +1143,11 @@ public partial class EntityEditWindow : Window
             return bool.TryParse(value, out var b) && b;
         return value;
     }
+
+    /// <summary>属性是否声明为可空 string（NullabilityInfoContext 读取编译器注解）。</summary>
+    private static bool IsNullableString(PropertyInfo prop) =>
+        prop.PropertyType == typeof(string)
+        && NullabilityContext.Create(prop).WriteState == NullabilityState.Nullable;
+
+    private static readonly NullabilityInfoContext NullabilityContext = new();
 }

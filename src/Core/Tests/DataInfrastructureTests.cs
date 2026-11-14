@@ -106,6 +106,17 @@ public class DataInfrastructureTests
         Assert.Equal(body, parsedBody);
     }
 
+    [Fact]
+    public void WriteMarkdown_NullMetaValue_SerializesAsBlank()
+    {
+        var meta = new Dictionary<string, string> { ["notes"] = null! };
+
+        var md = MarkdownHelper.WriteMarkdown(meta, "正文");
+        var (parsedMeta, _) = MarkdownHelper.ParseMarkdown(md);
+
+        Assert.Equal("", parsedMeta["notes"]);
+    }
+
     // ══════════════════════════════════════════════════════
     //  Data Models — Defaults
     // ══════════════════════════════════════════════════════

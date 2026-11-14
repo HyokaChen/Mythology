@@ -75,8 +75,10 @@ public static partial class MarkdownHelper
     /// frontmatter 单行值转义：反斜杠/双引号/换行必须转义，否则破坏行式解析。
     /// 转义序列为 YAML 双引号风格（\n / \" / \\），云端 YamlDotNet 可直接还原。
     /// </summary>
-    private static string EscapeMetaValue(string value)
+    private static string EscapeMetaValue(string? value)
     {
+        // frontmatter 的 null 值与空值等价；序列化层不因可选字段为空而中断保存。
+        value ??= "";
         if (value.IndexOfAny([':', '#', '\n', '\r', '"', '\\']) < 0)
             return value;
 
