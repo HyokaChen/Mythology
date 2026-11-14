@@ -10,11 +10,12 @@ namespace Core.Tests;
 public sealed class CompactionCheckpointTests
 {
     [Fact]
-    public void SummaryRequest_UsesActiveModel()
+    public void SummaryRequest_UsesActiveModelAndOutputBudget()
     {
-        var request = CompactionEngine.BuildSummaryRequest("DeepSeek-V4-Flash");
+        var request = CompactionEngine.BuildSummaryRequest("DeepSeek-V4-Flash", 8_192);
 
         Assert.Equal("DeepSeek-V4-Flash", (string)request.Model!);
+        Assert.Equal(8_192, request.MaxTokens);
     }
 
     [Fact]

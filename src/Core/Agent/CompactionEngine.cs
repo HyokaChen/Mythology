@@ -562,7 +562,14 @@ public sealed class CompactionEngine(
         prompt.AppendLine("## 新增对话（按时间顺序）");
         prompt.AppendLine(dialogue);
 
-        var request = BuildSummaryRequest(modelName);
+        // 摘要目标是 8,000 字符，CJK 约 1 token/字；2048 会把摘要截断。
+        // 按模型输出预算预留，同时不超过 8K，避免小窗口模型被 output 挤空输入。
+        var maxSummaryTokens = Math.Clamp(
+            agent.ModelProfile?.OutputTokenBudget ?? 8_192,
+            1_024,
+            8_192
+        );
+        var request = BuildSummaryRequest(modelName, maxSummaryTokens);
         var conversation = api.Chat.CreateConversation(request);
         conversation.AddSystemMessage(
             "你是小说写作的上下文检查点编辑器。只输出 5W1H 检查点，保留可执行的下一步。使用中文。"
@@ -584,9 +591,9 @@ public sealed class CompactionEngine(
         return string.IsNullOrEmpty(result) ? null : Truncate(result, 32_000);
     }
 
-    /// <summary>AI 摘要必须沿用当前会话模型，不能让服务端回退到 provider 默认模型。</summary>
-    internal static ChatRequest BuildSummaryRequest(string modelName) =>
-        new() { Model = modelName, MaxTokens = 2_048 };
+    /// <summary>AI 摘要必须沿用当前会话模型，并给足输出预算，不能让服务端回退到默认模型。</summary>
+    internal static ChatRequest BuildSummaryRequest(string modelName, int maxTokens) =>
+        new() { Model = modelName, MaxTokens = maxTokens };
 
     private static string BuildCompressedDialogue(IReadOnlyList<ChatMessage> messages, int cutIndex)
     {
