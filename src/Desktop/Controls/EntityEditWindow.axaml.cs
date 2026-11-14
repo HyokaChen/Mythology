@@ -44,12 +44,9 @@ public partial class EntityEditWindow : Window
     /// <summary>MultiSelect：prop → “已选 / 候选 / 下级已标注”说明。</summary>
     private readonly Dictionary<string, TextBlock> _multiSelectSummaries = [];
 
-    /// <summary>MultiSelect：prop → “从下级同步”按钮（仅章节 / 分卷的多选字段）。</summary>
-    private readonly Dictionary<string, Button> _multiSelectSyncButtons = [];
-
     /// <summary>
     /// MultiSelect：prop → 下级数据（章节 / 场景）已标注的 ID。
-    /// 只用于提示与一键勾选；打开窗口时不自动写回实体，保存仍由用户显式触发。
+    /// 只用于提示与候选自动勾选；打开窗口时不落盘，保存时随表单写入。
     /// </summary>
     private readonly Dictionary<string, HashSet<string>> _derivedMultiSelectIds = new(
         StringComparer.Ordinal
@@ -263,7 +260,7 @@ public partial class EntityEditWindow : Window
         return wrapper;
     }
 
-    /// <summary>MultiSelect：说明行 +（章节/分卷）同步按钮 + 可滚动候选列表。</summary>
+    /// <summary>MultiSelect：自动并入说明行 + 可滚动候选列表。</summary>
     private Control BuildMultiSelect(FieldDef def)
     {
         var panel = new StackPanel { Spacing = 4 };
@@ -279,28 +276,6 @@ public partial class EntityEditWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
         _multiSelectSummaries[def.Prop] = summary;
-
-        var syncButton = new Button
-        {
-            Content = "同步",
-            Classes = { "Ghost" },
-            FontSize = 11,
-            Padding = new Thickness(8, 2, 8, 2),
-            IsVisible = false,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        syncButton.Click += (_, _) => SyncMultiSelectFromLowerLevel(def.Prop);
-        ToolTip.SetTip(syncButton, "把下级章节/场景中已标注的 ID 勾选进来；保存后写入当前计划。");
-        _multiSelectSyncButtons[def.Prop] = syncButton;
-
-        var header = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 8,
-        };
-        header.Children.Add(summary);
-        header.Children.Add(syncButton);
-        Grid.SetColumn(syncButton, 1);
 
         var border = new Border
         {
@@ -319,7 +294,7 @@ public partial class EntityEditWindow : Window
         };
 
         var root = new StackPanel { Spacing = 6 };
-        root.Children.Add(header);
+        root.Children.Add(summary);
         root.Children.Add(border);
         return root;
     }
@@ -339,6 +314,7 @@ public partial class EntityEditWindow : Window
 
             var candidates = await LoadMultiSelectCandidatesCoreAsync(def.Prop);
             var selected = _selectedMultiSelectIds.GetValueOrDefault(def.Prop, []);
+            var derived = _derivedMultiSelectIds.GetValueOrDefault(def.Prop, []);
             var boxes = new List<(string Id, CheckBox Box)>(candidates.Count);
             foreach (var (name, id) in candidates)
             {
@@ -347,7 +323,9 @@ public partial class EntityEditWindow : Window
                     Content = name,
                     FontSize = 13,
                     Tag = id,
-                    IsChecked = selected.Contains(id),
+                    // 场景/下级章节已标注的事实直接并入计划；打开编辑器即可见，
+                    // 不再要求用户逐个字段点「同步」。
+                    IsChecked = selected.Contains(id) || derived.Contains(id),
                 };
                 box.PropertyChanged += (_, e) =>
                 {
@@ -406,7 +384,7 @@ public partial class EntityEditWindow : Window
         }
     }
 
-    /// <summary>刷新多选说明与「同步」按钮：已选 / 候选 / 下级已标注但尚未勾选。</summary>
+    /// <summary>刷新多选说明：已选 / 候选 / 下级已标注。</summary>
     private void UpdateMultiSelectSummary(string prop)
     {
         if (!_multiSelectSummaries.TryGetValue(prop, out var summary))
@@ -435,13 +413,6 @@ public partial class EntityEditWindow : Window
             pending,
             _type == EntityType.Volume
         );
-
-        if (_multiSelectSyncButtons.TryGetValue(prop, out var button))
-        {
-            button.IsVisible = pending > 0;
-            button.Content = $"同步 {pending}";
-            button.IsEnabled = pending > 0;
-        }
     }
 
     /// <summary>
@@ -489,24 +460,8 @@ public partial class EntityEditWindow : Window
     }
 
     /// <summary>
-    /// 只勾选、不取消：把下级章节/场景已标注的 ID 并入选区，随后仍由用户点“保存”落盘。
-    /// </summary>
-    private void SyncMultiSelectFromLowerLevel(string prop)
-    {
-        if (!_derivedMultiSelectIds.TryGetValue(prop, out var derived) || derived.Count == 0)
-            return;
-
-        foreach (var (id, box) in _multiSelectBoxes.GetValueOrDefault(prop, []))
-        {
-            if (derived.Contains(id))
-                box.IsChecked = true;
-        }
-        UpdateMultiSelectSummary(prop);
-    }
-
-    /// <summary>
     /// 汇总下级数据中已标注的关联 ID：章节 ← 场景；分卷 ← 本卷章节 + 这些章节的场景。
-    /// 该结果是“提示 + 同步”的来源，不是自动写回；计划字段与场景实际事实保持分离。
+    /// 这些 ID 在候选加载时自动勾选，保存时并入计划字段；不再要求人工逐个字段同步。
     /// </summary>
     private async Task LoadDerivedMultiSelectIdsAsync()
     {

@@ -5,9 +5,9 @@ using Xunit;
 namespace Desktop.Tests;
 
 /// <summary>
-/// 章节/分卷编辑器的「从下级同步」汇总口径：
+/// 章节/分卷编辑器的下级引用汇总口径：
 /// 场景是实际推进/出场的真源；章节/分卷的 PlotlineIds/CharacterIds 是计划字段。
-/// 同步只做并集，不删除手工勾选，也不在打开窗口时自动落盘。
+/// 打开编辑器时下级引用会自动勾选，保存时并集落盘，不删除手工勾选。
 /// </summary>
 public sealed class EntityEditorMultiSelectTests
 {

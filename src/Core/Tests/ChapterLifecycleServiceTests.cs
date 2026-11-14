@@ -140,6 +140,7 @@ public sealed class ChapterLifecycleServiceTests : IAsyncDisposable
             Content = "风起云涌。",
             Status = ChapterStatus.Draft,
             PlotlineIds = ["pl1"],
+            CharacterIds = ["char1", "char2"],
         };
         await _store.SaveChapter(chapter);
 

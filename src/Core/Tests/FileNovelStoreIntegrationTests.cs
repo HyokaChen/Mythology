@@ -651,6 +651,40 @@ public sealed class FileNovelStoreIntegrationTests : IAsyncDisposable
         Assert.Equal(["c0001", "c0002"], scenes[0].ParticipantIds);
     }
 
+    [Fact]
+    public async Task SaveScene_MergesSceneRefsIntoChapterPlan()
+    {
+        await _store.SaveNovel(new Novel { Id = "sc002", Title = "场景计划同步" });
+        await _store.SaveChapter(
+            new Chapter
+            {
+                Id = "ch002",
+                NovelId = "sc002",
+                Order = 1,
+                Title = "第一章",
+                PlotlineIds = ["p-existing"],
+            }
+        );
+
+        await _store.SaveScene(
+            new SceneDefinition
+            {
+                Id = "s0002",
+                NovelId = "sc002",
+                Title = "同步场景",
+                Order = 1,
+                ChapterId = "ch002",
+                ParticipantIds = ["c1", "c2"],
+                PlotlineIds = ["p1"],
+            }
+        );
+
+        var chapter = await _store.GetChapter("sc002", "ch002");
+        Assert.NotNull(chapter);
+        Assert.Equal(["p-existing", "p1"], chapter!.PlotlineIds);
+        Assert.Equal(["c1", "c2"], chapter.CharacterIds);
+    }
+
     // ══════════════════════════════════════════════════════
     //  FactionRelationship CRUD
     // ══════════════════════════════════════════════════════

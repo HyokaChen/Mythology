@@ -44,6 +44,14 @@ public sealed class FileNovelStore : INovelStore
     private ConcurrentDictionary<string, string>? _novelDirIndex;
 
     /// <summary>
+    /// 场景 → 章节计划同步的读改写锁：并发保存多个场景时避免后者覆盖前者的并集。
+    /// Key = novelId + NUL + chapterId。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _chapterPlanLocks = new(
+        StringComparer.Ordinal
+    );
+
+    /// <summary>
     /// 实体变更事件。所有 Save*/Delete* 方法在成功写入文件后触发。
     /// </summary>
     public event Func<EntityChangeEvent, Task>? OnEntityChanged;
@@ -2921,6 +2929,65 @@ public sealed class FileNovelStore : INovelStore
             EntityType.Scene,
             scene.Title
         );
+
+        // 场景是实际事实；章节的「计划」字段自动并集，避免作者/Agent 写完场景后
+        // 还要在编辑器里逐项点「同步」。手工新增的计划 ID 不会被移除。
+        await SyncChapterPlanFromSceneAsync(scene, ct);
+    }
+
+    /// <summary>
+    /// 把场景已标注的角色 / 情节线并入所属章节的计划列表。
+    /// 只增不减：章节计划可以包含场景中尚未出现的内容；移除计划仍由作者手动决定。
+    /// </summary>
+    private async Task SyncChapterPlanFromSceneAsync(SceneDefinition scene, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(scene.ChapterId))
+            return;
+
+        var gate = _chapterPlanLocks.GetOrAdd(
+            $"{scene.NovelId}\0{scene.ChapterId}",
+            _ => new SemaphoreSlim(1, 1)
+        );
+        await gate.WaitAsync(ct);
+        try
+        {
+            var chapter = await GetChapter(scene.NovelId, scene.ChapterId, ct);
+            if (chapter is null)
+                return;
+
+            chapter.PlotlineIds ??= [];
+            chapter.CharacterIds ??= [];
+            var changed = false;
+            foreach (var id in scene.PlotlineIds)
+            {
+                if (
+                    !string.IsNullOrWhiteSpace(id)
+                    && !chapter.PlotlineIds.Contains(id, StringComparer.Ordinal)
+                )
+                {
+                    chapter.PlotlineIds.Add(id);
+                    changed = true;
+                }
+            }
+            foreach (var id in scene.ParticipantIds)
+            {
+                if (
+                    !string.IsNullOrWhiteSpace(id)
+                    && !chapter.CharacterIds.Contains(id, StringComparer.Ordinal)
+                )
+                {
+                    chapter.CharacterIds.Add(id);
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                await SaveChapter(chapter, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task DeleteScene(string id, CancellationToken ct = default)
