@@ -240,6 +240,7 @@ public partial class ConversationView : UserControl
     private bool _windowSyncScheduled;
     private bool _forceWindowSync;
     private bool _syncingWindow;
+    private bool _followWhenCompactStarted;
 
     /// <summary>
     /// 阅读锚点：<see cref="Row"/> 是视口中心所在行，<see cref="Delta"/> 是中心点相对该行顶部的
@@ -289,6 +290,7 @@ public partial class ConversationView : UserControl
         {
             _messagesVm.Messages.CollectionChanged -= OnMessagesChanged;
             _messagesVm.PropertyChanged -= OnMessagesVmPropertyChanged;
+            _messagesVm.CompactStateChanged -= OnCompactStateChanged;
         }
 
         _messagesVm = vm;
@@ -300,6 +302,7 @@ public partial class ConversationView : UserControl
         {
             _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
             _messagesVm.PropertyChanged += OnMessagesVmPropertyChanged;
+            _messagesVm.CompactStateChanged += OnCompactStateChanged;
         }
 
         RebuildRows();
@@ -378,6 +381,28 @@ public partial class ConversationView : UserControl
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// compact 会插入/改写状态行并可能让上方内容收缩。用户原本在跟随尾部时，
+    /// 布局校正产生的负 offset 增量可能被误判成“用户上滚”，从而静默退出跟随；
+    /// 压缩结束后恢复一次跟随。若开始时本来就在阅读历史，则不抢走视口。
+    /// </summary>
+    private void OnCompactStateChanged(bool active)
+    {
+        if (active)
+        {
+            _followWhenCompactStarted = MessageList.IsFollowing;
+            return;
+        }
+
+        if (_followWhenCompactStarted)
+        {
+            MessageList.ResetFollow();
+            _forceWindowSync = true;
+            SyncWindowForCurrentState();
+        }
+        _followWhenCompactStarted = false;
     }
 
     private void ScheduleRowsRefresh()

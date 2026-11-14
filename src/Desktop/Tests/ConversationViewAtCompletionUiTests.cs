@@ -37,6 +37,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
 
     private readonly string _novelsRoot;
     private readonly ConversationViewModel _vm;
+    private readonly SessionEngine _engine;
 
     public ConversationViewAtCompletionUiTests()
     {
@@ -60,6 +61,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             new ConfigStore(storeDir),
             NullLogger.Instance
         );
+        _engine = engine;
         _vm = new ConversationViewModel(
             new DesktopAgentBridge(agent),
             engine,
@@ -2832,6 +2834,57 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     28,
                     "waiting"
                 );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void CompactEnd_RestoresFollowWhenStartedFollowing()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(120);
+            var (window, _, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始贴底");
+
+                var start = (Action)
+                    typeof(SessionEngine)
+                        .GetField(
+                            "OnCompactStart",
+                            System.Reflection.BindingFlags.Instance
+                                | System.Reflection.BindingFlags.NonPublic
+                        )!
+                        .GetValue(_engine)!;
+                var end =
+                    (Action<string>)
+                        typeof(SessionEngine)
+                            .GetField(
+                                "OnCompactEnd",
+                                System.Reflection.BindingFlags.Instance
+                                    | System.Reflection.BindingFlags.NonPublic
+                            )!
+                            .GetValue(_engine)!;
+
+                start();
+                PumpUntil(() => _vm.IsCompacting, "压缩开始");
+
+                // 模拟 compact 期间布局收缩/状态行替换把跟随静默关掉。
+                list.PauseFollow();
+                Assert.False(list.IsFollowing);
+
+                end("上下文溢出压缩完成：135 → 75 条");
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "compact 结束后恢复贴底");
+
+                var continued = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                continued.AppendContent("压缩后继续输出");
+                _vm.Messages.Add(continued);
+                PumpUntil(() => AtBottom(sv), "后续流式继续贴底");
             }
             finally
             {
