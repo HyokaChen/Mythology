@@ -1128,7 +1128,9 @@ public sealed class ConversationVmContractTests
         );
 
         var compacted = await h.Engine.GetUiMessagesAsync();
-        Assert.DoesNotContain(compacted, m => m.EntryId == firstUser.EntryId);
+        // compact 只压缩模型上下文；UI 历史保留被压缩的原文，并插入摘要边界。
+        Assert.Contains(compacted, m => m.EntryId == firstUser.EntryId);
+        Assert.Contains(compacted, m => m.EventType == SessionEventType.Compact);
 
         var started = await h.Engine.RetryFromUserMessageAsync(
             0,
@@ -1176,9 +1178,7 @@ public sealed class ConversationVmContractTests
             order: nextOrder2
         );
 
-        Assert.DoesNotContain(await h.Engine.GetUiMessagesAsync(), m =>
-            m.EntryId == firstUser.EntryId
-        );
+        Assert.Contains(await h.Engine.GetUiMessagesAsync(), m => m.EntryId == firstUser.EntryId);
 
         var started = await h.Engine.RetryFromUserMessageAsync(
             0,

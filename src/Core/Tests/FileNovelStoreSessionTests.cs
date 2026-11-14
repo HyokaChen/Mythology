@@ -701,6 +701,40 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>UI 历史模式保留 compact 前的原文，并插入摘要边界；active 模式仍只留压缩点之后。</summary>
+    public async Task GetUiHistoryMessages_AfterCompact_KeepsCompactedMessagesAndSummary()
+    {
+        var messages = CreateSimpleConversation("用户A", "助手A");
+        messages.AddRange(CreateSimpleConversation("用户B", "助手B"));
+        var lastEntryId = await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            messages,
+            startOrder: 0
+        );
+
+        await _store.CompactSession(
+            TestSessionId,
+            TestNovelId,
+            summary: "这是摘要",
+            firstKeptEntryId: lastEntryId!,
+            messagesBefore: messages.Count,
+            parentEntryId: null,
+            order: 4
+        );
+
+        var active = await _store.GetActiveMessages(TestSessionId);
+        Assert.DoesNotContain(active, m => m.Content == "用户A");
+
+        var history = await _store.GetUiHistoryMessages(TestSessionId);
+        Assert.Contains(history, m => m.Content == "用户A");
+        Assert.Contains(history, m => m.Content == "助手B");
+        Assert.Contains(history, m =>
+            m.EventType == SessionEventType.Compact && m.Content == "这是摘要"
+        );
+    }
+
+    [Fact]
     /// <summary>GetContextMessages 在 compact 后应注入 compact 为 UserMessage（LLM 路径）。</summary>
     public async Task GetContextMessages_AfterCompact_InjectsCompactAsUserMessage()
     {

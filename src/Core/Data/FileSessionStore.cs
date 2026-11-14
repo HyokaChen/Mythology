@@ -1302,6 +1302,12 @@ public sealed class FileSessionStore
 
         /// <summary>UI 渲染：compact 以 Unknown+EventType="compact" 返回，event 以 Unknown 返回。</summary>
         Active,
+
+        /// <summary>
+        /// UI 历史渲染：与 Active 相同，但不截断 compact 之前的消息。
+        /// 压缩只改变模型上下文，作者仍可在对话里回看被压缩的原文。
+        /// </summary>
+        ActiveHistory,
     }
 
     /// <summary>
@@ -1318,6 +1324,15 @@ public sealed class FileSessionStore
         string sessionId,
         CancellationToken ct = default
     ) => GetMessagesInternal(sessionId, MessageRenderMode.Active);
+
+    /// <summary>
+    /// 读取当前分支的完整 UI 历史（含 compact 之前的原文）。
+    /// 压缩只影响模型上下文；作者的对话记录不因 compact 消失。
+    /// </summary>
+    public Task<List<ChatMessage>> GetUiHistoryMessages(
+        string sessionId,
+        CancellationToken ct = default
+    ) => GetMessagesInternal(sessionId, MessageRenderMode.ActiveHistory);
 
     /// <summary>
     /// 通过会话索引查找会话路径（目录或旧格式 JSONL 文件路径），避免全目录扫描。
@@ -1438,6 +1453,7 @@ public sealed class FileSessionStore
             return [];
 
         var (activeIds, idMap) = ResolveActivePath(entries, leafTargetId);
+        var includeCompactedHistory = mode == MessageRenderMode.ActiveHistory;
 
         // 计算 leaf 目标条目的 order，用于崩溃场景判断（leaf 之后追加的消息应可见）
         var leafOrder =
@@ -1521,7 +1537,11 @@ public sealed class FileSessionStore
                         )
                             continue;
                     }
-                    if (compactFromOrder >= 0 && entry.Order < compactFromOrder)
+                    if (
+                        !includeCompactedHistory
+                        && compactFromOrder >= 0
+                        && entry.Order < compactFromOrder
+                    )
                         continue;
 
                     messages.Add(
@@ -1564,7 +1584,11 @@ public sealed class FileSessionStore
                             )
                                 continue;
                         }
-                        if (compactFromOrder >= 0 && entry.Order < compactFromOrder)
+                        if (
+                            !includeCompactedHistory
+                            && compactFromOrder >= 0
+                            && entry.Order < compactFromOrder
+                        )
                             continue;
 
                         messages.Add(entry.Message);
@@ -1591,7 +1615,7 @@ public sealed class FileSessionStore
                     continue;
             }
 
-            if (compactFromOrder >= 0 && entry.Order < compactFromOrder)
+            if (!includeCompactedHistory && compactFromOrder >= 0 && entry.Order < compactFromOrder)
                 continue;
 
             var message = entry.Message;

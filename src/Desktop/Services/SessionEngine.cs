@@ -302,12 +302,12 @@ public sealed class SessionEngine(
     //  恢复
     // ══════════════════════════════════════════════════════════
 
-    /// <summary>从 JSONL 恢复会话全部消息（UI 显示用，含已 compact 历史）。</summary>
+    /// <summary>从 JSONL 恢复当前分支的完整 UI 历史（含 compact 之前的原文）。</summary>
     public async Task<List<Core.Data.ChatMessage>> GetUiMessagesAsync()
     {
         try
         {
-            return await store.GetActiveMessages(_sessionId);
+            return await store.GetUiHistoryMessages(_sessionId);
         }
         catch (Exception ex)
         {
