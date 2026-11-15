@@ -85,8 +85,11 @@ public sealed class ModelQuickSwitchWindowTests
 
             var list = window.FindControl<ListBox>("ModelList")!;
             var note = window.FindControl<TextBlock>("StatusNote")!;
+            var skeleton = window.FindControl<StackPanel>("SkeletonPanel")!;
             var search = window.FindControl<TextBox>("SearchInput")!;
-            Assert.True(note.IsVisible);
+            Assert.True(skeleton.IsVisible);
+            Assert.False(list.IsVisible);
+            Assert.False(note.IsVisible);
             Assert.Equal(1, list.ItemCount);
 
             // 用户可能在“正在获取…”期间就输入搜索词；发现结果回来必须沿用该过滤条件。
@@ -97,6 +100,8 @@ public sealed class ModelQuickSwitchWindowTests
             window.SetModels(Enumerable.Range(1, 10).Select(i => $"model-{i}").ToArray());
             Dispatcher.UIThread.RunJobs();
 
+            Assert.False(skeleton.IsVisible);
+            Assert.True(list.IsVisible);
             Assert.Equal(1, list.ItemCount);
             Assert.Equal("model-9", Assert.IsType<QuickModelItem>(list.SelectedItem).Name);
             Assert.False(note.IsVisible);
@@ -114,13 +119,45 @@ public sealed class ModelQuickSwitchWindowTests
             window.Show();
             Dispatcher.UIThread.RunJobs();
 
+            var skeleton = window.FindControl<StackPanel>("SkeletonPanel")!;
+            Assert.True(skeleton.IsVisible);
+
             window.SetError("未获取到模型列表");
 
             var note = window.FindControl<TextBlock>("StatusNote")!;
             var list = window.FindControl<ListBox>("ModelList")!;
+            Assert.False(skeleton.IsVisible);
+            Assert.True(list.IsVisible);
             Assert.True(note.IsVisible);
             Assert.Equal("未获取到模型列表", note.Text);
             Assert.Equal("model-6", Assert.IsType<QuickModelItem>(list.SelectedItem).Name);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void LoadingState_IgnoresEnterOnHiddenPlaceholder()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var applied = new List<string>();
+            var window = new ModelQuickSwitchWindow("model-1", ["model-6"], applied.Add);
+            window.SetLoading();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            // 骨架阶段列表隐藏；Enter 不得作用到隐藏的非当前占位项。
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Empty(applied);
+
+            window.SetModels(["model-1", "model-6"]);
+            Dispatcher.UIThread.RunJobs();
+            window.KeyPress(Key.Down, RawInputModifiers.None, PhysicalKey.ArrowDown, null);
+            window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(["model-6"], applied);
             window.Close();
         });
     }

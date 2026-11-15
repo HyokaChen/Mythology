@@ -24,6 +24,7 @@ public partial class ModelQuickSwitchWindow : Window
     private List<QuickModelItem> _filtered = [];
     private readonly Action<string> _onApply;
     private bool _isInteractive;
+    private bool _isLoading;
 
     public ModelQuickSwitchWindow(
         string currentModel,
@@ -52,17 +53,23 @@ public partial class ModelQuickSwitchWindow : Window
             ))
             .ToList();
 
-    /// <summary>窗口已打开、模型列表仍在发现中。</summary>
+    /// <summary>窗口已打开、模型列表仍在发现中：只显示骨架，不露占位 ListBox。</summary>
     public void SetLoading(string message = "正在获取模型列表…")
     {
-        StatusNote.Text = message;
-        StatusNote.IsVisible = true;
+        _isLoading = true;
+        LoadingNote.Text = message;
+        SkeletonPanel.IsVisible = true;
+        ModelList.IsVisible = false;
+        StatusNote.IsVisible = false;
     }
 
     /// <summary>发现完成：替换列表并沿用用户已输入的搜索词。</summary>
     public void SetModels(IReadOnlyList<string> models)
     {
+        _isLoading = false;
         _items = BuildItems(models);
+        SkeletonPanel.IsVisible = false;
+        ModelList.IsVisible = true;
         RefreshFilter(SearchInput.Text ?? "");
         StatusNote.Text = "";
         StatusNote.IsVisible = false;
@@ -71,6 +78,9 @@ public partial class ModelQuickSwitchWindow : Window
     /// <summary>发现失败：保留已有列表，底部给出可操作提示。</summary>
     public void SetError(string message)
     {
+        _isLoading = false;
+        SkeletonPanel.IsVisible = false;
+        ModelList.IsVisible = true;
         StatusNote.Text = message;
         StatusNote.IsVisible = true;
     }
@@ -95,7 +105,7 @@ public partial class ModelQuickSwitchWindow : Window
         if (idx < 0 && _filtered.Count > 0)
             idx = 0;
         ModelList.SelectedIndex = idx;
-        if (ModelList.SelectedItem is not null)
+        if (ModelList.IsVisible && ModelList.SelectedItem is not null)
             ModelList.ScrollIntoView(ModelList.SelectedItem);
     }
 
@@ -141,6 +151,13 @@ public partial class ModelQuickSwitchWindow : Window
     /// <summary>↑↓ 移动选中（钳位）/ Enter 执行 / Esc 关闭。</summary>
     private void HandleNavigation(KeyEventArgs e)
     {
+        // 加载中列表隐藏，只有当前模型占位；此时 Up/Down/Enter 不得作用到隐藏项。
+        if (_isLoading && (e.Key is Key.Down or Key.Up or Key.Enter))
+        {
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Down:

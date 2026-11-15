@@ -25,36 +25,156 @@
       KeyDown="SearchInput_OnKeyDown"
     />
 
-    <!-- 模型列表 -->
+    <!-- 模型列表：加载中显示骨架行，避免先露出只有占位项的 ListBox -->
     <Border Grid.Row="1" Classes="Card" Margin="0,10,0,0" Padding="6">
-      <ListBox
-        x:Name="ModelList"
-        Background="Transparent"
-        Tapped="ModelList_OnTapped"
-        ItemContainerTheme="{StaticResource AdalineRowContainer}"
-        motion:Motion.Stagger="True"
-      >
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="controls:QuickModelItem">
-            <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">
-              <TextBlock
-                Grid.Column="0"
-                Text="{Binding Name}"
-                FontFamily="{StaticResource FontMono}"
-                FontSize="13"
-                VerticalAlignment="Center"
-              />
-              <TextBlock
-                Grid.Column="1"
-                Text="当前"
-                Classes="Tag"
-                IsVisible="{Binding HasMarker}"
-                VerticalAlignment="Center"
-              />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+      <Grid>
+        <ListBox
+          x:Name="ModelList"
+          Background="Transparent"
+          Tapped="ModelList_OnTapped"
+          ItemContainerTheme="{StaticResource AdalineRowContainer}"
+          motion:Motion.Stagger="True"
+        >
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="controls:QuickModelItem">
+              <Grid ColumnDefinitions="*,Auto" Margin="4,4" ColumnSpacing="10">
+                <TextBlock
+                  Grid.Column="0"
+                  Text="{Binding Name}"
+                  FontFamily="{StaticResource FontMono}"
+                  FontSize="13"
+                  VerticalAlignment="Center"
+                />
+                <TextBlock
+                  Grid.Column="1"
+                  Text="当前"
+                  Classes="Tag"
+                  IsVisible="{Binding HasMarker}"
+                  VerticalAlignment="Center"
+                />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel
+          x:Name="SkeletonPanel"
+          IsVisible="False"
+          IsHitTestVisible="False"
+          Spacing="0"
+          Margin="4,2"
+        >
+          <StackPanel Margin="8,8,0,10" Spacing="3">
+            <TextBlock
+              Text="MODEL CATALOG"
+              Classes="Eyebrow"
+              Foreground="{DynamicResource BrushSageMist}"
+            />
+            <TextBlock
+              x:Name="LoadingNote"
+              Text="正在获取模型列表…"
+              FontSize="12"
+              Foreground="{DynamicResource BrushSageGray}"
+            />
+          </StackPanel>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="172"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="208"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="148"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="232"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="184"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+          <Border
+            Height="34"
+            BorderBrush="{DynamicResource BrushMist}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+          >
+            <Border
+              Width="200"
+              Height="10"
+              Background="{DynamicResource BrushEucalyptus}"
+              CornerRadius="4"
+              Opacity="0.7"
+              HorizontalAlignment="Left"
+              VerticalAlignment="Center"
+            />
+          </Border>
+        </StackPanel>
+      </Grid>
     </Border>
 
     <!-- 底部提示：左侧显示发现中/错误，右侧保持固定键盘提示 -->
