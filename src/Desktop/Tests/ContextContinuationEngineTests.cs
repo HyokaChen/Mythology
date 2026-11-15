@@ -189,6 +189,73 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.False(_engine.IsCompacting);
     }
 
+    /// <summary>
+    /// 取消发生在溢出恢复的 catch 块内（压缩被中断）时，异常必须被 RunTurnAsync 的单一出口
+    /// 收口；否则会逃进 ReactiveCommand，被 ReactiveUI 升级成 UnhandledErrorException 并崩溃。
+    /// </summary>
+    [Fact]
+    public async Task RunTurn_CancelDuringOverflowRecovery_DoesNotEscape()
+    {
+        await SeedSessionAsync(count: 8, charsPerMessage: 300);
+        using var cts = new CancellationTokenSource();
+        var started = 0;
+        var ended = new List<string>();
+        _engine.OnCompactStart += () => started++;
+        _engine.OnCompactEnd += (message, _) => ended.Add(message);
+
+        var method = typeof(SessionEngine).GetMethod("RunTurnAsync", Flags)!;
+        var task = (Task)
+            method.Invoke(
+                _engine,
+                [
+                    (Func<Task>)(() => Task.CompletedTask),
+                    (Func<CancellationToken, Task>)(
+                        _ =>
+                        {
+                            cts.Cancel();
+                            throw new ContextOverflowException("send overflow");
+                        }
+                    ),
+                    (Func<int, CancellationToken, Task>)((_, _) => Task.CompletedTask),
+                    false,
+                    cts.Token,
+                    0,
+                ]
+            )!;
+
+        // 关键：await 本身不能抛。此前 OperationCanceledException 会从这里逃出去。
+        await task;
+
+        Assert.Equal(1, started);
+        Assert.Contains("已取消", Assert.Single(ended));
+        Assert.False(_engine.IsCompacting);
+    }
+
+    /// <summary>
+    /// UI 压缩状态必须严格一对一：第二个 Begin 被拒绝且不发 Start；没有 Start 的 End 也不发 End。
+    /// 否则被拒绝的尝试会清掉真正进行中的状态行，失败后重试再留下第二条“压缩中”。
+    /// </summary>
+    [Fact]
+    public void CompactScope_BeginEnd_AreStrictlyPaired()
+    {
+        var started = 0;
+        var ended = new List<string>();
+        _engine.OnCompactStart += () => started++;
+        _engine.OnCompactEnd += (message, _) => ended.Add(message);
+
+        var begin = typeof(SessionEngine).GetMethod("TryBeginCompact", Flags)!;
+        var end = typeof(SessionEngine).GetMethod("EndCompact", Flags)!;
+
+        Assert.True((bool)begin.Invoke(_engine, null)!);
+        Assert.False((bool)begin.Invoke(_engine, null)!);
+        Assert.Equal(1, started);
+
+        end.Invoke(_engine, ["上下文压缩完成", null]);
+        end.Invoke(_engine, ["重复结束", null]);
+
+        Assert.Equal("上下文压缩完成", Assert.Single(ended));
+    }
+
     /// <summary>自动压缩必须按 token 预算切，不允许 31→30 这种微型压缩。</summary>
     [Fact]
     public async Task AutoCompact_TokenBudget_DoesNotWriteTinyTail()

@@ -69,6 +69,14 @@ public sealed class SessionEngine(
     private readonly Agent agent = bridge.Agent;
     private readonly CompactionEngine _compactor = new(bridge.Agent, store, novelStore, log);
     private string? _lastCompactSummary;
+    private string? _lastCompactError;
+
+    /// <summary>
+    /// 是否有一条「已开始、尚未结束」的压缩状态事件。压缩 Start/End 必须严格一对一：
+    /// 被引擎拒绝的尝试不能发 Start，否则它的 End 会清掉真正进行中的状态行，
+    /// 等真正压缩结束时又新增一条「压缩中」，用户就会看到两次压缩状态。
+    /// </summary>
+    private bool _compactUiActive;
     private readonly string _todoRoot = string.IsNullOrWhiteSpace(todoRoot)
         ? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -739,6 +747,70 @@ public sealed class SessionEngine(
         int overflowRetryCount
     )
     {
+        // ★ 取消的唯一出口：prepare / send / 溢出恢复（包括 catch 块里再发起的压缩）都可能抛
+        // OperationCanceledException。异常一旦逃出命令任务，ReactiveUI 会把它升级成
+        // UnhandledErrorException 并直接终止进程——用户按“停止”就崩，根因就在这里。
+        // C# 的 catch 块内抛出的异常不会被同级的后续 catch 捕获，所以必须在这层兜住。
+        try
+        {
+            await RunTurnCoreAsync(
+                prepare,
+                send,
+                retryAfterOverflow,
+                captureNotes,
+                ct,
+                overflowRetryCount
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            await PersistInterruptAsync();
+        }
+    }
+
+    /// <summary>
+    /// 落盘用户中断。必须使用 <see cref="CancellationToken.None"/>：此时 ct 已取消，
+    /// 继续传 ct 会让中断记录写不进去，还会被误判成“会话保存故障”而锁死后续发送。
+    /// </summary>
+    private async Task PersistInterruptAsync()
+    {
+        try
+        {
+            // 回合被中断，in_progress 任务不可能再被模型完成，回退避免界面卡在「进行中」。
+            // 这一步也放进 try：本方法从 catch 块调用，绝不能再抛出任何异常。
+            todoStore.RevertInProgressToPending();
+            if (!await TryPersistNewMessagesAsync())
+                return;
+
+            await store.SaveSessionEvent(
+                _sessionId,
+                agent.CurrentNovelId ?? "",
+                new SessionEvent
+                {
+                    EventType = SessionEventType.Interrupt,
+                    ParentEntryId = _lastParentEntryId,
+                    Order = _nextOrder,
+                    Content = "用户中断生成",
+                },
+                CancellationToken.None
+            );
+            _nextOrder++;
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "persist interrupt failed");
+        }
+    }
+
+    private async Task RunTurnCoreAsync(
+        Func<Task> prepare,
+        Func<CancellationToken, Task> send,
+        Func<int, CancellationToken, Task> retryAfterOverflow,
+        bool captureNotes,
+        CancellationToken ct,
+        int overflowRetryCount
+    )
+    {
         try
         {
             await prepare();
@@ -769,31 +841,6 @@ public sealed class SessionEngine(
             // 持久化故障终止本轮：in_progress 任务不可能再被模型完成，回退避免卡在「进行中」
             todoStore.RevertInProgressToPending();
             HandleSessionPersistenceFailure(ex);
-        }
-        catch (OperationCanceledException)
-        {
-            if (!await TryPersistNewMessagesAsync())
-                return;
-            try
-            {
-                await store.SaveSessionEvent(
-                    _sessionId,
-                    agent.CurrentNovelId ?? "",
-                    new SessionEvent
-                    {
-                        EventType = SessionEventType.Interrupt,
-                        ParentEntryId = _lastParentEntryId,
-                        Order = _nextOrder,
-                        Content = "用户中断生成",
-                    },
-                    ct
-                );
-                _nextOrder++;
-            }
-            catch (Exception ex)
-            {
-                HandleSessionPersistenceFailure(ex);
-            }
         }
         catch (ContextOverflowException)
         {
@@ -840,7 +887,8 @@ public sealed class SessionEngine(
                     : "上下文过长，自动恢复未成功。请使用 /compact 或开启新会话。"
             );
         }
-        catch (Exception ex)
+        // 取消不在这里处理：必须冒泡到 RunTurnAsync 的单一出口，否则会逃进 ReactiveCommand。
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // 任意非中断异常终止本轮：in_progress 任务回退，避免 UI 永远显示「进行中」
             todoStore.RevertInProgressToPending();
@@ -865,7 +913,8 @@ public sealed class SessionEngine(
                         ErrorCode = errorCode,
                         Content = ex.InnerException?.Message ?? ex.Message,
                     },
-                    ct
+                    // 错误可能由取消引发；收尾写入不能再被已取消的 token 打断。
+                    CancellationToken.None
                 );
                 _nextOrder++;
             }
@@ -920,6 +969,34 @@ public sealed class SessionEngine(
     //  压缩引擎
     // ══════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// 尝试开启一次「会被引擎真正执行」的压缩。已有压缩时返回 false 且不发任何事件：
+    /// UI 的压缩状态行必须严格一对一，否则被拒绝的尝试会用 End 清掉真正进行中的状态行。
+    /// </summary>
+    private bool TryBeginCompact()
+    {
+        if (_compactUiActive || _compactor.IsCompacting)
+            return false;
+
+        _compactUiActive = true;
+        OnCompactStart?.Invoke();
+        return true;
+    }
+
+    /// <summary>结束当前压缩状态；没有 Start 的 End 一律忽略，保证事件配对。</summary>
+    private void EndCompact(string message, string? summary = null)
+    {
+        if (!_compactUiActive)
+            return;
+
+        _compactUiActive = false;
+        OnCompactEnd?.Invoke(message, summary);
+    }
+
+    /// <summary>把引擎给出的失败原因并进状态行文案，避免只显示笼统的“压缩失败”。</summary>
+    private string CompactFailureMessage(string prefix) =>
+        string.IsNullOrWhiteSpace(_lastCompactError) ? prefix : $"{prefix}：{_lastCompactError}";
+
     /// <summary>手动/智能压缩入口（/compact）。</summary>
     public async Task<CompactOutcome> CompactAsync(
         bool smart,
@@ -951,11 +1028,19 @@ public sealed class SessionEngine(
         if (smart && agent.MessageScorer is not null)
             return await CompactSmartCoreAsync(keepRecent, ct);
 
+        if (!TryBeginCompact())
+            return new CompactOutcome(
+                CompactOutcomeKind.Rejected,
+                messages.Count,
+                messages.Count,
+                "压缩进行中，请稍候再试"
+            );
+
         _lastCompactSummary = null;
-        OnCompactStart?.Invoke();
+        var keep = Math.Min(keepRecent, messages.Count);
+        var endMessage = "上下文压缩失败";
         try
         {
-            var keep = Math.Min(keepRecent, messages.Count);
             var result = await PrepareAndCompactAsync(
                 messages,
                 keep,
@@ -965,7 +1050,7 @@ public sealed class SessionEngine(
             );
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
-                OnCompactEnd?.Invoke(DescribeRejection(result), null);
+                endMessage = DescribeRejection(result);
                 return new CompactOutcome(
                     CompactOutcomeKind.Rejected,
                     messages.Count,
@@ -975,7 +1060,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.TooSmall)
             {
-                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage, null);
+                endMessage = CompactionEngine.TooSmallMessage;
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -985,18 +1070,15 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.Failed)
             {
-                OnCompactEnd?.Invoke("上下文压缩失败", null);
+                endMessage = CompactFailureMessage("上下文压缩失败");
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
                     keep,
-                    "压缩失败"
+                    endMessage
                 );
             }
-            OnCompactEnd?.Invoke(
-                $"上下文压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
-                _lastCompactSummary
-            );
+            endMessage = $"上下文压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条";
             return new CompactOutcome(
                 CompactOutcomeKind.Done,
                 messages.Count,
@@ -1004,18 +1086,43 @@ public sealed class SessionEngine(
                 null
             );
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 用户停止：正常控制流，不报错、不外抛（手动压缩也可能被停止按钮取消）。
+            endMessage = "压缩已取消";
+            return new CompactOutcome(
+                CompactOutcomeKind.Failed,
+                messages.Count,
+                messages.Count,
+                endMessage
+            );
+        }
         catch (Exception ex)
         {
-            OnCompactEnd?.Invoke("上下文压缩失败", null);
-            return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, ex.Message);
+            log.LogWarning(ex, "compact session failed");
+            _lastCompactError = ex.Message;
+            endMessage = CompactFailureMessage("上下文压缩失败");
+            return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, endMessage);
+        }
+        finally
+        {
+            EndCompact(endMessage, _lastCompactSummary);
         }
     }
 
     private async Task<CompactOutcome> CompactSmartCoreAsync(int keepRecent, CancellationToken ct)
     {
         var messages = agent.State.Messages;
+        if (!TryBeginCompact())
+            return new CompactOutcome(
+                CompactOutcomeKind.Rejected,
+                messages.Count,
+                messages.Count,
+                "压缩进行中，请稍候再试"
+            );
+
         _lastCompactSummary = null;
-        OnCompactStart?.Invoke();
+        var endMessage = "智能压缩失败";
         try
         {
             var result = await PrepareAndCompactAsync(
@@ -1029,7 +1136,7 @@ public sealed class SessionEngine(
 
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
-                OnCompactEnd?.Invoke(DescribeRejection(result), null);
+                endMessage = DescribeRejection(result);
                 return new CompactOutcome(
                     CompactOutcomeKind.Rejected,
                     messages.Count,
@@ -1039,7 +1146,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.TooSmall)
             {
-                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage, null);
+                endMessage = CompactionEngine.TooSmallMessage;
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -1049,18 +1156,15 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.Failed)
             {
-                OnCompactEnd?.Invoke("智能压缩失败", null);
+                endMessage = CompactFailureMessage("智能压缩失败");
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
                     messages.Count,
-                    "智能压缩失败"
+                    endMessage
                 );
             }
-            OnCompactEnd?.Invoke(
-                $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
-                _lastCompactSummary
-            );
+            endMessage = $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条";
             return new CompactOutcome(
                 CompactOutcomeKind.Done,
                 messages.Count,
@@ -1068,11 +1172,26 @@ public sealed class SessionEngine(
                 null
             );
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            endMessage = "智能压缩已取消";
+            return new CompactOutcome(
+                CompactOutcomeKind.Failed,
+                messages.Count,
+                messages.Count,
+                endMessage
+            );
+        }
         catch (Exception ex)
         {
             log.LogWarning(ex, "compact session with message scorer failed");
-            OnCompactEnd?.Invoke("上下文压缩失败", null);
-            return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, ex.Message);
+            _lastCompactError = ex.Message;
+            endMessage = CompactFailureMessage("智能压缩失败");
+            return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, endMessage);
+        }
+        finally
+        {
+            EndCompact(endMessage, _lastCompactSummary);
         }
     }
 
@@ -1084,8 +1203,15 @@ public sealed class SessionEngine(
         if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
             return;
 
+        // 已有压缩在跑：不能再发一条 Start/End，否则它的 End 会把对方的状态行提前收掉，
+        // 等对方真正结束时又新增一条「压缩中」——用户会看到压缩状态闪两次。
+        if (!TryBeginCompact())
+        {
+            log.LogDebug("auto-compact skipped: another compaction is in progress");
+            return;
+        }
+
         _lastCompactSummary = null;
-        OnCompactStart?.Invoke();
         var endMessage = "自动压缩失败";
         try
         {
@@ -1107,11 +1233,13 @@ public sealed class SessionEngine(
         catch (Exception ex)
         {
             log.LogWarning(ex, "auto-compact session failed");
+            _lastCompactError = ex.Message;
+            endMessage = CompactFailureMessage("自动压缩失败");
         }
         finally
         {
             // 无论成功、失败还是取消，都必须结束 UI 的压缩态，否则界面永久停在「压缩中」。
-            OnCompactEnd?.Invoke(endMessage, _lastCompactSummary);
+            EndCompact(endMessage, _lastCompactSummary);
         }
     }
 
@@ -1121,109 +1249,109 @@ public sealed class SessionEngine(
             CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode =>
                 DescribeRejection(result),
             CompactResult.TooSmall => CompactionEngine.TooSmallMessage,
-            CompactResult.Failed => "自动压缩失败",
+            CompactResult.Failed => CompactFailureMessage("自动压缩失败"),
             _ => $"自动压缩完成：{before} → {KeptMessageCountAfterCompact()} 条",
         };
 
     /// <summary>上下文溢出时压缩：compact 后验证 token 是否真的降低，无效时返回 false 防死循环。</summary>
     private async Task<bool> CompactForOverflowAsync(int keepRecentTokens, CancellationToken ct)
     {
-        try
+        var messages = agent.State.Messages;
+        var novelId = agent.CurrentNovelId;
+
+        // 消息不足时：若监控器冻结（累计口径虚高触发 BudgetExhausted），解冻重设基线即恢复
+        if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
         {
-            var messages = agent.State.Messages;
-            var novelId = agent.CurrentNovelId;
-
-            // 消息不足时：若监控器冻结（累计口径虚高触发 BudgetExhausted），解冻重设基线即恢复
-            if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
+            var monitor = agent.StabilityMonitor;
+            if (monitor is not null && monitor.IsFrozen)
             {
-                var monitor = agent.StabilityMonitor;
-                if (monitor is not null && monitor.IsFrozen)
-                {
-                    monitor.Unfreeze(
-                        calibrator.Project(CompactionEngine.EstimateContextTokens(messages))
-                    );
-                    return true;
-                }
-                return false;
-            }
-
-            var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
-            _lastCompactSummary = null;
-            OnCompactStart?.Invoke();
-            var endMessage = "上下文溢出压缩失败";
-            try
-            {
-                var result = await PrepareAndCompactAsync(
-                    messages,
-                    keepRecent: 0,
-                    "overflow",
-                    willRetry: true,
-                    keepRecentTokens: keepRecentTokens,
-                    ct: ct
+                monitor.Unfreeze(
+                    calibrator.Project(CompactionEngine.EstimateContextTokens(messages))
                 );
-
-                // 两种拒绝语义分开：已有压缩进行中 → true 交上层重试；模式互斥 → false 停止重试
-                // （接续模式下什么都不做，重试永远无用；此路径仅在未来新增触发源漏判模式时才可达）。
-                if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
-                {
-                    log.LogDebug(
-                        "compact after context overflow: rejected ({Reason})",
-                        result == CompactResult.RejectedInProgress ? "in progress" : "wrong mode"
-                    );
-                    endMessage = DescribeRejection(result);
-                    return result == CompactResult.RejectedInProgress;
-                }
-                if (result == CompactResult.TooSmall)
-                {
-                    endMessage = CompactionEngine.TooSmallMessage;
-                    return false;
-                }
-                if (result == CompactResult.Failed)
-                {
-                    endMessage = "上下文溢出压缩失败";
-                    return false;
-                }
-
-                var tokensAfter = CompactionEngine.EstimateContextTokens(agent.State.Messages);
-                var requiredDrop = Math.Max(1_024L, tokensBefore / 10);
-                if (tokensAfter >= tokensBefore - requiredDrop)
-                {
-                    log.LogWarning(
-                        "compact after context overflow: token count did not drop enough (before={Before}, after={After}, requiredDrop={RequiredDrop})",
-                        tokensBefore,
-                        tokensAfter,
-                        requiredDrop
-                    );
-                    endMessage = "上下文溢出压缩未显著降低 token，请开启新会话";
-                    return false;
-                }
-                endMessage =
-                    $"上下文溢出压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条";
                 return true;
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            return false;
+        }
+
+        // 已有压缩在跑：不能再发一条 Start/End（会提前收掉对方的状态行）。
+        if (!TryBeginCompact())
+        {
+            log.LogDebug(
+                "compact after context overflow skipped: another compaction is in progress"
+            );
+            return false;
+        }
+
+        var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
+        _lastCompactSummary = null;
+        var endMessage = "上下文溢出压缩失败";
+        try
+        {
+            var result = await PrepareAndCompactAsync(
+                messages,
+                keepRecent: 0,
+                "overflow",
+                willRetry: true,
+                keepRecentTokens: keepRecentTokens,
+                ct: ct
+            );
+
+            // 两种拒绝语义分开：已有压缩进行中 → true 交上层重试；模式互斥 → false 停止重试
+            // （接续模式下什么都不做，重试永远无用；此路径仅在未来新增触发源漏判模式时才可达）。
+            if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
-                endMessage = "上下文溢出压缩已取消";
-                throw;
+                log.LogDebug(
+                    "compact after context overflow: rejected ({Reason})",
+                    result == CompactResult.RejectedInProgress ? "in progress" : "wrong mode"
+                );
+                endMessage = DescribeRejection(result);
+                return result == CompactResult.RejectedInProgress;
             }
-            catch (Exception ex)
+            if (result == CompactResult.TooSmall)
             {
-                log.LogWarning(ex, "compact after context overflow failed");
+                endMessage = CompactionEngine.TooSmallMessage;
                 return false;
             }
-            finally
+            if (result == CompactResult.Failed)
             {
-                OnCompactEnd?.Invoke(endMessage, _lastCompactSummary);
+                endMessage = CompactFailureMessage("上下文溢出压缩失败");
+                return false;
             }
+
+            var tokensAfter = CompactionEngine.EstimateContextTokens(agent.State.Messages);
+            var requiredDrop = Math.Max(1_024L, tokensBefore / 10);
+            if (tokensAfter >= tokensBefore - requiredDrop)
+            {
+                log.LogWarning(
+                    "compact after context overflow: token count did not drop enough (before={Before}, after={After}, requiredDrop={RequiredDrop})",
+                    tokensBefore,
+                    tokensAfter,
+                    requiredDrop
+                );
+                endMessage = "上下文溢出压缩未显著降低 token，请开启新会话";
+                return false;
+            }
+            endMessage =
+                $"上下文溢出压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条";
+            return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            endMessage = "上下文溢出压缩已取消";
+            // 交给 RunTurnAsync 的单一取消出口：这里再抛一次也只会逃出 catch 块，
+            // 正是此前“按停止就崩溃”的根因。
             throw;
         }
         catch (Exception ex)
         {
             log.LogWarning(ex, "compact after context overflow failed");
+            _lastCompactError = ex.Message;
+            endMessage = CompactFailureMessage("上下文溢出压缩失败");
             return false;
+        }
+        finally
+        {
+            EndCompact(endMessage, _lastCompactSummary);
         }
     }
 
@@ -1267,6 +1395,8 @@ public sealed class SessionEngine(
 
         _lastCompactSummary =
             execution.Status == CompactionStatus.Success ? execution.Summary : null;
+        _lastCompactError =
+            execution.Status == CompactionStatus.Success ? null : execution.Error;
 
         if (execution.Status == CompactionStatus.Success)
         {

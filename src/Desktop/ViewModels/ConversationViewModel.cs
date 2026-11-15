@@ -37,6 +37,8 @@ public sealed class ConversationViewModel : ViewModelBase
     private readonly ILogger _log;
     private readonly string? _novelsRoot;
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _compactCts;
+    private Task<CompactOutcome>? _compactTask;
     private StreamEventHandler? _handler;
     private ChatMessageModel? _agentMessage;
     private bool _editSubmitting;
@@ -109,8 +111,8 @@ public sealed class ConversationViewModel : ViewModelBase
         }
     }
 
-    /// <summary>发送按钮应让位的总状态：Agent 循环运行中，或提交尚未走完。</summary>
-    public bool IsBusy => IsProcessing || _isSubmitting;
+    /// <summary>发送按钮应让位的总状态：Agent 循环运行中、提交尚未走完，或上下文压缩中。</summary>
+    public bool IsBusy => IsProcessing || _isSubmitting || _isCompacting;
 
     private bool _isCompacting;
     private ChatMessageModel? _compactStatusMessage;
@@ -122,7 +124,11 @@ public sealed class ConversationViewModel : ViewModelBase
     public bool IsCompacting
     {
         get => _isCompacting;
-        private set => this.RaiseAndSetIfChanged(ref _isCompacting, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isCompacting, value);
+            this.RaisePropertyChanged(nameof(IsBusy));
+        }
     }
 
     /// <summary>历史导航状态（JSONL 持久化由引擎负责）。</summary>
@@ -381,9 +387,18 @@ public sealed class ConversationViewModel : ViewModelBase
         var cmd = parts[0].ToLowerInvariant();
 
         // /new 会主动中止当前回合；压缩/模式切换必须等回合结束，避免与流式写回竞争。
-        if (_bridge.IsProcessing && cmd is "/compact" or "/decompress" or "/context" or "/mode")
+        // 手动压缩期间也要挡住这些命令：/compact 会撞上引擎的进行中闸门，产生一条
+        // 假的“压缩被拒绝”状态行——正是用户看到的“失败后又出现一次压缩中”。
+        if (
+            (_bridge.IsProcessing || IsCompacting)
+            && cmd is "/compact" or "/decompress" or "/context" or "/mode"
+        )
         {
-            SystemMessageRequested?.Invoke("Agent 正在生成，先中断当前回合后再执行该命令");
+            SystemMessageRequested?.Invoke(
+                IsCompacting
+                    ? "上下文压缩进行中，请等待压缩结束后再执行该命令"
+                    : "Agent 正在生成，先中断当前回合后再执行该命令"
+            );
             CommandExecuted?.Invoke();
             return true;
         }
@@ -595,7 +610,26 @@ public sealed class ConversationViewModel : ViewModelBase
         // 压缩开始/结束的系统状态行由引擎事件驱动；这里只为「连开始事件都没有」的
         // 前置拒绝补一条提示，避免和进行中状态行重复。
         _compactStartObserved = false;
-        var outcome = await _engine.CompactAsync(smart, keepRecent);
+
+        // 手动压缩也必须可停止：停止按钮取消这个 token，引擎会收口状态行并落一条“已取消”。
+        var cts = new CancellationTokenSource();
+        _compactCts = cts;
+        var compactTask = _engine.CompactAsync(smart, keepRecent, cts.Token);
+        _compactTask = compactTask;
+        CompactOutcome outcome;
+        try
+        {
+            outcome = await compactTask;
+        }
+        finally
+        {
+            if (ReferenceEquals(_compactTask, compactTask))
+                _compactTask = null;
+            if (ReferenceEquals(_compactCts, cts))
+                _compactCts = null;
+            cts.Dispose();
+        }
+
         ContextStatsChanged?.Invoke();
         if (!_compactStartObserved)
             AddSystemNotice(
@@ -1298,6 +1332,12 @@ public sealed class ConversationViewModel : ViewModelBase
         StopProcessingCommand = ReactiveCommand.Create(StopProcessing);
         NewConversationCommand = ReactiveCommand.CreateFromTask(NewConversationAsync);
 
+        // ReactiveUI 默认会把未观察的命令异常升级为 UnhandledErrorException 并终止进程。
+        // 取消是正常控制流；其它异常只提示，绝不能让一次失败把整个 UI 带走。
+        ObserveCommandErrors(SendMessageCommand.ThrownExceptions, "发送");
+        ObserveCommandErrors(StopProcessingCommand.ThrownExceptions, "停止");
+        ObserveCommandErrors(NewConversationCommand.ThrownExceptions, "新建对话");
+
         // 引擎通知 → 系统气泡 + 仪表重算（压缩进度、溢出重试、持久化故障）
         _engine.OnSystemNotice += text => Dispatcher.UIThread.Post(() => AddSystemNotice(text));
 
@@ -1314,6 +1354,12 @@ public sealed class ConversationViewModel : ViewModelBase
             {
                 IsCompacting = true;
                 CompactStateChanged?.Invoke(true);
+
+                // 压缩期间由「压缩中…」系统行负责反馈。Agent 占位消息还没产出内容时，
+                // 不能再并排显示「执行中」，否则两个 spinner 同时转——用户看到的就是
+                // “执行中”和“压缩中”同时出现。
+                if (_agentMessage is { IsEmpty: true } preparing)
+                    preparing.IsWaiting = false;
 
                 // 原地更新「压缩中…」行：spinner 只在压缩期间转，结束后同一行变结果，
                 // 不再留下两条静态系统消息。
@@ -1374,6 +1420,23 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// 观察命令异常。ReactiveUI 的默认处理器会把未订阅的 ThrownExceptions 升级成
+    /// UnhandledErrorException 并终止进程；取消是正常控制流（用户按停止），不提示，
+    /// 其它异常记录日志并给用户一条可读提示。
+    /// </summary>
+    private void ObserveCommandErrors(IObservable<Exception> thrownExceptions, string operation)
+    {
+        thrownExceptions.Subscribe(ex =>
+        {
+            if (ex is OperationCanceledException)
+                return;
+
+            _log.LogError(ex, "命令执行失败: {Operation}", operation);
+            Dispatcher.UIThread.Post(() => AddSystemNotice($"{operation}失败：{ex.Message}"));
+        });
+    }
+
+    /// <summary>
     /// 把落盘 entryId 绑定到最后一条尚未绑定 id 的本地用户气泡。
     /// compact 后消息离开 active 列表，retry/edit 仍靠这个 id 定位。
     /// </summary>
@@ -1421,6 +1484,10 @@ public sealed class ConversationViewModel : ViewModelBase
         _compactStartObserved = false;
         IsCompacting = false;
         CompactStateChanged?.Invoke(false);
+
+        // 压缩只是回合的准备阶段：结束后若仍在提交/处理且占位仍为空，恢复「执行中」等待行。
+        if (_agentMessage is { IsEmpty: true } placeholder && (IsSubmitting || IsProcessing))
+            placeholder.IsWaiting = true;
 
         var status = _compactStatusMessage;
         _compactStatusMessage = null;
@@ -1627,8 +1694,16 @@ public sealed class ConversationViewModel : ViewModelBase
             ContextStatsChanged?.Invoke();
 
             // 引擎编排：小说上下文注入 → 压缩预检 → 发送 → 持久化（溢出自动 compact+retry）
-            await _engine.RunPromptAsync(text, _cts.Token);
-            ContextStatsChanged?.Invoke();
+            try
+            {
+                await _engine.RunPromptAsync(text, _cts.Token);
+                ContextStatsChanged?.Invoke();
+            }
+            catch (OperationCanceledException)
+            {
+                // 用户按停止：引擎已落盘中断事件。命令任务必须正常完成，
+                // 否则 ReactiveCommand 会把取消当成 pipeline 错误并终止进程。
+            }
         }
         finally
         {
@@ -1844,9 +1919,11 @@ public sealed class ConversationViewModel : ViewModelBase
         HasMessages = Messages.Count > 0;
     }
 
-    /// <summary>中断当前处理。</summary>
+    /// <summary>中断当前处理（生成或手动压缩）。</summary>
     private void StopProcessing()
     {
+        // 手动 /compact 没有 _cts：必须单独取消，否则“停止”对压缩无效。
+        _compactCts?.Cancel();
         _cts?.Cancel();
         _bridge.Stop();
         FinalizeAgentMessage(null, interrupted: true);
@@ -1855,6 +1932,26 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>新建对话（宿主在切换动画前可直接 await）。</summary>
     public async Task NewConversationAsync()
     {
+        _compactCts?.Cancel();
+
+        // 取消只是发信号；必须等压缩真正退出再 NewSession，否则压缩收尾会推进
+        // 已被重置的 _nextOrder，把旧会话的序号写进新会话。
+        if (_compactTask is { } compacting)
+        {
+            try
+            {
+                await compacting;
+            }
+            catch (OperationCanceledException)
+            {
+                // 取消是预期路径。
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "等待压缩退出失败");
+            }
+        }
+
         await _bridge.StopAsync();
         _engine.NewSession();
         Messages.Clear();

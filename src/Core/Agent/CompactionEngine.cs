@@ -58,7 +58,9 @@ public sealed class CompactionEngine(
 {
     public const string TooSmallMessage = "压缩范围太小（未达到有效压缩阈值），未写入会话";
 
-    private static readonly TimeSpan AiSummaryTimeout = TimeSpan.FromSeconds(45);
+    // 124K 上下文的检查点摘要实测会超过 45 秒；3 分钟给足流式生成时间，
+    // 超时仍然回退到确定性检查点，不会让压缩失败。
+    private static readonly TimeSpan AiSummaryTimeout = TimeSpan.FromMinutes(3);
 
     private static readonly string[] CheckpointHeadings =
     [
@@ -71,10 +73,10 @@ public sealed class CompactionEngine(
         "## Next / 下一步",
     ];
 
-    private volatile bool _isCompacting;
+    private int _compactGate;
 
     /// <summary>是否有压缩进行中（宿主 UI spinner/防重入单一事实源）。</summary>
-    public bool IsCompacting => _isCompacting;
+    public bool IsCompacting => Volatile.Read(ref _compactGate) == 1;
 
     public async Task<CompactionExecution> CompactAsync(
         CompactionRequest request,
@@ -82,7 +84,9 @@ public sealed class CompactionEngine(
     )
     {
         var messages = agent.State.Messages;
-        if (_isCompacting)
+        // 原子闸门：自动压缩与手动 /compact 可能从不同线程同时到达。
+        // volatile bool 的“先读后写”存在竞态，两个请求都可能通过检查。
+        if (Interlocked.CompareExchange(ref _compactGate, 1, 0) != 0)
         {
             log.LogDebug(
                 "prepare compaction: rejected {Reason} request because compaction is in progress",
@@ -90,18 +94,20 @@ public sealed class CompactionEngine(
             );
             return Failed(CompactionStatus.RejectedInProgress, messages.Count, "压缩进行中");
         }
-        if (agent.ContextManagement is { Mode: ContextMode.Continuation })
-        {
-            log.LogDebug(
-                "prepare compaction: rejected {Reason} request because context management mode is continuation",
-                request.Reason
-            );
-            return Failed(CompactionStatus.RejectedWrongMode, messages.Count, "当前为接续模式");
-        }
 
-        _isCompacting = true;
         try
         {
+            if (agent.ContextManagement is { Mode: ContextMode.Continuation })
+            {
+                log.LogDebug(
+                    "prepare compaction: rejected {Reason} request because context management mode is continuation",
+                    request.Reason
+                );
+                return Failed(CompactionStatus.RejectedWrongMode, messages.Count, "当前为接续模式");
+            }
+
+            // 拿到闸门后再检查取消：调用方在等待期间按下停止时，不应白跑一整轮压缩。
+            ct.ThrowIfCancellationRequested();
             return await CompactCoreAsync(request, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -115,7 +121,7 @@ public sealed class CompactionEngine(
         }
         finally
         {
-            _isCompacting = false;
+            Volatile.Write(ref _compactGate, 0);
         }
     }
 
@@ -599,13 +605,27 @@ public sealed class CompactionEngine(
         summaryCts.CancelAfter(AiSummaryTimeout);
 
         var summaryBuilder = new StringBuilder();
-        await conversation.StreamResponse(
-            token =>
-            {
-                summaryBuilder.Append(token);
-            },
-            summaryCts.Token
-        );
+        try
+        {
+            await conversation.StreamResponse(
+                token =>
+                {
+                    summaryBuilder.Append(token);
+                },
+                summaryCts.Token
+            );
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // 摘要超时不是压缩失败：回退到确定性检查点即可。
+            // 只记一条简洁警告，不打完整堆栈——此前 45 秒超时把一次正常回退
+            // 记成了“压缩失败”，掩盖了真正的问题。
+            log.LogWarning(
+                "AI compact summary timed out after {Seconds:0}s; falling back to deterministic checkpoint",
+                AiSummaryTimeout.TotalSeconds
+            );
+            return null;
+        }
         var result = summaryBuilder.ToString().Trim();
         return string.IsNullOrEmpty(result) ? null : Truncate(result, 32_000);
     }

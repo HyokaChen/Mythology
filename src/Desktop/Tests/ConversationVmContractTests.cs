@@ -152,6 +152,46 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
+    /// 手动压缩必须进入总忙碌态：停止按钮可见、发送被挡住；压缩中再次输入 /compact
+    /// 必须在 VM 层拒绝，不能撞到引擎闸门后再生成一条“压缩被拒绝”的系统消息。
+    /// </summary>
+    [Fact]
+    public void Compaction_MarksBusy_AndBlocksCompactCommand()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var notices = new List<string>();
+        vm.SystemMessageRequested += notices.Add;
+
+        var start = (Action)
+            typeof(SessionEngine)
+                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine)!;
+        var end = (Action<string, string?>?)
+            typeof(SessionEngine)
+                .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(h.Engine);
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.True(vm.IsCompacting);
+            Assert.True(vm.IsBusy);
+            Assert.True(vm.TryExecuteCommand("/compact"));
+            Assert.Contains(notices, n => n.Contains("压缩进行中"));
+
+            Assert.NotNull(end);
+            end!("上下文压缩完成", null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.False(vm.IsCompacting);
+            Assert.False(vm.IsBusy);
+        });
+    }
+
+    /// <summary>
     /// 跨线程事件顺序不保证：End 的 UI action 可能先于 Start 执行。
     /// 此时 Start 必须立即消费挂起的 End，不能留下永久旋转的「上下文压缩中…」。
     /// </summary>
