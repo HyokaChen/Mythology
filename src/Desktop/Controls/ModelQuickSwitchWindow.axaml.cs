@@ -19,7 +19,8 @@ public sealed record QuickModelItem(string Name, bool IsCurrent)
 /// </summary>
 public partial class ModelQuickSwitchWindow : Window
 {
-    private readonly IReadOnlyList<QuickModelItem> _items;
+    private readonly string _currentModel;
+    private List<QuickModelItem> _items;
     private List<QuickModelItem> _filtered = [];
     private readonly Action<string> _onApply;
     private bool _isInteractive;
@@ -30,12 +31,8 @@ public partial class ModelQuickSwitchWindow : Window
         Action<string> onApply
     )
     {
-        _items = models
-            .Select(m => new QuickModelItem(
-                m,
-                string.Equals(m, currentModel, StringComparison.OrdinalIgnoreCase)
-            ))
-            .ToList();
+        _currentModel = currentModel;
+        _items = BuildItems(models);
         _onApply = onApply;
 
         InitializeComponent();
@@ -45,6 +42,37 @@ public partial class ModelQuickSwitchWindow : Window
         RefreshFilter("");
         _isInteractive = true; // 构造完成（程序化选中不触发应用），此后单击即切换
         KeyDown += OnKeyDown;
+    }
+
+    private List<QuickModelItem> BuildItems(IReadOnlyList<string> models) =>
+        models
+            .Select(m => new QuickModelItem(
+                m,
+                string.Equals(m, _currentModel, StringComparison.OrdinalIgnoreCase)
+            ))
+            .ToList();
+
+    /// <summary>窗口已打开、模型列表仍在发现中。</summary>
+    public void SetLoading(string message = "正在获取模型列表…")
+    {
+        StatusNote.Text = message;
+        StatusNote.IsVisible = true;
+    }
+
+    /// <summary>发现完成：替换列表并沿用用户已输入的搜索词。</summary>
+    public void SetModels(IReadOnlyList<string> models)
+    {
+        _items = BuildItems(models);
+        RefreshFilter(SearchInput.Text ?? "");
+        StatusNote.Text = "";
+        StatusNote.IsVisible = false;
+    }
+
+    /// <summary>发现失败：保留已有列表，底部给出可操作提示。</summary>
+    public void SetError(string message)
+    {
+        StatusNote.Text = message;
+        StatusNote.IsVisible = true;
     }
 
     /// <summary>

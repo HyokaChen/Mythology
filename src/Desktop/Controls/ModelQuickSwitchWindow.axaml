@@ -57,13 +57,24 @@
       </ListBox>
     </Border>
 
-    <!-- 底部提示 -->
-    <TextBlock
-      Grid.Row="2"
-      Text="↑↓ 导航 · Enter 切换 · Esc 关闭"
-      Classes="Tag"
-      Foreground="{DynamicResource BrushSageMist}"
-      Margin="2,8,0,0"
-    />
+    <!-- 底部提示：左侧显示发现中/错误，右侧保持固定键盘提示 -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="2,8,0,0">
+      <TextBlock
+        x:Name="StatusNote"
+        Grid.Column="0"
+        Classes="Tag"
+        Foreground="{DynamicResource BrushSageMist}"
+        TextWrapping="Wrap"
+        IsVisible="False"
+        VerticalAlignment="Center"
+      />
+      <TextBlock
+        Grid.Column="1"
+        Text="↑↓ 导航 · Enter 切换 · Esc 关闭"
+        Classes="Tag"
+        Foreground="{DynamicResource BrushSageMist}"
+        VerticalAlignment="Center"
+      />
+    </Grid>
   </Grid>
 </Window>

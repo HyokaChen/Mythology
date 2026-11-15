@@ -72,4 +72,56 @@ public sealed class ModelQuickSwitchWindowTests
             Assert.Equal(["model-9"], applied);
         });
     }
+
+    [Fact]
+    public void ModelsArrivingAfterFilter_RefreshesListAndSelection()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var window = new ModelQuickSwitchWindow("model-6", ["model-6"], _ => { });
+            window.SetLoading();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var list = window.FindControl<ListBox>("ModelList")!;
+            var note = window.FindControl<TextBlock>("StatusNote")!;
+            var search = window.FindControl<TextBox>("SearchInput")!;
+            Assert.True(note.IsVisible);
+            Assert.Equal(1, list.ItemCount);
+
+            // 用户可能在“正在获取…”期间就输入搜索词；发现结果回来必须沿用该过滤条件。
+            search.Text = "model-9";
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(0, list.ItemCount);
+
+            window.SetModels(Enumerable.Range(1, 10).Select(i => $"model-{i}").ToArray());
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(1, list.ItemCount);
+            Assert.Equal("model-9", Assert.IsType<QuickModelItem>(list.SelectedItem).Name);
+            Assert.False(note.IsVisible);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void ErrorAfterLoading_ShowsNoteAndKeepsCurrentList()
+    {
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var window = new ModelQuickSwitchWindow("model-6", ["model-6"], _ => { });
+            window.SetLoading();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            window.SetError("未获取到模型列表");
+
+            var note = window.FindControl<TextBlock>("StatusNote")!;
+            var list = window.FindControl<ListBox>("ModelList")!;
+            Assert.True(note.IsVisible);
+            Assert.Equal("未获取到模型列表", note.Text);
+            Assert.Equal("model-6", Assert.IsType<QuickModelItem>(list.SelectedItem).Name);
+            window.Close();
+        });
+    }
 }

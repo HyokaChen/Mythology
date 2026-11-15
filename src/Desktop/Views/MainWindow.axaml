@@ -342,12 +342,7 @@
             Text="·"
             VerticalAlignment="Center"
           />
-          <Button
-            Classes="NavPill"
-            Padding="8,3"
-            Click="CloudButton_OnClick"
-            ToolTip.Tip="云端账号 · 点击登录/管理"
-          >
+          <Button Classes="NavPill" Padding="8,3" Click="CloudButton_OnClick">
             <TextBlock
               FontFamily="{StaticResource FontMono}"
               FontSize="11"
@@ -392,12 +387,7 @@
             Background="{DynamicResource BrushMist}"
             VerticalAlignment="Center"
           />
-          <Button
-            Classes="NavPill"
-            Padding="8,3"
-            Click="ModelButton_OnClick"
-            ToolTip.Tip="快速切换模型（当前提供商）· 也可 Ctrl+K 命令面板"
-          >
+          <Button Classes="NavPill" Padding="8,3" Click="ModelButton_OnClick">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <lucide:LucideIcon
                 Kind="Brain"
@@ -420,12 +410,7 @@
             Background="{DynamicResource BrushMist}"
             VerticalAlignment="Center"
           />
-          <Button
-            Classes="NavPill"
-            Padding="8,3"
-            Click="StatusTools_OnClick"
-            ToolTip.Tip="工具统计 · 点击打开工具设置"
-          >
+          <Button Classes="NavPill" Padding="8,3" Click="StatusTools_OnClick">
             <TextBlock
               FontFamily="{StaticResource FontMono}"
               FontSize="11"

@@ -72,6 +72,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private bool _isCompacting;
     private bool _isShutdown;
+    private bool _modelQuickSwitchOpen;
     private readonly ContextTokenCalibrator _calibrator;
     private readonly ILogger _log;
 
@@ -1699,12 +1700,19 @@ public sealed class MainWindowViewModel : ViewModelBase
             )
             : cfg.ApiKeys.FirstOrDefault(k => k.Provider == cfg.Default);
 
-    /// <summary>状态栏模型区快速切换：列出当前提供商可用模型（发现失败/无 Key 给系统提示，引导去设置）。</summary>
+    /// <summary>
+    /// 状态栏模型区快速切换：先打开窗口再异步发现模型，避免网络慢时点击像没反应；
+    /// 同一时间只允许一个切换窗，防止连点叠出多个模态层。
+    /// </summary>
     public async Task ShowModelQuickSwitchAsync()
     {
+        if (_modelQuickSwitchOpen)
+            return;
+
         if (IsProcessing)
         {
             StatusText = "写作中…（先停止再切换模型）";
+            StatusTooltip = null;
             return;
         }
         var owner = GetMainWindow();
@@ -1718,27 +1726,68 @@ public sealed class MainWindowViewModel : ViewModelBase
             : ProviderDefinition.FindByConfigKey(cfg.Default);
         if (entry is null || string.IsNullOrWhiteSpace(entry.ApiKey))
         {
-            ActiveConversationVm?.AddSystemNotice("该提供商未配置 API Key，请先在设置中填写");
+            const string message = "该提供商未配置 API Key，请先在设置中填写。";
+            await new MessageBox("无法切换模型", message).ShowDialogAsync(owner);
             return;
         }
         if (def is null && string.IsNullOrWhiteSpace(entry.BaseUrl))
         {
-            ActiveConversationVm?.AddSystemNotice("自定义提供商需先在设置中填写 Base URL");
+            const string message = "自定义提供商需先在设置中填写 Base URL。";
+            await new MessageBox("无法切换模型", message).ShowDialogAsync(owner);
             return;
         }
 
-        var models = await ModelDiscoveryService.GetModelsAsync(entry, def);
-        if (models.Count == 0)
+        _modelQuickSwitchOpen = true;
+        try
         {
-            ActiveConversationVm?.AddSystemNotice(
-                "未获取到模型列表（检查网络或 API Key），也可在设置中手动输入"
+            var currentModel = _agent.State.ModelName ?? "";
+            // 当前模型先占位：窗口立即可见、可关闭；网络发现回来后再替换成完整列表。
+            IReadOnlyList<string> initialModels = string.IsNullOrWhiteSpace(currentModel)
+                ? Array.Empty<string>()
+                : new[] { currentModel };
+            var window = new ModelQuickSwitchWindow(currentModel, initialModels, m =>
+                _ = ApplyQuickModelAsync(m)
             );
-            return;
-        }
+            window.SetLoading();
 
-        await new ModelQuickSwitchWindow(_agent.State.ModelName ?? "", models, m =>
-            _ = ApplyQuickModelAsync(m)
-        ).ShowDialog(owner);
+            var dialogTask = window.ShowDialog(owner);
+            var discoveryTask = ModelDiscoveryService.GetModelsAsync(entry, def);
+            _ = PopulateModelQuickSwitchAsync(window, discoveryTask);
+            await dialogTask;
+        }
+        finally
+        {
+            _modelQuickSwitchOpen = false;
+        }
+    }
+
+    /// <summary>把异步发现结果回填到仍打开的切换窗；窗口已关闭则丢弃。</summary>
+    private static async Task PopulateModelQuickSwitchAsync(
+        ModelQuickSwitchWindow window,
+        Task<List<string>> discoveryTask
+    )
+    {
+        try
+        {
+            var models = await discoveryTask;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!window.IsVisible)
+                    return;
+                if (models.Count == 0)
+                    window.SetError("未获取到模型列表（检查网络或 API Key），也可在设置中手动输入");
+                else
+                    window.SetModels(models);
+            });
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (window.IsVisible)
+                    window.SetError($"获取模型列表失败：{ex.Message}");
+            });
+        }
     }
 
     /// <summary>应用快速切换：写配置 → 重建 API/失效 Loop → 刷新稳定器阈值/校准/状态栏。</summary>
