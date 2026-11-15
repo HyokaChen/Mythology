@@ -1361,7 +1361,8 @@ public sealed class ConversationViewModel : ViewModelBase
             // AgentStart 之后 _isPreflightTurn 为 false，回合中段压缩只能追加。
             var isPreflight = _isPreflightTurn;
             var pendingUser = isPreflight ? _pendingTurnUserMessage : null;
-            var pendingAgent = isPreflight && _agentMessage is { IsEmpty: true } ? _agentMessage : null;
+            var pendingAgent =
+                isPreflight && _agentMessage is { IsEmpty: true } ? _agentMessage : null;
             Dispatcher.UIThread.Post(() =>
             {
                 IsCompacting = true;
@@ -1515,15 +1516,13 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         if (message.Content.Length < CompactingStatusPrefix.Length)
             return false;
-        return message.Content.ToString().StartsWith(CompactingStatusPrefix, StringComparison.Ordinal);
+        return message
+            .Content.ToString()
+            .StartsWith(CompactingStatusPrefix, StringComparison.Ordinal);
     }
 
     /// <summary>把压缩结束事件落到活动状态行；没有活动行时退化为系统提示。</summary>
-    private void ApplyCompactEnd(
-        ChatMessageModel? status,
-        string message,
-        string? summary = null
-    )
+    private void ApplyCompactEnd(ChatMessageModel? status, string message, string? summary = null)
     {
         _compactWatch?.Stop();
         _pendingCompactEnd = null;
