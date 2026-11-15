@@ -70,4 +70,41 @@ public sealed class CompactionCheckpointTests
         Assert.Contains("继承背景", migrated);
         Assert.Equal(1, migrated.Split("## Next / 下一步", StringSplitOptions.None).Length - 1);
     }
+
+    [Fact]
+    public void CompactSummary_KeepsAuthorInstruction_AndDemotesForecastToSystemNote()
+    {
+        var messages = new List<LlmChatMessage>
+        {
+            new(
+                ChatMessageRoles.User,
+                "修正优化整个第二卷 分卷[ID:0a009638c126]:夏夜的萤火 的所有章节内容！！"
+            ),
+            new(ChatMessageRoles.Assistant, "开始处理第二卷。"),
+            new(
+                ChatMessageRoles.User,
+                "[远期推演] 已写至第53章，下一章：第54章《皮皮龙的灵觉与恶意的瞥见》"
+            ),
+            new(ChatMessageRoles.Assistant, "收到。"),
+        };
+
+        var dialogueMethod = typeof(CompactionEngine).GetMethod(
+            "BuildCompressedDialogue",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        var dialogue = (string)dialogueMethod.Invoke(null, [messages, messages.Count])!;
+
+        Assert.Contains("[user]: 修正优化整个第二卷", dialogue);
+        Assert.Contains("[system-note]: [远期推演]", dialogue);
+        Assert.DoesNotContain("[user]: [远期推演]", dialogue);
+
+        var summaryMethod = typeof(CompactionEngine).GetMethod(
+            "BuildCompactSummary",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        var summary = (string)summaryMethod.Invoke(null, [messages, messages.Count, null, ""])!;
+
+        Assert.StartsWith("> 作者指令（逐字，最高优先级）：修正优化整个第二卷", summary);
+        Assert.Contains("修正优化整个第二卷", summary);
+    }
 }

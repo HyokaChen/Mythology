@@ -488,7 +488,8 @@ public sealed class CompactionEngine(
                 if (aiSummary is not null)
                 {
                     var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint);
-                    return Truncate(MergeCheckpoint(normalized, previousSummary), 8_000);
+                    var merged = Truncate(MergeCheckpoint(normalized, previousSummary), 8_000);
+                    return PrependAuthorScope(merged, messages, cutIndex);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -523,6 +524,7 @@ public sealed class CompactionEngine(
         var dialogue = BuildCompressedDialogue(messages, cutIndex);
         if (dialogue.Length == 0)
             return null;
+        var authorInstructions = CollectAuthorInstructions(messages, cutIndex);
 
         var prompt = new StringBuilder();
         prompt.AppendLine(
@@ -543,6 +545,19 @@ public sealed class CompactionEngine(
         prompt.AppendLine("- 不得原文复述已有检查点，不得生成“压缩概览/之前的摘要/文件操作”标题，");
         prompt.AppendLine("- 不得用 read/write/edit/list/search 等工具调用结果代替剧情状态。");
         prompt.AppendLine("- 总长度不超过 8,000 字符。");
+        prompt.AppendLine(
+            "- 只有“作者指令（逐字）”是用户目标；[system-note]、[tool]、[assistant] 是系统/工具事件，不得写成“用户明确目标”或“用户要求”。"
+        );
+        prompt.AppendLine(
+            "- 作者指令中的范围（如“第二卷/第21-40章”）是硬约束；不得把范围扩大到其它卷或其它章节。"
+        );
+        prompt.AppendLine();
+        prompt.AppendLine("## 作者指令（逐字，最高优先级）");
+        if (authorInstructions.Count == 0)
+            prompt.AppendLine("- （压缩区没有作者指令）");
+        else
+            foreach (var instruction in authorInstructions)
+                prompt.AppendLine($"- {Truncate(instruction.ReplaceLineEndings(" "), 1_200)}");
         prompt.AppendLine();
 
         prompt.AppendLine("## 当前小说状态（优先）");
@@ -573,6 +588,7 @@ public sealed class CompactionEngine(
         var conversation = api.Chat.CreateConversation(request);
         conversation.AddSystemMessage(
             "你是小说写作的上下文检查点编辑器。只输出 5W1H 检查点，保留可执行的下一步。使用中文。"
+                + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
         );
         conversation.AddUserMessage(prompt.ToString());
 
@@ -610,13 +626,17 @@ public sealed class CompactionEngine(
                 || SessionInternalMessages.IsCompactSummary(content)
             )
                 continue;
-            var role = msg.Role switch
-            {
-                ChatMessageRoles.User => "user",
-                ChatMessageRoles.Assistant => "assistant",
-                ChatMessageRoles.Tool => "tool",
-                _ => "unknown",
-            };
+            var role =
+                msg.Role == ChatMessageRoles.User
+                && SessionInternalMessages.IsInjectedUserMessage(content)
+                    ? "system-note"
+                    : msg.Role switch
+                    {
+                        ChatMessageRoles.User => "user",
+                        ChatMessageRoles.Assistant => "assistant",
+                        ChatMessageRoles.Tool => "tool",
+                        _ => "unknown",
+                    };
             var line = $"[{role}]: {Truncate(content.ReplaceLineEndings(" "), maxPartChars)}";
             if (used + line.Length > maxTotalChars)
                 break;
@@ -638,7 +658,8 @@ public sealed class CompactionEngine(
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
-        return Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
+        var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
+        return PrependAuthorScope(summary, messages, cutIndex);
     }
 
     private static string BuildConversationCheckpoint(
@@ -810,6 +831,42 @@ public sealed class CompactionEngine(
             .OrderBy(e => e.Index)
             .Select(e => e.Text)
             .ToList();
+    }
+
+    private static List<string> CollectAuthorInstructions(
+        IReadOnlyList<ChatMessage> messages,
+        int cutIndex,
+        int max = 3
+    )
+    {
+        var result = new List<string>();
+        for (var i = cutIndex - 1; i >= 0 && result.Count < max; i--)
+        {
+            var content = (messages[i].Content ?? "").Trim();
+            if (
+                messages[i].Role != ChatMessageRoles.User
+                || content.Length == 0
+                || SessionInternalMessages.IsCompactSummary(content)
+                || SessionInternalMessages.IsInjectedUserMessage(content)
+            )
+                continue;
+            result.Add(content);
+        }
+        result.Reverse();
+        return result;
+    }
+
+    private static string PrependAuthorScope(
+        string summary,
+        IReadOnlyList<ChatMessage> messages,
+        int cutIndex
+    )
+    {
+        var latest = FindLatestVisibleUser(messages, cutIndex);
+        if (string.IsNullOrWhiteSpace(latest))
+            return summary;
+        var scope = Truncate(latest.ReplaceLineEndings(" "), 600);
+        return $"> 作者指令（逐字，最高优先级）：{scope}\n\n{summary}";
     }
 
     private static string? FindLatestVisibleUser(IReadOnlyList<ChatMessage> messages, int cutIndex)
