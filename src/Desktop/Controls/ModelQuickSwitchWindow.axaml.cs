@@ -20,7 +20,7 @@ public sealed record QuickModelItem(string Name, bool IsCurrent)
 public partial class ModelQuickSwitchWindow : Window
 {
     private readonly IReadOnlyList<QuickModelItem> _items;
-    private readonly List<QuickModelItem> _filtered = [];
+    private List<QuickModelItem> _filtered = [];
     private readonly Action<string> _onApply;
     private bool _isInteractive;
 
@@ -47,16 +47,20 @@ public partial class ModelQuickSwitchWindow : Window
         KeyDown += OnKeyDown;
     }
 
-    /// <summary>搜索过滤：模型名子串（不区分大小写）；默认选中当前模型。</summary>
+    /// <summary>
+    /// 搜索过滤：模型名子串（不区分大小写）；默认选中当前模型。
+    /// 每次过滤都换一个新的 List 作为 ItemsSource：ListBox 的 SelectionModel 只在
+    /// ItemsSource 变更时丢弃旧索引，原地复用同一个 List 会让过滤前的选中索引越界。
+    /// </summary>
     private void RefreshFilter(string query)
     {
-        _filtered.Clear();
         var q = query.Trim();
-        foreach (var item in _items)
-        {
-            if (q.Length == 0 || item.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
-                _filtered.Add(item);
-        }
+        _filtered =
+            q.Length == 0
+                ? _items.ToList()
+                : _items
+                    .Where(item => item.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
         ModelList.ItemsSource = _filtered;
         // 默认选中当前模型，其次首项
         var idx = _filtered.FindIndex(i => i.IsCurrent);
