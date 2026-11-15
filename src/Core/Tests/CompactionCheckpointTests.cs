@@ -42,6 +42,7 @@ public sealed class CompactionCheckpointTests
         foreach (
             var heading in new[]
             {
+                "## Scope / 任务边界",
                 "## Where / 写到哪里",
                 "## Who / 谁出场",
                 "## What / 发生了什么",

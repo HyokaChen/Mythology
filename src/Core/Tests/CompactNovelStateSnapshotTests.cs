@@ -14,6 +14,7 @@ namespace Core.Tests;
 public sealed class CompactNovelStateSnapshotTests : IDisposable
 {
     private const string NovelId = "n1";
+    private const string RevisionNovelId = "n2";
     private readonly string _base = Path.Combine(
         Path.GetTempPath(),
         $"myth-compact-snapshot-{Guid.NewGuid():N}"
@@ -60,14 +61,11 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
             new(ChatMessageRoles.User, "继续写第一章的对峙"),
             new(ChatMessageRoles.Assistant, "好的，我会接着写。"),
         };
-        var method = typeof(CompactionEngine).GetMethod(
-            "BuildNovelStateSnapshotAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-        var task =
-            (Task<string>)method.Invoke(_engine, [NovelId, messages, CancellationToken.None])!;
-        var snapshot = await task;
+        var snapshot = await BuildSnapshotAsync(NovelId, messages);
 
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("任务类型：续写/新建正文", snapshot);
+        Assert.Contains("允许范围：第1卷《第一卷》（ID:v1），第1章，共1章", snapshot);
         Assert.Contains("## Where / 写到哪里", snapshot);
         Assert.Contains("## Who / 谁出场", snapshot);
         Assert.Contains("## What / 发生了什么", snapshot);
@@ -78,18 +76,152 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
 
         Assert.Contains("第一卷", snapshot);
         Assert.Contains("第1章《开端》", snapshot);
+        Assert.Contains("当前章（任务焦点）：第1章《开端》", snapshot);
         Assert.Contains("黄昏", snapshot);
         Assert.Contains("教室", snapshot);
         Assert.Contains("林默", snapshot);
         Assert.Contains("身世之谜", snapshot);
-        Assert.Contains("下一章细纲：林默发现线索", snapshot);
+        Assert.Contains("全局下一章（不是本任务 Next）：第2章《线索》", snapshot);
+        Assert.Contains("本任务下一步（必须在 Scope 内）：写第1章《开端》", snapshot);
         Assert.Contains("用户目标：继续写第一章的对峙", snapshot);
         Assert.Contains("场景冲突/目标：对峙 / 试探", snapshot);
-        Assert.Contains("推进下一章", snapshot);
+        Assert.DoesNotContain("下一章细纲：林默发现线索", snapshot);
+        Assert.DoesNotContain("直接下一步：", snapshot);
 
         Assert.DoesNotContain("read(", snapshot, StringComparison.Ordinal);
         Assert.DoesNotContain("write(", snapshot, StringComparison.Ordinal);
         Assert.DoesNotContain("## 文件操作", snapshot, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildNovelStateSnapshot_WithoutExplicitScope_KeepsGlobalNext()
+    {
+        await SeedNovelAsync();
+
+        var messages = new List<LlmChatMessage>
+        {
+            new(ChatMessageRoles.User, "检查一下当前状态"),
+            new(ChatMessageRoles.Assistant, "好的。"),
+        };
+        var snapshot = await BuildSnapshotAsync(NovelId, messages);
+
+        Assert.DoesNotContain("## Scope / 任务边界", snapshot);
+        Assert.Contains("下一章细纲：林默发现线索", snapshot);
+        Assert.Contains("直接下一步：", snapshot);
+        Assert.Contains("推进下一章《线索》", snapshot);
+    }
+
+    [Fact]
+    public async Task BuildNovelStateSnapshot_RevisionScope_DoesNotPromoteGlobalNext()
+    {
+        await SeedRevisionNovelAsync();
+
+        var messages = new List<LlmChatMessage>
+        {
+            new(
+                ChatMessageRoles.User,
+                "修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！"
+            ),
+            new(ChatMessageRoles.Assistant, "开始处理第二卷。"),
+        };
+        var snapshot = await BuildSnapshotAsync(RevisionNovelId, messages);
+
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("任务类型：修订/优化已有章节", snapshot);
+        Assert.Contains("允许范围：第2卷《夏夜的萤火》（ID:v2），第21-40章", snapshot);
+        Assert.Contains("全局写作前沿（不是本任务进度）：第53章", snapshot);
+        Assert.Contains("全局下一章（不是本任务 Next）：第54章", snapshot);
+
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        var nextSection = snapshot[nextIndex..];
+        Assert.Contains("本任务下一步（必须在 Scope 内）", nextSection);
+        Assert.Contains("第23章", nextSection);
+        Assert.DoesNotContain("第54章", nextSection);
+    }
+
+    private async Task<string> BuildSnapshotAsync(
+        string novelId,
+        IReadOnlyList<LlmChatMessage> messages
+    )
+    {
+        var method = typeof(CompactionEngine).GetMethod(
+            "BuildNovelStateSnapshotAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var task =
+            (Task<string>)method.Invoke(_engine, [novelId, messages, CancellationToken.None])!;
+        return await task;
+    }
+
+    private async Task SeedRevisionNovelAsync()
+    {
+        var novel = new Novel
+        {
+            Id = RevisionNovelId,
+            NovelId = RevisionNovelId,
+            Title = "卷二修订测试",
+            Genre = "玄幻",
+            WritingStyle = "冷峻",
+        };
+        await _novelStore.SaveNovel(novel);
+
+        var volume2 = new Volume
+        {
+            Id = "v2",
+            NovelId = RevisionNovelId,
+            Name = "夏夜的萤火",
+            Order = 2,
+        };
+        var volume3 = new Volume
+        {
+            Id = "v3",
+            NovelId = RevisionNovelId,
+            Name = "第三卷",
+            Order = 3,
+        };
+        await _novelStore.SaveVolume(volume2);
+        await _novelStore.SaveVolume(volume3);
+
+        for (var order = 21; order <= 40; order++)
+        {
+            await _novelStore.SaveChapter(
+                new Chapter
+                {
+                    Id = $"c{order}",
+                    NovelId = RevisionNovelId,
+                    Title = $"萤火{order}",
+                    Order = order,
+                    VolumeId = volume2.Id,
+                    Status = ChapterStatus.Draft,
+                    Content = order <= 22 ? new string('文', 100) : "",
+                }
+            );
+        }
+
+        await _novelStore.SaveChapter(
+            new Chapter
+            {
+                Id = "c53",
+                NovelId = RevisionNovelId,
+                Title = "皮皮龙的灵觉",
+                Order = 53,
+                VolumeId = volume3.Id,
+                Status = ChapterStatus.Draft,
+                Content = new string('文', 500),
+            }
+        );
+        await _novelStore.SaveChapter(
+            new Chapter
+            {
+                Id = "c54",
+                NovelId = RevisionNovelId,
+                Title = "恶意的瞥见",
+                Order = 54,
+                VolumeId = volume3.Id,
+                Status = ChapterStatus.Draft,
+            }
+        );
     }
 
     private async Task SeedNovelAsync()
