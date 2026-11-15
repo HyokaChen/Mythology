@@ -286,6 +286,60 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetLastAuthorMessage_SurvivesCompact()
+    {
+        await CreateTestNovelAsync();
+        var messages = CreateSimpleConversation("原始作者任务：修正优化第二卷", "回复");
+        var lastEntryId = await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            messages,
+            startOrder: 0
+        );
+        var (compactEntryId, _) = await _store.CompactSession(
+            TestSessionId,
+            TestNovelId,
+            summary: "摘要",
+            firstKeptEntryId: lastEntryId!,
+            messagesBefore: messages.Count,
+            parentEntryId: null,
+            order: 2
+        );
+        await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            [new LlmChatMessage(ChatMessageRoles.User, "[本体 harness] 注入")],
+            lastParentEntryId: compactEntryId,
+            startOrder: 3
+        );
+
+        var lastAuthor = await _store.GetLastAuthorMessageAsync(TestSessionId);
+
+        Assert.Equal("原始作者任务：修正优化第二卷", lastAuthor);
+    }
+
+    [Fact]
+    public async Task SaveSessionMessages_PersistsTitleInManifest()
+    {
+        await CreateTestNovelAsync();
+        await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            CreateSimpleConversation("写进 manifest 的标题", "回复"),
+            startOrder: 0
+        );
+
+        var manifestPath = Path.Combine(GetSessionDir(), "MANIFEST.json");
+        var manifest = JsonSerializer.Deserialize<SessionManifest>(
+            await File.ReadAllTextAsync(manifestPath),
+            JsonlSerializer.Options
+        );
+
+        Assert.NotNull(manifest);
+        Assert.Equal("写进 manifest 的标题", manifest!.Title);
+    }
+
+    [Fact]
     /// <summary>标题应跳过系统注入消息，取第一条作者输入。</summary>
     public async Task GetSession_SkipsInjectedMessages_ForTitle()
     {

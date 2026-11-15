@@ -279,6 +279,65 @@ public sealed class FileSessionStore
         return null;
     }
 
+    /// <summary>
+    /// 取会话历史上最后一条真正作者消息（跨全部分片，从新到旧）。
+    /// compact 后活跃分片可能只剩注入消息；摘要提取 Scope 必须能看到旧分片里的作者原话。
+    /// </summary>
+    public async Task<string?> GetLastAuthorMessageAsync(
+        string sessionId,
+        CancellationToken ct = default
+    )
+    {
+        var mgr = GetSegmentManager(sessionId);
+        if (mgr is null)
+            return null;
+
+        // 先沿 active path 找，避免把已切走分支的作者消息当成当前任务。
+        foreach (var message in Enumerable.Reverse(await GetActiveMessages(sessionId, ct)))
+        {
+            var content = message.Content ?? "";
+            if (
+                message.Role != MessageRole.User
+                || string.IsNullOrWhiteSpace(content)
+                || SessionInternalMessages.IsCompactSummary(content)
+                || (
+                    SessionInternalMessages.IsInjectedUserMessage(content)
+                    && !SessionInternalMessages.IsAskUserReply(content)
+                )
+            )
+                continue;
+            return content.Trim();
+        }
+
+        // 活跃分片可能已被 compact/换页封住；再从全部分片补扫旧作者原话。
+        foreach (var path in Enumerable.Reverse(mgr.AllSegmentPaths))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!File.Exists(path))
+                continue;
+            var (entries, _, _) = await ReadAndParseJsonlAsync(path, sessionId);
+            for (var i = entries.Count - 1; i >= 0; i--)
+            {
+                var entry = entries[i];
+                if (entry.Type != JsonlEntryType.Message || entry.Message?.Role != MessageRole.User)
+                    continue;
+                var content = entry.Message.Content ?? "";
+                if (
+                    string.IsNullOrWhiteSpace(content)
+                    || SessionInternalMessages.IsCompactSummary(content)
+                    || (
+                        SessionInternalMessages.IsInjectedUserMessage(content)
+                        && !SessionInternalMessages.IsAskUserReply(content)
+                    )
+                )
+                    continue;
+                return content.Trim();
+            }
+        }
+
+        return null;
+    }
+
     public async Task<List<AgentSession>> GetSessions(
         string novelId,
         CancellationToken ct = default
@@ -545,6 +604,15 @@ public sealed class FileSessionStore
             // 会把 000001.jsonl 当成旧格式单文件，compact 后标题只剩注入消息。
             RegisterSessionIndex(sessionId, novelId, mgr.SessionDir);
 
+            // 标题只推导一次并写回 MANIFEST；compact 复制非空标题，不再靠每次读盘 fallback。
+            if (string.IsNullOrEmpty(mgr.Manifest.Title))
+            {
+                var title = ExtractTitleFromMessages(newMessages)
+                    ?? ReadTitleFromSegments(mgr.SessionDir, mgr.Manifest);
+                if (!string.IsNullOrWhiteSpace(title))
+                    mgr.Manifest.Title = title;
+            }
+
             // 更新 MANIFEST
             UpdateManifestSegment(
                 mgr,
@@ -589,6 +657,14 @@ public sealed class FileSessionStore
         await mgr.AcquireLockAsync();
         try
         {
+            // 旧会话 MANIFEST.title 可能为空；compact 前补一次，新分片/manifest 复制非空标题。
+            if (string.IsNullOrEmpty(mgr.Manifest.Title))
+            {
+                var recoveredTitle = ReadTitleFromSegments(mgr.SessionDir, mgr.Manifest);
+                if (!string.IsNullOrWhiteSpace(recoveredTitle))
+                    mgr.Manifest.Title = recoveredTitle;
+            }
+
             // BlockId = 新分片 seq：分片全局递增且不重用，天然唯一稳定（B2）。
             var newSeq = mgr.ActiveSeq + 1;
             var blockId = $"b{newSeq}";
@@ -3574,6 +3650,20 @@ public sealed class FileSessionStore
         {
             return null;
         }
+    }
+
+    /// <summary>从本批新消息里提取首条作者标题；注入消息不算作者原话。</summary>
+    private static string? ExtractTitleFromMessages(IReadOnlyList<LlmChatMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            if (MessageRoleMapping.ToRoleString(message.Role ?? ChatMessageRoles.User) != "user")
+                continue;
+            var title = SessionInternalMessages.ExtractTitle(message.Content);
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+        return null;
     }
 
     /// <summary>

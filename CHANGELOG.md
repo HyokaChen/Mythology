@@ -39,6 +39,17 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **compact 的任务 Scope 改为 LLM 从最近作者消息提取，不落本地状态**：
+  `CompactionScopeExtractor` 在压缩时读取跨全集分片的最后一条作者消息与上一份摘要，
+  让 LLM 输出卷/章选择；摘要的 Scope/Where/Next 继续由代码后置校验，AI 只写叙事字段。
+  没有 API 或提取失败时才回退 `CompactionTaskScope.TryCreate`。不再写 `TASK_SCOPE.json`，
+  也不再依赖工具层持久化 Scope。回归：`CompactionScopeExtractorTests`、
+  `CompactionTaskScopeTests`、`CompactNovelStateSnapshotTests`、`CompactionCheckpointTests`、
+  `FileNovelStoreSessionTests.GetLastAuthorMessage_SurvivesCompact`。
+- **compact 后顶部标题不再变“新对话”**：首条作者消息落库时把标题写入 `MANIFEST.title`，
+  compact 前补一次旧会话标题；`AgentEnd` 与 compact 结束都刷新顶部标题，读不到会话时保留旧标题。
+  回归：`FileNovelStoreSessionTests.SaveSessionMessages_PersistsTitleInManifest`、
+  `GetSession_TitleSurvivesCompact`。
 - **顶部切换胶囊的长标题不再硬切**：小说名/会话名超过胶囊宽度时改为在标题末尾显示 `…`，
   右侧下拉 chevron 不再被挤出可见区；短标题仍按内容自适应、不会被撑满。根因是 SukiUI 的
   Button 模板把内容包在水平 StackPanel 里（按无限宽测量子项），`TextTrimming` 不生效，

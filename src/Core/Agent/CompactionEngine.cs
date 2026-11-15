@@ -78,7 +78,11 @@ public sealed class CompactionEngine(
         NextHeading,
     ];
 
-    private sealed record NovelStateBuildResult(string Snapshot, CompactionTaskScope? Scope);
+    private sealed record NovelStateBuildResult(
+        string Snapshot,
+        CompactionTaskScope? Scope,
+        string? LatestAuthorMessage
+    );
 
     private int _compactGate;
 
@@ -203,7 +207,7 @@ public sealed class CompactionEngine(
         {
             // 设定/结构读取失败不能阻断上下文压缩；退化为对话 5W1H。
             log.LogWarning(ex, "build novel state snapshot failed; falling back to conversation");
-            novelState = new NovelStateBuildResult("", null);
+            novelState = new NovelStateBuildResult("", null, null);
         }
 
         var summary = await GenerateCompactSummaryAsync(
@@ -212,6 +216,7 @@ public sealed class CompactionEngine(
             previousSummary,
             novelState.Snapshot,
             novelState.Scope,
+            novelState.LatestAuthorMessage,
             ct
         );
         var estimatedTokensAfter = EstimateCompactTokensAfter(summary, cutIndex, messages);
@@ -492,6 +497,7 @@ public sealed class CompactionEngine(
         string? previousSummary,
         string novelSnapshot,
         CompactionTaskScope? scope,
+        string? latestAuthorMessage,
         CancellationToken ct
     )
     {
@@ -510,6 +516,7 @@ public sealed class CompactionEngine(
                     previousSummary,
                     novelSnapshot,
                     scope,
+                    latestAuthorMessage,
                     ct
                 );
                 if (aiSummary is not null)
@@ -517,7 +524,7 @@ public sealed class CompactionEngine(
                     var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint);
                     var merged = Truncate(MergeCheckpoint(normalized, previousSummary), 8_000);
                     return EnforceTaskScope(
-                        PrependAuthorScope(merged, messages, cutIndex),
+                        PrependAuthorScope(merged, messages, cutIndex, latestAuthorMessage, scope),
                         scope,
                         previousSummary
                     );
@@ -538,7 +545,8 @@ public sealed class CompactionEngine(
             cutIndex,
             previousSummary,
             novelSnapshot,
-            scope
+            scope,
+            latestAuthorMessage
         );
     }
 
@@ -548,6 +556,7 @@ public sealed class CompactionEngine(
         string? previousSummary,
         string novelSnapshot,
         CompactionTaskScope? scope,
+        string? latestAuthorMessage,
         CancellationToken ct
     )
     {
@@ -601,7 +610,14 @@ public sealed class CompactionEngine(
             "- 作者没有发出“取消/切换任务”的新指令时，原有 Scope 继续有效；不得把“没有新指令”解释为旧任务结束。"
         );
         prompt.AppendLine();
-        prompt.AppendLine("## 作者指令（逐字，最高优先级）");
+        prompt.AppendLine("## 最近作者消息（Scope 的唯一新来源）");
+        if (string.IsNullOrWhiteSpace(latestAuthorMessage))
+            prompt.AppendLine("- （本轮没有新的作者消息；只能继承已有检查点中的作者指令/Scope）");
+        else
+            prompt.AppendLine($"- {Truncate(latestAuthorMessage.ReplaceLineEndings(" "), 1_200)}");
+        prompt.AppendLine();
+
+        prompt.AppendLine("## 作者指令（压缩区，逐字）");
         if (authorInstructions.Count == 0)
             prompt.AppendLine("- （压缩区没有作者指令）");
         else
@@ -609,7 +625,7 @@ public sealed class CompactionEngine(
                 prompt.AppendLine($"- {Truncate(instruction.ReplaceLineEndings(" "), 1_200)}");
         prompt.AppendLine();
 
-        prompt.AppendLine("## 任务范围（确定性提取，最高优先级）");
+        prompt.AppendLine("## 任务范围（LLM 从作者消息提取，最高优先级）");
         if (scope is null)
             prompt.AppendLine("- 未识别到明确范围；按作者指令判断，不得自行扩大。");
         else
@@ -730,7 +746,7 @@ public sealed class CompactionEngine(
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
         var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
-        return PrependAuthorScope(summary, messages, cutIndex);
+        return PrependAuthorScope(summary, messages, cutIndex, null, null);
     }
 
     private static string BuildCompactSummaryWithScope(
@@ -738,7 +754,8 @@ public sealed class CompactionEngine(
         int cutIndex,
         string? previousSummary,
         string novelSnapshot,
-        CompactionTaskScope? scope
+        CompactionTaskScope? scope,
+        string? latestAuthorMessage
     )
     {
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
@@ -748,7 +765,7 @@ public sealed class CompactionEngine(
             baseCheckpoint = EnsureScopeSection(baseCheckpoint, scope);
 
         var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
-        summary = PrependAuthorScope(summary, messages, cutIndex);
+        summary = PrependAuthorScope(summary, messages, cutIndex, latestAuthorMessage, scope);
         return EnforceTaskScope(summary, scope, previousSummary);
     }
 
@@ -783,9 +800,7 @@ public sealed class CompactionEngine(
         sb.AppendLine("- 故事内时间：未指定（无小说时间线）");
         sb.AppendLine();
         sb.AppendLine(CheckpointHeadings[6]);
-        sb.AppendLine(
-            $"- 无小说风格设定；按最近用户要求继续：{(userText.Length > 0 ? userText : "当前对话")}"
-        );
+        sb.AppendLine("- 无小说风格设定；按最近用户要求继续，不重复复述用户目标。");
         sb.AppendLine();
         sb.AppendLine(CheckpointHeadings[7]);
         sb.AppendLine("- 直接下一步：完成用户最近请求（见 Why），并按当前对话继续");
@@ -915,17 +930,17 @@ public sealed class CompactionEngine(
             if (messages[i].Role == ChatMessageRoles.User)
             {
                 if (!SessionInternalMessages.IsInjectedUserMessage(content))
-                    userEvents.Add((i, $"用户：{Truncate(content, 120)}"));
+                    userEvents.Add((i, $"用户：{Truncate(content, 100)}"));
             }
             else if (messages[i].Role == ChatMessageRoles.Assistant)
             {
-                assistantEvents.Add((i, $"助手：{Truncate(content, 120)}"));
+                assistantEvents.Add((i, $"助手：{Truncate(content, 100)}"));
             }
         }
 
         return userEvents
-            .TakeLast(3)
-            .Concat(assistantEvents.TakeLast(3))
+            .TakeLast(2)
+            .Concat(assistantEvents.TakeLast(2))
             .OrderBy(e => e.Index)
             .Select(e => e.Text)
             .ToList();
@@ -957,14 +972,20 @@ public sealed class CompactionEngine(
     private static string PrependAuthorScope(
         string summary,
         IReadOnlyList<ChatMessage> messages,
-        int cutIndex
+        int cutIndex,
+        string? latestAuthorMessage,
+        CompactionTaskScope? scope
     )
     {
-        var latest = FindLatestVisibleUser(messages, cutIndex);
-        if (string.IsNullOrWhiteSpace(latest))
+        var instruction = scope?.Instruction;
+        if (string.IsNullOrWhiteSpace(instruction))
+            instruction = latestAuthorMessage;
+        if (string.IsNullOrWhiteSpace(instruction))
+            instruction = FindLatestVisibleUser(messages, cutIndex);
+        if (string.IsNullOrWhiteSpace(instruction))
             return summary;
-        var scope = Truncate(latest.ReplaceLineEndings(" "), 600);
-        return $"> 作者指令（逐字，最高优先级）：{scope}\n\n{summary}";
+        var text = Truncate(instruction.ReplaceLineEndings(" "), 300);
+        return $"> 作者指令（逐字，最高优先级）：{text}\n\n{summary}";
     }
 
     private static string? FindLatestVisibleUser(IReadOnlyList<ChatMessage> messages, int cutIndex)
@@ -1001,7 +1022,7 @@ public sealed class CompactionEngine(
     )
     {
         if (string.IsNullOrWhiteSpace(novelId))
-            return new NovelStateBuildResult("", null);
+            return new NovelStateBuildResult("", null, null);
 
         var structure = await novelStore.GetStructure(novelId, ct);
         if (structure is null || structure.Chapters.Count == 0)
@@ -1011,14 +1032,31 @@ public sealed class CompactionEngine(
                     compressedMessages.Count,
                     "尚未建立章节（按最近对话判断）"
                 ),
+                null,
                 null
             );
 
-        var latestUser = FindLatestVisibleUser(compressedMessages, compressedMessages.Count);
+        // 跨全部分片取最后一条作者消息：compact 后活跃分片可能只剩注入消息。
+        var latestAuthorMessage = !string.IsNullOrWhiteSpace(agent.SessionId)
+            ? await store.GetLastAuthorMessageAsync(agent.SessionId, ct)
+            : null;
+        latestAuthorMessage ??= FindLatestVisibleUser(compressedMessages, compressedMessages.Count);
+
+        // 主路径：LLM 从最近作者消息 + 上一份摘要提取 Scope；不落本地状态。
+        var extraction = await CompactionScopeExtractor.TryExtractAsync(
+            agent,
+            structure,
+            latestAuthorMessage,
+            previousSummary,
+            ct
+        );
         var previousScope = previousSummary is null
             ? null
             : ExtractSection(previousSummary, ScopeHeading);
-        var scope = CompactionTaskScope.TryCreate(latestUser, structure, previousScope);
+        var scope = extraction.Completed
+            ? extraction.Scope
+            : CompactionTaskScope.TryCreate(latestAuthorMessage, structure, previousScope);
+
         return new NovelStateBuildResult(
             await BuildNovelStateSnapshotCoreAsync(
                 novelId,
@@ -1027,7 +1065,8 @@ public sealed class CompactionEngine(
                 scope,
                 ct
             ),
-            scope
+            scope,
+            latestAuthorMessage
         );
     }
 

@@ -13,8 +13,9 @@ internal enum CompactionTaskMode
 }
 
 /// <summary>
-/// compact 摘要里的硬任务边界。它从作者指令（或上一份摘要的 Scope）确定性提取，
-/// 不依赖摘要模型“记得”作者要求；生成摘要后还要用它校验/修复 Next。
+/// compact 摘要里的任务边界。主路径由 <see cref="CompactionScopeExtractor"/> 调 LLM，
+/// 从最近作者消息（跨分片）和上一份摘要提取；无 API 或提取失败时才用 TryCreate 做离线兜底。
+/// 生成摘要后仍用它校验/修复 Where/Next。
 /// </summary>
 internal sealed class CompactionTaskScope
 {
@@ -103,8 +104,8 @@ internal sealed class CompactionTaskScope
     }
 
     /// <summary>
-    /// 从作者指令或上一份摘要的 Scope 中提取范围。优先作者指令；
-    /// 作者只说“继续”时继承 previousScopeText，避免多轮 compact 丢范围。
+    /// 离线兜底：从作者指令或上一份摘要的 Scope 中提取范围。优先作者指令；
+    /// 作者只说“继续”时继承 previousScopeText。正常路径由 LLM 提取，不依赖本方法。
     /// </summary>
     public static CompactionTaskScope? TryCreate(
         string? instruction,
@@ -116,6 +117,56 @@ internal sealed class CompactionTaskScope
             return null;
 
         return TryParse(instruction, structure) ?? TryParse(previousScopeText, structure);
+    }
+
+    /// <summary>
+    /// 把 LLM 提取出的卷/章选择还原成 Scope。LLM 只给 ID/序号，
+    /// 这里只做结构校验，不再从自然语言里猜范围。
+    /// </summary>
+    public static CompactionTaskScope? FromLlmSelection(
+        string? instruction,
+        string? mode,
+        IReadOnlyList<string>? volumeIds,
+        IReadOnlyList<int>? chapterOrders,
+        NovelStructure? structure
+    )
+    {
+        if (structure is null || structure.Chapters.Count == 0)
+            return null;
+
+        var selectedVolumeIds = (volumeIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        var selectedOrders = (chapterOrders ?? []).ToHashSet();
+        if (selectedVolumeIds.Count == 0 && selectedOrders.Count == 0)
+            return null;
+
+        var chapters = structure
+            .Chapters.Where(c =>
+                (
+                    selectedVolumeIds.Count == 0
+                    || (c.VolumeId is not null && selectedVolumeIds.Contains(c.VolumeId))
+                ) && (selectedOrders.Count == 0 || selectedOrders.Contains(c.Order))
+            )
+            .OrderBy(c => c.Order)
+            .ToList();
+        if (chapters.Count == 0)
+            return null;
+
+        var volumes = structure
+            .Volumes.Where(v =>
+                selectedVolumeIds.Contains(v.Id)
+                || chapters.Any(c => string.Equals(c.VolumeId, v.Id, StringComparison.Ordinal))
+            )
+            .OrderBy(v => v.Order)
+            .ToList();
+        var isRevise = string.Equals(mode, "revise", StringComparison.OrdinalIgnoreCase);
+        return new CompactionTaskScope(
+            instruction ?? "",
+            isRevise ? CompactionTaskMode.Revise : CompactionTaskMode.Write,
+            volumes,
+            chapters
+        );
     }
 
     private static CompactionTaskScope? TryParse(string? text, NovelStructure structure)
