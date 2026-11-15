@@ -1119,14 +1119,6 @@ public static class HostBootstrapper
         // 双速自进化账本（单账本折叠）：DI 单例注入写作钩子；未注册（测试/精简宿主）→ null 降级。
         var tacticLedger = provider.GetService<TacticLedger>();
 
-        // 工具执行前的任务边界闸门：摘要写错也不能改 Scope 外章节。
-        agent.BeforeToolCall = new TaskScopeGuardHook(
-            agent,
-            store,
-            provider.GetRequiredService<FileSessionStore>(),
-            provider.GetService<ILogger<TaskScopeGuardHook>>()
-        );
-
         // 记忆自动钩子：memory_recall/memory_find_conflicts 成功后自动标注有用性
         if (retrievalKernel?.AgentMemory is { } memStore)
         {

@@ -16,7 +16,6 @@ namespace Core.Data;
 public sealed class FileSessionStore
 {
     private static readonly JsonSerializerOptions JsonOpts = JsonlSerializer.Options;
-    private const string TaskScopeFileName = "TASK_SCOPE.json";
 
     private readonly NovelWorkspace _workspace;
     private readonly string _sessionsDir;
@@ -278,68 +277,6 @@ public sealed class FileSessionStore
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// 读取会话级任务边界。与 MANIFEST 分开存 TASK_SCOPE.json：
-    /// compact 只滚动分片，不会重建 sidecar；标题/范围也不会被摘要模型改掉。
-    /// </summary>
-    public async Task<TaskScopeState?> GetTaskScopeAsync(
-        string sessionId,
-        CancellationToken ct = default
-    )
-    {
-        var sessionDir = ResolveSessionDir(sessionId);
-        if (sessionDir is null)
-            return null;
-        if (File.Exists(sessionDir) && Path.GetExtension(sessionDir) == ".jsonl")
-            sessionDir = Path.GetDirectoryName(sessionDir);
-        if (sessionDir is null)
-            return null;
-
-        var path = Path.Combine(sessionDir, TaskScopeFileName);
-        if (!File.Exists(path))
-            return null;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(path, ct);
-            return JsonSerializer.Deserialize<TaskScopeState>(json, JsonOpts);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>写入/清除会话级任务边界。写入与会话消息共用会话锁。</summary>
-    public async Task SaveTaskScopeAsync(
-        string sessionId,
-        string novelId,
-        TaskScopeState? scope,
-        CancellationToken ct = default
-    )
-    {
-        var mgr = GetOrCreateSegmentManager(sessionId, novelId);
-        await mgr.AcquireLockAsync(ct);
-        try
-        {
-            var path = Path.Combine(mgr.SessionDir, TaskScopeFileName);
-            if (scope is null || !scope.IsActive)
-            {
-                if (File.Exists(path))
-                    File.Delete(path);
-                return;
-            }
-
-            var json = JsonSerializer.Serialize(scope, JsonOpts);
-            await AtomicFile.WriteAllTextAsync(path, json, ct);
-            RegisterSessionIndex(sessionId, novelId, mgr.SessionDir);
-        }
-        finally
-        {
-            mgr.ReleaseLock();
-        }
     }
 
     public async Task<List<AgentSession>> GetSessions(
@@ -608,16 +545,6 @@ public sealed class FileSessionStore
             // 会把 000001.jsonl 当成旧格式单文件，compact 后标题只剩注入消息。
             RegisterSessionIndex(sessionId, novelId, mgr.SessionDir);
 
-            // 标题只推导一次并写回 MANIFEST。之后 compact 复制的是非空标题，
-            // 不再依赖“每次 GetSession 扫全部分片”的 fallback。
-            if (string.IsNullOrEmpty(mgr.Manifest.Title))
-            {
-                var title = ExtractTitleFromMessages(newMessages)
-                    ?? ReadTitleFromSegments(mgr.SessionDir, mgr.Manifest);
-                if (!string.IsNullOrWhiteSpace(title))
-                    mgr.Manifest.Title = title;
-            }
-
             // 更新 MANIFEST
             UpdateManifestSegment(
                 mgr,
@@ -662,15 +589,6 @@ public sealed class FileSessionStore
         await mgr.AcquireLockAsync();
         try
         {
-            // 旧会话的 MANIFEST title 可能为空；compact 前补一次，之后新分片/manifest
-            // 复制到的就是稳定标题，不再出现“compact 后标题变新对话”。
-            if (string.IsNullOrEmpty(mgr.Manifest.Title))
-            {
-                var recoveredTitle = ReadTitleFromSegments(mgr.SessionDir, mgr.Manifest);
-                if (!string.IsNullOrWhiteSpace(recoveredTitle))
-                    mgr.Manifest.Title = recoveredTitle;
-            }
-
             // BlockId = 新分片 seq：分片全局递增且不重用，天然唯一稳定（B2）。
             var newSeq = mgr.ActiveSeq + 1;
             var blockId = $"b{newSeq}";
@@ -3656,20 +3574,6 @@ public sealed class FileSessionStore
         {
             return null;
         }
-    }
-
-    /// <summary>从本批新消息里提取首条作者标题；注入消息不算作者原话。</summary>
-    private static string? ExtractTitleFromMessages(IReadOnlyList<LlmChatMessage> messages)
-    {
-        foreach (var message in messages)
-        {
-            if (MessageRoleMapping.ToRoleString(message.Role ?? ChatMessageRoles.User) != "user")
-                continue;
-            var title = SessionInternalMessages.ExtractTitle(message.Content);
-            if (!string.IsNullOrWhiteSpace(title))
-                return title;
-        }
-        return null;
     }
 
     /// <summary>

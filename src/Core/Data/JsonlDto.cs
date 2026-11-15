@@ -481,7 +481,7 @@ public sealed class SessionManifest
     public int Version { get; init; } = 1;
     public string SessionId { get; init; } = "";
     public string NovelId { get; init; } = "";
-    public string Title { get; set; } = "";
+    public string Title { get; init; } = "";
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
     public List<ManifestSegmentRecord> Segments { get; init; } = [];

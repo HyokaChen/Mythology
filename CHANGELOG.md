@@ -39,18 +39,6 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
-- **compact 不再丢失作者任务边界，写入工具不能越界**：任务范围从作者指令确定性提取，
-  持久化到会话目录 `TASK_SCOPE.json`，并在 `write_chapter` / `edit_text` /
-  `rewrite_selection` / `create_outline` 执行前由 `TaskScopeGuardHook` 校验；摘要的
-  Scope/Where/Next 由代码主导，AI 只能写叙事字段，旧摘要中的 `> 作者指令` 可恢复，
-  不再把“全局下一章”写成任务 Next，也不再追加旧 Next。单章临时修改记 TurnTarget，
-  不覆盖长期任务；作者明确取消/切换才更新范围。回归：`CompactionTaskScopeTests`、
-  `CompactNovelStateSnapshotTests`、`TaskScopeGuardTests`、`TaskScopeGuardHookTests`、
-  `TaskScopeTrackerTests`、`CompactionCheckpointTests`。
-- **compact 后顶部标题不再变“新对话”**：首条作者消息落库时把标题写入 `MANIFEST.title`，
-  compact 继承非空标题；`AgentEnd` 与 compact 结束都刷新顶部标题，读不到会话时保留旧标题，
-  不再把已有会话误判成新对话。回归：`FileNovelStoreSessionTests.GetSession_TitleSurvivesCompact`、
-  `SaveSessionMessages_PersistsTitleInManifest`。
 - **顶部切换胶囊的长标题不再硬切**：小说名/会话名超过胶囊宽度时改为在标题末尾显示 `…`，
   右侧下拉 chevron 不再被挤出可见区；短标题仍按内容自适应、不会被撑满。根因是 SukiUI 的
   Button 模板把内容包在水平 StackPanel 里（按无限宽测量子项），`TextTrimming` 不生效，

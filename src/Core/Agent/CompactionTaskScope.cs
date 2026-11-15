@@ -56,22 +56,6 @@ internal sealed class CompactionTaskScope
         RegexOptions.Compiled
     );
 
-    private static readonly Regex TaskLevelPattern = new(
-        @"整个|全部|所有章节|这一卷|本卷|整卷|任务|接下来|从现在开始|重新迭代|从头",
-        RegexOptions.Compiled
-    );
-
-    private static readonly Regex CancellationPattern = new(
-        @"(?:取消|结束|停止|放弃|不用).{0,12}(?:任务|卷|优化|修订|改写)|(?:任务|卷|优化|修订|改写).{0,12}(?:取消|结束|停止|放弃)",
-        RegexOptions.Compiled
-    );
-
-    /// <summary>旧摘要顶部的 <c>&gt; 作者指令（逐字，最高优先级）：…</c> 行。</summary>
-    private static readonly Regex LegacyAuthorInstructionPattern = new(
-        @"^\s*>\s*作者指令[^\n]*?[:：]\s*(?<text>.+)$",
-        RegexOptions.Compiled | RegexOptions.Multiline
-    );
-
     private CompactionTaskScope(
         string instruction,
         CompactionTaskMode mode,
@@ -132,144 +116,6 @@ internal sealed class CompactionTaskScope
             return null;
 
         return TryParse(instruction, structure) ?? TryParse(previousScopeText, structure);
-    }
-
-    /// <summary>只有“任务级”指令才允许替换长期 Scope；“把第54章第三段改一下”是 TurnTarget，不是换任务。</summary>
-    public static CompactionTaskScope? TryCreateTaskSwitch(
-        string? instruction,
-        NovelStructure? structure
-    )
-    {
-        if (!IsTaskLevelInstruction(instruction))
-            return null;
-        return TryCreate(instruction, structure);
-    }
-
-    /// <summary>
-    /// 从旧摘要恢复 Scope：优先顶部 <c>&gt; 作者指令</c>，其次 <c>## Scope</c> 段。
-    /// 不解析整份摘要，避免 Where/Next 里的“第54章”反向扩大范围。
-    /// </summary>
-    public static CompactionTaskScope? TryCreateFromSummary(
-        string? summary,
-        NovelStructure? structure
-    )
-    {
-        if (
-            string.IsNullOrWhiteSpace(summary)
-            || structure is null
-            || structure.Chapters.Count == 0
-        )
-            return null;
-
-        var legacy = TryParse(ExtractLegacyAuthorInstruction(summary), structure);
-        if (legacy is not null)
-            return legacy;
-
-        var scopeSection = ExtractScopeSection(summary);
-        return string.IsNullOrWhiteSpace(scopeSection) ? null : TryParse(scopeSection, structure);
-    }
-
-    /// <summary>把持久化状态还原成带章节/卷实体的 Scope；结构已不存在时返回 null。</summary>
-    public static CompactionTaskScope? FromState(TaskScopeState? state, NovelStructure? structure)
-    {
-        if (state is null || !state.IsActive || structure is null || structure.Chapters.Count == 0)
-            return null;
-
-        var volumeIds = state.VolumeIds.ToHashSet(StringComparer.Ordinal);
-        var chapterOrders = state.ChapterOrders.ToHashSet();
-        var chapters = structure
-            .Chapters.Where(c =>
-                (volumeIds.Count == 0 || (c.VolumeId is not null && volumeIds.Contains(c.VolumeId)))
-                && (chapterOrders.Count == 0 || chapterOrders.Contains(c.Order))
-            )
-            .OrderBy(c => c.Order)
-            .ToList();
-        if (chapters.Count == 0)
-            return null;
-
-        var volumes = structure
-            .Volumes.Where(v =>
-                volumeIds.Contains(v.Id)
-                || chapters.Any(c => string.Equals(c.VolumeId, v.Id, StringComparison.Ordinal))
-            )
-            .OrderBy(v => v.Order)
-            .ToList();
-        return new CompactionTaskScope(
-            state.Instruction,
-            state.IsRevise ? CompactionTaskMode.Revise : CompactionTaskMode.Write,
-            volumes,
-            chapters
-        );
-    }
-
-    /// <summary>把当前 Scope 固化成可持久化状态。调用方负责写入会话目录。</summary>
-    public TaskScopeState ToState(string? sourceEntryId = null) =>
-        new()
-        {
-            Mode = Mode == CompactionTaskMode.Revise ? "revise" : "write",
-            Label = ShortLabel,
-            VolumeIds = Volumes.Select(v => v.Id).ToList(),
-            ChapterOrders = Chapters.Select(c => c.Order).ToList(),
-            Instruction = Instruction,
-            SourceEntryId = sourceEntryId,
-            Status = "active",
-            CreatedAt = DateTime.UtcNow,
-        };
-
-    /// <summary>轻量预检：避免每条普通消息都读一次小说结构。</summary>
-    public static bool MayContainScopeReference(string? text) =>
-        !string.IsNullOrWhiteSpace(text)
-        && (
-            TaskLevelPattern.IsMatch(text)
-            || VolumeIdPattern.IsMatch(text)
-            || VolumeOrderPattern.IsMatch(text)
-            || ChapterRefPattern.IsMatch(text)
-        );
-
-    public static bool IsTaskLevelInstruction(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-        var source = text.ReplaceLineEndings(" ");
-        return TaskLevelPattern.IsMatch(source)
-            || VolumeIdPattern.IsMatch(source)
-            || VolumeOrderPattern.IsMatch(source)
-            || ChapterRangePattern.IsMatch(source);
-    }
-
-    public static bool IsCancellationInstruction(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-        return CancellationPattern.IsMatch(text.ReplaceLineEndings(" "));
-    }
-
-    /// <summary>该文本是否明确提到 Scope 外的章节/卷（用于清理 Where 中的越界指令）。</summary>
-    public bool ContainsOutOfScopeReference(string text)
-    {
-        foreach (Match match in ChapterRefPattern.Matches(text))
-        {
-            if (ParseNumber(match.Groups["n"].Value) is { } order && !ChapterOrders.Contains(order))
-                return true;
-        }
-
-        foreach (Match match in VolumeOrderPattern.Matches(text))
-        {
-            if (
-                VolumeOrders.Count > 0
-                && ParseNumber(match.Groups["n"].Value) is { } order
-                && !VolumeOrders.Contains(order)
-            )
-                return true;
-        }
-
-        foreach (Match match in VolumeIdPattern.Matches(text))
-        {
-            if (VolumeIds.Count > 0 && !VolumeIds.Contains(match.Groups["id"].Value))
-                return true;
-        }
-
-        return false;
     }
 
     private static CompactionTaskScope? TryParse(string? text, NovelStructure structure)
@@ -534,22 +380,6 @@ internal sealed class CompactionTaskScope
     {
         var match = AuthorInstructionPattern.Match(source);
         return match.Success ? match.Groups["text"].Value.Trim() : source.Trim();
-    }
-
-    private static string? ExtractLegacyAuthorInstruction(string summary)
-    {
-        var match = LegacyAuthorInstructionPattern.Match(summary);
-        return match.Success ? match.Groups["text"].Value.Trim() : null;
-    }
-
-    private static string? ExtractScopeSection(string summary)
-    {
-        var idx = summary.IndexOf(Heading, StringComparison.Ordinal);
-        if (idx < 0)
-            return null;
-        var start = idx + Heading.Length;
-        var next = summary.IndexOf("\n## ", start, StringComparison.Ordinal);
-        return (next > start ? summary[start..next] : summary[start..]).Trim();
     }
 
     private static bool IsNegated(string text, int index)

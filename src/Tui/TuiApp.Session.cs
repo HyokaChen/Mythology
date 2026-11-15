@@ -95,13 +95,6 @@ public sealed partial class TuiApp
 
         try
         {
-            await TaskScopeTracker.ObserveAuthorMessageAsync(
-                _agent,
-                _sessionStore,
-                _store,
-                text,
-                ct
-            );
             await InjectNovelContextAsync();
 
             // 主动压缩：发送前检查，接近动态阈值时先压缩再发送
@@ -570,7 +563,6 @@ public sealed partial class TuiApp
                 _sessionId = session.Id;
                 _agent.SessionId = _sessionId;
                 _agent.CurrentNovelId = novelId;
-                await TaskScopeTracker.LoadAsync(_agent, _sessionStore, _sessionId);
 
                 // UI 恢复全部消息
                 var uiMessages = await RestoreMessagesFromDbAsync(_sessionId);
@@ -622,7 +614,6 @@ public sealed partial class TuiApp
         _sessionId = Guid.NewGuid().ToString("N")[..12];
         _agent.SessionId = _sessionId;
         _agent.CurrentNovelId = novelId;
-        TaskScopeTracker.Clear(_agent);
         _agent.ReplaceMessages([]);
         _lastParentEntryId = null;
         _persistedMessageCount = 0;
@@ -688,7 +679,6 @@ public sealed partial class TuiApp
             _agent.CurrentNovelId = novelId;
             _sessionId = latest.Id;
             _agent.SessionId = _sessionId;
-            await TaskScopeTracker.LoadAsync(_agent, _sessionStore, _sessionId);
             _sessionPersistenceFaulted = false;
 
             // UI 恢复全部消息

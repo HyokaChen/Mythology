@@ -780,12 +780,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         var vm = _services.GetRequiredService<ConversationViewModel>();
         vm.CurrentNovelId = SelectedNovel?.Id;
         vm.CurrentNovelTitle = SelectedNovel?.Title ?? "未选择小说";
-        vm.ConversationCompleted += () =>
-            Dispatcher.UIThread.Post(() =>
-            {
-                RefreshRecentConversations();
-                _ = UpdateConversationTitleAsync(vm);
-            });
+        vm.ConversationCompleted += () => Dispatcher.UIThread.Post(RefreshRecentConversations);
         vm.CompactStateChanged += active =>
             Dispatcher.UIThread.Post(() =>
             {
@@ -807,7 +802,6 @@ public sealed class MainWindowViewModel : ViewModelBase
                     // compact 改变了上下文大小，旧 API 实测是压缩前的完整 prompt。
                     // 必须作废，否则仪表会钉在旧值（例如压缩后仍显示 278K）。
                     InvalidateContextMeasure();
-                    _ = UpdateConversationTitleAsync(vm);
                     if (!IsProcessing)
                     {
                         StatusText = IdleStatusText;
@@ -1887,19 +1881,13 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task UpdateConversationTitleAsync(ConversationViewModel vm)
     {
-        if (!ReferenceEquals(ActiveConversationVm, vm))
-            return;
         if (string.IsNullOrEmpty(vm.CurrentConversationId))
         {
             ConversationTitle = "新对话";
             return;
         }
         var session = await _sessionStore.GetSession(vm.CurrentConversationId);
-        // 切换/compact 的瞬间索引可能尚未归一化；读不到时保留旧标题，
-        // 不能把已有会话误判成“新对话”。
-        if (session is null)
-            return;
-        ConversationTitle = string.IsNullOrEmpty(session.Title) ? "未命名会话" : session.Title;
+        ConversationTitle = string.IsNullOrEmpty(session?.Title) ? "新对话" : session!.Title;
     }
 
     /// <summary>侧边栏/下拉点击对话。</summary>
