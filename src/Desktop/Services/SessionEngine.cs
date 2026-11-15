@@ -1394,8 +1394,7 @@ public sealed class SessionEngine(
 
         _lastCompactSummary =
             execution.Status == CompactionStatus.Success ? execution.Summary : null;
-        _lastCompactError =
-            execution.Status == CompactionStatus.Success ? null : execution.Error;
+        _lastCompactError = execution.Status == CompactionStatus.Success ? null : execution.Error;
 
         if (execution.Status == CompactionStatus.Success)
         {

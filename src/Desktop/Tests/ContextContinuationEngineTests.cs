@@ -692,9 +692,8 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.Equal(2, _agent.State.Messages.Count);
         Assert.StartsWith("[本体 harness]", _agent.State.Messages[0].Content);
         Assert.Equal("编辑后", _agent.State.Messages[1].Content);
-        Assert.Single(
-            _agent.State.Messages,
-            m => m.Content?.StartsWith("[本体 harness]", StringComparison.Ordinal) == true
+        Assert.Single(_agent.State.Messages, m =>
+            m.Content?.StartsWith("[本体 harness]", StringComparison.Ordinal) == true
         );
     }
 
