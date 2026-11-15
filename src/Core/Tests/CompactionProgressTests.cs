@@ -149,6 +149,123 @@ public sealed class CompactionProgressTests
         Assert.Null(progress);
     }
 
+    [Fact]
+    public void EnforceTaskScope_ContradictingInScopeNext_AlignedWithProgress()
+    {
+        var structure = BuildStructure();
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var progress = CompactionTaskProgress.Create(
+            [21, 22, 24, 30],
+            [],
+            currentOrder: 30,
+            nextOrder: 23,
+            outOfScopeOrders: []
+        );
+        const string summary = "## Next / 下一步\n- 优化第21章《萤火21》；范围内但进度显示已编辑过";
+
+        var enforced = CompactionEngine.EnforceTaskScope(
+            summary,
+            scope,
+            previousSummary: null,
+            progress
+        );
+
+        var nextIndex = enforced.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        Assert.Contains("第23章", enforced[nextIndex..]);
+        Assert.DoesNotContain("第21章", enforced[nextIndex..]);
+    }
+
+    [Fact]
+    public void EnforceTaskScope_NextMatchingProgress_Kept()
+    {
+        var structure = BuildStructure();
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var progress = CompactionTaskProgress.Create([21], [], 21, 22, []);
+        const string summary = "## Next / 下一步\n- 优先优化第22章《萤火22》开头五百字";
+
+        var enforced = CompactionEngine.EnforceTaskScope(
+            summary,
+            scope,
+            previousSummary: null,
+            progress
+        );
+
+        Assert.Contains("开头五百字", enforced);
+    }
+
+    [Fact]
+    public void BuildCompactSummary_InheritsProgressWithScope()
+    {
+        var messages = new List<LlmChatMessage>
+        {
+            new(ChatMessageRoles.User, "继续"),
+            new(ChatMessageRoles.Assistant, "好的。"),
+        };
+        const string previous =
+            "## Scope / 任务边界\n- 任务类型：修订/优化已有章节（不是续写新章）\n\n"
+            + "## Progress / 进度\n- 已实际编辑：21、22\n- 当前：第22章\n- 下一章：第23章\n\n"
+            + "## Next / 下一步\n- 优化第23章《萤火23》";
+
+        var method = typeof(CompactionEngine).GetMethod(
+            "BuildCompactSummaryWithScope",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic
+        )!;
+        var summary = (string)
+            method.Invoke(null, [messages, messages.Count, previous, "", null, null, null])!;
+
+        Assert.Contains("## Scope / 任务边界", summary);
+        Assert.Contains("已实际编辑：21、22", summary);
+        Assert.Contains("下一章：第23章", summary);
+    }
+
+    [Fact]
+    public void Extract_WriteChapterNewChapterWithOrder_CountsAsEdited()
+    {
+        var structure = BuildStructure();
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var messages = new List<LlmChatMessage>();
+        AddCall(
+            messages,
+            "write-23",
+            "write_chapter",
+            """{"order":23,"title":"萤火23","volume-id":"v2","content":"新写一章"}""",
+            true
+        );
+
+        var progress = CompactionProgressExtractor.Extract(
+            messages,
+            structure,
+            scope,
+            previous: null
+        );
+
+        Assert.NotNull(progress);
+        Assert.Contains(23, progress!.EditedOrders);
+        Assert.Equal(21, progress.NextOrder);
+    }
+
+    [Fact]
+    public void Extract_ChapterRefForms_ResolveLikeTools()
+    {
+        var structure = BuildStructure();
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var messages = new List<LlmChatMessage>();
+        AddCall(messages, "edit-cn", "edit_text", """{"chapter-id":"第23章"}""", true);
+        AddCall(messages, "edit-title", "edit_text", """{"chapter-id":"萤火25"}""", true);
+        AddCall(messages, "edit-ch", "edit_text", """{"chapter-id":"ch24"}""", true);
+
+        var progress = CompactionProgressExtractor.Extract(
+            messages,
+            structure,
+            scope,
+            previous: null
+        );
+
+        Assert.NotNull(progress);
+        Assert.Equal([23, 24, 25], progress!.EditedOrders);
+    }
+
     private static void AddCall(
         List<LlmChatMessage> messages,
         string callId,

@@ -39,7 +39,7 @@ public sealed class CompactionScopeExtractorTests
     }
 
     [Fact]
-    public void ParseSelection_EmptySelectionMeansNoScope()
+    public void ParseSelection_UnresolvableSelectionFallsBack()
     {
         var result = CompactionScopeExtractor.ParseSelection(
             """{"mode":"revise","volume_ids":[],"chapter_orders":[]}""",
@@ -47,7 +47,9 @@ public sealed class CompactionScopeExtractorTests
             "修正优化整个第二卷"
         );
 
-        Assert.True(result.Completed);
+        // 半成品回答（认出任务却选不出卷/章）必须按解析失败处理，
+        // 让上游走 TryCreate 兜底；mode=none 才表示真的没有任务。
+        Assert.False(result.Completed);
         Assert.Null(result.Scope);
     }
 

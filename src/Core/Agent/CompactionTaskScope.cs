@@ -389,6 +389,23 @@ internal sealed class CompactionTaskScope
     }
 
     /// <summary>
+    /// 提取文本里引用的全部章节序号（“第N章”，含中文数字）。
+    /// EnforceTaskScope 用它核对 Next 是否与 Progress 的下一章一致。
+    /// </summary>
+    public IReadOnlyList<int> ReferencedChapterOrders(string text)
+    {
+        var orders = new List<int>();
+        if (string.IsNullOrWhiteSpace(text))
+            return orders;
+        foreach (Match match in ChapterRefPattern.Matches(text.ReplaceLineEndings(" ")))
+        {
+            if (ParseNumber(match.Groups["n"].Value) is { } order && !orders.Contains(order))
+                orders.Add(order);
+        }
+        return orders;
+    }
+
+    /// <summary>
     /// 生成范围内下一步。优先使用工具进度给出的下一章；没有进度时沿用上一份
     /// 合法的 Next，避免把“卷二的下一章”重置成泛化描述。
     /// </summary>
@@ -460,7 +477,8 @@ internal sealed class CompactionTaskScope
         return Regex.IsMatch(prefix, @"(?:不|别|勿|禁止|不得|无需)[^，。；]{0,6}$");
     }
 
-    private static int? ParseNumber(string raw)
+    /// <summary>解析阿拉伯数字或中文数字（含“十/百”进位）；混入其它字符返回 null。</summary>
+    internal static int? ParseNumber(string raw)
     {
         raw = raw.Trim();
         if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))

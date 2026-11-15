@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Core.Data;
 using Core.Novels;
@@ -51,6 +51,15 @@ internal static class CompactionProgressExtractor
         var chapterByOrder = structure
             .Chapters.GroupBy(chapter => chapter.Order)
             .ToDictionary(group => group.Key, group => group.First());
+        // 标题解析与 NovelReferenceResolver 同口径：重名标题解析不了，宁缺毋滥不猜。
+        var chapterByTitle = structure
+            .Chapters.GroupBy(chapter => NormalizeTitle(chapter.Title))
+            .Where(group => group.Key.Length > 0 && group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First(),
+                StringComparer.OrdinalIgnoreCase
+            );
 
         foreach (var message in messages)
         {
@@ -78,7 +87,12 @@ internal static class CompactionProgressExtractor
                     continue;
 
                 foreach (
-                    var chapter in ResolveChapters(function.Arguments, chapterById, chapterByOrder)
+                    var chapter in ResolveChapters(
+                        function.Arguments,
+                        chapterById,
+                        chapterByOrder,
+                        chapterByTitle
+                    )
                 )
                 {
                     if (!scope.ChapterOrders.Contains(chapter.Order))
@@ -142,7 +156,8 @@ internal static class CompactionProgressExtractor
     private static List<Chapter> ResolveChapters(
         string arguments,
         IReadOnlyDictionary<string, Chapter> chapterById,
-        IReadOnlyDictionary<int, Chapter> chapterByOrder
+        IReadOnlyDictionary<int, Chapter> chapterByOrder,
+        IReadOnlyDictionary<string, Chapter> chapterByTitle
     )
     {
         var result = new List<Chapter>(capacity: 2);
@@ -157,6 +172,10 @@ internal static class CompactionProgressExtractor
             AddString(root, "chapterId");
             AddArray(root, "chapter-ids");
             AddArray(root, "chapterIds");
+            // write_chapter 新建章节没有 chapter-id，只有 order/title；
+            // 读不到 order 会把“新写了一章”整个丢出进度。
+            AddOrder(root, "order");
+            AddOrder(root, "chapter-order");
         }
         catch (JsonException)
         {
@@ -184,29 +203,53 @@ internal static class CompactionProgressExtractor
             {
                 if (item.ValueKind == JsonValueKind.String)
                     AddResolved(item.GetString());
-                else if (
-                    item.ValueKind == JsonValueKind.Number
-                    && item.TryGetInt32(out var order)
-                    && chapterByOrder.TryGetValue(order, out var chapter)
-                )
-                    AddChapter(chapter);
+                else if (item.ValueKind == JsonValueKind.Number)
+                    AddByOrder(item);
             }
+        }
+
+        void AddOrder(JsonElement root, string name)
+        {
+            if (!root.TryGetProperty(name, out var property))
+                return;
+            if (property.ValueKind == JsonValueKind.Number)
+                AddByOrder(property);
+            else if (
+                property.ValueKind == JsonValueKind.String
+                && TryParseOrderRef(property.GetString()) is { } order
+                && chapterByOrder.TryGetValue(order, out var chapter)
+            )
+                AddChapter(chapter);
+        }
+
+        void AddByOrder(JsonElement item)
+        {
+            if (
+                item.TryGetInt32(out var order)
+                && chapterByOrder.TryGetValue(order, out var chapter)
+            )
+                AddChapter(chapter);
         }
 
         void AddResolved(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
                 return;
-            if (chapterById.TryGetValue(raw, out var chapter))
+            if (chapterById.TryGetValue(raw, out var byId))
             {
-                AddChapter(chapter);
+                AddChapter(byId);
                 return;
             }
-            if (
-                int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var order)
-                && chapterByOrder.TryGetValue(order, out chapter)
-            )
-                AddChapter(chapter);
+            // 工具允许 chapter-id 传「第12章/ch12/12/中文数字」或章节标题；
+            // 解析形态必须与 NovelReferenceResolver 同口径，否则进度漏记。
+            if (TryParseOrderRef(raw) is { } order)
+            {
+                if (chapterByOrder.TryGetValue(order, out var byOrder))
+                    AddChapter(byOrder);
+                return;
+            }
+            if (chapterByTitle.TryGetValue(NormalizeTitle(raw), out var byTitle))
+                AddChapter(byTitle);
         }
 
         void AddChapter(Chapter chapter)
@@ -219,4 +262,38 @@ internal static class CompactionProgressExtractor
                 result.Add(chapter);
         }
     }
+
+    /// <summary>
+    /// 与 NovelReferenceResolver.TryParseOrder 同口径的宽松序号解析：
+    /// 剥掉「第/#」前缀、chapter/ch 前缀与「章/卷/节/回/场」后缀后交给 ParseNumber。
+    /// </summary>
+    private static int? TryParseOrderRef(string? raw)
+    {
+        var text = (raw ?? "").Trim().ToLowerInvariant().Replace(" ", "").Replace("\t", "");
+        if (text.Length == 0)
+            return null;
+
+        if (text.StartsWith('第') || text.StartsWith('#'))
+            text = text[1..];
+        foreach (var prefix in new[] { "chapter", "ch.", "ch" })
+        {
+            if (text.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                text = text[prefix.Length..];
+                break;
+            }
+        }
+        foreach (var suffix in new[] { "章", "卷", "节", "回", "场" })
+        {
+            if (text.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                text = text[..^suffix.Length];
+                break;
+            }
+        }
+        return text.Length == 0 ? null : CompactionTaskScope.ParseNumber(text);
+    }
+
+    private static string NormalizeTitle(string? title) =>
+        (title ?? "").Trim().Normalize(NormalizationForm.FormKC);
 }

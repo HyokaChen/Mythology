@@ -864,7 +864,18 @@ public sealed class CompactionEngine(
             {
                 var previousScope = ExtractSection(previousSummary, ScopeHeading);
                 if (!string.IsNullOrWhiteSpace(previousScope))
+                {
                     sections[ScopeHeading] = previousScope.Trim();
+
+                    // Scope 继承自上一份摘要时，同一条任务链的 Progress 必须一起继承；
+                    // 否则一次提取失败就会清空进度，下一轮退回按字数猜焦点。
+                    if (IsUnrecorded(sections[ProgressHeading]))
+                    {
+                        var previousProgress = ExtractSection(previousSummary, ProgressHeading);
+                        if (!string.IsNullOrWhiteSpace(previousProgress))
+                            sections[ProgressHeading] = previousProgress.Trim();
+                    }
+                }
             }
 
             // Why/How 可以累积背景；Next 只能回退，不能把上一轮任务清单追加到新任务后面。
@@ -1522,7 +1533,7 @@ public sealed class CompactionEngine(
 
     /// <summary>
     /// 摘要生成后的最后一道确定性闸门：Scope/Progress/Where 以本轮事实为准；
-    /// Next 越界时优先使用 Progress 的下一章，否则沿用上一份合法 Next。
+    /// Next 为空、越界或与 Progress 下一章矛盾时统一用 BuildSafeNext 修复。
     /// </summary>
     internal static string EnforceTaskScope(
         string summary,
@@ -1551,7 +1562,22 @@ public sealed class CompactionEngine(
             ? null
             : ExtractSection(previousSummary, NextHeading);
 
-        if (string.IsNullOrWhiteSpace(next) || !scope.IsNextWithinScope(next))
+        // Progress 给出下一章时，Next 必须指向同一章；范围内但与进度矛盾的 Next
+        // （例如已编辑的第21章）与空/越界 Next 一样，统一用 BuildSafeNext 修复。
+        var progressNextOrder =
+            progress?.NextOrder is { } nextOrder
+            && scope.Chapters.Any(chapter => chapter.Order == nextOrder)
+                ? nextOrder
+                : (int?)null;
+        var nextMatchesProgress =
+            progressNextOrder is not int expected
+            || scope.ReferencedChapterOrders(next).Contains(expected);
+
+        if (
+            string.IsNullOrWhiteSpace(next)
+            || !scope.IsNextWithinScope(next)
+            || !nextMatchesProgress
+        )
         {
             withScope = ReplaceSection(
                 withScope,

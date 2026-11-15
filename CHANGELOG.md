@@ -48,6 +48,14 @@
   Progress、Where、Next，避免"卷二任务却把全局第54章当 Next"。旧摘要没有 Progress
   时从工具调用重建，不写本地 JSON。回归：`CompactionProgressTests`、
   `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_RevisionProgress_UsesEditedChaptersNotCharCount`。
+
+- **compact 硬化四处任务边界**：Progress 给出下一章时，Next 必须指向同一章，不再放行
+  范围内但与进度矛盾的 Next；LLM 提取器答 write/revise 却选不出卷/章时按解析失败
+  处理、走 `TryCreate` 兜底（mode=none 仍表示真的无任务）；继承上一份 Scope 时同步
+  继承 Progress，提取失败不再清空进度链；进度提取与 `NovelReferenceResolver` 同口径
+  解析工具参数（write_chapter 新建章的 `order`，chapter-id 的「第N章/chN/中文数字/
+  标题」），新建章节与标题引用不再漏记。回归：`CompactionProgressTests`、
+  `CompactionScopeExtractorTests.ParseSelection_UnresolvableSelectionFallsBack`。
 - **compact 的任务 Scope 改为 LLM 从最近作者消息提取，不落本地状态**：
   `CompactionScopeExtractor` 在压缩时读取跨全集分片的最后一条作者消息与上一份摘要，
   让 LLM 输出卷/章选择；摘要的 Scope/Progress/Where/Next 继续由代码后置校验，AI 只写叙事字段。

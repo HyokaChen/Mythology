@@ -93,7 +93,11 @@ internal static class CompactionScopeExtractor
                 chapterOrders,
                 structure
             );
-            return new CompactionScopeExtraction(true, scope);
+            // write/revise 却选不出任何卷/章 = 半成品回答，与解析失败同构：
+            // 返回未完成，让上游走 TryCreate 兜底。不能把“有任务却无范围”当成
+            // “无任务”——那会关闭 EnforceTaskScope 并丢掉 Progress，
+            // 让全局写作前沿再次渗进 Next。mode=none 仍表示作者真的取消了任务。
+            return new CompactionScopeExtraction(scope is not null, scope);
         }
         catch (JsonException)
         {
