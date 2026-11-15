@@ -106,15 +106,8 @@ public sealed class ConversationVmContractTests
         var states = new List<bool>();
         vm.CompactStateChanged += states.Add;
 
-        var start = (Action)
-            typeof(SessionEngine)
-                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine)!;
-        var end =
-            (Action<string, string?>)
-                typeof(SessionEngine)
-                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(h.Engine)!;
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
 
         HeadlessUiHost.Instance.Run(() =>
         {
@@ -167,16 +160,13 @@ public sealed class ConversationVmContractTests
         {
             var user = new ChatMessageModel(MessageSender.User);
             user.Content.Append("继续啊！");
-            var agent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
             vm.Messages.Add(user);
-            vm.Messages.Add(agent);
-            SetPrivateField(vm, "_pendingTurnUserMessage", user);
-            SetPrivateField(vm, "_agentMessage", agent);
+            var agent = AttachPendingTurn(vm, user);
 
             start();
-            // 模拟 AgentStart 在压缩 UI Post 执行前清掉实时锚点：
+            // AgentStart 在压缩 UI Post 执行前结束预压缩阶段并清掉实时锚点；
             // 状态行必须依赖 OnCompactStart 在事件线程捕获的引用。
-            SetPrivateField<ChatMessageModel?>(vm, "_pendingTurnUserMessage", null);
+            vm.HandleAgentEvent(new AgentStart());
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(3, vm.Messages.Count);
@@ -210,9 +200,7 @@ public sealed class ConversationVmContractTests
 
         HeadlessUiHost.Instance.Run(() =>
         {
-            var agent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
-            vm.Messages.Add(agent);
-            SetPrivateField(vm, "_agentMessage", agent);
+            var agent = AttachPendingTurn(vm, null);
 
             start();
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
@@ -247,16 +235,12 @@ public sealed class ConversationVmContractTests
         {
             var user = new ChatMessageModel(MessageSender.User);
             user.Content.Append("继续啊！");
-            var agent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
+            vm.Messages.Add(user);
+            var agent = AttachPendingTurn(vm, user);
             var stale = new ChatMessageModel(MessageSender.System);
             stale.Content.Append("上下文压缩中…");
             stale.IsSpinnerVisible = true;
-            vm.Messages.Add(user);
-            vm.Messages.Add(agent);
             vm.Messages.Add(stale);
-            SetPrivateField(vm, "_pendingTurnUserMessage", user);
-            SetPrivateField(vm, "_agentMessage", agent);
-            SetPrivateField(vm, "_compactStatusMessage", stale);
 
             start();
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
@@ -277,6 +261,131 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
+    /// AgentStart 已结束预压缩阶段时，即使占位仍为空，回合中段压缩也只能追加到末尾。
+    /// 这防止纯重试的“前插”规则误伤正常回合中的压缩。
+    /// </summary>
+    [Fact]
+    public void CompactStart_AfterAgentStart_WithEmptyPlaceholder_Appends()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var user = new ChatMessageModel(MessageSender.User);
+            user.Content.Append("继续啊！");
+            vm.Messages.Add(user);
+            var agent = AttachPendingTurn(vm, user);
+
+            vm.HandleAgentEvent(new AgentStart());
+
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(3, vm.Messages.Count);
+            Assert.Same(user, vm.Messages[0]);
+            Assert.Same(agent, vm.Messages[1]);
+            var compact = vm.Messages[2];
+            Assert.Equal(MessageSender.System, compact.Sender);
+            Assert.True(compact.IsSpinnerVisible);
+
+            end("上下文压缩完成：48 → 8 条", null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(3, vm.Messages.Count);
+            Assert.Same(compact, vm.Messages[2]);
+            Assert.False(compact.IsSpinnerVisible);
+        });
+    }
+
+    /// <summary>
+    /// 复用的活动状态行若在本轮锚点之前，必须移动到锚点前一位；
+    /// 只处理“在锚点之后”会把它留在对话中段，破坏压缩行与回合的对应关系。
+    /// </summary>
+    [Fact]
+    public void CompactStart_WithStaleStatusRowBeforeAnchor_MovesToTurnStart()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var stale = new ChatMessageModel(MessageSender.System);
+            stale.Content.Append("上下文压缩中…");
+            stale.IsSpinnerVisible = true;
+            vm.Messages.Add(stale);
+
+            var filler = new ChatMessageModel(MessageSender.System);
+            filler.Content.Append("历史提示");
+            vm.Messages.Add(filler);
+
+            var user = new ChatMessageModel(MessageSender.User);
+            user.Content.Append("继续啊！");
+            vm.Messages.Add(user);
+            var agent = AttachPendingTurn(vm, user);
+
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(4, vm.Messages.Count);
+            Assert.Same(filler, vm.Messages[0]);
+            Assert.Same(stale, vm.Messages[1]);
+            Assert.Same(user, vm.Messages[2]);
+            Assert.Same(agent, vm.Messages[3]);
+            Assert.True(stale.IsSpinnerVisible);
+
+            end("上下文压缩完成：72 → 10 条", null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Same(stale, vm.Messages[1]);
+            Assert.False(stale.IsSpinnerVisible);
+        });
+    }
+
+    /// <summary>
+    /// 两次 Start 可能因事件重放或快速重连连续到达；同一轮只允许一条状态行，
+    /// 第二次必须复用已在锚点前的行，而不是再插入一条。
+    /// </summary>
+    [Fact]
+    public void CompactStart_Twice_KeepsSingleRowBeforeTurn()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            var user = new ChatMessageModel(MessageSender.User);
+            user.Content.Append("继续啊！");
+            vm.Messages.Add(user);
+            var agent = AttachPendingTurn(vm, user);
+
+            start();
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(3, vm.Messages.Count);
+            var compact = vm.Messages[0];
+            Assert.Equal(MessageSender.System, compact.Sender);
+            Assert.True(compact.IsSpinnerVisible);
+            Assert.Same(user, vm.Messages[1]);
+            Assert.Same(agent, vm.Messages[2]);
+
+            end("上下文压缩完成：96 → 12 条", null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(3, vm.Messages.Count);
+            Assert.Same(compact, vm.Messages[0]);
+            Assert.False(compact.IsSpinnerVisible);
+        });
+    }
+
+    /// <summary>
     /// 手动压缩必须进入总忙碌态：停止按钮可见、发送被挡住；压缩中再次输入 /compact
     /// 必须在 VM 层拒绝，不能撞到引擎闸门后再生成一条“压缩被拒绝”的系统消息。
     /// </summary>
@@ -288,14 +397,8 @@ public sealed class ConversationVmContractTests
         var notices = new List<string>();
         vm.SystemMessageRequested += notices.Add;
 
-        var start = (Action)
-            typeof(SessionEngine)
-                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine)!;
-        var end = (Action<string, string?>?)
-            typeof(SessionEngine)
-                .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine);
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
 
         HeadlessUiHost.Instance.Run(() =>
         {
@@ -307,8 +410,7 @@ public sealed class ConversationVmContractTests
             Assert.True(vm.TryExecuteCommand("/compact"));
             Assert.Contains(notices, n => n.Contains("压缩进行中"));
 
-            Assert.NotNull(end);
-            end!("上下文压缩完成", null);
+            end("上下文压缩完成", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.False(vm.IsCompacting);
@@ -328,15 +430,8 @@ public sealed class ConversationVmContractTests
         var states = new List<bool>();
         vm.CompactStateChanged += states.Add;
 
-        var start = (Action)
-            typeof(SessionEngine)
-                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine)!;
-        var end =
-            (Action<string, string?>)
-                typeof(SessionEngine)
-                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(h.Engine)!;
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
 
         HeadlessUiHost.Instance.Run(() =>
         {
@@ -354,33 +449,21 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
-    /// 状态行指针丢失但可见行仍在时，End 必须复用原行；否则会留下“压缩中…”并在下面新增完成行。
+    /// 状态行只存在于 Messages 中时，End 必须复用原行；否则会留下“压缩中…”并在下面新增完成行。
     /// </summary>
     [Fact]
     public void CompactEnd_WithOrphanedStatusRow_ReusesExistingRow()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
-        var start = (Action)
-            typeof(SessionEngine)
-                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine)!;
-        var end =
-            (Action<string, string?>)
-                typeof(SessionEngine)
-                    .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(h.Engine)!;
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
 
         HeadlessUiHost.Instance.Run(() =>
         {
             start();
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
             var row = Assert.Single(vm.Messages);
-
-            // 模拟看门狗/异常路径：可见行还在，但指针已丢。
-            typeof(ConversationViewModel)
-                .GetField("_compactStatusMessage", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .SetValue(vm, null);
 
             end("上下文溢出压缩完成：290 → 4 条", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
@@ -400,10 +483,7 @@ public sealed class ConversationVmContractTests
     {
         using var h = new Harness();
         var vm = h.CreateVm();
-        var start = (Action)
-            typeof(SessionEngine)
-                .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(h.Engine)!;
+        var start = GetCompactStart(h);
 
         HeadlessUiHost.Instance.Run(() =>
         {
@@ -1182,19 +1262,31 @@ public sealed class ConversationVmContractTests
             VariantContent = "变体正文",
         };
 
+    /// <summary>
+    /// 测试用：构造发送/重试已入列、AgentStart 尚未到达的预压缩阶段。
+    /// 纯重试的 localUser 为 null，但仍须标记 preflight，状态行才会前插到占位之前。
+    /// </summary>
+    private static ChatMessageModel AttachPendingTurn(
+        ConversationViewModel vm,
+        ChatMessageModel? localUser
+    )
+    {
+        var agent = new ChatMessageModel(MessageSender.Agent) { IsWaiting = true };
+        vm.Messages.Add(agent);
+        SetPrivateField(vm, "_pendingTurnUserMessage", localUser);
+        SetPrivateField(vm, "_isPreflightTurn", true);
+        SetPrivateField(vm, "_agentMessage", agent);
+        return agent;
+    }
+
     /// <summary>测试用：把 Agent 占位消息挂到 VM 当前回合（生产代码由 SendMessageAsync 创建）。</summary>
     private static Desktop.Models.ChatMessage AttachAgentMessage(
         ConversationViewModel vm,
         bool processing
     )
     {
-        var agent = new Desktop.Models.ChatMessage(MessageSender.Agent);
-        var field = typeof(ConversationViewModel).GetField(
-            "_agentMessage",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
-        Assert.NotNull(field);
-        field.SetValue(vm, agent);
+        var agent = new ChatMessageModel(MessageSender.Agent);
+        SetPrivateField(vm, "_agentMessage", agent);
         vm.IsProcessing = processing;
         return agent;
     }
