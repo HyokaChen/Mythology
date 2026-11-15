@@ -126,7 +126,11 @@ public sealed record AnalysisContextInput(
     string? CharacterVersion = null,
     string? PlotlineVersion = null,
     SetupCheckInput? Setup = null, // CHANGE_10 · fiction.setup.check 设定图（kebab wire 键 setup）
-    IReadOnlyList<CloudTimelineEventInput>? Timeline = null // PlotHoleDetector 时间线冲突（kebab wire 键 timeline）
+    IReadOnlyList<CloudTimelineEventInput>? Timeline = null, // PlotHoleDetector 时间线冲突（kebab wire 键 timeline）
+    // 实体名通道（云端 jieba 用户词典；与云端 AnalysisContextInput 镜像）
+    IReadOnlyList<string>? Locations = null,
+    IReadOnlyList<string>? Organizations = null,
+    IReadOnlyList<string>? Scenes = null
 );
 
 /// <summary>

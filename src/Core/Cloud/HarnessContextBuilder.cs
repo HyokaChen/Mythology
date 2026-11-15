@@ -58,6 +58,21 @@ public static class HarnessContextBuilder
             .Select(i => new CloudItemInput(i.Name))
             .ToList();
 
+        // 实体名通道：云端 jieba 用户词典。与 SetupDigestBuilder 的实体集合同源，
+        // 但不依赖 setup.check——story.check / diagnose_writing 也要能保住整名。
+        var locations = novel
+            .Locations.Where(l => !string.IsNullOrWhiteSpace(l.Name))
+            .Select(l => l.Name)
+            .ToList();
+        var organizations = novel
+            .Factions.Where(f => !string.IsNullOrWhiteSpace(f.Name))
+            .Select(f => f.Name)
+            .ToList();
+        var scenes = novel
+            .Scenes.Where(s => !string.IsNullOrWhiteSpace(s.Title))
+            .Select(s => s.Title)
+            .ToList();
+
         // 时间线事件（2026-10-18 接线）：PlotHoleDetector 时间线冲突检查的唯一数据源。
         // 事件归属章节引用用本地章 ID（与 ChapterInput.ClientChapterRef 同一命名空间）；
         // 无事件时发 null 而非空数组，避免在 wire 上新增无意义的占位键。
@@ -97,7 +112,10 @@ public static class HarnessContextBuilder
             string.IsNullOrWhiteSpace(novel.Title) ? null : novel.Title,
             CharacterVersion: charVersion,
             PlotlineVersion: plotVersion,
-            Timeline: timeline.Count > 0 ? timeline : null
+            Timeline: timeline.Count > 0 ? timeline : null,
+            Locations: locations.Count > 0 ? locations : null,
+            Organizations: organizations.Count > 0 ? organizations : null,
+            Scenes: scenes.Count > 0 ? scenes : null
         );
     }
 

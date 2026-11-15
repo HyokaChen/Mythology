@@ -49,6 +49,9 @@ public class HarnessContextBuilderTests
                 },
             ],
             Items = [new Item { Name = "青云剑" }],
+            Locations = [new Location { Name = "藏经阁" }],
+            Factions = [new Faction { Name = "青云宗" }],
+            Scenes = [new SceneDefinition { Title = "山门夜谈" }],
         };
 
         var ctx = HarnessContextBuilder.Build(novel, "玄幻");
@@ -82,6 +85,11 @@ public class HarnessContextBuilderTests
         // 物品
         Assert.NotNull(ctx.Items);
         Assert.Equal(["青云剑"], ctx.Items!.Select(i => i.Name).ToList());
+
+        // 实体名通道（云端 jieba 词典）
+        Assert.Equal(["藏经阁"], ctx.Locations);
+        Assert.Equal(["青云宗"], ctx.Organizations);
+        Assert.Equal(["山门夜谈"], ctx.Scenes);
     }
 
     [Fact]
@@ -94,6 +102,9 @@ public class HarnessContextBuilderTests
         Assert.Empty(ctx.CharacterDetails!);
         Assert.Empty(ctx.Plotlines!);
         Assert.Empty(ctx.Items!);
+        Assert.Null(ctx.Locations);
+        Assert.Null(ctx.Organizations);
+        Assert.Null(ctx.Scenes);
         Assert.Empty(ctx.PlotHints!);
     }
 

@@ -68,6 +68,9 @@ public sealed class FictionHarnessRequestDto
                     PlotlineVersion = request.Context.PlotlineVersion,
                     Setup = request.Context.Setup,
                     Timeline = request.Context.Timeline,
+                    Locations = request.Context.Locations,
+                    Organizations = request.Context.Organizations,
+                    Scenes = request.Context.Scenes,
                 },
             SemanticExtraction = request.SemanticExtraction is null
                 ? null
@@ -109,6 +112,15 @@ public sealed class ContextDto
     public string? PlotlineVersion { get; init; }
 
     public SetupCheckInput? Setup { get; init; }
+
+    /// <summary>地点名（云端 jieba 词典；kebab 键 <c>locations</c>）。</summary>
+    public IReadOnlyList<string>? Locations { get; init; }
+
+    /// <summary>组织/派系名（云端 jieba 词典；kebab 键 <c>organizations</c>）。</summary>
+    public IReadOnlyList<string>? Organizations { get; init; }
+
+    /// <summary>场景标题（云端 jieba 词典；kebab 键 <c>scenes</c>）。</summary>
+    public IReadOnlyList<string>? Scenes { get; init; }
 
     /// <summary>
     /// 时间线事件（kebab 键 <c>timeline</c>）— 云端 PlotHoleDetector.DetectTimelineConflicts 的数据源；
