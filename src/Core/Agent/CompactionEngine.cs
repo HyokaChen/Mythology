@@ -150,11 +150,11 @@ public sealed class CompactionEngine(
         if (
             cutIndex <= 0
             || cutIndex >= messages.Count
-            || messages[cutIndex].Role != ChatMessageRoles.User
+            || !IsSafeCompactBoundary(messages[cutIndex])
         )
         {
             log.LogWarning(
-                "prepare compaction: no complete user turn can be compressed (keepRecent={Keep}, keepRecentTokens={Tokens}, cutIndex={Cut})",
+                "prepare compaction: no safe compact boundary can be compressed (keepRecent={Keep}, keepRecentTokens={Tokens}, cutIndex={Cut})",
                 request.KeepRecent,
                 request.KeepRecentTokens,
                 cutIndex
@@ -321,8 +321,10 @@ public sealed class CompactionEngine(
     }
 
     /// <summary>
-    /// 从尾部按 token 预算反扫切割点：至少保留预算与 minKeepMessages 条，再回退到 user 边界。
-    /// 绝不切在 tool 消息上，保证工具结果跟随其 assistant tool call。
+    /// 从尾部按 token 预算反扫切割点：至少保留预算与 minKeepMessages 条，再向尾部找最近的
+    /// user/assistant 边界。绝不切在 tool 消息上，保证工具结果跟随其 assistant tool call。
+    /// 注意不能向前回退到更早的 user：单轮长工具循环没有就近 user 边界，回退会直接跳到
+    /// 整轮的第一个 user，把整轮工具结果都留在尾部，压缩收益不足（TooSmall）。
     /// </summary>
     private static int FindTokenCutPoint(
         IReadOnlyList<ChatMessage> messages,
@@ -345,23 +347,28 @@ public sealed class CompactionEngine(
                 break;
         }
 
-        while (cutIndex > 0 && messages[cutIndex].Role != ChatMessageRoles.User)
-            cutIndex--;
+        if (cutIndex >= messages.Count)
+            return 0;
+        if (IsSafeCompactBoundary(messages[cutIndex]))
+            return cutIndex;
 
-        if (cutIndex < messages.Count && messages[cutIndex].Role != ChatMessageRoles.User)
-        {
-            for (var i = cutIndex + 1; i < messages.Count; i++)
-            {
-                if (messages[i].Role == ChatMessageRoles.User)
-                {
-                    cutIndex = i;
-                    break;
-                }
-            }
-        }
+        // 切点落在 tool 消息上：优先向尾部找最近的 user/assistant，保留的尾部最小；
+        // 若尾部全是 tool（例如最后一条就是 tool result），回退到最近的 assistant，
+        // 保证 tool result 不脱离它的 tool call。绝不回退到 user，否则会吞掉整轮工具循环。
+        for (var i = cutIndex + 1; i < messages.Count; i++)
+            if (IsSafeCompactBoundary(messages[i]))
+                return i;
 
-        return cutIndex <= 0 ? 0 : cutIndex;
+        for (var i = cutIndex - 1; i > 0; i--)
+            if (messages[i].Role == ChatMessageRoles.Assistant)
+                return i;
+
+        return 0;
     }
+
+    /// <summary>可安全作为压缩切点的消息角色：user 或 assistant；tool 必须跟随其 assistant call。</summary>
+    private static bool IsSafeCompactBoundary(ChatMessage message) =>
+        message.Role == ChatMessageRoles.User || message.Role == ChatMessageRoles.Assistant;
 
     private readonly record struct TurnScore(int StartIndex, int EndIndex, double Score);
 

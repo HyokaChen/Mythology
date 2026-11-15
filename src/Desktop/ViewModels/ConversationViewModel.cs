@@ -1853,8 +1853,9 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             _cts?.Dispose();
             _cts = new CancellationTokenSource();
-            // 编辑/重试都走 Continue：不会再有用户消息回显，不需要 echo 抑制。
-            _pendingEchoText = null;
+            // 纯重试走 Continue，不会回显用户消息；编辑重发走 RunPromptAsync/Agent.Prompt，
+            // 引擎会再次发出同一条 user MessageStart。本地编辑气泡已先行插入，必须吞掉回显。
+            _pendingEchoText = editedOutbound;
 
             if (editedDisplay is not null)
             {

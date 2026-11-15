@@ -1185,11 +1185,11 @@ public sealed class ConversationVmContractTests
         Assert.Contains(compacted, m => m.EntryId == firstUser.EntryId);
         Assert.Contains(compacted, m => m.EventType == SessionEventType.Compact);
 
-        var started = await h.Engine.RetryFromUserMessageAsync(
+        var started = await RetryEditedAndCancelAfterPersistAsync(
+            h,
             0,
             "改写第一问",
-            CancellationToken.None,
-            targetEntryId: firstUser.EntryId
+            firstUser.EntryId
         );
 
         Assert.True(started);
@@ -1233,11 +1233,11 @@ public sealed class ConversationVmContractTests
 
         Assert.Contains(await h.Engine.GetUiMessagesAsync(), m => m.EntryId == firstUser.EntryId);
 
-        var started = await h.Engine.RetryFromUserMessageAsync(
+        var started = await RetryEditedAndCancelAfterPersistAsync(
+            h,
             0,
             "改写第一问",
-            CancellationToken.None,
-            targetEntryId: firstUser.EntryId
+            firstUser.EntryId
         );
 
         Assert.True(started);
@@ -1320,7 +1320,7 @@ public sealed class ConversationVmContractTests
         using var h = new Harness();
         await SeedConversationAsync(h);
 
-        await h.Engine.RetryFromUserMessageAsync(0, "改写后的问题", CancellationToken.None);
+        await RetryEditedAndCancelAfterPersistAsync(h, 0, "改写后的问题");
 
         var active = await h.Engine.GetUiMessagesAsync();
         Assert.DoesNotContain(active, m => m.Content == "第一问");
@@ -1412,6 +1412,32 @@ public sealed class ConversationVmContractTests
             CancellationToken ct,
             IProgress<AgentToolResult>? onUpdate = null
         ) => Task.FromResult(new AgentToolResult());
+    }
+
+    /// <summary>
+    /// 编辑后重发现在走 Agent.Prompt；用空 TornadoApi 预热并在用户消息落盘后取消，
+    /// 让测试能验证分支/追加结果而不触网。
+    /// </summary>
+    private static async Task<bool> RetryEditedAndCancelAfterPersistAsync(
+        Harness h,
+        int visibleUserMessageOrdinal,
+        string editedText,
+        string? targetEntryId = null
+    )
+    {
+        h.Agent.TornadoApi = new TornadoApi();
+        using var cts = new CancellationTokenSource();
+        h.Engine.UserMessagePersisted += (content, _) =>
+        {
+            if (content == editedText)
+                cts.Cancel();
+        };
+        return await h.Engine.RetryFromUserMessageAsync(
+            visibleUserMessageOrdinal,
+            editedText,
+            cts.Token,
+            targetEntryId
+        );
     }
 
     /// <summary>最小装配（临时目录；Dispose 清理）。</summary>

@@ -684,12 +684,11 @@ public sealed class SessionEngine(
         }
         else
         {
-            // 编辑后重发不经过 Agent.Prompt（那会再追加一条用户消息），
-            // 直接把新用户消息接到回退后的上下文尾部，再走 Continue。
-            var messages = agent.State.Messages.ToList();
-            messages.Add(new LlmChatMessage(ChatMessageRoles.User, editedText));
-            agent.ReplaceMessages(messages);
-            await RunContinuationAsync(ct);
+            // 编辑后重发走完整 prompt 路径：先由 RunPromptAsync 的 prepare 做 novel 上下文
+            // 注入与主动压缩，再由 Agent.Prompt 追加用户消息。这样 BeforeRun 注入的本体
+            // harness 会排在用户消息之前；若在这里手工追加再 Continue，harness 会被注入到
+            // 用户消息之后，同时上下文里还留着旧 harness，形成重复与错序。
+            await RunPromptAsync(editedText, ct);
         }
         return true;
     }

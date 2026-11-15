@@ -595,6 +595,109 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.Equal(0, _agent.ContextWindowState.StartOrder); // 页状态未推进
     }
 
+    /// <summary>
+    /// 单轮长工具循环没有就近 user 边界时，token 切点必须向尾部找 assistant 边界。
+    /// 旧实现回退到本轮第一个 user，几乎不压缩，自动压缩因此一直 TooSmall。
+    /// </summary>
+    [Fact]
+    public void FindTokenCutPoint_LongToolTurn_DoesNotFallBackToFirstUser()
+    {
+        var messages = new List<LlmChatMessage> { new(ChatMessageRoles.User, "开始") };
+        for (var i = 0; i < 20; i++)
+        {
+            messages.Add(new LlmChatMessage(ChatMessageRoles.Assistant, new string('述', 2_000)));
+            messages.Add(new LlmChatMessage(ChatMessageRoles.Tool, new string('述', 2_000)));
+        }
+        messages.Add(new LlmChatMessage(ChatMessageRoles.User, "继续"));
+
+        var method = typeof(CompactionEngine).GetMethod(
+            "FindTokenCutPoint",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        var cut = (int)method.Invoke(null, [messages, 2_000, 4])!;
+
+        Assert.InRange(cut, 30, messages.Count - 1);
+        Assert.NotEqual(ChatMessageRoles.Tool, messages[cut].Role);
+    }
+
+    /// <summary>
+    /// 单轮长工具循环 + 尾部累计 token 锚点时，自动压缩必须真正降低上下文。
+    /// 旧切点回退到本轮第一个 user，压缩后仍保留整轮，触发 TooSmall 且不写 compact 块。
+    /// </summary>
+    [Fact]
+    public async Task AutoCompact_LongToolTurn_DoesNotFailTooSmall()
+    {
+        var messages = new List<LlmChatMessage>();
+        for (var i = 0; i < 6; i++)
+        {
+            messages.Add(
+                new LlmChatMessage(
+                    i % 2 == 0 ? ChatMessageRoles.User : ChatMessageRoles.Assistant,
+                    new string('述', 5_000)
+                )
+            );
+        }
+        messages.Add(new LlmChatMessage(ChatMessageRoles.User, "长任务"));
+        for (var i = 0; i < 30; i++)
+            messages.Add(new LlmChatMessage(ChatMessageRoles.Assistant, new string('述', 4_000)));
+        messages.Add(new LlmChatMessage(ChatMessageRoles.User, "继续"));
+        // 复现真实会话：最后一条 assistant 带有累计上下文锚点。
+        messages.Last(m => m.Role == ChatMessageRoles.Assistant).Tokens = 135_000;
+
+        await SeedSessionMessagesAsync(messages);
+        var before = _agent.State.Messages.Count;
+        var ended = new List<string>();
+        _engine.OnCompactEnd += (message, _) => ended.Add(message);
+
+        var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
+        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None])!;
+
+        Assert.Contains("自动压缩完成", Assert.Single(ended));
+        var compact = Assert.Single(ReadSessionEntries("compact"));
+        var compressed = compact.GetProperty("compressed-message-ids").EnumerateArray().ToList();
+        Assert.True(compressed.Count > 1);
+        Assert.True(_agent.State.Messages.Count < before / 2);
+    }
+
+    /// <summary>
+    /// 编辑后重发必须把 BeforeRun 注入的 harness 放在新用户消息之前，且不能重复注入。
+    /// 旧实现先手工追加用户消息再 Continue，harness 被排到用户消息之后。
+    /// </summary>
+    [Fact]
+    public async Task EditResend_InjectsHarnessBeforeEditedMessage()
+    {
+        await SeedSessionMessagesAsync([
+            new LlmChatMessage(ChatMessageRoles.User, "原始"),
+            new LlmChatMessage(ChatMessageRoles.Assistant, "回答"),
+        ]);
+        _agent.TornadoApi = new TornadoApi();
+        _agent.BeforeRun = _ =>
+        {
+            _agent.InjectQueue.Enqueue(
+                new LlmChatMessage(ChatMessageRoles.User, "[本体 harness] 测试")
+            );
+            return Task.CompletedTask;
+        };
+
+        using var cts = new CancellationTokenSource();
+        _engine.UserMessagePersisted += (content, _) =>
+        {
+            if (content == "编辑后")
+                cts.Cancel();
+        };
+
+        var started = await _engine.RetryFromUserMessageAsync(0, "编辑后", cts.Token);
+
+        Assert.True(started);
+        Assert.Equal(2, _agent.State.Messages.Count);
+        Assert.StartsWith("[本体 harness]", _agent.State.Messages[0].Content);
+        Assert.Equal("编辑后", _agent.State.Messages[1].Content);
+        Assert.Single(
+            _agent.State.Messages,
+            m => m.Content?.StartsWith("[本体 harness]", StringComparison.Ordinal) == true
+        );
+    }
+
     /// <summary>把第一轮打最高分，复现“最早 top 轮落在历史开头”的智能压缩场景。</summary>
     private sealed class EarlyTurnScorer : IMessageScorer
     {
