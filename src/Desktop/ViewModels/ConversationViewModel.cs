@@ -127,6 +127,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private DispatcherTimer? _compactWatch;
     private const string CompactingStatusPrefix = "上下文压缩中";
     private const string CompactingStatusText = "上下文压缩中…";
+    private const string CompactEndedPlaceholder = "上下文压缩已结束";
 
     /// <summary>上下文压缩是否进行中（系统状态行 + 状态栏 spinner 的单一事实源）。</summary>
     public bool IsCompacting
@@ -1412,6 +1413,9 @@ public sealed class ConversationViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() =>
             {
                 var (status, _) = FindActiveCompactStatus();
+                // 看门狗可能先一步把「压缩中」改成「上下文压缩已结束」；真正 End 到达时
+                // 必须复用这一行，否则会多出一条完成行，摘要也会被丢到第三行。
+                status ??= FindEndedCompactStatus();
                 if (status is null)
                 {
                     // Start 的 UI action 尚未执行：先挂起，由 Start 收尾。
@@ -1421,7 +1425,7 @@ public sealed class ConversationViewModel : ViewModelBase
                         return;
                     }
 
-                    AddSystemNotice(message);
+                    AddSystemNotice(message, summary);
                     return;
                 }
 
@@ -1511,6 +1515,28 @@ public sealed class ConversationViewModel : ViewModelBase
         return (null, -1);
     }
 
+    /// <summary>
+    /// 看门狗已经把活动行改成「上下文压缩已结束」时，End 仍应更新同一行。
+    /// 只匹配看门狗的占位文案，避免把更早的完成行误当成当前压缩。
+    /// </summary>
+    private ChatMessageModel? FindEndedCompactStatus()
+    {
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            var message = Messages[i];
+            if (message.Sender != MessageSender.System)
+                continue;
+            if (
+                message.Content.Length >= CompactEndedPlaceholder.Length
+                && message
+                    .Content.ToString()
+                    .StartsWith(CompactEndedPlaceholder, StringComparison.Ordinal)
+            )
+                return message;
+        }
+        return null;
+    }
+
     /// <summary>避免长系统提示无谓 ToString；ObservableStringBuilder 没有 Span/索引器。</summary>
     private static bool HasCompactingPrefix(ChatMessageModel message)
     {
@@ -1577,7 +1603,7 @@ public sealed class ConversationViewModel : ViewModelBase
         if (status is null && !IsCompacting)
             return;
 
-        ApplyCompactEnd(status, "上下文压缩已结束");
+        ApplyCompactEnd(status, CompactEndedPlaceholder);
     }
 
     /// <summary>从设定面板插入实体引用（如 `角色「林月如」`）。</summary>

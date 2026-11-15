@@ -871,11 +871,10 @@ public sealed class SessionEngine(
             var relieved = await RelieveOverflowAsync(keepRecentTokensOverflow, ct);
             if (relieved)
             {
-                OnSystemNotice?.Invoke(
-                    _contextManagement is { Mode: ContextMode.Continuation }
-                        ? "上下文过长，已开启新的上下文页，正在继续..."
-                        : "上下文溢出，已压缩，正在继续..."
-                );
+                // compact 模式的完成行已经展示「压缩完成 + 摘要」，不再追加
+                // “已压缩，正在继续…”；接续模式没有摘要行，仍保留换页提示。
+                if (_contextManagement is { Mode: ContextMode.Continuation })
+                    OnSystemNotice?.Invoke("上下文过长，已开启新的上下文页，正在继续...");
                 await retryAfterOverflow(overflowRetryCount + 1, ct);
                 return;
             }

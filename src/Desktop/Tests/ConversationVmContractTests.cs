@@ -502,6 +502,39 @@ public sealed class ConversationVmContractTests
     }
 
     [Fact]
+    public void CompactEnd_AfterWatchdog_ReusesEndedRowAndShowsSummary()
+    {
+        using var h = new Harness();
+        var vm = h.CreateVm();
+        var start = GetCompactStart(h);
+        var end = GetCompactEnd(h);
+
+        HeadlessUiHost.Instance.Run(() =>
+        {
+            start();
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            vm.SetProcessing(true);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            var ended = Assert.Single(vm.Messages);
+            Assert.Equal("上下文压缩已结束", ended.Content.ToString());
+
+            end(
+                "上下文溢出压缩完成：49 → 3 条",
+                "## Where / 写到哪里\n- 第 49 章\n## Next / 下一步\n- 继续"
+            );
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            var row = Assert.Single(vm.Messages);
+            Assert.StartsWith("上下文溢出压缩完成：49 → 3 条", row.Content.ToString());
+            Assert.True(row.HasSummaryDetail);
+            Assert.Contains("## Where / 写到哪里", row.SummaryDetail.ToString());
+            Assert.Contains(SessionInternalMessages.CompactSummaryPrefix, row.Content.ToString());
+            Assert.False(row.IsSpinnerVisible);
+        });
+    }
+
+    [Fact]
     public void EntityChangeNotice_WhileIdle_IsSystemRow()
     {
         using var h = new Harness();
