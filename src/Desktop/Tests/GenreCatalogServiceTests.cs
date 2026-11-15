@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text;
 using ClientPlatform;
-using Desktop.Services;
 using Xunit;
 
 namespace Desktop.Tests;

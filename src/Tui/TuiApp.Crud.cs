@@ -156,7 +156,8 @@ public sealed partial class TuiApp
                 EntityType.Chapter,
                 entityId: chapterId,
                 novelId: novelId,
-                editScope: ChapterEditScope.Outline
+                editScope: ChapterEditScope.Outline,
+                genreCatalog: _genreCatalog
             ).Show();
         };
         _setUpPanel.OnEditChapter += editChapterHandler;
@@ -173,7 +174,8 @@ public sealed partial class TuiApp
                 EntityType.Chapter,
                 entityId: chapterId,
                 novelId: novelId,
-                editScope: ChapterEditScope.Content
+                editScope: ChapterEditScope.Content,
+                genreCatalog: _genreCatalog
             ).Show();
         };
         _setUpPanel.OnEditChapterContent += editChapterContentHandler;
@@ -226,7 +228,8 @@ public sealed partial class TuiApp
                 _store,
                 EntityType.Novel,
                 entityId: novelId,
-                novelId: novelId
+                novelId: novelId,
+                genreCatalog: _genreCatalog
             ).Show();
         };
         _setUpPanel.OnEditNovel += editNovelHandler;
@@ -550,7 +553,12 @@ public sealed partial class TuiApp
         Action<string?, string?> handler = (novelId, _) =>
         {
             _manualEdit = true;
-            new EntityEditDialog(_store, entityType, novelId: novelId).Show();
+            new EntityEditDialog(
+                _store,
+                entityType,
+                novelId: novelId,
+                genreCatalog: _genreCatalog
+            ).Show();
         };
         subscribe(handler);
         _crudUnsubscribers.Add(() => unsubscribe(handler));
@@ -574,7 +582,13 @@ public sealed partial class TuiApp
                 return;
             }
             _manualEdit = true;
-            new EntityEditDialog(_store, entityType, entityId: id, novelId: novelId).Show();
+            new EntityEditDialog(
+                _store,
+                entityType,
+                entityId: id,
+                novelId: novelId,
+                genreCatalog: _genreCatalog
+            ).Show();
         };
         subscribe(handler);
         _crudUnsubscribers.Add(() => unsubscribe(handler));

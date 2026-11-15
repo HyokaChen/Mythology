@@ -1,3 +1,4 @@
+using ClientPlatform;
 using Core.Data;
 using Core.Evolution;
 using Core.Novels;
@@ -33,11 +34,15 @@ public sealed class EntityEditDialog(
     string? entityId = null,
     string? novelId = null,
     string? presetVolumeId = null,
-    ChapterEditScope editScope = ChapterEditScope.Full
+    ChapterEditScope editScope = ChapterEditScope.Full,
+    GenreCatalogService? genreCatalog = null
 )
 {
     /// <summary>当前小说 ID。</summary>
     private readonly string _novelId = novelId ?? "";
+
+    /// <summary>云端题材目录（null = 仅内置/缓存目录）。</summary>
+    private readonly GenreCatalogService? _genreCatalog = genreCatalog;
 
     /// <summary>新建章节时的预置所属分卷（null = 未分卷）。</summary>
     private readonly string? _presetVolumeId = presetVolumeId;
@@ -51,6 +56,7 @@ public sealed class EntityEditDialog(
         TextBox, // 单行文本
         TextArea, // 多行文本
         Select, // 下拉选择
+        Genre, // 两级题材选择（父/子两个下拉，保存 Genre + GenreParent）
         MultiSelect, // Tag 多选（从已有实体列表选取）
         FreeTag, // Tag 自由输入（如角色标签，回车添加）
         ReadOnlyTags, // 只读 Tag 展示（折叠项内）
@@ -67,6 +73,137 @@ public sealed class EntityEditDialog(
         string? Placeholder = null, // 输入占位提示
         string? Icon = null // 只读 Tag 前缀图标
     );
+
+    /// <summary>
+    /// 小说题材的两级选择状态。旧数据的 GenreParent 为空时，由调用方先用
+    /// <see cref="GenreCatalog.Resolve"/> 反查一级，再构造本状态。
+    /// </summary>
+    internal sealed class GenreFieldState
+    {
+        public event Action? CatalogChanged;
+
+        public GenreFieldState(GenreCatalog catalog, GenreSelection initial)
+        {
+            initial = ResolveInitial(catalog, initial);
+            Categories = BuildCategories(catalog, initial);
+            var parentIndex = FindIndex(
+                [.. Categories.Select(category => category.Name)],
+                initial.Parent
+            );
+            ParentIndex = new State<int>(parentIndex < 0 ? 0 : parentIndex);
+            var childIndex = FindIndex(CurrentSubcategories(), initial.Child);
+            ChildIndex = new State<int>(childIndex < 0 ? 0 : childIndex);
+        }
+
+        public IReadOnlyList<GenreCategory> Categories { get; private set; }
+
+        public State<int> ParentIndex { get; }
+
+        public State<int> ChildIndex { get; }
+
+        public string[] CurrentSubcategories()
+        {
+            if (Categories.Count == 0)
+                return [];
+            var parent = Math.Clamp(ParentIndex.Value, 0, Categories.Count - 1);
+            return [.. Categories[parent].Subcategories];
+        }
+
+        public GenreSelection Selection
+        {
+            get
+            {
+                if (Categories.Count == 0)
+                    return new GenreSelection("", "");
+                var parent = Math.Clamp(ParentIndex.Value, 0, Categories.Count - 1);
+                var category = Categories[parent];
+                if (category.Subcategories.Count == 0)
+                    return new GenreSelection(category.Name, "");
+                var child = Math.Clamp(ChildIndex.Value, 0, category.Subcategories.Count - 1);
+                return new GenreSelection(category.Name, category.Subcategories[child]);
+            }
+        }
+
+        /// <summary>热替换云端目录：保留当前父子选择，旧值不在新目录时也保留。</summary>
+        public void ApplyCatalog(GenreCatalog catalog)
+        {
+            var selection = ResolveInitial(catalog, Selection);
+            var categories = BuildCategories(catalog, selection);
+            if (categories.Count == 0)
+                return;
+            Categories = categories;
+            var parentIndex = FindIndex(
+                [.. Categories.Select(category => category.Name)],
+                selection.Parent
+            );
+            ParentIndex.Value = parentIndex < 0 ? 0 : parentIndex;
+            var childIndex = FindIndex(CurrentSubcategories(), selection.Child);
+            ChildIndex.Value = childIndex < 0 ? 0 : childIndex;
+            CatalogChanged?.Invoke();
+        }
+
+        private static GenreSelection ResolveInitial(GenreCatalog catalog, GenreSelection selection)
+        {
+            if (
+                string.IsNullOrWhiteSpace(selection.Parent)
+                && !string.IsNullOrWhiteSpace(selection.Child)
+            )
+                return catalog.Resolve(selection.Parent, selection.Child);
+            return selection;
+        }
+
+        private static List<GenreCategory> BuildCategories(
+            GenreCatalog catalog,
+            GenreSelection initial
+        )
+        {
+            var source =
+                catalog.Categories.Count > 0 ? catalog.Categories : GenreCatalog.Local.Categories;
+            var categories = source
+                .Select(category => new GenreCategory(category.Name, [.. category.Subcategories]))
+                .ToList();
+            var parent = initial.Parent.Trim();
+            var child = initial.Child.Trim();
+            if (categories.Count == 0 || (parent.Length == 0 && child.Length == 0))
+                return categories;
+
+            var parentIndex = FindIndex([.. categories.Select(category => category.Name)], parent);
+            if (parentIndex < 0)
+            {
+                if (child.Length > 0)
+                {
+                    // 父级无法识别时保留原值（包括空父级），不伪造“未分类”改写用户数据。
+                    // 放在首位，避免 ParentIndex 的 0 回退指向真实分类而改写父级。
+                    categories.Insert(0, new GenreCategory(parent, [child]));
+                }
+                return categories;
+            }
+
+            var category = categories[parentIndex];
+            if (
+                child.Length > 0
+                && !category.Subcategories.Any(value =>
+                    string.Equals(value, child, StringComparison.Ordinal)
+                )
+            )
+            {
+                categories[parentIndex] = category with
+                {
+                    Subcategories = [.. category.Subcategories, child],
+                };
+            }
+            return categories;
+        }
+
+        private static int FindIndex(string[] names, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return -1;
+            return Array.FindIndex(names, name =>
+                string.Equals(name, value, StringComparison.Ordinal)
+            );
+        }
+    }
 
     // ── 标签页定义 ──
     private sealed record TabDef(string Name, FieldDef[] Fields); // Name=标签名, Fields=字段列表
@@ -444,7 +581,7 @@ public sealed class EntityEditDialog(
             "小说定义",
             [
                 new FieldDef("Title", "标题", FieldType.TextBox),
-                new FieldDef("Genre", "类型", FieldType.TextBox),
+                new FieldDef("Genre", "类型", FieldType.Genre),
                 new FieldDef("Description", "简介", FieldType.TextArea),
                 new FieldDef(
                     "Outline",
@@ -1211,6 +1348,11 @@ public sealed class EntityEditDialog(
         var displayTitle = ChromeText.ForTitle(title, 40);
         var hasMultipleTabs = tabs.Length > 1;
 
+        // 题材目录缓存优先；云端刷新由新建项目窗口负责写缓存。
+        var catalog = _genreCatalog is null ? GenreCatalog.Local : await _genreCatalog.LoadAsync();
+        if (catalog.Categories.Count == 0)
+            catalog = GenreCatalog.Local;
+
         // 编辑模式：加载已有实体数据
         Dictionary<string, object?> initialValues = [];
         if (isEdit)
@@ -1229,6 +1371,17 @@ public sealed class EntityEditDialog(
         {
             // 新建章节且从某卷入口进入：表单预选目标卷（ID-ref Select 按 ID 定位索引）
             initialValues["VolumeId"] = _presetVolumeId;
+        }
+
+        if (entityType == EntityType.Novel)
+        {
+            // 旧数据只有 Genre（二级）时，用当前目录反查一级；无法识别则保留原值。
+            var selection = catalog.Resolve(
+                initialValues.GetValueOrDefault("GenreParent")?.ToString(),
+                initialValues.GetValueOrDefault("Genre")?.ToString()
+            );
+            initialValues["GenreParent"] = selection.Parent;
+            initialValues["Genre"] = selection.Child;
         }
 
         // 小说详情第二个 tab：世界规则/设定（即时保存）
@@ -1322,6 +1475,8 @@ public sealed class EntityEditDialog(
         var multiSelectStates = new Dictionary<string, State<List<string>>>();
         // 自由标签状态
         var freeTagStates = new Dictionary<string, State<List<string>>>();
+        // 两级题材状态（Genre 字段专用）
+        var genreStates = new Dictionary<string, GenreFieldState>();
 
         foreach (var tab in tabs)
         {
@@ -1348,6 +1503,16 @@ public sealed class EntityEditDialog(
                                 : new List<string>();
                         var ftState = new State<List<string>>(tagList);
                         freeTagStates[def.Prop] = ftState;
+                        states.Add((def.Prop, new State<string?>(""), null, def));
+                        break;
+                    }
+                    case FieldType.Genre:
+                    {
+                        var initialSelection = new GenreSelection(
+                            initialValues.GetValueOrDefault("GenreParent")?.ToString() ?? "",
+                            initialValues.GetValueOrDefault("Genre")?.ToString() ?? ""
+                        );
+                        genreStates[def.Prop] = new GenreFieldState(catalog, initialSelection);
                         states.Add((def.Prop, new State<string?>(""), null, def));
                         break;
                     }
@@ -1422,7 +1587,8 @@ public sealed class EntityEditDialog(
                     multiSelectStates,
                     freeTagStates,
                     readOnlyTagData,
-                    initialValues
+                    initialValues,
+                    genreStates
                 );
                 tabPages.Add(new TabPage(tabDef.Name, tabContent));
             }
@@ -1460,7 +1626,8 @@ public sealed class EntityEditDialog(
                 multiSelectStates,
                 freeTagStates,
                 readOnlyTagData,
-                initialValues
+                initialValues,
+                genreStates
             );
             content = PanelThemes.CreateScrollableDialogContent(form);
         }
@@ -1498,6 +1665,8 @@ public sealed class EntityEditDialog(
             }
         );
         dlg.Show();
+        if (_genreCatalog is not null && genreStates.Count > 0)
+            _ = RefreshCatalogAsync(_genreCatalog, genreStates);
         return;
 
         // UI event handler (button click): 异常处理收敛到 TuiSafeFire（Toast），
@@ -1523,6 +1692,7 @@ public sealed class EntityEditDialog(
                             is FieldType.MultiSelect
                                 or FieldType.ReadOnlyTags
                                 or FieldType.ReadOnly
+                                or FieldType.Genre
                         )
                             continue; // handled separately / 只读不参与保存
 
@@ -1546,6 +1716,14 @@ public sealed class EntityEditDialog(
                     foreach (var (prop, msState) in multiSelectStates)
                     {
                         fieldValues[prop] = msState.Value;
+                    }
+
+                    // Genre 复合字段：Genre = 二级，GenreParent = 一级。
+                    foreach (var genreState in genreStates.Values)
+                    {
+                        var selection = genreState.Selection;
+                        fieldValues["Genre"] = selection.Child;
+                        fieldValues["GenreParent"] = selection.Parent;
                     }
 
                     await SaveEntityAsync(fieldValues);
@@ -1599,7 +1777,8 @@ public sealed class EntityEditDialog(
         Dictionary<string, State<List<string>>> multiSelectStates,
         Dictionary<string, State<List<string>>> freeTagStates,
         Dictionary<string, (string[] Texts, string[] Icons)> readOnlyTagData,
-        Dictionary<string, object?> initialValues
+        Dictionary<string, object?> initialValues,
+        Dictionary<string, GenreFieldState> genreStates
     )
     {
         var rows = new List<Visual>();
@@ -1693,6 +1872,12 @@ public sealed class EntityEditDialog(
                             }
                             break;
                         }
+                        case FieldType.Genre:
+                        {
+                            if (genreStates.TryGetValue(def.Prop, out var genreState))
+                                row.Cell(BuildGenreField(genreState), 0, 1);
+                            break;
+                        }
                         case FieldType.ReadOnly:
                         {
                             // 只读信息（章节号/字数/更新时间）：值由 LoadEntityAsync 预计算，
@@ -1743,6 +1928,74 @@ public sealed class EntityEditDialog(
         }
 
         return new VStack(rows.ToArray()).Spacing(1);
+    }
+
+    /// <summary>后台刷新云端题材目录；失败保留缓存/内置目录。</summary>
+    private static async Task RefreshCatalogAsync(
+        GenreCatalogService service,
+        Dictionary<string, GenreFieldState> genreStates
+    )
+    {
+        try
+        {
+            var catalog = await service.RefreshAsync();
+            if (catalog.Categories.Count == 0)
+                return;
+            UiDispatch.PostIfAttached(() =>
+            {
+                foreach (var state in genreStates.Values)
+                    state.ApplyCatalog(catalog);
+            });
+        }
+        catch
+        {
+            // 题材目录不是编辑实体的硬前提：保留缓存/内置目录。
+        }
+    }
+
+    /// <summary>
+    /// 两级题材选择：一级下拉决定二级候选；保存时由调用方同时落 Genre / GenreParent。
+    /// 展示顺序与项目列表一致（二级 │ 一级），但选择顺序仍是先一级后二级。
+    /// </summary>
+    private static Visual BuildGenreField(GenreFieldState state)
+    {
+        var parentSelect = new MythSelect()
+            .Items([.. state.Categories.Select(category => category.Name)])
+            .SelectedIndex(state.ParentIndex)
+            .Style(SelectStyle.NoBorder)
+            .MaxWidth(int.MaxValue);
+        parentSelect.HorizontalAlignment = Align.Stretch;
+
+        var childSelect = new MythSelect()
+            .Items(state.CurrentSubcategories())
+            .SelectedIndex(state.ChildIndex)
+            .Style(SelectStyle.NoBorder)
+            .MaxWidth(int.MaxValue);
+        childSelect.HorizontalAlignment = Align.Stretch;
+
+        parentSelect.SelectionChanged(
+            (_, _) =>
+            {
+                state.ParentIndex.Value = Math.Max(0, parentSelect.SelectedIndex);
+                childSelect.Items(state.CurrentSubcategories());
+                state.ChildIndex.Value = 0;
+            }
+        );
+
+        // 云端目录热替换：先保存当前索引，重建两个下拉后恢复选择。
+        state.CatalogChanged += () =>
+        {
+            var parentIndex = state.ParentIndex.Value;
+            var childIndex = state.ChildIndex.Value;
+            parentSelect.Items([.. state.Categories.Select(category => category.Name)]);
+            parentSelect.SelectedIndex(parentIndex);
+            childSelect.Items(state.CurrentSubcategories());
+            childSelect.SelectedIndex(childIndex);
+        };
+
+        var picker = new HStack(parentSelect, new Markup("[dim]│[/]"), childSelect).Spacing(1);
+        picker.HorizontalAlignment = Align.Stretch;
+        return picker;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1969,6 +2222,7 @@ public sealed class EntityEditDialog(
             {
                 ["Title"] = nv.Title,
                 ["Genre"] = nv.Genre,
+                ["GenreParent"] = nv.GenreParent,
                 ["Description"] = nv.Description,
                 ["Outline"] = nv.Outline,
                 ["WritingStyle"] = nv.WritingStyle,
@@ -2483,6 +2737,7 @@ public sealed class EntityEditDialog(
                     return;
                 nv.Title = Val(values, "Title");
                 nv.Genre = Val(values, "Genre");
+                nv.GenreParent = Val(values, "GenreParent");
                 nv.Description = Val(values, "Description");
                 nv.Outline = Val(values, "Outline");
                 nv.WritingStyle = Val(values, "WritingStyle");

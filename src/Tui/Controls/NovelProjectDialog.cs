@@ -1,3 +1,4 @@
+using ClientPlatform;
 using Core.Data;
 using Tui.Services;
 using XenoAtom.Terminal;
@@ -19,7 +20,8 @@ namespace Tui.Controls;
 public sealed class NovelProjectDialog(
     INovelStore store, // 小说存储服务
     FileSessionStore sessionStore, // 会话存储服务
-    Action<string, string?>? onOpenNovel = null // 打开小说回调（参数：novelId, sessionId）
+    Action<string, string?>? onOpenNovel = null, // 打开小说回调（参数：novelId, sessionId）
+    GenreCatalogService? genreCatalog = null // 云端题材目录（null = 仅内置/缓存）
 )
 {
     /// <summary>
@@ -30,8 +32,11 @@ public sealed class NovelProjectDialog(
         ? fns.Workspace
         : null;
 
-    /// <summary>一级分类列表（引用 GenreDefinitions）。</summary>
-    private static readonly GenreDefinitions.Category[] Categories = GenreDefinitions.All;
+    /// <summary>运行时题材目录：内置 → 缓存 → 云端刷新。</summary>
+    private GenreCatalog _catalog = GenreCatalog.Local;
+
+    /// <summary>新建表单打开时，后台刷新完成后把新目录热替换进两个下拉。</summary>
+    private Action<GenreCatalog>? _applyCatalog;
 
     /// <summary>
     /// 显示小说项目对话框。
@@ -49,18 +54,58 @@ public sealed class NovelProjectDialog(
     {
         try
         {
+            _catalog = genreCatalog is null ? GenreCatalog.Local : await genreCatalog.LoadAsync();
+            if (_catalog.Categories.Count == 0)
+                _catalog = GenreCatalog.Local;
+
             var novels = await store.GetAllNovels();
             if (novels.Count == 0)
             {
                 ShowNewForm();
-                return;
             }
-            ShowProjectPicker(novels);
+            else
+            {
+                ShowProjectPicker(novels);
+            }
         }
         catch (Exception ex)
         {
             ToastService.Error($"加载项目失败: {ex.Message}");
             ShowNewForm();
+        }
+
+        // 缓存先显示，云端目录在后台刷新；刷新完成时若新建表单正开着，热替换下拉项。
+        if (genreCatalog is not null)
+            _ = RefreshCatalogAsync(genreCatalog);
+    }
+
+    /// <summary>后台刷新云端题材目录；失败保留缓存/内置目录。</summary>
+    private async Task RefreshCatalogAsync(GenreCatalogService service)
+    {
+        try
+        {
+            var catalog = await service.RefreshAsync();
+            if (catalog.Categories.Count == 0)
+                return;
+            if (_applyCatalog is null)
+            {
+                _catalog = catalog;
+                return;
+            }
+
+            // 表单可能在刷新返回与 UI 回调执行之间被关闭；回调里重新读取字段，
+            // 避免把新目录应用到已经 detach 的控件，也避免清空后调用 null。
+            UiDispatch.PostIfAttached(() =>
+            {
+                if (_applyCatalog is { } apply)
+                    apply(catalog);
+                else
+                    _catalog = catalog;
+            });
+        }
+        catch
+        {
+            // 题材目录不是打开项目的硬前提：保留缓存/内置目录。
         }
     }
 
@@ -80,7 +125,8 @@ public sealed class NovelProjectDialog(
         foreach (var n in recent)
         {
             var title = string.IsNullOrEmpty(n.Title) ? n.Id : n.Title;
-            var genre = string.IsNullOrEmpty(n.Genre) ? "其他" : n.Genre;
+            var selection = _catalog.Resolve(n.GenreParent, n.Genre);
+            var genre = selection.IsEmpty ? "其他" : selection.Display;
             var ch = n.Chapters?.Count ?? 0;
             var date = n.UpdatedAt.ToString("MM-dd");
             // 书所在的项目目录（清单里可能不止一个）→ 角标，多目录时同名书可分辨
@@ -276,7 +322,14 @@ public sealed class NovelProjectDialog(
     /// <param name="novelTitle">小说标题。</param>
     private void ShowSessionPicker(string novelId, string novelTitle)
     {
-        new SessionPickerDialog(store, sessionStore, onOpenNovel, novelId, novelTitle).Show();
+        new SessionPickerDialog(
+            store,
+            sessionStore,
+            onOpenNovel,
+            novelId,
+            novelTitle,
+            genreCatalog
+        ).Show();
     }
 
     // ── 新建项目表单 ──
@@ -296,8 +349,12 @@ public sealed class NovelProjectDialog(
         var outlineState = new State<string?>("");
         var wordCountState = new State<string?>("50000");
 
-        // 一级分类 Select
-        var categoryNames = Categories.Select(c => c.Name).ToArray();
+        // 题材目录可能刚从缓存/云端更新；空目录回退内置。
+        var catalog = _catalog.Categories.Count > 0 ? _catalog : GenreCatalog.Local;
+        _catalog = catalog;
+
+        // 一级分类 Select（父子两级；保存时同时写 Genre / GenreParent）
+        var categoryNames = catalog.Categories.Select(c => c.Name).ToArray();
         var categorySelect = new Select<string>()
             .Items(categoryNames)
             .SelectedIndex(categoryIdx)
@@ -305,26 +362,64 @@ public sealed class NovelProjectDialog(
         categorySelect.HorizontalAlignment = Align.Stretch;
 
         // 二级分类 Select — 根据一级分类联动
-        var initialSubs = Categories[0].Subcategories.Select(s => s.Name).ToArray();
+        var initialSubs =
+            catalog.Categories.Count > 0 ? catalog.Categories[0].Subcategories.ToArray() : [];
         var subcategorySelect = new Select<string>()
             .Items(initialSubs)
             .SelectedIndex(subcategoryIdx)
             .Style(SelectStyle.NoBorder);
         subcategorySelect.HorizontalAlignment = Align.Stretch;
 
+        void UpdateSubcategories()
+        {
+            var idx = categorySelect.SelectedIndex;
+            var subs =
+                idx >= 0 && idx < _catalog.Categories.Count
+                    ? _catalog.Categories[idx].Subcategories.ToArray()
+                    : [];
+            subcategorySelect.Items(subs);
+            subcategoryIdx.Value = 0;
+        }
+
         // 一级分类变化时更新二级分类列表
-        categorySelect.SelectionChanged(
-            (_, _) =>
-            {
-                var idx = categorySelect.SelectedIndex;
-                if (idx >= 0 && idx < Categories.Length)
-                {
-                    var subs = Categories[idx].Subcategories.Select(s => s.Name).ToArray();
-                    subcategorySelect.Items(subs);
-                    subcategoryIdx.Value = 0;
-                }
-            }
-        );
+        categorySelect.SelectionChanged((_, _) => UpdateSubcategories());
+
+        // 后台刷新完成后保留当前选择，热替换目录；旧目录里找不到的值回退第一项。
+        _applyCatalog = newCatalog =>
+        {
+            if (newCatalog.Categories.Count == 0)
+                return;
+
+            var oldParent =
+                categoryIdx.Value >= 0 && categoryIdx.Value < _catalog.Categories.Count
+                    ? _catalog.Categories[categoryIdx.Value].Name
+                    : "";
+            var oldChild =
+                categoryIdx.Value >= 0
+                && categoryIdx.Value < _catalog.Categories.Count
+                && subcategoryIdx.Value >= 0
+                && subcategoryIdx.Value < _catalog.Categories[categoryIdx.Value].Subcategories.Count
+                    ? _catalog.Categories[categoryIdx.Value].Subcategories[subcategoryIdx.Value]
+                    : "";
+
+            _catalog = newCatalog;
+            var parents = newCatalog.Categories.Select(c => c.Name).ToArray();
+            categorySelect.Items(parents);
+            categoryIdx.Value = Math.Max(
+                0,
+                Array.FindIndex(parents, n => string.Equals(n, oldParent, StringComparison.Ordinal))
+            );
+
+            var subs =
+                categoryIdx.Value >= 0 && categoryIdx.Value < newCatalog.Categories.Count
+                    ? newCatalog.Categories[categoryIdx.Value].Subcategories.ToArray()
+                    : [];
+            subcategorySelect.Items(subs);
+            subcategoryIdx.Value = Math.Max(
+                0,
+                Array.FindIndex(subs, n => string.Equals(n, oldChild, StringComparison.Ordinal))
+            );
+        };
 
         var form = new Grid()
             .Columns(
@@ -408,7 +503,14 @@ public sealed class NovelProjectDialog(
             .MinHeight(28)
             .Padding(new Thickness(2, 1, 2, 1));
 
-        var closeBtn = PanelThemes.CreateDialogCloseButton(dialog.Close);
+        void CloseForm()
+        {
+            // 关闭后不再接收后台刷新的热替换回调；当前目录已由 _catalog 保留。
+            _applyCatalog = null;
+            dialog.Close();
+        }
+
+        var closeBtn = PanelThemes.CreateDialogCloseButton(CloseForm);
 
         var createBtn = new Button(new Markup("[bold]创建[/]"))
             .Style(ThemeStyles.BuildButtonAccent(PanelThemes.Current))
@@ -424,7 +526,7 @@ public sealed class NovelProjectDialog(
             {
                 if (e.Key == TerminalKey.Escape)
                 {
-                    dialog.Close();
+                    CloseForm();
                     e.Handled = true;
                 }
             }
@@ -446,21 +548,26 @@ public sealed class NovelProjectDialog(
                         return;
                     }
 
-                    // 取二级分类名作为 Genre（Novel.Genre 存储二级分类中文名）
+                    // 同级保存：Genre = 二级，GenreParent = 一级；旧数据缺一级时由 catalog 反查。
+                    var selection = _catalog.DefaultSelection ?? new GenreSelection("", "");
                     var catIdx = categoryIdx.Value;
                     var subIdx = subcategoryIdx.Value;
-                    var genre = "东方玄幻"; // 默认 fallback
-                    if (catIdx >= 0 && catIdx < Categories.Length)
+                    if (catIdx >= 0 && catIdx < _catalog.Categories.Count)
                     {
-                        var subs = Categories[catIdx].Subcategories;
-                        if (subIdx >= 0 && subIdx < subs.Length)
-                            genre = subs[subIdx].Name;
+                        var category = _catalog.Categories[catIdx];
+                        var child =
+                            subIdx >= 0 && subIdx < category.Subcategories.Count
+                                ? category.Subcategories[subIdx]
+                                : category.Subcategories.FirstOrDefault() ?? "";
+                        selection = new GenreSelection(category.Name, child);
                     }
+                    var genre = selection.Child;
 
                     var novel = new Novel
                     {
                         Title = title,
                         Genre = genre,
+                        GenreParent = selection.Parent,
                         Author = authorState.Value?.Trim() ?? "",
                         TargetWords =
                             int.TryParse(wordCountState.Value?.Trim(), out var tw) && tw > 0
@@ -482,8 +589,8 @@ public sealed class NovelProjectDialog(
                     {
                         await store.SaveNovel(novel);
                     }
-                    ToastService.Success($"已创建：{title}（{genre}）");
-                    dialog.Close();
+                    ToastService.Success($"已创建：{title}（{selection.Display}）");
+                    CloseForm();
                     onOpenNovel?.Invoke(novel.Id, null);
                 },
                 "create novel",
@@ -493,7 +600,7 @@ public sealed class NovelProjectDialog(
 
         void OnBack()
         {
-            dialog.Close();
+            CloseForm();
             Show();
         }
     }

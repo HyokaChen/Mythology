@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
-using Desktop.Services;
+using ClientPlatform;
 
 namespace Desktop.Controls;
 

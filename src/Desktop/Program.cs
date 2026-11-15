@@ -800,11 +800,11 @@ public static class Program
                 logger: sp.GetService<ILogger<ClientPlatform.GenreCatalogRestClient>>()
             );
         });
-        services.AddSingleton<Desktop.Services.GenreCatalogService>(sp =>
+        services.AddSingleton<ClientPlatform.GenreCatalogService>(sp =>
             new(
                 sp.GetRequiredService<ClientPlatform.GenreCatalogRestClient>(),
                 Path.Combine(mythologyDir, "genre-catalog.yaml"),
-                sp.GetService<ILogger<Desktop.Services.GenreCatalogService>>()
+                sp.GetService<ILogger<ClientPlatform.GenreCatalogService>>()
             )
         );
 

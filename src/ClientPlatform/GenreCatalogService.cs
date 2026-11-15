@@ -1,11 +1,10 @@
 using System.Collections;
 using System.Globalization;
 using System.Text;
-using ClientPlatform;
 using Core.Data;
 using Microsoft.Extensions.Logging;
 
-namespace Desktop.Services;
+namespace ClientPlatform;
 
 /// <summary>
 /// 题材目录服务 — 云端目录（GET /v1/fiction/genres）→ 本地 YAML 缓存 → 内置 GenreDefinitions。

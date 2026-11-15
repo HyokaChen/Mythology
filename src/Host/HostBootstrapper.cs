@@ -58,6 +58,7 @@ public static class HostBootstrapper
         Core.Cloud.IFictionHarnessClient? CloudHarness,
         ClientPlatform.CloudNovelSyncService? NovelSync,
         ClientPlatform.UsageRestClient? CloudUsage,
+        ClientPlatform.GenreCatalogService GenreCatalog,
         Channels.WeChat.WeChatChannelService WeChat,
         ILoggerFactory LoggerFactory
     )> InitializeAsync(
@@ -394,6 +395,8 @@ public static class HostBootstrapper
         // Core 不依赖 NativeObject 字段，只依赖 Func 委托；TuiApp 负责写入（MapDbMessageToChatMessage）。
         agent.EntryIdProvider = msg => msg.NativeObject as string;
 
+        var genreCatalog = provider.GetRequiredService<ClientPlatform.GenreCatalogService>();
+
         return (
             agent,
             registry,
@@ -413,6 +416,7 @@ public static class HostBootstrapper
             cloudHarness,
             novelSync,
             cloudUsage,
+            genreCatalog,
             weChat,
             loggerFactory
         );
@@ -590,6 +594,28 @@ public static class HostBootstrapper
                 logger: sp.GetService<ILogger<ClientPlatform.UsageRestClient>>()
             );
         });
+
+        // ── 云端创作题材目录（GenreCatalogRestClient：GET /v1/fiction/genres，零价）──
+        // 与 Desktop 共用 ClientPlatform.GenreCatalogService：缓存优先，后台刷新云端；
+        // TUI 的新建项目与小说信息编辑都从这里取同一份父子题材树。
+        services.AddSingleton<ClientPlatform.GenreCatalogRestClient>(sp =>
+        {
+            var store = sp.GetRequiredService<ClientPlatform.CloudSessionStore>();
+            return new ClientPlatform.GenreCatalogRestClient(
+                ClientPlatform.CloudEndpoints.ResolveCloudBaseUrl(),
+                () => store.Load()?.ApiKey,
+                http: sp.GetRequiredService<IHttpClientFactory>().CreateClient("MythologyCloud"),
+                invalidationBus: sp.GetRequiredService<ClientPlatform.CloudAuthInvalidationBus>(),
+                logger: sp.GetService<ILogger<ClientPlatform.GenreCatalogRestClient>>()
+            );
+        });
+        services.AddSingleton<ClientPlatform.GenreCatalogService>(sp =>
+            new(
+                sp.GetRequiredService<ClientPlatform.GenreCatalogRestClient>(),
+                Path.Combine(mythologyDir, "genre-catalog.yaml"),
+                sp.GetService<ILogger<ClientPlatform.GenreCatalogService>>()
+            )
+        );
 
         // ── 云端小说同步（cloud-novel-sync v3：:cloud sync / :cloud sync all / :cloud pull）──
         // 端点：共享收口 CloudEndpoints.ResolveCloudBaseUrl() + /v1/sync（与 :cloud 命令一致）。

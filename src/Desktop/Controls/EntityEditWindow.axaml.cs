@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using ClientPlatform;
 using Core.Data;
 using Core.Evolution;
 using Desktop.Services;

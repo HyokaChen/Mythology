@@ -825,8 +825,11 @@ public sealed partial class TuiApp
     /// <summary>显示小说项目选择对话框，选择后打开对应小说和会话。</summary>
     private void ShowNovelProjectDialog()
     {
-        new NovelProjectDialog(_store, _sessionStore, (novelId, sessionId) =>
-            _ = OpenNovelAsync(novelId, sessionId)
+        new NovelProjectDialog(
+            _store,
+            _sessionStore,
+            (novelId, sessionId) => _ = OpenNovelAsync(novelId, sessionId),
+            genreCatalog: _genreCatalog
         ).Show();
     }
 
@@ -902,7 +905,8 @@ public sealed partial class TuiApp
             _store,
             _sessionStore,
             (nid, sessionId) => _ = OpenNovelAsync(nid, sessionId),
-            novelId
+            novelId,
+            genreCatalog: _genreCatalog
         ).Show();
     }
 

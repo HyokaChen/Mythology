@@ -118,6 +118,7 @@ public static class Program
                 cloudHarness,
                 novelSync,
                 cloudUsage,
+                genreCatalog,
                 weChat,
                 loggerFactory
             ) = await HostBootstrapper.InitializeAsync(
@@ -157,6 +158,7 @@ public static class Program
                 cloudHarness: cloudHarness, // CHANGE_10 §4.3 设定检查反馈上报
                 novelSync: novelSync, // cloud-novel-sync v3（:cloud sync / :cloud pull）
                 cloudUsage: cloudUsage, // :cloud status 积分余量（零价 usage 查询）
+                genreCatalog: genreCatalog, // 云端题材目录（新建项目 / 小说信息编辑）
                 weChat: weChat, // 微信通道（/wechat bind|status|unbind + 长轮询驱动 Agent）
                 interactionHub: interactionHub,
                 loggerFactory: loggerFactory

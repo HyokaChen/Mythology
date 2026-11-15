@@ -205,6 +205,9 @@ public sealed partial class TuiApp : IDisposable
     /// <summary>云端用量查询客户端（:cloud status 积分余量；null = 未接线，仅显示连接态）。</summary>
     private readonly UsageRestClient? _cloudUsage;
 
+    /// <summary>云端题材目录（缓存优先；null = 测试/未接线时回退内置目录）。</summary>
+    private readonly GenreCatalogService? _genreCatalog;
+
     /// <summary>启动时恢复的会话 ID（可选）。</summary>
     private readonly string? _resumeSessionId;
 
@@ -224,6 +227,7 @@ public sealed partial class TuiApp : IDisposable
     /// <param name="pluginLoader">插件加载器（可选）。</param>
     /// <param name="retrievalKernel">检索内核（可选，用于 UI 实时索引）。</param>
     /// <param name="cloudUsage">云端用量客户端（可选，:cloud status 显示积分余量）。</param>
+    /// <param name="genreCatalog">云端题材目录（可选；缺失时 TUI 回退内置/缓存目录）。</param>
     public TuiApp(
         Agent agent,
         INovelStore store,
@@ -248,7 +252,8 @@ public sealed partial class TuiApp : IDisposable
         ILogger<TuiApp>? logger = null,
         IFictionHarnessClient? cloudHarness = null,
         CloudNovelSyncService? novelSync = null,
-        UsageRestClient? cloudUsage = null
+        UsageRestClient? cloudUsage = null,
+        GenreCatalogService? genreCatalog = null
     )
     {
         _agent = agent;
@@ -292,6 +297,7 @@ public sealed partial class TuiApp : IDisposable
             );
         _novelSync = novelSync; // cloud-novel-sync v3（:cloud sync / :cloud pull；null = 未接线）
         _cloudUsage = cloudUsage; // :cloud status 积分余量（null = 未接线，仅显示连接态）
+        _genreCatalog = genreCatalog; // 题材目录：新建项目 / 小说信息编辑共用
         if (_novelSync is not null)
         {
             // 同步状态 → 状态栏 ⇅ 标识 + 设定面板大纲 tab 的云端状态行（事件可能在后台线程触发，经 PostToUi 回 UI）

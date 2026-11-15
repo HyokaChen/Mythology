@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
+using ClientPlatform;
 using Core.Data;
 using Desktop.Services;
 using Microsoft.Extensions.DependencyInjection;

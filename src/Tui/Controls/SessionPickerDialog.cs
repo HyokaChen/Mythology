@@ -1,3 +1,4 @@
+using ClientPlatform;
 using Core.Data;
 using XenoAtom.Terminal;
 using XenoAtom.Terminal.UI;
@@ -17,7 +18,8 @@ public sealed class SessionPickerDialog(
     FileSessionStore sessionStore, // 会话存储服务
     Action<string, string?>? onOpenNovel = null, // 打开小说回调（参数：novelId, sessionId）
     string? novelId = null, // 当前小说 ID（null 时跳转到项目选择器）
-    string? novelTitle = null // 当前小说标题
+    string? novelTitle = null, // 当前小说标题
+    GenreCatalogService? genreCatalog = null // 云端题材目录（转交项目选择器）
 )
 {
     /// <summary>
@@ -27,7 +29,12 @@ public sealed class SessionPickerDialog(
     {
         if (novelId is null)
         {
-            new NovelProjectDialog(novelStore, sessionStore, onOpenNovel).Show();
+            new NovelProjectDialog(
+                novelStore,
+                sessionStore,
+                onOpenNovel,
+                genreCatalog: genreCatalog
+            ).Show();
             return;
         }
 

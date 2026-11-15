@@ -1,6 +1,6 @@
 using Core.Data;
 
-namespace Desktop.Services;
+namespace ClientPlatform;
 
 /// <summary>
 /// 一个两级题材选择：Parent = 一级（如“轻小说”），Child = 二级（如“原生幻想”）。

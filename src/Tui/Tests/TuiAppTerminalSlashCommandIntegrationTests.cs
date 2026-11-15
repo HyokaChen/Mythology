@@ -462,7 +462,81 @@ public sealed class TuiAppTerminalSlashCommandIntegrationTests : TerminalUiFixtu
             _harness.Store.Novels.Values.Single(novel => novel.Title == title)
         );
         Assert.Equal(outline, created.Outline);
+        Assert.False(string.IsNullOrWhiteSpace(created.Genre));
+        Assert.False(string.IsNullOrWhiteSpace(created.GenreParent));
+        Assert.Equal(GenreCatalog.Local.Resolve(null, created.Genre).Parent, created.GenreParent);
         Assert.Equal(created.Id, await Dispatcher.Current.InvokeAsync(() => openedNovelId));
+    }
+
+    [Fact]
+    public async Task NovelEditor_LegacyChildOnly_PersistsInferredParent()
+    {
+        var promptEditor = (MythPromptEditor)
+            typeof(TuiApp)
+                .GetField("_promptEditor", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(_harness.App)!;
+        var app = promptEditor.App!;
+        var novelId = TuiSlashTestHarness.NovelId;
+
+        await Dispatcher.Current.InvokeAsync(() =>
+        {
+            var novel = _harness.Store.Novels[novelId];
+            novel.Genre = "原生幻想";
+            novel.GenreParent = "";
+
+            new EntityEditDialog(
+                _harness.Store,
+                Core.Data.EntityType.Novel,
+                entityId: novelId,
+                novelId: novelId
+            ).Show();
+        });
+        await WaitForOutputAsync("小说编辑", "保存");
+
+        var saveBounds = await Dispatcher.Current.InvokeAsync(() =>
+        {
+            var dialog = app.Root.EnumerateVisualsDepthFirst().OfType<Dialog>().Single();
+            return dialog
+                .EnumerateVisualsDepthFirst()
+                .OfType<Button>()
+                .Single(button =>
+                    button.Content is Markup content
+                    && content.Text?.Contains("保存", StringComparison.Ordinal) == true
+                )
+                .Bounds;
+        });
+        Assert.True(saveBounds.Width > 0 && saveBounds.Height > 0, $"保存按钮未布局：{saveBounds}");
+
+        var x = saveBounds.X + saveBounds.Width / 2;
+        var y = saveBounds.Y + saveBounds.Height / 2;
+        Backend.PushEvent(
+            new TerminalMouseEvent
+            {
+                Kind = TerminalMouseKind.Down,
+                Button = TerminalMouseButton.Left,
+                X = x,
+                Y = y,
+            }
+        );
+        Backend.PushEvent(
+            new TerminalMouseEvent
+            {
+                Kind = TerminalMouseKind.Up,
+                Button = TerminalMouseButton.Left,
+                X = x,
+                Y = y,
+            }
+        );
+
+        await WaitForOutputAsync("小说已保存");
+
+        var saved = await Dispatcher.Current.InvokeAsync(() => _harness.Store.Novels[novelId]);
+        Assert.Equal("原生幻想", saved.Genre);
+        Assert.Equal("轻小说", saved.GenreParent);
+        Assert.Equal(
+            "原生幻想 │ 轻小说",
+            GenreCatalog.Local.Resolve(saved.GenreParent, saved.Genre).Display
+        );
     }
 
     // ── 弹框命令：断言真实渲染的对话框标题/内容 ──
