@@ -81,22 +81,33 @@ public static class SessionInternalMessages
 
     public static string FormatCompactSummaryPreview(string? content, int maxLength = 120)
     {
-        var text = (content ?? "").TrimStart();
-        if (text.StartsWith(CompactSummaryPrefix, StringComparison.Ordinal))
-            text = text[CompactSummaryPrefix.Length..];
-        else if (text.StartsWith("[上下文摘要", StringComparison.Ordinal))
-        {
-            // 运行时 LLM 消息把 compact 存成 "[上下文摘要 bN]\n<全文>"；
-            // 预览必须跳过这行标记，取摘要正文的第一行。
-            var headerEnd = text.IndexOf('\n');
-            text = headerEnd >= 0 ? text[(headerEnd + 1)..] : "";
-        }
-
+        var text = GetCompactSummaryBody(content);
         var lineEnd = text.IndexOf('\n');
         var line = (lineEnd >= 0 ? text[..lineEnd] : text).Trim();
+        if (line.StartsWith('#'))
+            line = line.TrimStart('#').TrimStart();
+        else if (line.StartsWith("- ", StringComparison.Ordinal))
+            line = line[2..].TrimStart();
         if (line.Length > maxLength)
             line = line[..maxLength] + "…";
         return CompactSummaryPrefix + line;
+    }
+
+    /// <summary>
+    /// 取出 compact 摘要正文（去掉 UI 前缀或运行时 [上下文摘要 bN] 头）。
+    /// 预览与展开全文共用同一套提取规则，避免 UI 行和详情显示不同内容。
+    /// </summary>
+    public static string GetCompactSummaryBody(string? content)
+    {
+        var text = (content ?? "").TrimStart();
+        if (text.StartsWith(CompactSummaryPrefix, StringComparison.Ordinal))
+            return text[CompactSummaryPrefix.Length..];
+        if (text.StartsWith("[上下文摘要", StringComparison.Ordinal))
+        {
+            var headerEnd = text.IndexOf('\n');
+            return headerEnd >= 0 ? text[(headerEnd + 1)..] : "";
+        }
+        return text;
     }
 
     /// <summary>

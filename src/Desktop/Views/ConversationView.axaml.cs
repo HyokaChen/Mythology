@@ -806,6 +806,15 @@ public partial class ConversationView : UserControl
             NoticeLineHeight
         );
         var height = NoticeChrome + textHeight + cardChrome + row.Margin.Bottom;
+        if (row.Message.IsSummaryExpanded && row.Message.HasSummaryDetail)
+        {
+            var detail = MarkdownHeightEstimator.EstimateDocument(
+                row.Message.SummaryDetail.ToString(),
+                textWidth,
+                MarkdownHeightEstimator.Step
+            );
+            height += 3 + Math.Min(420, detail); // ContentControl margin + ScrollViewer max-height
+        }
         _rowHeightCache[row.Message] = (content.Version, _estimateWidth, height);
         return height;
     }
@@ -1364,8 +1373,12 @@ public partial class ConversationView : UserControl
                     or nameof(ChatMessage.IsInterrupted)
                     or nameof(ChatMessage.IsProcessExpanded)
                     or nameof(ChatMessage.IsCompleted)
+                    or nameof(ChatMessage.HasSummaryDetail)
+                    or nameof(ChatMessage.IsSummaryExpanded)
         )
         {
+            if (e.PropertyName == nameof(ChatMessage.IsSummaryExpanded))
+                _rowHeightCache.Remove(message);
             MarkRowsDirty(message);
             if (e.PropertyName == nameof(ChatMessage.IsWaiting))
                 TryScheduleProcessFold(message);
@@ -1680,6 +1693,32 @@ public partial class ConversationView : UserControl
         if (sender is Control { DataContext: ConversationRow { Step: { } step } row })
             ToggleStepDetails(row, step);
         e.Handled = true;
+    }
+
+    /// <summary>compact 摘要展开/收起。展开时暂停尾部跟随，避免视口自动追到底部。</summary>
+    private void SystemSummary_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: ConversationRow { Message: var message } })
+            ToggleSystemSummary(message);
+        e.Handled = true;
+    }
+
+    internal void ToggleSystemSummary(ChatMessage message)
+    {
+        if (!message.HasSummaryDetail)
+            return;
+
+        var expand = !message.IsSummaryExpanded;
+        if (expand)
+        {
+            if (MessageList.IsFollowing)
+                MessageList.PauseFollow();
+            RememberReadingAnchor();
+        }
+
+        message.IsSummaryExpanded = expand;
+        if (!expand)
+            MessageList.ResetFollow();
     }
 
     /// <summary>步骤头点击的纯 UI 逻辑；测试可直接验证自动折叠交互，不依赖指针命中。</summary>

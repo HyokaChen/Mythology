@@ -78,6 +78,8 @@ public sealed class ConversationRowCollection : ObservableCollection<Conversatio
                 or nameof(ChatMessage.IsProcessExpanded)
                 or nameof(ChatMessage.IsCompleted)
                 or nameof(ChatMessage.IsEditing)
+                or nameof(ChatMessage.HasSummaryDetail)
+                or nameof(ChatMessage.IsSummaryExpanded)
         )
             Rebuild();
     }

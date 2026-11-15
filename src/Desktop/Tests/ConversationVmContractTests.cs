@@ -111,7 +111,7 @@ public sealed class ConversationVmContractTests
                 .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(h.Engine)!;
         var end =
-            (Action<string>)
+            (Action<string, string?>)
                 typeof(SessionEngine)
                     .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(h.Engine)!;
@@ -127,11 +127,24 @@ public sealed class ConversationVmContractTests
             Assert.Equal("上下文压缩中…", message.Content.ToString());
             Assert.True(message.IsSpinnerVisible);
 
-            end("上下文压缩完成：202 → 20 条");
+            end(
+                "上下文压缩完成：202 → 20 条",
+                "## Where / 写到哪里\n- 第 12 章，第 3 段\n## Next / 下一步\n- 继续"
+            );
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.False(vm.IsCompacting);
-            Assert.Equal("上下文压缩完成：202 → 20 条", message.Content.ToString());
+            Assert.StartsWith("上下文压缩完成：202 → 20 条", message.Content.ToString());
+            Assert.Contains(
+                SessionInternalMessages.CompactSummaryPrefix,
+                message.Content.ToString()
+            );
+            Assert.True(message.HasSummaryDetail);
+            Assert.Contains("## Where / 写到哪里", message.SummaryDetail.ToString());
+            Assert.Contains("## Next / 下一步", message.SummaryDetail.ToString());
+            Assert.Equal("查看摘要", message.SummaryToggleLabel);
+            message.IsSummaryExpanded = true;
+            Assert.Equal("收起摘要", message.SummaryToggleLabel);
             Assert.False(message.IsSpinnerVisible);
         });
 
@@ -155,14 +168,14 @@ public sealed class ConversationVmContractTests
                 .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(h.Engine)!;
         var end =
-            (Action<string>)
+            (Action<string, string?>)
                 typeof(SessionEngine)
                     .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(h.Engine)!;
 
         HeadlessUiHost.Instance.Run(() =>
         {
-            end("上下文压缩完成：202 → 20 条");
+            end("上下文压缩完成：202 → 20 条", null);
             start();
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
@@ -188,7 +201,7 @@ public sealed class ConversationVmContractTests
                 .GetField("OnCompactStart", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(h.Engine)!;
         var end =
-            (Action<string>)
+            (Action<string, string?>)
                 typeof(SessionEngine)
                     .GetField("OnCompactEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(h.Engine)!;
@@ -204,7 +217,7 @@ public sealed class ConversationVmContractTests
                 .GetField("_compactStatusMessage", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(vm, null);
 
-            end("上下文溢出压缩完成：290 → 4 条");
+            end("上下文溢出压缩完成：290 → 4 条", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Single(vm.Messages);

@@ -632,7 +632,7 @@ public sealed class SessionMessageMapperDisplayTests
         {
             Role = MessageRole.Unknown,
             EventType = SessionEventType.Compact,
-            Content = "## 压缩概览\n" + new string('文', 4000),
+            Content = "[上下文摘要 b1]\n## 压缩概览\n" + new string('文', 4000),
         };
 
         var notice = Assert.Single(SessionMessageMapper.MapUi([compact]));
@@ -644,6 +644,14 @@ public sealed class SessionMessageMapperDisplayTests
             StringComparison.Ordinal
         );
         Assert.True(notice.Content.Length < 200, $"compact 系统行仍过长：{notice.Content.Length}");
+        Assert.True(notice.HasSummaryDetail);
+        Assert.Contains("## 压缩概览", notice.SummaryDetail.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            new string('文', 4000),
+            notice.SummaryDetail.ToString(),
+            StringComparison.Ordinal
+        );
+        Assert.Equal("查看摘要", notice.SummaryToggleLabel);
     }
 
     [Fact]

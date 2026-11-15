@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using Core.Data;
 using LiveMarkdown.Avalonia;
 
 namespace Desktop.Models;
@@ -16,6 +17,8 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isError;
     private bool _isProcessExpanded = true;
     private bool _isSpinnerVisible;
+    private bool _hasSummaryDetail;
+    private bool _isSummaryExpanded;
     private bool _isCompleted = sender != MessageSender.Agent;
     private bool _isEditing;
     private string _editDraft = "";
@@ -183,6 +186,79 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
 
     /// <summary>消息内容（可增量追加，LiveMarkdown 流式渲染）。</summary>
     public ObservableStringBuilder Content { get; } = new();
+
+    /// <summary>
+    /// compact 摘要全文。收起时只显示 <see cref="Content"/> 的预览；
+    /// 展开后由 MarkdownRenderer 渲染完整摘要，不把全文塞进系统行摘要。
+    /// </summary>
+    public ObservableStringBuilder SummaryDetail { get; } = new();
+
+    /// <summary>是否有可展开的 compact 摘要全文。</summary>
+    public bool HasSummaryDetail
+    {
+        get => _hasSummaryDetail;
+        private set
+        {
+            if (_hasSummaryDetail == value)
+                return;
+            _hasSummaryDetail = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSummaryDetail)));
+        }
+    }
+
+    /// <summary>compact 摘要是否展开（默认收起，历史与实时同构）。</summary>
+    public bool IsSummaryExpanded
+    {
+        get => _isSummaryExpanded;
+        set
+        {
+            if (_isSummaryExpanded == value)
+                return;
+            _isSummaryExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSummaryExpanded)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SummaryToggleLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SummaryDetailsView)));
+        }
+    }
+
+    /// <summary>摘要展开开关文案。</summary>
+    public string SummaryToggleLabel => IsSummaryExpanded ? "收起摘要" : "查看摘要";
+
+    /// <summary>展开时才返回自身，避免收起行创建 MarkdownRenderer 子树。</summary>
+    public ChatMessage? SummaryDetailsView => IsSummaryExpanded && HasSummaryDetail ? this : null;
+
+    /// <summary>
+    /// 绑定 compact 摘要：<paramref name="summaryBody"/> 是去掉 wire 头后的正文。
+    /// <paramref name="includePreview"/> 为 true 时把首行预览追加到系统状态行
+    /// （实时压缩完成后让用户立即看到摘要存在，而不是等重开会话）。
+    /// </summary>
+    public void SetCompactSummary(string? summaryBody, bool includePreview)
+    {
+        var body = (summaryBody ?? "").Trim();
+        if (body.Length == 0)
+        {
+            ClearCompactSummary();
+            return;
+        }
+
+        if (includePreview)
+        {
+            if (Content.Length > 0)
+                Content.Append("\n");
+            Content.Append(SessionInternalMessages.FormatCompactSummaryPreview(body));
+        }
+        SummaryDetail.Clear();
+        SummaryDetail.Append(body);
+        HasSummaryDetail = true;
+    }
+
+    /// <summary>清掉摘要详情；失败/看门狗收尾时不能残留上一次压缩的展开内容。</summary>
+    public void ClearCompactSummary()
+    {
+        SummaryDetail.Clear();
+        IsSummaryExpanded = false;
+        HasSummaryDetail = false;
+    }
 
     /// <summary>
     /// 是否已有可见正文（至少一个非空白字符）。

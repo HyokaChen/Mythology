@@ -59,9 +59,13 @@ public static class SessionMessageMapper
                 case MessageRole.User when m.EventType == SessionEventType.Compact:
                 case MessageRole.Unknown when m.EventType == SessionEventType.Compact:
                 {
-                    // compact 摘要：dim 系统行（Active 模式渲染为 Unknown+EventType）
+                    // compact 摘要：dim 系统行（Active 模式渲染为 Unknown+EventType）。
+                    // 行内只放首行预览，全文留给展开区，避免历史恢复时一次创建巨大控件。
                     var msg = new ChatMessage(MessageSender.System);
-                    msg.Content.Append(SessionInternalMessages.FormatCompactSummaryPreview(text));
+                    msg.SetCompactSummary(
+                        SessionInternalMessages.GetCompactSummaryBody(text),
+                        includePreview: true
+                    );
                     result.Add(msg);
                     break;
                 }

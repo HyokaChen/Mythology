@@ -1074,6 +1074,55 @@ public class ConversationRenderingTests
     }
 
     [Fact]
+    public void CompactSummaryRow_ExpandsFullSummary()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.System);
+            message.AppendContent("上下文压缩完成：202 → 20 条");
+            message.SetCompactSummary(
+                "## Where / 写到哪里\n- 第 12 章，第 3 段\n## Next / 下一步\n- 继续写",
+                includePreview: true
+            );
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                Assert.Contains("查看摘要", RenderedText(view));
+                Assert.DoesNotContain("第 12 章，第 3 段", RenderedText(view));
+
+                view.ToggleSystemSummary(message);
+                Pump();
+                Assert.True(message.IsSummaryExpanded);
+                Assert.Contains("写到哪里", RenderedText(view));
+                Assert.Contains("第 12 章，第 3 段", RenderedText(view));
+                Assert.Contains("收起摘要", RenderedText(view));
+
+                view.ToggleSystemSummary(message);
+                Pump();
+                Assert.False(message.IsSummaryExpanded);
+                Assert.DoesNotContain("第 12 章，第 3 段", RenderedText(view));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void WaitingRow_ShowsSpinnerAndRunningText_AndHidesAfterFirstActivity()
     {
         Ui.Value.Run(() =>

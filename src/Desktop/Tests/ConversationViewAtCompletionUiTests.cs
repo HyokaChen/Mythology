@@ -2862,7 +2862,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                         )!
                         .GetValue(_engine)!;
                 var end =
-                    (Action<string>)
+                    (Action<string, string?>)
                         typeof(SessionEngine)
                             .GetField(
                                 "OnCompactEnd",
@@ -2878,7 +2878,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 list.PauseFollow();
                 Assert.False(list.IsFollowing);
 
-                end("上下文溢出压缩完成：135 → 75 条");
+                end("上下文溢出压缩完成：135 → 75 条", null);
                 PumpUntil(() => AtBottom(sv) && list.IsFollowing, "compact 结束后恢复贴底");
 
                 var continued = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);

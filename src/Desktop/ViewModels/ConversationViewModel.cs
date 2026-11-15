@@ -115,7 +115,7 @@ public sealed class ConversationViewModel : ViewModelBase
     private bool _isCompacting;
     private ChatMessageModel? _compactStatusMessage;
     private bool _compactStartObserved;
-    private string? _pendingCompactEnd;
+    private (string Message, string? Summary)? _pendingCompactEnd;
     private DispatcherTimer? _compactWatch;
 
     /// <summary>上下文压缩是否进行中（系统状态行 + 状态栏 spinner 的单一事实源）。</summary>
@@ -1320,6 +1320,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 _compactStatusMessage = FindReusableCompactStatus()
                     ?? new ChatMessageModel(MessageSender.System);
                 _compactStatusMessage.IsSpinnerVisible = true;
+                _compactStatusMessage.ClearCompactSummary();
                 if (
                     !_compactStatusMessage
                         .Content.ToString()
@@ -1340,10 +1341,10 @@ public sealed class ConversationViewModel : ViewModelBase
                 // 跨线程事件到达顺序不保证：End 可能先排进 UI 队列。
                 // Start 的 UI action 跑起来后立即收尾，避免留下永久旋转的「压缩中」行。
                 if (_pendingCompactEnd is { } pending)
-                    ApplyCompactEnd(pending);
+                    ApplyCompactEnd(pending.Message, pending.Summary);
             });
         };
-        _engine.OnCompactEnd += message =>
+        _engine.OnCompactEnd += (message, summary) =>
             Dispatcher.UIThread.Post(() =>
             {
                 if (_compactStatusMessage is null)
@@ -1353,14 +1354,14 @@ public sealed class ConversationViewModel : ViewModelBase
                     if (FindReusableCompactStatus() is { } stale)
                     {
                         _compactStatusMessage = stale;
-                        ApplyCompactEnd(message);
+                        ApplyCompactEnd(message, summary);
                         return;
                     }
 
                     // Start 的 UI action 尚未执行：先挂起，由 Start 收尾。
                     if (_compactStartObserved)
                     {
-                        _pendingCompactEnd = message;
+                        _pendingCompactEnd = (message, summary);
                         return;
                     }
 
@@ -1368,7 +1369,7 @@ public sealed class ConversationViewModel : ViewModelBase
                     return;
                 }
 
-                ApplyCompactEnd(message);
+                ApplyCompactEnd(message, summary);
             });
     }
 
@@ -1413,7 +1414,7 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>把压缩结束事件落到同一条系统状态行，并清掉压缩态。</summary>
-    private void ApplyCompactEnd(string message)
+    private void ApplyCompactEnd(string message, string? summary = null)
     {
         _compactWatch?.Stop();
         _pendingCompactEnd = null;
@@ -1427,11 +1428,14 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             status.IsSpinnerVisible = false;
             status.ResetContent();
+            status.ClearCompactSummary();
             status.AppendContent(message);
+            if (!string.IsNullOrWhiteSpace(summary))
+                status.SetCompactSummary(summary, includePreview: true);
         }
         else
         {
-            AddSystemNotice(message);
+            AddSystemNotice(message, summary);
         }
 
         ContextStatsChanged?.Invoke();
@@ -1473,10 +1477,12 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>追加一条系统提示气泡（压缩进度/decompress 提示等）。</summary>
-    public void AddSystemNotice(string text)
+    public void AddSystemNotice(string text, string? compactSummary = null)
     {
         var msg = new ChatMessageModel(MessageSender.System);
         msg.Content.Append(text);
+        if (!string.IsNullOrWhiteSpace(compactSummary))
+            msg.SetCompactSummary(compactSummary, includePreview: true);
         Messages.Add(msg);
         HasMessages = true;
     }

@@ -68,6 +68,7 @@ public sealed class SessionEngine(
 {
     private readonly Agent agent = bridge.Agent;
     private readonly CompactionEngine _compactor = new(bridge.Agent, store, novelStore, log);
+    private string? _lastCompactSummary;
     private readonly string _todoRoot = string.IsNullOrWhiteSpace(todoRoot)
         ? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -114,8 +115,8 @@ public sealed class SessionEngine(
     /// <summary>压缩开始。</summary>
     public event Action? OnCompactStart;
 
-    /// <summary>压缩结束（参数：结果文案）。</summary>
-    public event Action<string>? OnCompactEnd;
+    /// <summary>压缩结束（参数：结果文案、摘要正文；摘要留给 UI 展开，不进入状态行正文）。</summary>
+    public event Action<string, string?>? OnCompactEnd;
 
     /// <summary>
     /// 用户消息成功落盘（参数：显示文本、entryId）。后台线程触发；
@@ -950,6 +951,7 @@ public sealed class SessionEngine(
         if (smart && agent.MessageScorer is not null)
             return await CompactSmartCoreAsync(keepRecent, ct);
 
+        _lastCompactSummary = null;
         OnCompactStart?.Invoke();
         try
         {
@@ -963,7 +965,7 @@ public sealed class SessionEngine(
             );
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
-                OnCompactEnd?.Invoke(DescribeRejection(result));
+                OnCompactEnd?.Invoke(DescribeRejection(result), null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Rejected,
                     messages.Count,
@@ -973,7 +975,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.TooSmall)
             {
-                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage);
+                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage, null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -983,7 +985,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.Failed)
             {
-                OnCompactEnd?.Invoke("上下文压缩失败");
+                OnCompactEnd?.Invoke("上下文压缩失败", null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -992,7 +994,8 @@ public sealed class SessionEngine(
                 );
             }
             OnCompactEnd?.Invoke(
-                $"上下文压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
+                $"上下文压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
+                _lastCompactSummary
             );
             return new CompactOutcome(
                 CompactOutcomeKind.Done,
@@ -1003,7 +1006,7 @@ public sealed class SessionEngine(
         }
         catch (Exception ex)
         {
-            OnCompactEnd?.Invoke("上下文压缩失败");
+            OnCompactEnd?.Invoke("上下文压缩失败", null);
             return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, ex.Message);
         }
     }
@@ -1011,6 +1014,7 @@ public sealed class SessionEngine(
     private async Task<CompactOutcome> CompactSmartCoreAsync(int keepRecent, CancellationToken ct)
     {
         var messages = agent.State.Messages;
+        _lastCompactSummary = null;
         OnCompactStart?.Invoke();
         try
         {
@@ -1025,7 +1029,7 @@ public sealed class SessionEngine(
 
             if (result is CompactResult.RejectedInProgress or CompactResult.RejectedWrongMode)
             {
-                OnCompactEnd?.Invoke(DescribeRejection(result));
+                OnCompactEnd?.Invoke(DescribeRejection(result), null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Rejected,
                     messages.Count,
@@ -1035,7 +1039,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.TooSmall)
             {
-                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage);
+                OnCompactEnd?.Invoke(CompactionEngine.TooSmallMessage, null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -1045,7 +1049,7 @@ public sealed class SessionEngine(
             }
             if (result == CompactResult.Failed)
             {
-                OnCompactEnd?.Invoke("智能压缩失败");
+                OnCompactEnd?.Invoke("智能压缩失败", null);
                 return new CompactOutcome(
                     CompactOutcomeKind.Failed,
                     messages.Count,
@@ -1054,7 +1058,8 @@ public sealed class SessionEngine(
                 );
             }
             OnCompactEnd?.Invoke(
-                $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条"
+                $"智能压缩完成：{messages.Count} → {KeptMessageCountAfterCompact()} 条",
+                _lastCompactSummary
             );
             return new CompactOutcome(
                 CompactOutcomeKind.Done,
@@ -1066,7 +1071,7 @@ public sealed class SessionEngine(
         catch (Exception ex)
         {
             log.LogWarning(ex, "compact session with message scorer failed");
-            OnCompactEnd?.Invoke("上下文压缩失败");
+            OnCompactEnd?.Invoke("上下文压缩失败", null);
             return new CompactOutcome(CompactOutcomeKind.Failed, messages.Count, 0, ex.Message);
         }
     }
@@ -1079,6 +1084,7 @@ public sealed class SessionEngine(
         if (string.IsNullOrEmpty(novelId) || messages.Count == 0)
             return;
 
+        _lastCompactSummary = null;
         OnCompactStart?.Invoke();
         var endMessage = "自动压缩失败";
         try
@@ -1105,7 +1111,7 @@ public sealed class SessionEngine(
         finally
         {
             // 无论成功、失败还是取消，都必须结束 UI 的压缩态，否则界面永久停在「压缩中」。
-            OnCompactEnd?.Invoke(endMessage);
+            OnCompactEnd?.Invoke(endMessage, _lastCompactSummary);
         }
     }
 
@@ -1142,6 +1148,7 @@ public sealed class SessionEngine(
             }
 
             var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
+            _lastCompactSummary = null;
             OnCompactStart?.Invoke();
             var endMessage = "上下文溢出压缩失败";
             try
@@ -1206,7 +1213,7 @@ public sealed class SessionEngine(
             }
             finally
             {
-                OnCompactEnd?.Invoke(endMessage);
+                OnCompactEnd?.Invoke(endMessage, _lastCompactSummary);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1257,6 +1264,9 @@ public sealed class SessionEngine(
             ),
             ct
         );
+
+        _lastCompactSummary =
+            execution.Status == CompactionStatus.Success ? execution.Summary : null;
 
         if (execution.Status == CompactionStatus.Success)
         {

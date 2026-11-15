@@ -41,7 +41,8 @@ public sealed record CompactionExecution(
     string? BlockId,
     string? Error,
     int EstimatedTokensAfter,
-    IReadOnlyList<string> CompressedMessageIds
+    IReadOnlyList<string> CompressedMessageIds,
+    string? Summary = null
 );
 
 /// <summary>
@@ -281,7 +282,8 @@ public sealed class CompactionEngine(
             blockId,
             Error: null,
             estimatedTokensAfter,
-            compressedIds
+            compressedIds,
+            Summary: summary
         );
     }
 
@@ -295,7 +297,8 @@ public sealed class CompactionEngine(
             BlockId: null,
             Error: error,
             EstimatedTokensAfter: 0,
-            CompressedMessageIds: []
+            CompressedMessageIds: [],
+            Summary: null
         );
 
     private static int FindCutPoint(IReadOnlyList<ChatMessage> messages, int keepRecent)

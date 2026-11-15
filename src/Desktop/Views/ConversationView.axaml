@@ -107,6 +107,22 @@
       </Grid>
     </DataTemplate>
 
+    <!-- compact 摘要全文：收起行只保留预览；展开时才创建 MarkdownRenderer。 -->
+    <DataTemplate x:Key="SystemSummaryDetails" x:DataType="models:ChatMessage">
+      <ScrollViewer
+        MaxHeight="420"
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto"
+        Margin="0,3,0,1"
+      >
+        <md:MarkdownRenderer
+          Classes="ConversationMarkdown SystemSummaryMarkdown"
+          MarkdownBuilder="{Binding SummaryDetail}"
+          CodeBlockColorTheme="LightPlus"
+        />
+      </ScrollViewer>
+    </DataTemplate>
+
     <DataTemplate x:Key="RowSystem" x:DataType="models:ConversationRow">
       <Border
         Classes="SystemNoticeCard"
@@ -117,23 +133,46 @@
         <StackPanel Spacing="3">
           <TextBlock Classes="Eyebrow" HorizontalAlignment="Left" Text="系统" />
           <!-- 压缩等长任务：BusySpinner 与文本同排，任务完成后只关 spinner，不换行不跳动。 -->
-          <DockPanel>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
             <controls:BusySpinner
-              DockPanel.Dock="Left"
+              Grid.Column="0"
               IsActive="{Binding Message.IsSpinnerVisible}"
               IsVisible="{Binding Message.IsSpinnerVisible}"
               FontSize="12"
               Foreground="{DynamicResource BrushSageLeaf}"
-              Margin="0,0,8,0"
+              Margin="0,0,0,0"
               VerticalAlignment="Center"
             />
             <SelectableTextBlock
+              Grid.Column="1"
               Classes="SystemNoticeText"
               Text="{Binding Message.Content, Converter={StaticResource StringBuilderToString}}"
               TextAlignment="Left"
               HorizontalAlignment="Stretch"
             />
-          </DockPanel>
+            <Border
+              Grid.Column="2"
+              Classes="StepDetailsToggle"
+              IsVisible="{Binding Message.HasSummaryDetail}"
+              Cursor="Hand"
+              MinWidth="28"
+              VerticalAlignment="Top"
+              PointerPressed="SystemSummary_OnClick"
+            >
+              <TextBlock
+                Text="{Binding Message.SummaryToggleLabel}"
+                FontSize="11"
+                LineHeight="16"
+                Foreground="{DynamicResource BrushSageLeaf}"
+                TextAlignment="Right"
+              />
+            </Border>
+          </Grid>
+          <ContentControl
+            IsVisible="{Binding Message.IsSummaryExpanded}"
+            Content="{Binding Message.SummaryDetailsView}"
+            ContentTemplate="{StaticResource SystemSummaryDetails}"
+          />
         </StackPanel>
       </Border>
     </DataTemplate>
@@ -561,6 +600,16 @@
     </Style>
     <Style Selector="md|MarkdownRenderer.ConversationMarkdown md|MarkdownTextBlock.ParagraphBlock">
       <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <!-- compact 摘要详情：系统行内展开，字号与系统提示一致，不抢正文层级。 -->
+    <Style Selector="md|MarkdownRenderer.SystemSummaryMarkdown md|MarkdownTextBlock:not(.CodeBlockText)">
+      <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LineHeight" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
+    </Style>
+    <Style Selector="md|MarkdownRenderer.SystemSummaryMarkdown md|MarkdownTextBlock.ParagraphBlock">
+      <Setter Property="Margin" Value="0,0,0,5" />
     </Style>
     <!-- 中间正文：只做时间线留痕，字号小于最终答复；外层复用 AgentBubble 的
          Bone 卡片（16/12 padding），用 LiveMarkdown 渲染，避免出现裸 Markdown 标记。 -->

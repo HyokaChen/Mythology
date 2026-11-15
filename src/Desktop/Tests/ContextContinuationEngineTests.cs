@@ -180,7 +180,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         await SeedSessionAsync(count: 10, charsPerMessage: 300);
         _agent.MessageScorer = new ThrowingScorer();
         var ended = new List<string>();
-        _engine.OnCompactEnd += ended.Add;
+        _engine.OnCompactEnd += (message, _) => ended.Add(message);
 
         var outcome = await _engine.CompactAsync(smart: true, keepRecent: 2);
 
@@ -195,13 +195,16 @@ public sealed class ContextContinuationEngineTests : IDisposable
     {
         await SeedSessionAsync(count: 32, charsPerMessage: 500);
         var before = _agent.State.Messages.Count;
-        var ended = new List<string>();
-        _engine.OnCompactEnd += ended.Add;
+        var ended = new List<(string Message, string? Summary)>();
+        _engine.OnCompactEnd += (message, summary) => ended.Add((message, summary));
 
         var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
         await (Task)method.Invoke(_engine, [2_000, CancellationToken.None])!;
 
-        Assert.Contains("自动压缩完成", Assert.Single(ended));
+        var end = Assert.Single(ended);
+        Assert.Contains("自动压缩完成", end.Message);
+        Assert.False(string.IsNullOrWhiteSpace(end.Summary));
+        Assert.Contains("## Where", end.Summary);
         var compact = Assert.Single(ReadSessionEntries("compact"));
         var compressed = compact.GetProperty("compressed-message-ids").EnumerateArray().ToList();
         Assert.True(compressed.Count > 1, $"compressed={compressed.Count}");
@@ -464,7 +467,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         var started = 0;
         var ended = new List<string>();
         _engine.OnCompactStart += () => started++;
-        _engine.OnCompactEnd += ended.Add;
+        _engine.OnCompactEnd += (message, _) => ended.Add(message);
 
         Assert.True(await RelieveOverflowAsync(keepRecentTokens: 2_000));
 
