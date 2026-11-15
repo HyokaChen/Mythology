@@ -7,6 +7,10 @@
 ## [Unreleased]
 
 ### Added
+- **Harness 实体名通道**：`AnalysisContextInput` 新增 `Locations`/`Organizations`/`Scenes`，
+  `HarnessContextBuilder` 从 `Novel.Locations/Factions/Scenes` 上传，云端在分析前注册
+  jieba 用户词典，避免地点/组织/道具被默认分词切碎；与云端 `NovelLexicon` 同口径
+  （去空白、按标点切段、≥2 字、词频 100000）。回归：`HarnessContextBuilderTests`。
 - **Desktop 大纲正文（默认可编辑 + 翻页）**：大纲树书 / 卷 / 章的 `⋯` 菜单统一为「正文」，
   删除重复的「内容」入口；打开章节内容对话框：书从第一章起、卷仅在本卷内翻页、章从所选章起。
   正文默认就是可编辑状态（无阅读 / 编辑模式切换），底部「取消 / 保存」，有改动才启用保存并
