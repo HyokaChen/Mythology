@@ -1,4 +1,5 @@
 using Core.Data;
+using Core.Prose;
 using Core.Shared;
 using Plugins.NovelTools.Tools;
 using Xunit;
@@ -125,18 +126,72 @@ public sealed class EditTextToolTests
     }
 
     [Fact]
-    public async Task InsertStandaloneSeparator_IsCleanedBeforeSave()
+    public async Task Replace_WithAiHarnessKeepingSeparator_SavesIt()
     {
-        var (store, tool) = await SeedAsync();
+        var (store, _) = await SeedAsync();
+        var replacement = $"{new string('甲', 500)}\n\n---\n\n{new string('乙', 500)}";
+        var expected = replacement + "文本";
+        var harness = FakeProseHarness.Returning(expected);
+        var tool = new EditTextTool(store, proseHarness: harness);
+
         var result = await tool.ExecuteAsync(
             "call",
-            Args("insert", newText: "\n\n---\n\n新段落", position: 999),
+            Args("replace", oldText: "旧到的", newText: replacement),
             CancellationToken.None
         );
 
         Assert.False(result.IsError);
-        Assert.Equal("旧到的文本\n\n新段落", (await store.GetChapter(ChapterId))!.Content);
+        var content = (await store.GetChapter(ChapterId))!.Content;
+        Assert.Equal(expected, content);
+        Assert.Equal(1, ProseHarnessValidator.CountSeparatorLines(content));
+        Assert.Equal(1, harness.Calls);
         var text = string.Join("", result.Content.OfType<TextContent>().Select(c => c.Text));
-        Assert.Contains("已清理 1 处独立分隔符", text);
+        Assert.Contains("AI 分隔符 harness", text);
+    }
+
+    [Fact]
+    public async Task Replace_WithAiHarnessRemovingSeparator_SavesWithoutIt()
+    {
+        var (store, _) = await SeedAsync();
+        var replacement = $"{new string('甲', 500)}\n\n---\n\n{new string('乙', 500)}";
+        var candidate = replacement + "文本";
+        var expected = ProseTestContent.WithoutSeparators(candidate);
+        var harness = FakeProseHarness.Returning(expected);
+        var tool = new EditTextTool(store, proseHarness: harness);
+
+        var result = await tool.ExecuteAsync(
+            "call",
+            Args("replace", oldText: "旧到的", newText: replacement),
+            CancellationToken.None
+        );
+
+        Assert.False(result.IsError);
+        var content = (await store.GetChapter(ChapterId))!.Content;
+        Assert.Equal(expected, content);
+        Assert.Equal(0, ProseHarnessValidator.CountSeparatorLines(content));
+        var text = string.Join("", result.Content.OfType<TextContent>().Select(c => c.Text));
+        Assert.Contains("原 1 处 → 现 0 处", text);
+    }
+
+    [Fact]
+    public async Task Replace_WhenHarnessUnavailable_DoesNotApplyLocalCleanup()
+    {
+        var (store, _) = await SeedAsync();
+        var replacement = ProseTestContent.WithSeparators(20);
+        var expected = replacement + "文本";
+        var tool = new EditTextTool(store, proseHarness: FakeProseHarness.Unavailable());
+
+        var result = await tool.ExecuteAsync(
+            "call",
+            Args("replace", oldText: "旧到的", newText: replacement),
+            CancellationToken.None
+        );
+
+        Assert.False(result.IsError);
+        var content = (await store.GetChapter(ChapterId))!.Content;
+        Assert.Equal(expected, content);
+        Assert.Equal(20, ProseHarnessValidator.CountSeparatorLines(content));
+        var text = string.Join("", result.Content.OfType<TextContent>().Select(c => c.Text));
+        Assert.Contains("未运行", text);
     }
 }

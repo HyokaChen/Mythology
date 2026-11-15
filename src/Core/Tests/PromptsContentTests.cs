@@ -105,6 +105,16 @@ public sealed class PromptsContentTests
     }
 
     [Fact]
+    public void WritingPrompts_TreatInlineDashAsLegalProse()
+    {
+        Assert.Contains("破折号是合法句内标点", HumanizerPrompt.Full);
+        Assert.Contains("语音延长", HumanizerPrompt.Full);
+        Assert.Contains("句内破折号是合法正文", OutputZonesPrompt.Full);
+        Assert.Contains("不要把句内破折号当独立分隔符", OutputZonesPrompt.Full);
+        Assert.Contains("必要强调、语音延长、话语中断不算滥用", WritingProcessPrompt.Full);
+    }
+
+    [Fact]
     public void AllPrompts_AreAtLeast100Chars()
     {
         Assert.True(RoleDefinitionPrompt.Full.Length > 100);

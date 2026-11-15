@@ -3,6 +3,7 @@ using Core.Data.Migrations;
 using Core.Infrastructure;
 using Core.Interactions;
 using Core.Plugins;
+using Core.Prose;
 using Core.Shared;
 using Core.Tools;
 using Core.Vector;
@@ -133,6 +134,10 @@ public static class CoreServiceExtensions
             var registry = sp.GetRequiredService<ToolRegistry>();
             return new AgentCore(registry, effectiveTornadoApi);
         });
+        services.AddSingleton<IProseHarness>(sp => new LlmProseHarness(
+            sp.GetRequiredService<AgentCore>(),
+            sp.GetService<ILogger<LlmProseHarness>>()
+        ));
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
 using Core.Data;
 using Core.Evolution;
+using Core.Prose;
 using Core.Shared;
 using Core.Tools;
 using Core.Vector;
@@ -119,8 +120,11 @@ internal static class EvolutionHook
     }
 }
 
-public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel = null)
-    : AgentTool<WriteChapterParams, ChapterDetails>
+public sealed class WriteChapterTool(
+    INovelStore store,
+    RetrievalKernel? kernel = null,
+    IProseHarness? proseHarness = null
+) : AgentTool<WriteChapterParams, ChapterDetails>
 {
     /// <summary>工具唯一标识符</summary>
     public override string Name => "write_chapter";
@@ -150,8 +154,9 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
     )
     {
         ThrowIfCancelled(ct);
-        // 正文不接纳 Markdown 水平线/场景分隔符；写入前统一清理，后续保存/索引/字数都用清理后的正文。
-        var formatted = ProseFormatGuard.Normalize(args.Content);
+        // 正文候选原样进入 AI 分隔符 harness；由它通读全章后决定保留/新增/删除独立分隔符。
+        // 这里不做正则检测、固定数量或密度收敛。
+        var candidateContent = args.Content ?? "";
         EditHunk[]? hunks = null;
         var existingChapters = await store.GetChapters(args.NovelId, ct);
         ThrowIfCancelled(ct);
@@ -188,9 +193,23 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             // 显式传 volume-id = 移动章节；不传则保留原有分卷归属。
             if (volumeId is not null)
                 existing.VolumeId = volumeId;
-            // 复用已有章节：保留 ID、CreatedAt、Status，只更新内容和元数据
-            hunks = [EditHunk.FromFullContent(existing.Content, formatted.Content)];
-            existing.Content = formatted.Content;
+            // 复用已有章节：保留 ID、CreatedAt、Status，只更新内容和元数据。
+            // 保存前交给 AI 分隔符 harness 通读全章；它拥有最终决定权。
+            var reviewed = await ProseHarnessRunner.ReviewAsync(
+                proseHarness,
+                store,
+                args.NovelId,
+                existing.Id,
+                existing.Order,
+                existing.Title,
+                existing.Summary,
+                candidateContent,
+                "update",
+                ct
+            );
+            var content = reviewed.Content;
+            hunks = [EditHunk.FromFullContent(existing.Content, content)];
+            existing.Content = content;
             await store.SaveChapter(existing, ct);
             ThrowIfCancelled(ct);
             if (kernel is not null)
@@ -200,13 +219,13 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
             }
             await EvolutionHook.RecordEvolutionSafeAsync(store, args.NovelId, existing, ct);
             ThrowIfCancelled(ct);
-            var wordCount = formatted.Content.Length;
+            var wordCount = content.Length;
             return new AgentToolResult<ChapterDetails>
             {
                 Content =
                 [
                     new TextContent(
-                        $"章节「{existing.Title}」已保存 ({wordCount} 字{formatted.CleanupNote})"
+                        $"章节「{existing.Title}」已保存 ({wordCount} 字{reviewed.ToolNote})"
                     ),
                 ],
                 Details = new ChapterDetails
@@ -234,12 +253,25 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
                     + $"现有章节：{FormatChapterChoices(existingChapters)}"
             );
 
+        // 新章节也先让 AI harness 通读；它决定独立分隔符，不按固定数量或密度。
+        var reviewedNew = await ProseHarnessRunner.ReviewAsync(
+            proseHarness,
+            store,
+            args.NovelId,
+            "",
+            args.Order,
+            args.Title.Trim(),
+            "",
+            candidateContent,
+            "write",
+            ct
+        );
         var chapter = new Chapter
         {
             NovelId = args.NovelId,
             Title = args.Title.Trim(),
             Order = args.Order,
-            Content = formatted.Content,
+            Content = reviewedNew.Content,
             Status = ChapterStatus.Draft,
             VolumeId = volumeId,
         };
@@ -252,13 +284,13 @@ public sealed class WriteChapterTool(INovelStore store, RetrievalKernel? kernel 
         }
         await EvolutionHook.RecordEvolutionSafeAsync(store, args.NovelId, chapter, ct);
         ThrowIfCancelled(ct);
-        var wordCount2 = formatted.Content.Length;
+        var wordCount2 = reviewedNew.Content.Length;
         return new AgentToolResult<ChapterDetails>
         {
             Content =
             [
                 new TextContent(
-                    $"章节「{chapter.Title}」已保存 ({wordCount2} 字{formatted.CleanupNote})"
+                    $"章节「{chapter.Title}」已保存 ({wordCount2} 字{reviewedNew.ToolNote})"
                 ),
             ],
             Details = new ChapterDetails
@@ -616,8 +648,11 @@ public sealed record ExportChapterDetails
 /// <summary>
 /// 编辑文本工具：对已有章节文本执行插入、替换、删除操作
 /// </summary>
-public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = null)
-    : AgentTool<EditTextParams, EditTextDetails>
+public sealed class EditTextTool(
+    INovelStore store,
+    RetrievalKernel? kernel = null,
+    IProseHarness? proseHarness = null
+) : AgentTool<EditTextParams, EditTextDetails>
 {
     /// <summary>工具唯一标识符</summary>
     public override string Name => "edit_text";
@@ -664,7 +699,8 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
         if (chapter is null)
             return Error($"章节 {args.ChapterId} 不存在；按序号/标题编辑时请同时提供 novel-id");
 
-        var content = chapter.Content;
+        var originalContent = chapter.Content;
+        var content = originalContent;
         var operation = (args.Operation ?? "replace").Trim().ToLowerInvariant();
         var oldText = args.OldText ?? "";
         var newText = args.NewText ?? "";
@@ -731,11 +767,24 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
                 return Error($"未知 operation: {args.Operation}。支持 replace/insert/delete");
         }
 
-        // edit_text 也可能插入独立分隔符：对最终正文再守一道，且顺带清掉历史遗留。
-        var formatted = ProseFormatGuard.Normalize(content);
-        content = formatted.Content;
-        if (formatted.RemovedSeparatorLines > 0 && hunk is not null)
-            hunk = hunk with { NewText = ProseFormatGuard.Normalize(hunk.NewText).Content };
+        // 保存前由 AI 分隔符 harness 通读最终正文，自主决定保留/新增/删除独立分隔符。
+        // harness 不可用或失败时按候选正文保存；这里不做任何本地密度/数量兜底。
+        var reviewed = await ProseHarnessRunner.ReviewAsync(
+            proseHarness,
+            store,
+            chapter.NovelId,
+            chapter.Id,
+            chapter.Order,
+            chapter.Title,
+            chapter.Summary,
+            content,
+            "edit",
+            ct
+        );
+        var reviewedContent = reviewed.Content;
+        if (!string.Equals(reviewedContent, content, StringComparison.Ordinal) && hunk is not null)
+            hunk = EditHunk.FromFullContent(originalContent, reviewedContent);
+        content = reviewedContent;
         chapter.Content = content;
         await store.SaveChapter(chapter, ct);
         if (kernel is not null)
@@ -748,7 +797,7 @@ public sealed class EditTextTool(INovelStore store, RetrievalKernel? kernel = nu
             Content =
             [
                 new TextContent(
-                    $"章节「{chapter.Title}」文本已更新 ({content.Length} 字{formatted.CleanupNote})"
+                    $"章节「{chapter.Title}」文本已更新 ({content.Length} 字{reviewed.ToolNote})"
                 ),
             ],
             Details = new EditTextDetails
@@ -1413,8 +1462,11 @@ public sealed record CreateOutlineParams
 /// <summary>
 /// 重写段落工具：重写章节中的选中段落
 /// </summary>
-public sealed class RewriteSelectionTool(INovelStore store, RetrievalKernel? kernel = null)
-    : AgentTool<RewriteSelectionParams, RewriteSelectionDetails>
+public sealed class RewriteSelectionTool(
+    INovelStore store,
+    RetrievalKernel? kernel = null,
+    IProseHarness? proseHarness = null
+) : AgentTool<RewriteSelectionParams, RewriteSelectionDetails>
 {
     /// <summary>工具唯一标识符</summary>
     public override string Name => "rewrite_selection";
@@ -1482,9 +1534,21 @@ public sealed class RewriteSelectionTool(INovelStore store, RetrievalKernel? ker
                 IsError = true,
             };
 
-        // rewrite_selection 同样只能产出正文，不接受独立分隔符。
-        var formatted = ProseFormatGuard.Normalize(newContent);
-        newContent = formatted.Content;
+        // 保存前由 AI 分隔符 harness 通读全章，自主决定保留/新增/删除独立分隔符。
+        // harness 不可用或失败时按候选正文保存；这里不做任何本地密度/数量兜底。
+        var reviewed = await ProseHarnessRunner.ReviewAsync(
+            proseHarness,
+            store,
+            chapter.NovelId,
+            chapter.Id,
+            chapter.Order,
+            chapter.Title,
+            chapter.Summary,
+            newContent,
+            "rewrite",
+            ct
+        );
+        newContent = reviewed.Content;
         var oldLength = chapter.Content.Length;
         chapter.Content = newContent;
         await store.SaveChapter(chapter, ct);
@@ -1502,7 +1566,7 @@ public sealed class RewriteSelectionTool(INovelStore store, RetrievalKernel? ker
             Content =
             [
                 new TextContent(
-                    $"章节「{chapter.Title}」段落已重写 ({diff:+0;-0} 字变化{formatted.CleanupNote})"
+                    $"章节「{chapter.Title}」段落已重写 ({diff:+0;-0} 字变化{reviewed.ToolNote})"
                 ),
             ],
             Details = new RewriteSelectionDetails

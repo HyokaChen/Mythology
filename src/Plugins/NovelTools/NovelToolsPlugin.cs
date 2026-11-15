@@ -4,6 +4,7 @@ using Core.Cloud;
 using Core.Data;
 using Core.Inference;
 using Core.Plugins;
+using Core.Prose;
 using Core.Tools;
 using Core.Vector;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,7 @@ public sealed class NovelToolsPlugin : IToolPlugin
     private Agent? _agent;
     private RetrievalKernel? _kernel;
     private IFictionHarnessClient? _cloudHarness;
+    private IProseHarness? _proseHarness;
     private ISystemOneClient? _systemOne;
     private RetrievalRestClient? _retrievalRest;
     private KnowledgeRestClient? _knowledgeRest;
@@ -40,6 +42,7 @@ public sealed class NovelToolsPlugin : IToolPlugin
         _agent = sp.GetService<Agent>();
         _kernel = sp.GetService<RetrievalKernel>();
         _cloudHarness = sp.GetService<IFictionHarnessClient>();
+        _proseHarness = sp.GetService<IProseHarness>();
         // 受限服务提供器（非 Builtin 信任级）不映射 ISystemOneClient → null，工具按可空降级
         _systemOne = sp.GetService<ISystemOneClient>();
         _retrievalRest = sp.GetService<RetrievalRestClient>();
@@ -66,9 +69,9 @@ public sealed class NovelToolsPlugin : IToolPlugin
         yield return new ReadChapterTool(_store);
         yield return new ManageVolumeTool(_store);
         yield return new ReorderChaptersTool(_store);
-        yield return new WriteChapterTool(_store, _kernel);
-        yield return new RewriteSelectionTool(_store, _kernel);
-        yield return new EditTextTool(_store, _kernel);
+        yield return new WriteChapterTool(_store, _kernel, _proseHarness);
+        yield return new RewriteSelectionTool(_store, _kernel, _proseHarness);
+        yield return new EditTextTool(_store, _kernel, _proseHarness);
         yield return new GetWordCountTool(_store);
         yield return new SetChapterStatusTool(_store);
         yield return new SuggestContinuationTool(_store);
