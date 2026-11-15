@@ -241,6 +241,7 @@ public sealed class FileNovelStore : INovelStore
             CreatedAt = GetDateTime(dict, "created-at"),
             UpdatedAt = GetDateTime(dict, "updated-at"),
             CompletionStatus = GetString(dict, "completion-status") ?? "ongoing",
+            GenreParent = GetString(dict, "genre-parent") ?? "",
             Outline = GetString(dict, "outline") ?? "",
             Chapters = await chaptersTask,
             Characters = await charactersTask,
@@ -252,6 +253,11 @@ public sealed class FileNovelStore : INovelStore
             Relationships = await relationshipsTask,
             Scenes = await scenesTask,
         };
+
+        // 旧 novel.yaml 只有 genre（二级）：从分类表反查一级，
+        // 让项目列表 / 编辑窗立即显示“原生幻想 │ 轻小说”，用户下次保存时落盘。
+        if (string.IsNullOrEmpty(novel.GenreParent) && !string.IsNullOrEmpty(novel.Genre))
+            novel.GenreParent = GenreDefinitions.FindParent(novel.Genre)?.Name ?? "";
 
         return novel;
     }
@@ -272,12 +278,13 @@ public sealed class FileNovelStore : INovelStore
         var text = await File.ReadAllTextAsync(yamlPath, ct);
         var dict = YamlHelper.Deserialize(text);
 
-        return new Novel
+        var novel = new Novel
         {
             Id = GetString(dict, "id") ?? id,
             NovelId = id,
             Title = GetString(dict, "title") ?? "",
             Genre = GetString(dict, "genre") ?? "",
+            GenreParent = GetString(dict, "genre-parent") ?? "",
             Author = GetString(dict, "author") ?? "",
             TargetWords = GetInt(dict, "target-words"),
             Description = GetString(dict, "description") ?? "",
@@ -291,6 +298,11 @@ public sealed class FileNovelStore : INovelStore
             CreatedAt = GetDateTime(dict, "created-at"),
             UpdatedAt = GetDateTime(dict, "updated-at"),
         };
+
+        if (string.IsNullOrEmpty(novel.GenreParent) && !string.IsNullOrEmpty(novel.Genre))
+            novel.GenreParent = GenreDefinitions.FindParent(novel.Genre)?.Name ?? "";
+
+        return novel;
     }
 
     /// <summary>全部已登记项目目录下的小说并集（统一项目列表）；同 id 只保留写入目录里的那份。</summary>
@@ -311,27 +323,31 @@ public sealed class FileNovelStore : INovelStore
             if (id is null || !seenIds.Add(id))
                 continue;
 
-            result.Add(
-                new Novel
-                {
-                    Id = id,
-                    NovelId = id,
-                    Title = GetString(dict, "title") ?? "",
-                    Genre = GetString(dict, "genre") ?? "",
-                    Author = GetString(dict, "author") ?? "",
-                    TargetWords = GetInt(dict, "target-words"),
-                    Description = GetString(dict, "description") ?? "",
-                    WritingStyle = GetString(dict, "writing-style") ?? "",
-                    TargetAudience = GetString(dict, "target-audience") ?? "",
-                    EnhancementProfile = GetString(dict, "enhancement-profile") ?? "commercial",
-                    AutoDiagnose = GetBool(dict, "auto-diagnose", true),
-                    AutoEnhance = GetString(dict, "auto-enhance") ?? "semi",
-                    CompletionStatus = GetString(dict, "completion-status") ?? "ongoing",
-                    Outline = GetString(dict, "outline") ?? "",
-                    CreatedAt = GetDateTime(dict, "created-at"),
-                    UpdatedAt = GetDateTime(dict, "updated-at"),
-                }
-            );
+            var novel = new Novel
+            {
+                Id = id,
+                NovelId = id,
+                Title = GetString(dict, "title") ?? "",
+                Genre = GetString(dict, "genre") ?? "",
+                GenreParent = GetString(dict, "genre-parent") ?? "",
+                Author = GetString(dict, "author") ?? "",
+                TargetWords = GetInt(dict, "target-words"),
+                Description = GetString(dict, "description") ?? "",
+                WritingStyle = GetString(dict, "writing-style") ?? "",
+                TargetAudience = GetString(dict, "target-audience") ?? "",
+                EnhancementProfile = GetString(dict, "enhancement-profile") ?? "commercial",
+                AutoDiagnose = GetBool(dict, "auto-diagnose", true),
+                AutoEnhance = GetString(dict, "auto-enhance") ?? "semi",
+                CompletionStatus = GetString(dict, "completion-status") ?? "ongoing",
+                Outline = GetString(dict, "outline") ?? "",
+                CreatedAt = GetDateTime(dict, "created-at"),
+                UpdatedAt = GetDateTime(dict, "updated-at"),
+            };
+
+            if (string.IsNullOrEmpty(novel.GenreParent) && !string.IsNullOrEmpty(novel.Genre))
+                novel.GenreParent = GenreDefinitions.FindParent(novel.Genre)?.Name ?? "";
+
+            result.Add(novel);
         }
 
         return result.OrderByDescending(n => n.UpdatedAt).ToList();
@@ -382,6 +398,7 @@ public sealed class FileNovelStore : INovelStore
             ["id"] = novel.Id,
             ["title"] = novel.Title,
             ["genre"] = novel.Genre,
+            ["genre-parent"] = novel.GenreParent,
             ["author"] = novel.Author,
             ["target-words"] = novel.TargetWords.ToString(CultureInfo.InvariantCulture),
             ["description"] = novel.Description,

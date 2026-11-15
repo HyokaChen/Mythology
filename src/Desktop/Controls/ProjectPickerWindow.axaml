@@ -139,7 +139,7 @@
                         Foreground="{DynamicResource BrushSageMist}"
                         TextTrimming="CharacterEllipsis"
                       >
-                        <Run Text="{Binding Genre, Mode=OneWay}" />
+                        <Run Text="{Binding GenrePath, Mode=OneWay}" />
                         <Run Text=" · " />
                         <Run Text="{Binding Chapters, Mode=OneWay}" />
                         <Run Text=" 章 · 更新 " />
@@ -243,11 +243,8 @@
           </StackPanel>
 
           <StackPanel Spacing="6">
-            <TextBlock Classes="Tag" Text="题材（大类 / 二级）" />
-            <Grid ColumnDefinitions="*,12,*">
-              <ComboBox x:Name="CategoryBox" HorizontalAlignment="Stretch" />
-              <ComboBox x:Name="SubcategoryBox" Grid.Column="2" HorizontalAlignment="Stretch" />
-            </Grid>
+            <TextBlock Classes="Tag" Text="题材（一级 / 二级）" />
+            <c:GenrePicker x:Name="GenrePicker" HorizontalAlignment="Stretch" />
           </StackPanel>
 
           <StackPanel Spacing="6">

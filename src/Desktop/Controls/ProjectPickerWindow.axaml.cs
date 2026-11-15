@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Core.Data;
+using Desktop.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -22,11 +23,10 @@ public partial class ProjectPickerWindow : Window
     private readonly Action<string> _onOpenNovel;
     private readonly bool _showLlmHint;
     private readonly string? _currentNovelId;
+    private readonly GenreCatalogService? _genreCatalog;
 
     /// <summary>防「按钮激活 + 窗口 KeyDown」双通道重复打开（打开后窗口即将关闭）。</summary>
     private bool _opened;
-
-    private readonly string[] _categories = GenreDefinitions.All.Select(c => c.Name).ToArray();
 
     /// <summary>
     /// 创建项目选择/新建窗口。
@@ -68,11 +68,10 @@ public partial class ProjectPickerWindow : Window
         BackButton.Click += (_, _) => BackToMain();
         CreateButton.Click += async (_, _) => await CreateNovelAsync();
 
-        // 分类级联
-        CategoryBox.ItemsSource = _categories;
-        CategoryBox.SelectedIndex = 0;
-        CategoryBox.SelectionChanged += (_, _) => UpdateSubcategories();
-        UpdateSubcategories();
+        // 题材：先零等待显示内置目录，再后台换缓存/云端目录。
+        _genreCatalog = Program.Services?.GetService<GenreCatalogService>();
+        GenrePicker.SetCatalog(GenreCatalog.Local);
+        _ = LoadGenreCatalogAsync();
 
         KeyDown += (_, e) =>
         {
@@ -95,15 +94,21 @@ public partial class ProjectPickerWindow : Window
         _ = LoadNovelsAsync();
     }
 
-    /// <summary>一级分类变化 → 联动二级分类列表。</summary>
-    private void UpdateSubcategories()
+    /// <summary>缓存优先加载，随后尽力刷新云端目录；失败保留当前目录，选择器仍可用。</summary>
+    private async Task LoadGenreCatalogAsync()
     {
-        var idx = Math.Max(CategoryBox.SelectedIndex, 0);
-        if (idx >= GenreDefinitions.All.Length)
+        if (_genreCatalog is null)
             return;
-        var subs = GenreDefinitions.All[idx].Subcategories.Select(s => s.Name).ToArray();
-        SubcategoryBox.ItemsSource = subs;
-        SubcategoryBox.SelectedIndex = 0;
+
+        try
+        {
+            GenrePicker.SetCatalog(await _genreCatalog.LoadAsync());
+            GenrePicker.SetCatalog(await _genreCatalog.RefreshAsync());
+        }
+        catch
+        {
+            // 题材目录不是创建项目的硬前提：保留内置/缓存目录。
+        }
     }
 
     private void ShowForm()
@@ -179,6 +184,9 @@ public partial class ProjectPickerWindow : Window
                     n.Id,
                     string.IsNullOrEmpty(n.Title) ? n.Id : n.Title,
                     string.IsNullOrEmpty(n.Genre) ? "其他" : n.Genre,
+                    string.IsNullOrEmpty(n.GenreParent)
+                        ? GenreDefinitions.FindParent(n.Genre)?.Name ?? ""
+                        : n.GenreParent,
                     n.Chapters.Count,
                     n.UpdatedAt.ToString("MM-dd"),
                     // 书所在的项目目录（清单里可能不止一个）→ 卡片角标，避免同名书分不清
@@ -239,20 +247,13 @@ public partial class ProjectPickerWindow : Window
             return;
         }
 
-        var catIdx = Math.Max(CategoryBox.SelectedIndex, 0);
-        var subIdx = Math.Max(SubcategoryBox.SelectedIndex, 0);
-        var genre = "东方玄幻";
-        if (catIdx < GenreDefinitions.All.Length)
-        {
-            var subs = GenreDefinitions.All[catIdx].Subcategories;
-            if (subIdx < subs.Length)
-                genre = subs[subIdx].Name;
-        }
+        var selection = GenrePicker.SelectedGenre ?? GenreCatalog.Local.DefaultSelection;
 
         var novel = new Novel
         {
             Title = title,
-            Genre = genre,
+            Genre = selection?.Child ?? "",
+            GenreParent = selection?.Parent ?? "",
             Author = AuthorBox.Text?.Trim() ?? "",
             TargetWords = int.TryParse(TargetWordsBox.Text?.Trim(), out var tw) && tw > 0 ? tw : 0,
             Description = DescBox.Text?.Trim() ?? "",
@@ -289,11 +290,16 @@ internal sealed record NovelItem(
     string Id,
     string Title,
     string Genre,
+    string GenreParent,
     int Chapters,
     string Date,
     string? Directory,
     bool IsCurrent = false
 )
 {
-    public override string ToString() => $"{Title}  ·  {Genre} {Chapters}章 · {Date}";
+    /// <summary>列表展示「二级 │ 一级」；旧数据只有二级时仅显示二级。</summary>
+    public string GenrePath =>
+        string.IsNullOrEmpty(GenreParent) ? Genre : $"{Genre} │ {GenreParent}";
+
+    public override string ToString() => $"{Title}  ·  {GenrePath} {Chapters}章 · {Date}";
 }

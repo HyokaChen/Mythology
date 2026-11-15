@@ -6,6 +6,7 @@ public enum FieldType
     TextBox,
     TextArea,
     Select,
+    Genre, // 两级题材选择（一级分类 + 二级分类；Desktop 用 GenrePicker 渲染）
     FreeTag,
     MultiSelect,
     CheckBox,
@@ -394,7 +395,7 @@ public static class EntityFieldRegistry
             "小说定义",
             [
                 new("Title", "标题", FieldType.TextBox),
-                new("Genre", "类型", FieldType.TextBox),
+                new("Genre", "题材（一级 / 二级）", FieldType.Genre),
                 new("Author", "作者", FieldType.TextBox),
                 new("TargetWords", "目标字数", FieldType.TextBox, Placeholder: "字（如 50000）"),
                 new("Description", "简介", FieldType.TextArea),

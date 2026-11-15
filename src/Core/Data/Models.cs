@@ -22,8 +22,14 @@ public class Novel : Entity
     /// <summary>小说标题。</summary>
     public string Title { get; set; } = "";
 
-    /// <summary>小说类型/流派。</summary>
+    /// <summary>小说类型/流派（二级题材，如“原生幻想”）。</summary>
     public string Genre { get; set; } = "";
+
+    /// <summary>
+    /// 一级题材分类（如“轻小说”）。与 <see cref="Genre"/> 组成两级题材；
+    /// 旧数据只有 Genre 时由 GenreDefinitions 反查补齐。
+    /// </summary>
+    public string GenreParent { get; set; } = "";
 
     /// <summary>作者笔名（可空；展示于项目管理列表）。</summary>
     public string Author { get; set; } = "";

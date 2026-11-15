@@ -7,6 +7,12 @@ namespace Core.Data;
 /// </summary>
 public static class GenreDefinitions
 {
+    /// <summary>
+    /// 本地题材目录版本（与云端 /v1/fiction/genres 响应同字段）。
+    /// 分类增删改时递增；缓存合并时用于快速判断是否需要替换。
+    /// </summary>
+    public const string CatalogVersion = "1";
+
     /// <summary>一级题材分类。</summary>
     public sealed class Category
     {

@@ -787,6 +787,27 @@ public static class Program
             );
         });
 
+        // ── 云端创作题材目录（GenreCatalogRestClient：GET /v1/fiction/genres，零价）──
+        // 与 knowledge.categories 不同：该端点投影 FictionIntelligence 的创作题材父子树。
+        services.AddSingleton<ClientPlatform.GenreCatalogRestClient>(sp =>
+        {
+            var baseUrl = ClientPlatform.CloudEndpoints.ResolveCloudBaseUrl();
+            return new ClientPlatform.GenreCatalogRestClient(
+                baseUrl,
+                () => sp.GetRequiredService<CloudAuthService>().Session?.ApiKey,
+                http: sp.GetRequiredService<IHttpClientFactory>().CreateClient("MythologyCloud"),
+                invalidationBus: sp.GetRequiredService<ClientPlatform.CloudAuthInvalidationBus>(),
+                logger: sp.GetService<ILogger<ClientPlatform.GenreCatalogRestClient>>()
+            );
+        });
+        services.AddSingleton<Desktop.Services.GenreCatalogService>(sp =>
+            new(
+                sp.GetRequiredService<ClientPlatform.GenreCatalogRestClient>(),
+                Path.Combine(mythologyDir, "genre-catalog.yaml"),
+                sp.GetService<ILogger<Desktop.Services.GenreCatalogService>>()
+            )
+        );
+
         // ── 云端爬取任务（CrawlRestClient：提交/快照/取消，Idempotency-Key 必填）──
         services.AddSingleton<ClientPlatform.CrawlRestClient>(sp =>
         {

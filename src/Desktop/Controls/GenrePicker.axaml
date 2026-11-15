@@ -1,0 +1,95 @@
+<UserControl
+  x:Class="Desktop.Controls.GenrePicker"
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:c="clr-namespace:Desktop.Controls"
+  xmlns:lucide="clr-namespace:Lucide.Avalonia;assembly=Lucide.Avalonia"
+  x:CompileBindings="True"
+>
+  <!--
+    两级题材选择器：单字段（值 + chevron）+ Flyout 内的 TreeView。
+    Avalonia 没有官方 TreeComboBox；TreeView 是官方层级数据控件（TreeDataTemplate.ItemsSource），
+    Flyout 是官方浮层容器，因此不引入自绘弹出层，也不复制第二套一级/二级数据。
+  -->
+  <Button
+    x:Name="FieldButton"
+    Classes="GenreField"
+    HorizontalAlignment="Stretch"
+    Click="FieldButton_OnClick"
+    ToolTip.Tip="展开一级 / 二级题材"
+  >
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBlock
+        x:Name="ValueText"
+        Grid.Column="0"
+        Text="选择题材"
+        FontSize="14"
+        Foreground="{DynamicResource BrushForestInk}"
+        TextTrimming="CharacterEllipsis"
+        VerticalAlignment="Center"
+      />
+      <lucide:LucideIcon
+        Grid.Column="1"
+        Kind="ChevronDown"
+        Size="14"
+        StrokeWidth="1.8"
+        Foreground="{DynamicResource BrushSageGray}"
+        VerticalAlignment="Center"
+      />
+    </Grid>
+
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedLeft">
+        <Border Classes="FlyoutPanel" Width="380" MaxHeight="430">
+          <Grid RowDefinitions="Auto,*">
+            <TextBox
+              x:Name="SearchBox"
+              Classes="Adaline"
+              PlaceholderText="搜索一级或二级题材，如：轻小说 / 原生幻想"
+              TextChanged="SearchBox_OnTextChanged"
+              Margin="0,0,0,8"
+            />
+            <TreeView
+              x:Name="GenreTree"
+              Grid.Row="1"
+              SelectionMode="Single"
+              Background="Transparent"
+              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+              SelectionChanged="GenreTree_OnSelectionChanged"
+            >
+              <!-- IsExpanded ↔ 节点 VM：点一级分类时程序化展开，搜索时自动展开命中项。 -->
+              <TreeView.Styles>
+                <Style Selector="TreeViewItem" x:DataType="c:GenreNode">
+                  <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                </Style>
+              </TreeView.Styles>
+              <TreeView.ItemTemplate>
+                <TreeDataTemplate x:DataType="c:GenreNode" ItemsSource="{Binding Children}">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2,0,2">
+                    <TextBlock
+                      Grid.Column="0"
+                      Text="{Binding Label}"
+                      FontSize="12"
+                      Foreground="{DynamicResource BrushForestInk}"
+                      VerticalAlignment="Center"
+                      TextTrimming="CharacterEllipsis"
+                    />
+                    <TextBlock
+                      Grid.Column="1"
+                      Text="{Binding CountLabel}"
+                      IsVisible="{Binding IsCategory}"
+                      FontFamily="{StaticResource FontMono}"
+                      FontSize="10"
+                      Foreground="{DynamicResource BrushSageMist}"
+                      VerticalAlignment="Center"
+                    />
+                  </Grid>
+                </TreeDataTemplate>
+              </TreeView.ItemTemplate>
+            </TreeView>
+          </Grid>
+        </Border>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>

@@ -140,6 +140,26 @@
             BorderThickness="{TemplateBinding BorderThickness}"
             CornerRadius="{TemplateBinding CornerRadius}"
           />
+          <!-- ComboBox 的点击开合由模板中的 PART_ToggleButton 驱动；缺它时
+               自定义模板只剩展示内容，点击/键盘都不会打开下拉。 -->
+          <ToggleButton
+            Name="PART_ToggleButton"
+            Grid.ColumnSpan="2"
+            Background="Transparent"
+            BorderThickness="0"
+            Padding="0"
+            Focusable="False"
+            IsTabStop="False"
+            IsChecked="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+          >
+            <ToggleButton.Template>
+              <ControlTemplate>
+                <Border Background="Transparent" />
+              </ControlTemplate>
+            </ToggleButton.Template>
+          </ToggleButton>
           <ContentPresenter
             x:Name="PART_ContentPresenter"
             Grid.Column="0"
@@ -148,6 +168,20 @@
             HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
             VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
             Margin="{TemplateBinding Padding}"
+            IsHitTestVisible="False"
+          />
+          <Path
+            Grid.Column="1"
+            Data="M0,0 L4,4 L8,0"
+            Stroke="{DynamicResource BrushSageGray}"
+            StrokeThickness="1.4"
+            Width="8"
+            Height="4"
+            Stretch="None"
+            Margin="8,0,2,0"
+            VerticalAlignment="Center"
+            HorizontalAlignment="Center"
+            IsHitTestVisible="False"
           />
           <Popup
             Grid.Column="0"

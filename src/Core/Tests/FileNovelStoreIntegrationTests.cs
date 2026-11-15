@@ -59,6 +59,56 @@ public sealed class FileNovelStoreIntegrationTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SaveNovel_PersistsGenreHierarchy_AcrossReadPaths()
+    {
+        var novel = new Novel
+        {
+            Id = "genre001",
+            Title = "题材落盘",
+            Genre = "原生幻想",
+            GenreParent = "轻小说",
+        };
+        await _store.SaveNovel(novel);
+
+        // 新实例重新读盘：parent 必须来自 novel.yaml 的 genre-parent，而不是内存对象。
+        var reopened = new FileNovelStore(_tempRoot, _mythologyDir);
+        var loaded = await reopened.GetNovel("genre001");
+        Assert.NotNull(loaded);
+        Assert.Equal("原生幻想", loaded!.Genre);
+        Assert.Equal("轻小说", loaded.GenreParent);
+
+        var summary = await reopened.GetNovelSummary("genre001");
+        Assert.NotNull(summary);
+        Assert.Equal("轻小说", summary!.GenreParent);
+
+        var fromAll = Assert.Single(await reopened.GetAllNovels(), n => n.Id == "genre001");
+        Assert.Equal("轻小说", fromAll.GenreParent);
+    }
+
+    [Fact]
+    public async Task GetNovel_LegacyGenreOnly_InfersParentFromCatalog()
+    {
+        var dir = Path.Combine(_tempRoot, "旧题材书");
+        Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(
+            Path.Combine(dir, "novel.yaml"),
+            "id: genre002\ntitle: 旧题材书\ngenre: 原生幻想\n"
+        );
+
+        var loaded = await _store.GetNovel("genre002");
+        Assert.NotNull(loaded);
+        Assert.Equal("原生幻想", loaded!.Genre);
+        Assert.Equal("轻小说", loaded.GenreParent);
+
+        var summary = await _store.GetNovelSummary("genre002");
+        Assert.NotNull(summary);
+        Assert.Equal("轻小说", summary!.GenreParent);
+
+        var fromAll = Assert.Single(await _store.GetAllNovels(), n => n.Id == "genre002");
+        Assert.Equal("轻小说", fromAll.GenreParent);
+    }
+
+    [Fact]
     public async Task GetNovel_NotFound_ReturnsNull()
     {
         var result = await _store.GetNovel("nonexistent");

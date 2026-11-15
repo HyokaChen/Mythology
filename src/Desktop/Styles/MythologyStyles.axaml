@@ -225,6 +225,30 @@
     <Setter Property="Background" Value="{DynamicResource BrushSageMistWash}" />
   </Style>
 
+  <!-- ── 两级题材字段（与输入框同规格：透明底 · hairline Mist · 4px 输入圆角） ──
+       用 Button + Flyout 而不是 ComboBox：Avalonia 没有官方层级 ComboBox；
+       TreeView 负责父子树，Button 只负责“点击打开”和展示当前值。 -->
+  <Style Selector="Button.GenreField">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushMist}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusInputs}" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushForestInk}" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.GenreField:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushLichen}" />
+    <Setter Property="Background" Value="{DynamicResource BrushSurfaceGlow}" />
+  </Style>
+  <Style Selector="Button.GenreField:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushOlivePress}" />
+  </Style>
+
   <!-- ── 输入框（透明底 · hairline Mist 边框 · 焦点 Forest Ink） ── -->
   <Style Selector="TextBox.Adaline">
     <Setter Property="Background" Value="Transparent" />

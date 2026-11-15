@@ -8,6 +8,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Core.Data;
 using Core.Evolution;
+using Desktop.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Desktop.Controls;
 
@@ -240,6 +242,7 @@ public partial class EntityEditWindow : Window
             },
             FieldType.Select => BuildSelect(def),
             FieldType.MultiSelect => BuildMultiSelect(def),
+            FieldType.Genre => new GenrePicker(),
             FieldType.CheckBox => new CheckBox { Content = def.Label, FontSize = 13 },
             // 只读信息（章节号 / 字数 / 更新时间）：值由 PopulateReadOnlyFieldsAsync 预计算回填
             FieldType.ReadOnly => new TextBlock
@@ -654,6 +657,8 @@ public partial class EntityEditWindow : Window
         base.OnOpened(e);
         try
         {
+            await LoadGenreCatalogAsync();
+
             if (_entityId is not null)
             {
                 _entity = await LoadEntityAsync();
@@ -680,6 +685,45 @@ public partial class EntityEditWindow : Window
         catch (Exception ex)
         {
             await new MessageBox("加载失败", ex.Message).ShowDialogAsync(this);
+        }
+    }
+
+    /// <summary>
+    /// 题材选择器先显示缓存/内置目录，再后台刷新云端目录。
+    /// 只有 Novel 表单存在 Genre 字段；其它实体直接跳过，不增加打开延迟。
+    /// </summary>
+    private async Task LoadGenreCatalogAsync()
+    {
+        if (
+            !_fields.TryGetValue("Genre", out var control)
+            || control is not GenrePicker picker
+            || Program.Services?.GetService<GenreCatalogService>() is not { } service
+        )
+            return;
+
+        try
+        {
+            picker.SetCatalog(await service.LoadAsync());
+            _ = RefreshGenreCatalogAsync(picker, service);
+        }
+        catch
+        {
+            // 保留 GenrePicker 构造时的内置目录；编辑窗口不因目录服务失败而阻塞。
+        }
+    }
+
+    private static async Task RefreshGenreCatalogAsync(
+        GenrePicker picker,
+        GenreCatalogService service
+    )
+    {
+        try
+        {
+            picker.SetCatalog(await service.RefreshAsync());
+        }
+        catch
+        {
+            // 离线 / 鉴权失败：继续使用缓存或内置目录。
         }
     }
 
@@ -739,6 +783,9 @@ public partial class EntityEditWindow : Window
                     break;
                 case TextBox tb:
                     tb.Text = value?.ToString() ?? "";
+                    break;
+                case GenrePicker picker when _entity is Novel novel:
+                    picker.Select(novel.GenreParent, novel.Genre);
                     break;
                 case ComboBox combo:
                 {
@@ -862,6 +909,10 @@ public partial class EntityEditWindow : Window
                         break;
                     case TextBox tb:
                         prop.SetValue(_entity, CoerceValue(prop, tb.Text?.Trim() ?? ""));
+                        break;
+                    case GenrePicker picker when _entity is Novel novel:
+                        novel.Genre = picker.SelectedGenre?.Child ?? "";
+                        novel.GenreParent = picker.SelectedGenre?.Parent ?? "";
                         break;
                     case ComboBox combo:
                         var display = combo.SelectedItem as string ?? "";
