@@ -103,6 +103,51 @@ public sealed class CompactionTaskScopeTests
         Assert.DoesNotContain("第54章", repaired);
     }
 
+    [Fact]
+    public void TryCreateFromSummary_RecoversLegacyAuthorInstruction()
+    {
+        const string summary =
+            "> 作者指令（逐字，最高优先级）：修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！\n\n"
+            + "## Where / 写到哪里\n"
+            + "- 若作者未另行指示，先推进第54章。\n\n"
+            + "## Next / 下一步\n"
+            + "- 写第54章";
+
+        var scope = CompactionTaskScope.TryCreateFromSummary(summary, BuildStructure());
+
+        Assert.NotNull(scope);
+        Assert.Equal(CompactionTaskMode.Revise, scope!.Mode);
+        Assert.Contains(21, scope.ChapterOrders);
+        Assert.Contains(40, scope.ChapterOrders);
+        Assert.DoesNotContain(54, scope.ChapterOrders);
+    }
+
+    [Fact]
+    public void EnforceTaskScope_CleansOutOfScopeWhere()
+    {
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;
+        const string summary =
+            "## Scope / 任务边界\n"
+            + "- 未记录\n\n"
+            + "## Where / 写到哪里\n"
+            + "- 卷三第53章已完成；下一章第54章。\n"
+            + "- 若作者未另行指示，先推进第54章。\n"
+            + "- 当前场景：湿地残址。\n\n"
+            + "## Next / 下一步\n"
+            + "- 写第54章《恶意的瞥见》";
+
+        var repaired = CompactionEngine.EnforceTaskScope(summary, scope, null);
+
+        var whereIndex = repaired.IndexOf("## Where / 写到哪里", StringComparison.Ordinal);
+        var nextIndex = repaired.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        var where = repaired[whereIndex..nextIndex];
+        Assert.Contains("当前任务焦点：第22章", where);
+        Assert.Contains("湿地残址", where);
+        Assert.DoesNotContain("第54章", where);
+        Assert.DoesNotContain("先推进第54章", repaired);
+        Assert.Contains("优化/补写第23章", repaired);
+    }
+
     private static NovelStructure BuildStructure()
     {
         const string novelId = "n-scope";

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Agent;
 using Core.Data;
 using Core.Shared;
 using LlmTornado.ChatFunctions;
@@ -283,6 +284,56 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
 
         var listed = Assert.Single(await _store.GetSessions(TestNovelId));
         Assert.Equal("会话标题", listed.Title);
+    }
+
+    [Fact]
+    public async Task SaveSessionMessages_PersistsTitleInManifest()
+    {
+        await CreateTestNovelAsync();
+        var messages = CreateSimpleConversation("写进 manifest 的标题", "回复");
+        await _store.SaveSessionMessages(TestSessionId, TestNovelId, messages, startOrder: 0);
+
+        var manifestPath = Path.Combine(GetSessionDir(), "MANIFEST.json");
+        var manifest = JsonSerializer.Deserialize<SessionManifest>(
+            await File.ReadAllTextAsync(manifestPath),
+            JsonlSerializer.Options
+        );
+
+        Assert.NotNull(manifest);
+        Assert.Equal("写进 manifest 的标题", manifest!.Title);
+    }
+
+    [Fact]
+    public async Task TaskScope_SaveReadAndClear()
+    {
+        await CreateTestNovelAsync();
+        await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            CreateSimpleConversation(),
+            startOrder: 0
+        );
+        var scope = new TaskScopeState
+        {
+            Mode = "revise",
+            Label = "第2卷《夏夜的萤火》（第21-40章）",
+            VolumeIds = ["v2"],
+            ChapterOrders = [21, 22, 23],
+            Instruction = "修正优化整个第二卷",
+            Status = "active",
+        };
+
+        await _store.SaveTaskScopeAsync(TestSessionId, TestNovelId, scope);
+        var loaded = await _store.GetTaskScopeAsync(TestSessionId);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("revise", loaded!.Mode);
+        Assert.Equal(new[] { "v2" }, loaded.VolumeIds);
+        Assert.Equal(new[] { 21, 22, 23 }, loaded.ChapterOrders);
+        Assert.Equal("修正优化整个第二卷", loaded.Instruction);
+
+        await _store.SaveTaskScopeAsync(TestSessionId, TestNovelId, null);
+        Assert.Null(await _store.GetTaskScopeAsync(TestSessionId));
     }
 
     [Fact]

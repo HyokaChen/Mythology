@@ -405,6 +405,7 @@ public sealed class SessionEngine(
         SaveCurrentSessionTodos();
         _sessionId = Guid.NewGuid().ToString("N")[..12];
         agent.SessionId = _sessionId;
+        TaskScopeTracker.Clear(agent);
         todoStore.Reset();
         agent.ReplaceMessages([]);
         agent.SetContextWindowState(ContextWindowState.First);
@@ -462,6 +463,7 @@ public sealed class SessionEngine(
         _sessionId = session.Id;
         agent.SessionId = _sessionId;
         agent.CurrentNovelId = novelId;
+        await TaskScopeTracker.LoadAsync(agent, store, _sessionId, CancellationToken.None);
         _sessionPersistenceFaulted = false;
         LoadSessionTodosOrEmpty(_sessionId);
 
@@ -534,6 +536,13 @@ public sealed class SessionEngine(
         await RunTurnAsync(
             prepare: async () =>
             {
+                await TaskScopeTracker.ObserveAuthorMessageAsync(
+                    agent,
+                    store,
+                    novelStore,
+                    text,
+                    ct
+                );
                 await InjectNovelContextAsync();
 
                 // 主动压缩预检：接近动态阈值时先压缩再发送，阈值与显示分母一致（ModelProfile 窗口）

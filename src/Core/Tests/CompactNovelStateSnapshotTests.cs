@@ -140,6 +140,57 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         Assert.DoesNotContain("第54章", nextSection);
     }
 
+    [Fact]
+    public async Task BuildNovelState_SecondCompactWithoutAuthorMessage_RecoversLegacyScope()
+    {
+        await SeedRevisionNovelAsync();
+
+        var messages = new List<LlmChatMessage>
+        {
+            new(ChatMessageRoles.User, "[云端诊断] 需要修改 35 处"),
+            new(ChatMessageRoles.User, "[远期推演] 已写至第53章，下一章：第54章"),
+        };
+        const string previousSummary =
+            "> 作者指令（逐字，最高优先级）：修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！\n\n"
+            + "## Where / 写到哪里\n"
+            + "- 卷三第53章已完成；下一章第54章。\n"
+            + "- 若作者未另行指示，先推进第54章。\n\n"
+            + "## Next / 下一步\n"
+            + "- 写第54章《恶意的瞥见》";
+
+        var (snapshot, scope) = await BuildStateAsync(RevisionNovelId, messages, previousSummary);
+
+        Assert.NotNull(scope);
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("允许范围：第2卷《夏夜的萤火》（ID:v2），第21-40章", snapshot);
+        Assert.Contains("当前章（任务焦点）：第22章", snapshot);
+        Assert.Contains("全局下一章（不是本任务 Next）：第54章", snapshot);
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        Assert.Contains("本任务下一步（必须在 Scope 内）", snapshot[nextIndex..]);
+        Assert.Contains("第23章", snapshot[nextIndex..]);
+        Assert.DoesNotContain("第54章", snapshot[nextIndex..]);
+    }
+
+    private async Task<(string Snapshot, object? Scope)> BuildStateAsync(
+        string novelId,
+        IReadOnlyList<LlmChatMessage> messages,
+        string? previousSummary
+    )
+    {
+        var method = typeof(CompactionEngine).GetMethod(
+            "BuildNovelStateAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var task = (Task)
+            method.Invoke(_engine, [novelId, messages, previousSummary, CancellationToken.None])!;
+        await task;
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var snapshot = (string)result.GetType().GetProperty("Snapshot")!.GetValue(result)!;
+        var scope = result.GetType().GetProperty("Scope")!.GetValue(result);
+        return (snapshot, scope);
+    }
+
     private async Task<string> BuildSnapshotAsync(
         string novelId,
         IReadOnlyList<LlmChatMessage> messages

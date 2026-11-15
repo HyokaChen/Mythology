@@ -152,6 +152,15 @@ public sealed class Agent : IAsyncDisposable
     /// <summary>当前会话 ID，贯穿所有持久化操作。</summary>
     public string? SessionId { get; set; }
 
+    /// <summary>
+    /// 当前会话的长期任务边界（持久化在会话目录 TASK_SCOPE.json）。
+    /// 写入工具执行前由 <c>TaskScopeGuardHook</c> 校验；摘要模型无权修改。
+    /// </summary>
+    public TaskScopeState? ActiveTaskScope { get; set; }
+
+    /// <summary>作者本轮明确点名的单章临时目标（不覆盖 ActiveTaskScope）。</summary>
+    public string? TurnTargetChapterId { get; set; }
+
     /// <summary>Core 交互状态机（由宿主装配；ask_user / 变体统一经它创建）。</summary>
     public Core.Interactions.InteractionHub? InteractionHub { get; set; }
 

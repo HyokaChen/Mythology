@@ -471,6 +471,14 @@ public static class Program
             // 双速自进化账本（单账本折叠）：与 TUI 同款装配（DI 单例；默认关闭零行为变化）。
             var tacticLedger = provider.GetService<Core.Agent.TacticLedger>();
 
+            // 工具执行前的任务边界闸门：摘要写错也不能改 Scope 外章节。
+            agent.BeforeToolCall = new TaskScopeGuardHook(
+                agent,
+                store,
+                provider.GetRequiredService<FileSessionStore>(),
+                loggerFactory.CreateLogger<TaskScopeGuardHook>()
+            );
+
             // 记忆自动钩子：memory_recall/memory_find_conflicts 成功后自动标注有用性
             var novelHook = new NovelContextHook(agent, store);
             var writingFlowHook = new WritingFlowHook(

@@ -73,6 +73,24 @@ public sealed class CompactionCheckpointTests
     }
 
     [Fact]
+    public void MergeCheckpoint_NewNextWins_DoesNotAppendPreviousNext()
+    {
+        const string baseCheckpoint =
+            "## Scope / 任务边界\n- 未记录\n\n" + "## Next / 下一步\n- 写第54章《恶意的瞥见》";
+        const string previous = "## Next / 下一步\n- 先列出卷二章节目录与细纲对照表";
+        var method = typeof(CompactionEngine).GetMethod(
+            "MergeCheckpoint",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+
+        var merged = (string)method.Invoke(null, [baseCheckpoint, previous])!;
+
+        Assert.Contains("写第54章", merged);
+        Assert.DoesNotContain("先列出卷二章节目录", merged);
+        Assert.Equal(1, merged.Split("## Next / 下一步", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
     public void CompactSummary_KeepsAuthorInstruction_AndDemotesForecastToSystemNote()
     {
         var messages = new List<LlmChatMessage>
