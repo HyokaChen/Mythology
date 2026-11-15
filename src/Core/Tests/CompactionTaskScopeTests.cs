@@ -87,6 +87,46 @@ public sealed class CompactionTaskScopeTests
     }
 
     [Fact]
+    public void EnforceTaskScope_ReplacesWhereProgressAndNext()
+    {
+        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;
+        var progress = CompactionTaskProgress.Create(
+            [21, 22, 24, 30],
+            [25],
+            currentOrder: 30,
+            nextOrder: 23,
+            outOfScopeOrders: [54]
+        );
+        const string summary =
+            "## Scope / 任务边界\n- 未记录\n\n"
+            + "## Progress / 进度\n- 未记录\n\n"
+            + "## Where / 写到哪里\n- 先推进第54章\n\n"
+            + "## Next / 下一步\n- 写第54章《恶意的瞥见》";
+        const string baseCheckpoint =
+            "## Where / 写到哪里\n"
+            + "- 当前章（任务焦点）：第30章《萤火30》\n"
+            + "- 下一章（任务焦点）：第23章《萤火23》\n"
+            + "- 全局下一章（不是本任务 Next）：第54章《恶意的瞥见》";
+
+        var repaired = CompactionEngine.EnforceTaskScope(
+            summary,
+            scope,
+            previousSummary: null,
+            progress,
+            baseCheckpoint
+        );
+
+        Assert.Contains("已实际编辑：21、22、24、30", repaired);
+        Assert.Contains("当前：第30章", repaired);
+        Assert.Contains("下一章：第23章", repaired);
+        Assert.Contains("当前章（任务焦点）：第30章", repaired);
+        var nextIndex = repaired.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        Assert.DoesNotContain("写第54章", repaired[nextIndex..]);
+        Assert.DoesNotContain("先推进第54章", repaired);
+    }
+
+    [Fact]
     public void EnforceTaskScope_PrefersPreviousInScopeNext()
     {
         var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;

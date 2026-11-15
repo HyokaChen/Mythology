@@ -2,6 +2,7 @@ using System.Reflection;
 using Core.Agent;
 using Core.Data;
 using Core.Tools;
+using LlmTornado.ChatFunctions;
 using LlmTornado.Code;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -140,6 +141,75 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         Assert.DoesNotContain("第54章", nextSection);
     }
 
+    [Fact]
+    public async Task BuildNovelStateSnapshot_RevisionProgress_UsesEditedChaptersNotCharCount()
+    {
+        await SeedRevisionNovelAsync(allContent: true);
+
+        var messages = new List<LlmChatMessage>
+        {
+            new(
+                ChatMessageRoles.User,
+                "修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！"
+            ),
+        };
+        AddChapterCall(messages, "edit-21", "edit_text", "c21");
+        AddChapterCall(messages, "edit-22", "edit_text", "c22");
+        AddChapterCall(messages, "edit-24", "edit_text", "c24");
+        AddChapterCall(messages, "edit-30", "edit_text", "c30");
+        AddChapterCall(messages, "read-25", "read_chapter", "c25");
+        AddChapterCall(messages, "write-54", "write_chapter", "c54");
+
+        var snapshot = await BuildSnapshotAsync(RevisionNovelId, messages);
+
+        Assert.Contains("## Progress / 进度", snapshot);
+        Assert.Contains("已实际编辑：21、22、24、30", snapshot);
+        Assert.Contains("已读/诊断：25", snapshot);
+        Assert.Contains("当前：第30章", snapshot);
+        Assert.Contains("下一章：第23章", snapshot);
+        Assert.Contains("范围外活动：54", snapshot);
+        Assert.Contains("当前章（任务焦点）：第30章", snapshot);
+
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        var nextSection = snapshot[nextIndex..];
+        Assert.Contains("第23章", nextSection);
+        Assert.DoesNotContain("第54章", nextSection);
+    }
+
+    private static void AddChapterCall(
+        List<LlmChatMessage> messages,
+        string callId,
+        string toolName,
+        string chapterId
+    )
+    {
+        messages.Add(
+            new LlmChatMessage(ChatMessageRoles.Assistant, "")
+            {
+                ToolCalls =
+                [
+                    new ToolCall
+                    {
+                        Id = callId,
+                        FunctionCall = new FunctionCall
+                        {
+                            Name = toolName,
+                            Arguments = $$"""{"chapter-id":"{{chapterId}}"}""",
+                        },
+                    },
+                ],
+            }
+        );
+        messages.Add(
+            new LlmChatMessage(ChatMessageRoles.Tool, "ok")
+            {
+                ToolCallId = callId,
+                ToolInvocationSucceeded = true,
+            }
+        );
+    }
+
     private async Task<string> BuildSnapshotAsync(
         string novelId,
         IReadOnlyList<LlmChatMessage> messages
@@ -154,7 +224,7 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         return await task;
     }
 
-    private async Task SeedRevisionNovelAsync()
+    private async Task SeedRevisionNovelAsync(bool allContent = false)
     {
         var novel = new Novel
         {
@@ -194,7 +264,7 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
                     Order = order,
                     VolumeId = volume2.Id,
                     Status = ChapterStatus.Draft,
-                    Content = order <= 22 ? new string('文', 100) : "",
+                    Content = allContent || order <= 22 ? new string('文', 100) : "",
                 }
             );
         }

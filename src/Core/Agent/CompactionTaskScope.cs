@@ -80,28 +80,9 @@ internal sealed class CompactionTaskScope
     public IReadOnlySet<string> VolumeIds { get; }
     public IReadOnlySet<int> VolumeOrders { get; }
     public IReadOnlySet<int> ChapterOrders { get; }
-    public bool RequiresAuthorConfirmation => Mode == CompactionTaskMode.Revise;
 
     public int MinChapterOrder => Chapters.Count == 0 ? 0 : Chapters.Min(c => c.Order);
     public int MaxChapterOrder => Chapters.Count == 0 ? 0 : Chapters.Max(c => c.Order);
-
-    public string ShortLabel
-    {
-        get
-        {
-            var chapterText =
-                MinChapterOrder == MaxChapterOrder
-                    ? $"第{MinChapterOrder}章"
-                    : $"第{MinChapterOrder}-{MaxChapterOrder}章";
-            if (Volumes.Count == 0)
-                return chapterText;
-            var volumeText = string.Join(
-                "、",
-                Volumes.OrderBy(v => v.Order).Select(v => $"第{v.Order}卷《{v.Name}》")
-            );
-            return $"{volumeText}（{chapterText}）";
-        }
-    }
 
     /// <summary>
     /// 离线兜底：从作者指令或上一份摘要的 Scope 中提取范围。优先作者指令；
@@ -324,15 +305,35 @@ internal sealed class CompactionTaskScope
         return sb.ToString().TrimEnd();
     }
 
-    public Chapter? FindFocusChapter()
+    public Chapter? FindFocusChapter(CompactionTaskProgress? progress = null)
     {
+        if (progress is not null)
+        {
+            if (
+                progress.CurrentOrder is int progressOrder
+                && Chapters.FirstOrDefault(c => c.Order == progressOrder) is { } progressChapter
+            )
+                return progressChapter;
+
+            var pending = Chapters
+                .OrderBy(c => c.Order)
+                .FirstOrDefault(c => !progress.EditedOrders.Contains(c.Order));
+            return pending ?? Chapters.OrderBy(c => c.Order).FirstOrDefault();
+        }
+
         var ordered = Chapters.OrderBy(c => c.Order).ToList();
         return ordered.LastOrDefault(c => c.CharCount > 0) ?? ordered.FirstOrDefault();
     }
 
-    public Chapter? FindNextChapter()
+    public Chapter? FindNextChapter(CompactionTaskProgress? progress = null)
     {
-        var current = FindFocusChapter();
+        if (
+            progress?.NextOrder is int progressOrder
+            && Chapters.FirstOrDefault(c => c.Order == progressOrder) is { } progressChapter
+        )
+            return progressChapter;
+
+        var current = FindFocusChapter(progress);
         var currentOrder = current?.Order ?? 0;
         return Chapters.Where(c => c.Order > currentOrder).OrderBy(c => c.Order).FirstOrDefault();
     }
@@ -388,27 +389,46 @@ internal sealed class CompactionTaskScope
     }
 
     /// <summary>
-    /// 生成范围内下一步。优先沿用上一份摘要里已经合法的 Next，避免每轮 compact
-    /// 把“卷二的下一章”重置成泛化描述。
+    /// 生成范围内下一步。优先使用工具进度给出的下一章；没有进度时沿用上一份
+    /// 合法的 Next，避免把“卷二的下一章”重置成泛化描述。
     /// </summary>
-    public string BuildSafeNext(string? preferredNext = null)
+    public string BuildSafeNext(
+        string? preferredNext = null,
+        CompactionTaskProgress? progress = null
+    )
     {
+        if (
+            progress?.NextOrder is int progressOrder
+            && Chapters.FirstOrDefault(c => c.Order == progressOrder) is { } progressChapter
+        )
+            return BuildNextText(progressChapter);
+
         if (!string.IsNullOrWhiteSpace(preferredNext) && IsNextWithinScope(preferredNext))
             return preferredNext.Trim();
 
         if (Mode == CompactionTaskMode.Revise)
         {
-            var unwritten = Chapters.FirstOrDefault(c => c.CharCount == 0);
-            if (unwritten is not null)
-                return $"优化/补写第{unwritten.Order}章《{unwritten.Title}》；只在 Scope 范围内推进，不得跳到范围外。";
-            return $"按细纲顺序继续优化{ShortLabel}范围内的下一个待优化章；不得推进范围外的下一章。";
+            var pending = progress is null
+                ? Chapters.FirstOrDefault(c => c.CharCount == 0)
+                : Chapters
+                    .OrderBy(c => c.Order)
+                    .FirstOrDefault(c => !progress.EditedOrders.Contains(c.Order));
+            pending ??= Chapters.OrderBy(c => c.Order).FirstOrDefault();
+            if (pending is not null)
+                return BuildNextText(pending);
+            return "按 Scope 继续优化范围内章节；不要推进范围外内容。";
         }
 
         var target = Chapters.FirstOrDefault(c => c.CharCount == 0) ?? Chapters.FirstOrDefault();
         if (target is not null)
-            return $"写第{target.Order}章《{target.Title}》；只写 Scope 范围内章节，不推进范围外内容。";
+            return BuildNextText(target);
         return "按 Scope 继续写范围内章节；不要推进范围外内容。";
     }
+
+    private string BuildNextText(Chapter target) =>
+        Mode == CompactionTaskMode.Revise
+            ? $"优化/补写第{target.Order}章《{target.Title}》；只在 Scope 范围内推进，不得跳到范围外。"
+            : $"写第{target.Order}章《{target.Title}》；只写 Scope 范围内章节，不推进范围外内容。";
 
     private string AllowedRangeText()
     {

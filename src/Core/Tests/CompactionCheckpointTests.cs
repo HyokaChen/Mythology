@@ -43,6 +43,7 @@ public sealed class CompactionCheckpointTests
             var heading in new[]
             {
                 "## Scope / 任务边界",
+                "## Progress / 进度",
                 "## Where / 写到哪里",
                 "## Who / 谁出场",
                 "## What / 发生了什么",
@@ -70,6 +71,24 @@ public sealed class CompactionCheckpointTests
         Assert.DoesNotContain("## 文件操作", migrated);
         Assert.Contains("继承背景", migrated);
         Assert.Equal(1, migrated.Split("## Next / 下一步", StringSplitOptions.None).Length - 1);
+    }
+
+    [Fact]
+    public void MergeCheckpoint_DoesNotAppendPreviousNext()
+    {
+        var method = typeof(CompactionEngine).GetMethod(
+            "MergeCheckpoint",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        const string current =
+            "## Next / 下一步\n- 优化第23章《萤火23》\n\n" + "## Why / 为什么\n- 当前任务";
+        const string previous =
+            "## Next / 下一步\n- 写第54章《恶意的瞥见》\n\n" + "## Why / 为什么\n- 旧任务";
+
+        var merged = (string)method.Invoke(null, [current, previous])!;
+
+        Assert.Contains("- 优化第23章", merged);
+        Assert.DoesNotContain("- 写第54章", merged);
     }
 
     [Fact]

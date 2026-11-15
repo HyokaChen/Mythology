@@ -138,11 +138,20 @@ internal static class CompactionScopeExtractor
         sb.AppendLine(
             "4. 当前章/下一章/全局写作前沿只是全书进度，不是任务范围；绝不能用它扩大 Scope。"
         );
-        sb.AppendLine("5. 无法确定时输出 mode=none。");
+        sb.AppendLine(
+            "5. 没有新的作者消息时，上一份摘要里的 Scope 原样继承；不得把“没有新指令”解释为任务结束或切换。"
+        );
+        sb.AppendLine(
+            "6. 上一份摘要里的 Progress/工具活动/章节编辑只是任务进度，不是新的任务范围。"
+        );
+        sb.AppendLine("7. 无法确定时输出 mode=none。");
         sb.AppendLine();
         sb.AppendLine("## 输出 JSON（只输出这个对象）");
         sb.AppendLine(
-            """{"mode":"write|revise|none","instruction":"作者任务原话或简短概括","volume_ids":["卷ID"],"chapter_orders":[21,22]}"""
+            "instruction 必须逐字复制作者任务原话；若继承上一份 Scope，复制上一份 Scope 的作者指令，不要概括。"
+        );
+        sb.AppendLine(
+            """{"mode":"write|revise|none","instruction":"作者任务原话","volume_ids":["卷ID"],"chapter_orders":[21,22]}"""
         );
         return sb.ToString();
     }

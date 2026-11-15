@@ -64,23 +64,32 @@ public sealed class CompactionEngine(
     private static readonly TimeSpan AiSummaryTimeout = TimeSpan.FromMinutes(3);
 
     private const string ScopeHeading = CompactionTaskScope.Heading;
+    private const string ProgressHeading = CompactionTaskProgress.Heading;
+    private const string WhereHeading = "## Where / 写到哪里";
+    private const string WhoHeading = "## Who / 谁出场";
+    private const string WhatHeading = "## What / 发生了什么";
+    private const string WhyHeading = "## Why / 为什么";
+    private const string WhenHeading = "## When / 时间";
+    private const string HowHeading = "## How / 怎么写";
     private const string NextHeading = "## Next / 下一步";
 
     private static readonly string[] CheckpointHeadings =
     [
         ScopeHeading,
-        "## Where / 写到哪里",
-        "## Who / 谁出场",
-        "## What / 发生了什么",
-        "## Why / 为什么",
-        "## When / 时间",
-        "## How / 怎么写",
+        ProgressHeading,
+        WhereHeading,
+        WhoHeading,
+        WhatHeading,
+        WhyHeading,
+        WhenHeading,
+        HowHeading,
         NextHeading,
     ];
 
     private sealed record NovelStateBuildResult(
         string Snapshot,
         CompactionTaskScope? Scope,
+        CompactionTaskProgress? Progress,
         string? LatestAuthorMessage
     );
 
@@ -207,7 +216,7 @@ public sealed class CompactionEngine(
         {
             // 设定/结构读取失败不能阻断上下文压缩；退化为对话 5W1H。
             log.LogWarning(ex, "build novel state snapshot failed; falling back to conversation");
-            novelState = new NovelStateBuildResult("", null, null);
+            novelState = new NovelStateBuildResult("", null, null, null);
         }
 
         var summary = await GenerateCompactSummaryAsync(
@@ -216,6 +225,7 @@ public sealed class CompactionEngine(
             previousSummary,
             novelState.Snapshot,
             novelState.Scope,
+            novelState.Progress,
             novelState.LatestAuthorMessage,
             ct
         );
@@ -497,6 +507,7 @@ public sealed class CompactionEngine(
         string? previousSummary,
         string novelSnapshot,
         CompactionTaskScope? scope,
+        CompactionTaskProgress? progress,
         string? latestAuthorMessage,
         CancellationToken ct
     )
@@ -506,6 +517,11 @@ public sealed class CompactionEngine(
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
+        if (scope is not null)
+            baseCheckpoint = EnsureScopeSection(baseCheckpoint, scope);
+        if (progress is not null)
+            baseCheckpoint = EnsureProgressSection(baseCheckpoint, progress);
+
         if (compressedTokens >= aiSummaryMinCompressedTokens)
         {
             try
@@ -514,8 +530,9 @@ public sealed class CompactionEngine(
                     messages,
                     cutIndex,
                     previousSummary,
-                    novelSnapshot,
+                    baseCheckpoint,
                     scope,
+                    progress,
                     latestAuthorMessage,
                     ct
                 );
@@ -526,7 +543,9 @@ public sealed class CompactionEngine(
                     return EnforceTaskScope(
                         PrependAuthorScope(merged, messages, cutIndex, latestAuthorMessage, scope),
                         scope,
-                        previousSummary
+                        previousSummary,
+                        progress,
+                        baseCheckpoint
                     );
                 }
             }
@@ -546,6 +565,7 @@ public sealed class CompactionEngine(
             previousSummary,
             novelSnapshot,
             scope,
+            progress,
             latestAuthorMessage
         );
     }
@@ -556,6 +576,7 @@ public sealed class CompactionEngine(
         string? previousSummary,
         string novelSnapshot,
         CompactionTaskScope? scope,
+        CompactionTaskProgress? progress,
         string? latestAuthorMessage,
         CancellationToken ct
     )
@@ -574,19 +595,22 @@ public sealed class CompactionEngine(
         prompt.AppendLine(
             "请维护一份小说写作的 5W1H 检查点。它是压缩历史后唯一保留的上下文，必须让下一轮写作能直接继续。"
         );
-        prompt.AppendLine("输出必须且只能使用以下 8 个标题（顺序固定，不得嵌套其它标题）：");
+        prompt.AppendLine("输出必须且只能使用以下 9 个标题（顺序固定，不得嵌套其它标题）：");
         prompt.AppendLine(string.Join('\n', CheckpointHeadings));
         prompt.AppendLine();
         prompt.AppendLine("要求：");
         prompt.AppendLine(
-            "- Scope 写任务边界：必须保留允许/禁止的卷、章节和完成条件，不得改写或扩大。"
+            "- Scope 与 Progress 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
+        );
+        prompt.AppendLine(
+            "- Progress 只记录工具事实：已实际编辑、已读/诊断、当前、下一章、范围外活动；不要把“读过”写成“已完成”。"
         );
         prompt.AppendLine(
             "- Where 写到哪里：当前卷/章/场景、下一章；Who 谁出场；What 发生了什么；"
         );
         prompt.AppendLine("- Why 为什么写这些；When 故事内时间；How 怎么写（风格、节奏、约束）；");
         prompt.AppendLine(
-            "- Next 下一步必须是可执行的继续推进/修订计划，不能只写“继续”；有 Scope 时必须在 Scope 内。"
+            "- Next 必须具体到 Scope 内的某章，不能只写“继续”或“下一个待优化章”；禁止追加上一份摘要的 Next。"
         );
         prompt.AppendLine(
             "- 优先保留小说状态与任务进度：写到哪里、谁出场、发生了什么、为什么、何时、怎么写。"
@@ -601,13 +625,19 @@ public sealed class CompactionEngine(
             "- 作者指令中的范围（如“第二卷/第21-40章”）是硬约束；不得把范围扩大到其它卷或其它章节。"
         );
         prompt.AppendLine(
-            "- 当 Scope 是修订/优化时，Next 必须是范围内下一个待优化章，不能写全书写作前沿的下一章，也不能写范围外的新章。"
+            "- 当 Scope 是修订/优化时，Next 必须是范围内尚未编辑/待复核的章，不能写全书写作前沿的下一章，也不能写范围外的新章。"
         );
         prompt.AppendLine(
             "- 当前小说状态里的“当前章/下一章”是全局写作前沿，不是本任务进度；与 Scope 冲突时，Scope 优先。"
         );
         prompt.AppendLine(
             "- 作者没有发出“取消/切换任务”的新指令时，原有 Scope 继续有效；不得把“没有新指令”解释为旧任务结束。"
+        );
+        prompt.AppendLine(
+            "- 范围外写入（例如 Scope 是卷二却写了第54章）只记入 Progress 的“范围外活动”，不是任务切换，不能成为 Next。"
+        );
+        prompt.AppendLine(
+            "- 没有新作者消息时，Scope 原样继承；工具活动、全局前沿、最新章节都不是新任务。"
         );
         prompt.AppendLine();
         prompt.AppendLine("## 最近作者消息（Scope 的唯一新来源）");
@@ -630,6 +660,13 @@ public sealed class CompactionEngine(
             prompt.AppendLine("- 未识别到明确范围；按作者指令判断，不得自行扩大。");
         else
             prompt.AppendLine(scope.FormatBody());
+        prompt.AppendLine();
+
+        prompt.AppendLine("## 任务进度（工具事实，不得改写）");
+        if (progress is null)
+            prompt.AppendLine(CompactionTaskProgress.Unrecorded);
+        else
+            prompt.AppendLine(progress.FormatBody());
         prompt.AppendLine();
 
         prompt.AppendLine("## 当前小说状态（全局写作前沿；Scope 冲突时以 Scope 为准）");
@@ -659,9 +696,10 @@ public sealed class CompactionEngine(
         var request = BuildSummaryRequest(modelName, maxSummaryTokens);
         var conversation = api.Chat.CreateConversation(request);
         conversation.AddSystemMessage(
-            "你是小说写作的上下文检查点编辑器。只输出 8 个检查点标题，保留可执行的下一步。使用中文。"
+            "你是小说写作的上下文检查点编辑器。只输出 9 个检查点标题，保留可执行的下一步。使用中文。"
                 + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
-                + "任务范围（Scope）是硬约束；Next 必须落在 Scope 内，不能把全局写作前沿的下一章当成任务下一步。"
+                + "任务范围（Scope）是硬约束；Progress 是工具事实，不得改写；Next 必须落在 Scope 内且具体到章，"
+                + "不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
         );
         conversation.AddUserMessage(prompt.ToString());
 
@@ -755,6 +793,7 @@ public sealed class CompactionEngine(
         string? previousSummary,
         string novelSnapshot,
         CompactionTaskScope? scope,
+        CompactionTaskProgress? progress,
         string? latestAuthorMessage
     )
     {
@@ -763,10 +802,12 @@ public sealed class CompactionEngine(
             : novelSnapshot;
         if (scope is not null)
             baseCheckpoint = EnsureScopeSection(baseCheckpoint, scope);
+        if (progress is not null)
+            baseCheckpoint = EnsureProgressSection(baseCheckpoint, progress);
 
         var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
         summary = PrependAuthorScope(summary, messages, cutIndex, latestAuthorMessage, scope);
-        return EnforceTaskScope(summary, scope, previousSummary);
+        return EnforceTaskScope(summary, scope, previousSummary, progress, baseCheckpoint);
     }
 
     private static string BuildConversationCheckpoint(
@@ -780,29 +821,29 @@ public sealed class CompactionEngine(
         var userText = latestUser is null ? "" : Truncate(latestUser, 200);
 
         var sb = new StringBuilder();
-        sb.AppendLine(CheckpointHeadings[1]);
+        sb.AppendLine(WhereHeading);
         sb.AppendLine($"- {whereNote}");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[2]);
+        sb.AppendLine(WhoHeading);
         sb.AppendLine("- 对话参与者：用户 / 助手");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[3]);
+        sb.AppendLine(WhatHeading);
         if (events.Count == 0)
             sb.AppendLine("- 压缩区没有可提取的对话正文");
         else
             foreach (var line in events)
                 sb.AppendLine($"- {line}");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[4]);
+        sb.AppendLine(WhyHeading);
         sb.AppendLine($"- 用户目标：{(userText.Length > 0 ? userText : "未明确")}");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[5]);
+        sb.AppendLine(WhenHeading);
         sb.AppendLine("- 故事内时间：未指定（无小说时间线）");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[6]);
+        sb.AppendLine(HowHeading);
         sb.AppendLine("- 无小说风格设定；按最近用户要求继续，不重复复述用户目标。");
         sb.AppendLine();
-        sb.AppendLine(CheckpointHeadings[7]);
+        sb.AppendLine(NextHeading);
         sb.AppendLine("- 直接下一步：完成用户最近请求（见 Why），并按当前对话继续");
         return sb.ToString();
     }
@@ -826,15 +867,9 @@ public sealed class CompactionEngine(
                     sections[ScopeHeading] = previousScope.Trim();
             }
 
+            // Why/How 可以累积背景；Next 只能回退，不能把上一轮任务清单追加到新任务后面。
             var mergedAny = false;
-            foreach (
-                var heading in new[]
-                {
-                    CheckpointHeadings[4],
-                    CheckpointHeadings[6],
-                    CheckpointHeadings[7],
-                }
-            )
+            foreach (var heading in new[] { WhyHeading, HowHeading })
             {
                 var previous = ExtractSection(previousSummary, heading);
                 if (string.IsNullOrWhiteSpace(previous))
@@ -843,14 +878,21 @@ public sealed class CompactionEngine(
                 sections[heading] = AppendMissingLines(sections[heading], previous, maxLines: 5);
             }
 
+            if (string.IsNullOrWhiteSpace(sections[NextHeading]))
+            {
+                var previousNext = ExtractSection(previousSummary, NextHeading);
+                if (!string.IsNullOrWhiteSpace(previousNext))
+                    sections[NextHeading] = previousNext.Trim();
+            }
+
             if (!mergedAny)
             {
                 var plain = StripHeadingLines(previousSummary);
                 if (plain.Length > 0)
                 {
-                    var how = sections[CheckpointHeadings[6]];
+                    var how = sections[HowHeading];
                     var inherited = $"- 继承背景：{Truncate(plain, 1_000)}";
-                    sections[CheckpointHeadings[6]] = string.IsNullOrEmpty(how)
+                    sections[HowHeading] = string.IsNullOrEmpty(how)
                         ? inherited
                         : how + "\n" + inherited;
                 }
@@ -1022,7 +1064,7 @@ public sealed class CompactionEngine(
     )
     {
         if (string.IsNullOrWhiteSpace(novelId))
-            return new NovelStateBuildResult("", null, null);
+            return new NovelStateBuildResult("", null, null, null);
 
         var structure = await novelStore.GetStructure(novelId, ct);
         if (structure is null || structure.Chapters.Count == 0)
@@ -1032,6 +1074,7 @@ public sealed class CompactionEngine(
                     compressedMessages.Count,
                     "尚未建立章节（按最近对话判断）"
                 ),
+                null,
                 null,
                 null
             );
@@ -1057,15 +1100,29 @@ public sealed class CompactionEngine(
             ? extraction.Scope
             : CompactionTaskScope.TryCreate(latestAuthorMessage, structure, previousScope);
 
+        var previousProgress = previousSummary is null
+            ? null
+            : CompactionTaskProgress.TryParse(previousSummary);
+        var progress = scope is null
+            ? null
+            : CompactionProgressExtractor.Extract(
+                compressedMessages,
+                structure,
+                scope,
+                previousProgress
+            );
+
         return new NovelStateBuildResult(
             await BuildNovelStateSnapshotCoreAsync(
                 novelId,
                 structure,
                 compressedMessages,
                 scope,
+                progress,
                 ct
             ),
             scope,
+            progress,
             latestAuthorMessage
         );
     }
@@ -1075,6 +1132,7 @@ public sealed class CompactionEngine(
         NovelStructure structure,
         IReadOnlyList<ChatMessage> compressedMessages,
         CompactionTaskScope? scope,
+        CompactionTaskProgress? progress,
         CancellationToken ct
     )
     {
@@ -1089,9 +1147,19 @@ public sealed class CompactionEngine(
             .OrderBy(c => c.Order)
             .FirstOrDefault()
             ?? orderedChapters.FirstOrDefault(c => c.Order > globalCurrent.Order);
-        var current = scope?.FindFocusChapter() ?? globalCurrent;
+        var current = (
+            progress?.CurrentOrder is int progressCurrent
+                ? scope?.Chapters.FirstOrDefault(c => c.Order == progressCurrent)
+                : null
+        )
+            ?? scope?.FindFocusChapter(progress)
+            ?? globalCurrent;
         // 有 Scope 时，范围内没有下一章就是 null；不能回退到全书写作前沿。
-        var next = scope is null ? globalNext : scope.FindNextChapter();
+        var next = (
+            progress?.NextOrder is int progressNext
+                ? scope?.Chapters.FirstOrDefault(c => c.Order == progressNext)
+                : null
+        ) ?? (scope is null ? globalNext : scope.FindNextChapter(progress));
         var volume = structure.Volumes.FirstOrDefault(v => v.Id == current.VolumeId);
 
         var scenesTask = novelStore.GetScenesByChapter(current.Id, ct);
@@ -1262,7 +1330,7 @@ public sealed class CompactionEngine(
         if (latestUser is not null)
             nextParts.Add($"回应用户最近请求：{Truncate(latestUser, 200)}");
         if (scope is not null)
-            nextParts.Add($"按任务范围继续：{scope.BuildSafeNext()}");
+            nextParts.Add($"按任务范围继续：{scope.BuildSafeNext(progress: progress)}");
         else if (!string.IsNullOrWhiteSpace(next?.Summary))
             nextParts.Add($"推进下一章《{next.Title}》：{Truncate(next.Summary, 200)}");
         if (openPlotlines.Count > 0)
@@ -1276,8 +1344,13 @@ public sealed class CompactionEngine(
             sb.AppendLine(scope.FormatSection());
             sb.AppendLine();
         }
+        if (progress is not null)
+        {
+            sb.AppendLine(progress.FormatSection());
+            sb.AppendLine();
+        }
 
-        sb.AppendLine(CheckpointHeadings[1]);
+        sb.AppendLine(WhereHeading);
         sb.AppendLine($"- 卷：{(volume is null ? "未分卷" : $"{volume.Name}（{volume.Order}）")}");
         sb.AppendLine(
             scope is null
@@ -1308,7 +1381,7 @@ public sealed class CompactionEngine(
         }
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[2]);
+        sb.AppendLine(WhoHeading);
         sb.AppendLine(
             $"- 本章计划角色：{(plannedNames.Count == 0 ? "未指定" : string.Join("、", plannedNames.Take(8)))}"
         );
@@ -1323,7 +1396,7 @@ public sealed class CompactionEngine(
             sb.AppendLine($"- 最近出场：{string.Join("；", appearanceLines)}");
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[3]);
+        sb.AppendLine(WhatHeading);
         sb.AppendLine(
             $"- 本章细纲：{(string.IsNullOrWhiteSpace(current.Summary) ? "未填写" : Truncate(current.Summary, 500))}"
         );
@@ -1337,7 +1410,7 @@ public sealed class CompactionEngine(
             sb.AppendLine("- 最近对话事件：无");
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[4]);
+        sb.AppendLine(WhyHeading);
         sb.AppendLine($"- 用户目标：{(latestUser is null ? "未明确" : Truncate(latestUser, 200))}");
         sb.AppendLine(
             scene is null
@@ -1352,7 +1425,7 @@ public sealed class CompactionEngine(
                 sb.AppendLine($"- 情节线：{line}");
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[5]);
+        sb.AppendLine(WhenHeading);
         sb.AppendLine(
             $"- 故事内时间：{(scene is null || string.IsNullOrWhiteSpace(scene.TimeDescription) ? "未指定" : scene.TimeDescription)}"
         );
@@ -1363,7 +1436,7 @@ public sealed class CompactionEngine(
             sb.AppendLine("- 时间线事件：无");
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[6]);
+        sb.AppendLine(HowHeading);
         sb.AppendLine($"- 类型/风格：{structure.Novel.Genre} / {structure.Novel.WritingStyle}");
         sb.AppendLine(
             $"- 本章备注/节奏提示：{(string.IsNullOrWhiteSpace(current.Notes) ? "无" : Truncate(current.Notes, 300))}"
@@ -1374,10 +1447,12 @@ public sealed class CompactionEngine(
             sb.AppendLine("- 最近用户写作要求：无");
         sb.AppendLine();
 
-        sb.AppendLine(CheckpointHeadings[7]);
+        sb.AppendLine(NextHeading);
         if (scope is not null)
         {
-            sb.AppendLine($"- 本任务下一步（必须在 Scope 内）：{scope.BuildSafeNext()}");
+            sb.AppendLine(
+                $"- 本任务下一步（必须在 Scope 内）：{scope.BuildSafeNext(progress: progress)}"
+            );
             sb.AppendLine(
                 scope.Mode == CompactionTaskMode.Revise
                     ? "- 全局下一章只是小说写作前沿，不是本任务 Next；不得写入范围外章节。"
@@ -1437,20 +1512,40 @@ public sealed class CompactionEngine(
         return ReplaceSection(markdown, ScopeHeading, scope.FormatBody());
     }
 
+    private static string EnsureProgressSection(string markdown, CompactionTaskProgress progress)
+    {
+        var existing = ExtractSection(markdown, ProgressHeading);
+        if (!string.IsNullOrWhiteSpace(existing) && !IsUnrecorded(existing))
+            return markdown;
+        return ReplaceSection(markdown, ProgressHeading, progress.FormatBody());
+    }
+
     /// <summary>
-    /// 摘要生成后的最后一道确定性闸门：Scope 永远以本轮提取结果为准；
-    /// Next 越界时优先沿用上一份合法 Next，否则换成范围内安全下一步。
+    /// 摘要生成后的最后一道确定性闸门：Scope/Progress/Where 以本轮事实为准；
+    /// Next 越界时优先使用 Progress 的下一章，否则沿用上一份合法 Next。
     /// </summary>
     internal static string EnforceTaskScope(
         string summary,
         CompactionTaskScope? scope,
-        string? previousSummary
+        string? previousSummary,
+        CompactionTaskProgress? progress = null,
+        string? baseCheckpoint = null
     )
     {
         if (scope is null)
             return summary;
 
         var withScope = ReplaceSection(summary, ScopeHeading, scope.FormatBody());
+        if (progress is not null)
+            withScope = ReplaceSection(withScope, ProgressHeading, progress.FormatBody());
+
+        // Where 由小说状态快照生成；AI 摘要里的全局前沿不能覆盖任务焦点。
+        var baseWhere = baseCheckpoint is null
+            ? null
+            : ExtractSection(baseCheckpoint, WhereHeading);
+        if (!string.IsNullOrWhiteSpace(baseWhere))
+            withScope = ReplaceSection(withScope, WhereHeading, baseWhere);
+
         var next = ExtractSection(withScope, NextHeading);
         var previousNext = previousSummary is null
             ? null
@@ -1458,14 +1553,23 @@ public sealed class CompactionEngine(
 
         if (string.IsNullOrWhiteSpace(next) || !scope.IsNextWithinScope(next))
         {
-            withScope = ReplaceSection(withScope, NextHeading, scope.BuildSafeNext(previousNext));
+            withScope = ReplaceSection(
+                withScope,
+                NextHeading,
+                scope.BuildSafeNext(previousNext, progress)
+            );
         }
         return withScope;
     }
 
-    private static bool IsUnrecorded(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-        || string.Equals(text.Trim(), CompactionTaskScope.Unrecorded, StringComparison.Ordinal);
+    private static bool IsUnrecorded(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return true;
+        var trimmed = text.Trim();
+        return string.Equals(trimmed, CompactionTaskScope.Unrecorded, StringComparison.Ordinal)
+            || string.Equals(trimmed, CompactionTaskProgress.Unrecorded, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// 用 body 替换指定二级标题的整段内容；标题不存在时追加到末尾。

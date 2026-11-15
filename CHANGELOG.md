@@ -39,9 +39,18 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **compact 增加工具事实 Progress，修订任务不再按字数猜焦点**：
+  摘要新增 `## Progress / 进度`（已实际编辑 / 已读诊断 / 当前 / 下一章 / 范围外活动），
+  由 `CompactionProgressExtractor` 从成功的 `edit_text` / `write_chapter` /
+  `rewrite_selection` / `read_chapter` / `diagnose_writing` 调用确定性提取；失败调用与
+  注入消息不计入。Scope 仍只由作者消息改变，范围外写入只记为 deviation，不切换任务。
+  `CompactionTaskScope` 的焦点/Next 优先使用 Progress；摘要后置强制重写 Scope、
+  Progress、Where、Next，避免"卷二任务却把全局第54章当 Next"。旧摘要没有 Progress
+  时从工具调用重建，不写本地 JSON。回归：`CompactionProgressTests`、
+  `CompactNovelStateSnapshotTests.BuildNovelStateSnapshot_RevisionProgress_UsesEditedChaptersNotCharCount`。
 - **compact 的任务 Scope 改为 LLM 从最近作者消息提取，不落本地状态**：
   `CompactionScopeExtractor` 在压缩时读取跨全集分片的最后一条作者消息与上一份摘要，
-  让 LLM 输出卷/章选择；摘要的 Scope/Where/Next 继续由代码后置校验，AI 只写叙事字段。
+  让 LLM 输出卷/章选择；摘要的 Scope/Progress/Where/Next 继续由代码后置校验，AI 只写叙事字段。
   没有 API 或提取失败时才回退 `CompactionTaskScope.TryCreate`。不再写 `TASK_SCOPE.json`，
   也不再依赖工具层持久化 Scope。回归：`CompactionScopeExtractorTests`、
   `CompactionTaskScopeTests`、`CompactNovelStateSnapshotTests`、`CompactionCheckpointTests`、
