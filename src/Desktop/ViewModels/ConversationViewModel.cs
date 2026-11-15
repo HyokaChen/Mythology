@@ -45,6 +45,10 @@ public sealed class ConversationViewModel : ViewModelBase
 
     /// <summary>本轮已先行插入的用户消息文本（抑制 Loop 对同一条消息的回显）。</summary>
     private string? _pendingEchoText;
+
+    /// <summary>本轮先行插入的用户气泡；压缩预检的状态行必须插在它之前，保证与 JSONL 顺序一致。</summary>
+    private ChatMessageModel? _pendingTurnUserMessage;
+
     private int _suggestionVersion;
 
     /// <summary>消息列表。</summary>
@@ -877,6 +881,8 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         await _engine.SwitchBranchAsync(branchPointEntryId, generateSummary);
         Messages.Clear();
+        _compactStatusMessage = null;
+        _pendingTurnUserMessage = null;
         foreach (
             var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync(), _toolDisplay)
         )
@@ -1350,6 +1356,10 @@ public sealed class ConversationViewModel : ViewModelBase
             // 先记在调用线程上：CompactAsync 可能在 UI Post 执行前就返回，
             // 只靠排版后的状态会误判成「没有开始事件」并补出重复提示。
             _compactStartObserved = true;
+            // 预压缩发生在用户气泡/Agent 占位之后、AgentStart 之前；
+            // 在调用线程捕获本轮起点，避免 UI 队列延迟后丢失插入锚点。
+            var pendingUser = _pendingTurnUserMessage;
+            var pendingAgent = _agentMessage is { IsEmpty: true } ? _agentMessage : null;
             Dispatcher.UIThread.Post(() =>
             {
                 IsCompacting = true;
@@ -1376,10 +1386,17 @@ public sealed class ConversationViewModel : ViewModelBase
                     _compactStatusMessage.ResetContent();
                     _compactStatusMessage.AppendContent("上下文压缩中…");
                 }
-                if (!Messages.Contains(_compactStatusMessage))
+                var insertIndex = FindCompactStatusInsertIndex(pendingUser, pendingAgent);
+                var existingIndex = Messages.IndexOf(_compactStatusMessage);
+                if (existingIndex < 0)
                 {
-                    Messages.Add(_compactStatusMessage);
+                    Messages.Insert(insertIndex, _compactStatusMessage);
                     HasMessages = true;
+                }
+                else if (existingIndex > insertIndex)
+                {
+                    // 复用的残留状态行也要移动到本轮起点，不能留在旧的末尾位置。
+                    Messages.Move(existingIndex, insertIndex);
                 }
 
                 EnsureCompactWatch();
@@ -1449,6 +1466,31 @@ public sealed class ConversationViewModel : ViewModelBase
         );
         if (local is not null)
             local.EntryId = entryId;
+    }
+
+    /// <summary>
+    /// 压缩状态行的插入点：位于本轮用户气泡/空 Agent 占位之前。
+    /// 预压缩虽然发生在二者入列之后，但逻辑顺序在它们之前。
+    /// </summary>
+    private int FindCompactStatusInsertIndex(
+        ChatMessageModel? pendingUser,
+        ChatMessageModel? pendingAgent
+    )
+    {
+        var index = Messages.Count;
+        if (pendingUser is not null)
+        {
+            var userIndex = Messages.IndexOf(pendingUser);
+            if (userIndex >= 0)
+                index = Math.Min(index, userIndex);
+        }
+        if (pendingAgent is not null)
+        {
+            var agentIndex = Messages.IndexOf(pendingAgent);
+            if (agentIndex >= 0)
+                index = Math.Min(index, agentIndex);
+        }
+        return index;
     }
 
     /// <summary>
@@ -1582,6 +1624,7 @@ public sealed class ConversationViewModel : ViewModelBase
         // AgentEnd/Interrupted 正常收尾时 _agentMessage 已置空；这里处理的是错误路径：
         // Core 可能只发 AgentError 不发 AgentEnd，UI 必须自行收口，否则「重试」永远不出现。
         _pendingEchoText = null;
+        _pendingTurnUserMessage = null;
         FinalizeAgentMessage(null);
     }
 
@@ -1675,6 +1718,8 @@ public sealed class ConversationViewModel : ViewModelBase
             return;
         }
 
+        // 进入新一轮前清掉旧锚点；本轮气泡入列后再重新绑定。
+        _pendingTurnUserMessage = null;
         IsSubmitting = true;
         try
         {
@@ -1686,6 +1731,7 @@ public sealed class ConversationViewModel : ViewModelBase
             var userMsg = new ChatMessageModel(MessageSender.User);
             userMsg.Content.Append(displayText ?? text);
             Messages.Add(userMsg);
+            _pendingTurnUserMessage = userMsg;
             HasMessages = true;
             _pendingEchoText = text;
 
@@ -1708,6 +1754,7 @@ public sealed class ConversationViewModel : ViewModelBase
         finally
         {
             IsSubmitting = false;
+            _pendingTurnUserMessage = null;
         }
     }
 
@@ -1846,6 +1893,8 @@ public sealed class ConversationViewModel : ViewModelBase
             return;
         }
 
+        // 纯重试没有本地用户气泡；编辑重发在气泡入列后重新绑定。
+        _pendingTurnUserMessage = null;
         IsSubmitting = true;
         ChatMessageModel? localUser = null;
         ChatMessageModel? localAgent = null;
@@ -1862,6 +1911,7 @@ public sealed class ConversationViewModel : ViewModelBase
                 localUser = new ChatMessageModel(MessageSender.User);
                 localUser.Content.Append(editedDisplay);
                 Messages.Add(localUser);
+                _pendingTurnUserMessage = localUser;
                 HasMessages = true;
             }
 
@@ -1892,6 +1942,7 @@ public sealed class ConversationViewModel : ViewModelBase
         finally
         {
             IsSubmitting = false;
+            _pendingTurnUserMessage = null;
         }
     }
 
@@ -1956,6 +2007,8 @@ public sealed class ConversationViewModel : ViewModelBase
         await _bridge.StopAsync();
         _engine.NewSession();
         Messages.Clear();
+        _compactStatusMessage = null;
+        _pendingTurnUserMessage = null;
         Suggestions.Clear();
         _agentMessage = null;
         _handler = null;
@@ -1968,6 +2021,8 @@ public sealed class ConversationViewModel : ViewModelBase
     {
         await _engine.SwitchToAsync(conversationId, CurrentNovelId ?? "");
         Messages.Clear();
+        _compactStatusMessage = null;
+        _pendingTurnUserMessage = null;
         foreach (
             var msg in SessionMessageMapper.MapUi(await _engine.GetUiMessagesAsync(), _toolDisplay)
         )
@@ -1986,6 +2041,8 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             case AgentStart:
                 IsProcessing = true;
+                // 预压缩锚点已在 OnCompactStart 捕获；此后属于回合中段，不再前插。
+                _pendingTurnUserMessage = null;
                 // 溢出恢复首轮没有可见输出时，SetProcessing(false) 会收掉空占位并清空
                 // handler；continuation 的 AgentStart 必须重新建立流式落点，否则后续
                 // StreamChunk/Tool 事件全部被静默丢弃，界面只剩“正在继续”而没内容。
@@ -1996,12 +2053,14 @@ public sealed class ConversationViewModel : ViewModelBase
             case AgentEnd:
                 FinalizeAgentMessage(null);
                 _pendingEchoText = null;
+                _pendingTurnUserMessage = null;
                 ConversationCompleted?.Invoke();
                 break;
 
             case AgentInterrupted:
                 FinalizeAgentMessage(null, interrupted: true);
                 _pendingEchoText = null;
+                _pendingTurnUserMessage = null;
                 break;
 
             // 用户消息（含注入的审计/系统消息）→ 创建用户气泡
