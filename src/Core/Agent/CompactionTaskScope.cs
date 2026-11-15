@@ -392,7 +392,7 @@ internal sealed class CompactionTaskScope
     /// 提取文本里引用的全部章节序号（“第N章”，含中文数字）。
     /// EnforceTaskScope 用它核对 Next 是否与 Progress 的下一章一致。
     /// </summary>
-    public IReadOnlyList<int> ReferencedChapterOrders(string text)
+    public IReadOnlyList<int> ReferencedChapterOrders(string? text)
     {
         var orders = new List<int>();
         if (string.IsNullOrWhiteSpace(text))
