@@ -159,7 +159,11 @@ public sealed record CloudCharacterInput(
     string Motivation = "",
     string Abilities = "",
     string Weakness = "",
-    string Habits = ""
+    string Habits = "",
+    /// <summary>别名/短称（正文实际称呼）；云端主角场占率与角色网络按"全名 ∪ 别名"匹配。</summary>
+    IReadOnlyList<string>? Aliases = null,
+    /// <summary>唯一主角裁决位（多个 protagonist 声明时生效）。</summary>
+    bool Primary = false
 );
 
 /// <summary>结构化情节线输入 — 云端 PlotHoleDetector 依赖（埋设/回收章节）。</summary>
@@ -167,7 +171,9 @@ public sealed record CloudPlotlineInput(
     string Name,
     string Type = "sub",
     string? ResolvedAtChapterId = null,
-    string? PlannedRevealChapterId = null
+    string? PlannedRevealChapterId = null,
+    /// <summary>正文引用词（线名是标签，正文不字面出现）；云端"线推进"按 名字 ∪ 引用词 命中。</summary>
+    IReadOnlyList<string>? References = null
 );
 
 /// <summary>物品输入 — 云端 PowerSystemAnalyzer 统计物品数量。</summary>

@@ -678,6 +678,71 @@ public sealed class HttpFictionHarnessContractTests
         Assert.Equal("literary", profile.GetProperty("tone").GetString());
     }
 
+    [Fact]
+    public async Task CreateInvocation_CharacterAliasesAndPlotlineReferences_AreOnWire()
+    {
+        CapturedRequest? invocation = null;
+        await CaptureAsync(
+            async request =>
+            {
+                if (
+                    request.Method == HttpMethod.Post
+                    && request.RequestUri!.AbsolutePath.EndsWith("/runs")
+                )
+                    return Json("""{"run-id":"run_1","status":"queued"}""");
+                if (request.Method == HttpMethod.Post)
+                {
+                    invocation = await CaptureBody(request);
+                    return Json("""{"invocation-id":"inv_1","status":"queued"}""");
+                }
+                return CompletedResult();
+            },
+            async client =>
+            {
+                await client.ExecuteAsync(
+                    new HarnessRequest
+                    {
+                        Capability = "fiction.story.check",
+                        Chapters = [new ChapterInput("ch_1", 1, "第一章", "target", "正文内容")],
+                        Context = new AnalysisContextInput(
+                            CharacterHints: ["陈折花", "千山秋依"],
+                            CharacterDetails:
+                            [
+                                new CloudCharacterInput(
+                                    "陈折花",
+                                    "protagonist",
+                                    Aliases: ["折花"],
+                                    Primary: true
+                                ),
+                                new CloudCharacterInput("千山秋依", "protagonist"),
+                            ],
+                            Plotlines:
+                            [
+                                new CloudPlotlineInput(
+                                    "卷二·夏夜的萤火",
+                                    "main",
+                                    References: ["萤火虫", "湿地"]
+                                ),
+                            ]
+                        ),
+                    },
+                    "idem-alias-1",
+                    CancellationToken.None
+                );
+            }
+        );
+
+        Assert.NotNull(invocation);
+        var root = JsonDocument.Parse(invocation!.Body!).RootElement;
+        var context = root.GetProperty("context");
+        var characters = context.GetProperty("character-details");
+        var zheHua = characters[0];
+        Assert.Equal("折花", zheHua.GetProperty("aliases")[0].GetString());
+        Assert.True(zheHua.GetProperty("primary").GetBoolean());
+        var plotline = context.GetProperty("plotlines")[0];
+        Assert.Equal("萤火虫", plotline.GetProperty("references")[0].GetString());
+    }
+
     private static async Task<CapturedRequest> CaptureBody(HttpRequestMessage request)
     {
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync();

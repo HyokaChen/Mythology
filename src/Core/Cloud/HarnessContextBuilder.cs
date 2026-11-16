@@ -38,6 +38,8 @@ public static class HarnessContextBuilder
                     Abilities = c.Abilities ?? "",
                     Weakness = c.Weakness ?? "",
                     Habits = c.Habits ?? "",
+                    c.Aliases,
+                    c.Primary,
                 })
         );
 
@@ -50,6 +52,7 @@ public static class HarnessContextBuilder
                     Type = p.Type.ToString(),
                     p.ResolvedAtChapterId,
                     p.PlannedRevealChapterId,
+                    ReferenceNames = ResolveReferenceNames(p),
                 })
         );
 
@@ -117,6 +120,34 @@ public static class HarnessContextBuilder
             Organizations: organizations.Count > 0 ? organizations : null,
             Scenes: scenes.Count > 0 ? scenes : null
         );
+    }
+
+    /// <summary>
+    /// 情节线正文引用词：显式声明优先；缺省时从线名派生核心短语
+    /// （去卷号前缀「卷二·」与括号注释，如「男女主情感主线（贯穿五卷）」→「男女主情感主线」）。
+    /// 线名常是标签、正文零字面命中——不派生则剧情账本永远判"无线推进"。
+    /// </summary>
+    private static IReadOnlyList<string>? ResolveReferenceNames(Plotline plotline)
+    {
+        if (plotline.ReferenceNames.Count > 0)
+            return plotline.ReferenceNames;
+
+        var original = plotline.Name;
+        if (string.IsNullOrWhiteSpace(original))
+            return null;
+
+        var name = original;
+        // 去前导卷号：「卷二·」「卷五·」
+        var separator = name.IndexOf('·');
+        if (separator > 0 && name[..separator].StartsWith('卷'))
+            name = name[(separator + 1)..];
+        // 去括号注释（全角/半角）
+        var open = name.IndexOfAny(['（', '(']);
+        if (open > 0)
+            name = name[..open];
+        name = name.Trim();
+
+        return name.Length >= 2 && name != original ? [name] : null;
     }
 
     private static string ComputeJsonVersionHash<T>(IEnumerable<T> items)

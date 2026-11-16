@@ -208,6 +208,12 @@ public class Character : Entity
     /// <summary>习惯（口头禅、肢体习惯、行为模式）。</summary>
     public string Habits { get; set; } = "";
 
+    /// <summary>别名/短称（正文实际称呼，如「陈折花」的「折花」）；云端主角识别与角色网络按此匹配。</summary>
+    public List<string> Aliases { get; set; } = [];
+
+    /// <summary>是否唯一主角（多个 protagonist 声明时的裁决依据；云端 identity 优先读取）。</summary>
+    public bool Primary { get; set; }
+
     /// <summary>备注。</summary>
     public string Notes { get; set; } = "";
 
@@ -247,6 +253,12 @@ public class Plotline : Entity
 
     /// <summary>关键转折（自由文本，如"第5章：真相揭露；第12章：盟友背叛；林默死亡"）。</summary>
     public string Turnpoints { get; set; } = "";
+
+    /// <summary>
+    /// 正文引用词（线名是标签，正文不字面出现；如「卷二·夏夜的萤火」→ 萤火虫/湿地）。
+    /// 云端剧情账本的"推进"判定按 名字 ∪ 引用词 命中；空 = 云端按线名派生。
+    /// </summary>
+    public List<string> ReferenceNames { get; set; } = [];
 
     /// <summary>情节线状态（Active/Resolved/Abandoned）。</summary>
     public PlotlineStatus Status { get; set; } = PlotlineStatus.Active;

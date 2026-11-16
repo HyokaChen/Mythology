@@ -402,6 +402,29 @@ public sealed class FileNovelStoreIntegrationTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SaveCharacter_And_GetCharacters_RoundtripAliasesAndPrimary()
+    {
+        await _store.SaveNovel(new Novel { Id = "cn101", Title = "别名测试" });
+
+        await _store.SaveCharacter(
+            new Character
+            {
+                Id = "c101",
+                NovelId = "cn101",
+                Name = "陈折花",
+                Role = CharacterRole.Protagonist,
+                Aliases = ["折花", "阿花"],
+                Primary = true,
+            }
+        );
+
+        var chars = await _store.GetCharacters("cn101");
+        var character = Assert.Single(chars);
+        Assert.Equal(["折花", "阿花"], character.Aliases);
+        Assert.True(character.Primary);
+    }
+
+    [Fact]
     public async Task GetCharacterCount_ReturnsCorrectCount()
     {
         await _store.SaveNovel(new Novel { Id = "cn002", Title = "角色计数" });
@@ -461,6 +484,27 @@ public sealed class FileNovelStoreIntegrationTests : IAsyncDisposable
         Assert.Equal("主线：寻找神器", plotlines[0].Name);
         Assert.Equal(PlotlineType.Main, plotlines[0].Type);
         Assert.Equal(PlotlineTension.High, plotlines[0].Tension);
+    }
+
+    [Fact]
+    public async Task SavePlotline_And_GetPlotlines_RoundtripReferenceNames()
+    {
+        await _store.SaveNovel(new Novel { Id = "pl101", Title = "引用词测试" });
+
+        await _store.SavePlotline(
+            new Plotline
+            {
+                Id = "p101",
+                NovelId = "pl101",
+                Name = "卷二·夏夜的萤火",
+                Type = PlotlineType.Main,
+                ReferenceNames = ["萤火虫", "湿地"],
+            }
+        );
+
+        var plotlines = await _store.GetPlotlines("pl101");
+        var plotline = Assert.Single(plotlines);
+        Assert.Equal(["萤火虫", "湿地"], plotline.ReferenceNames);
     }
 
     [Fact]

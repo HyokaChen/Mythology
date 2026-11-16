@@ -1115,6 +1115,8 @@ public sealed class FileNovelStore : INovelStore
             Abilities = GetString(dict, "abilities") ?? "",
             Weakness = GetString(dict, "weakness") ?? "",
             Habits = GetString(dict, "habits") ?? "",
+            Aliases = GetStringList(dict, "aliases"),
+            Primary = GetBool(dict, "primary", false),
             Notes = GetString(dict, "notes") ?? "",
             Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
             FactionId = GetString(dict, "faction-id"),
@@ -1147,6 +1149,8 @@ public sealed class FileNovelStore : INovelStore
             Abilities = GetString(dict, "abilities") ?? "",
             Weakness = GetString(dict, "weakness") ?? "",
             Habits = GetString(dict, "habits") ?? "",
+            Aliases = GetStringList(dict, "aliases"),
+            Primary = GetBool(dict, "primary", false),
             Notes = GetString(dict, "notes") ?? "",
             Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
             FactionId = GetString(dict, "faction-id"),
@@ -1175,6 +1179,8 @@ public sealed class FileNovelStore : INovelStore
             Abilities = GetString(dict, "abilities") ?? "",
             Weakness = GetString(dict, "weakness") ?? "",
             Habits = GetString(dict, "habits") ?? "",
+            Aliases = GetStringList(dict, "aliases"),
+            Primary = GetBool(dict, "primary", false),
             Notes = GetString(dict, "notes") ?? "",
             Status = YamlHelper.YamlToEnum(dict, "status", CharacterStatus.Active),
             FactionId = GetString(dict, "faction-id"),
@@ -1203,6 +1209,8 @@ public sealed class FileNovelStore : INovelStore
             ["abilities"] = character.Abilities,
             ["weakness"] = character.Weakness,
             ["habits"] = character.Habits,
+            ["aliases"] = character.Aliases,
+            ["primary"] = character.Primary,
             ["notes"] = character.Notes,
             ["status"] = YamlHelper.EnumToYaml(character.Status),
             ["faction-id"] = character.FactionId,
@@ -1273,6 +1281,7 @@ public sealed class FileNovelStore : INovelStore
             ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
             Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
             Turnpoints = GetString(dict, "turnpoints") ?? "",
+            ReferenceNames = GetStringList(dict, "reference-names"),
             CreatedAt = GetDateTime(dict, "created-at"),
             UpdatedAt = GetDateTime(dict, "updated-at"),
         });
@@ -1296,6 +1305,7 @@ public sealed class FileNovelStore : INovelStore
             ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
             Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
             Turnpoints = GetString(dict, "turnpoints") ?? "",
+            ReferenceNames = GetStringList(dict, "reference-names"),
             CreatedAt = GetDateTime(dict, "created-at"),
             UpdatedAt = GetDateTime(dict, "updated-at"),
         });
@@ -1315,6 +1325,7 @@ public sealed class FileNovelStore : INovelStore
             ResolvedAtChapterId = GetString(dict, "resolved-at-chapter-id"),
             Status = YamlHelper.YamlToEnum(dict, "status", PlotlineStatus.Active),
             Turnpoints = GetString(dict, "turnpoints") ?? "",
+            ReferenceNames = GetStringList(dict, "reference-names"),
             CreatedAt = GetDateTime(dict, "created-at"),
             UpdatedAt = GetDateTime(dict, "updated-at"),
         });
@@ -1343,6 +1354,7 @@ public sealed class FileNovelStore : INovelStore
             ["resolved-at-chapter-id"] = plotline.ResolvedAtChapterId,
             ["status"] = YamlHelper.EnumToYaml(plotline.Status),
             ["turnpoints"] = plotline.Turnpoints,
+            ["reference-names"] = plotline.ReferenceNames,
             ["created-at"] = (
                 plotline.CreatedAt == default ? DateTime.UtcNow : plotline.CreatedAt
             ).ToString("O", CultureInfo.InvariantCulture),
