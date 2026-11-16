@@ -1,6 +1,7 @@
 using System.Text;
 using Core.Data;
 using Core.Novels;
+using Core.Shared;
 using Core.Stability;
 using LlmTornado.Chat;
 using LlmTornado.Code;
@@ -55,7 +56,8 @@ public sealed class CompactionEngine(
     Agent agent,
     FileSessionStore store,
     INovelStore novelStore,
-    ILogger log
+    ILogger log,
+    TodoStore? todoStore = null
 )
 {
     public const string TooSmallMessage = "压缩范围太小（未达到有效压缩阈值），未写入会话";
@@ -66,6 +68,7 @@ public sealed class CompactionEngine(
 
     private const string ScopeHeading = CompactionTaskScope.Heading;
     private const string ProgressHeading = CompactionTaskProgress.Heading;
+    private const string TodosHeading = "## Todos / 任务清单";
     private const string WhereHeading = "## Where / 写到哪里";
     private const string WhoHeading = "## Who / 谁出场";
     private const string WhatHeading = "## What / 发生了什么";
@@ -78,6 +81,7 @@ public sealed class CompactionEngine(
     [
         ScopeHeading,
         ProgressHeading,
+        TodosHeading,
         WhereHeading,
         WhoHeading,
         WhatHeading,
@@ -516,13 +520,19 @@ public sealed class CompactionEngine(
     {
         const int aiSummaryMinCompressedTokens = 2_000;
         var compressedTokens = EstimateContextTokens(messages.Take(cutIndex).ToList());
+        var todoItems = todoStore?.List();
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
+        // AI 提示词中的 Scope/Progress/Todos 另有独立小节；这里保留小说/对话快照，
+        // 且暂时不把 Todos 合入快照，避免“当前小说状态”里重复同一份任务清单。
+        var promptSnapshot = baseCheckpoint;
         if (scope is not null)
             baseCheckpoint = EnsureScopeSection(baseCheckpoint, scope);
         if (progress is not null)
             baseCheckpoint = EnsureProgressSection(baseCheckpoint, progress);
+        if (todoItems is not null)
+            baseCheckpoint = EnsureTodoSection(baseCheckpoint, todoItems);
 
         if (compressedTokens >= aiSummaryMinCompressedTokens)
         {
@@ -532,16 +542,20 @@ public sealed class CompactionEngine(
                     messages,
                     cutIndex,
                     previousSummary,
-                    baseCheckpoint,
+                    promptSnapshot,
                     scope,
                     progress,
                     authorMessages,
+                    todoItems,
                     ct
                 );
                 if (aiSummary is not null)
                 {
                     var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint);
-                    var merged = Truncate(MergeCheckpoint(normalized, previousSummary), 8_000);
+                    var merged = MergeCheckpoint(normalized, previousSummary);
+                    if (todoItems is not null)
+                        merged = EnsureTodoSection(merged, todoItems);
+                    merged = Truncate(merged, 8_000);
                     return EnforceTaskScope(
                         PrependAuthorScope(merged, messages, cutIndex, authorMessages, scope),
                         scope,
@@ -561,15 +575,16 @@ public sealed class CompactionEngine(
             }
         }
 
-        return BuildCompactSummaryWithScope(
+        var fallback = BuildCompactSummaryWithScope(
             messages,
             cutIndex,
             previousSummary,
-            novelSnapshot,
+            baseCheckpoint,
             scope,
             progress,
             authorMessages
         );
+        return todoItems is null ? fallback : EnsureTodoSection(fallback, todoItems);
     }
 
     private async Task<string?> TryGenerateAiSummaryAsync(
@@ -580,6 +595,7 @@ public sealed class CompactionEngine(
         CompactionTaskScope? scope,
         CompactionTaskProgress? progress,
         IReadOnlyList<string> authorMessages,
+        IReadOnlyList<TodoItem>? todoItems,
         CancellationToken ct
     )
     {
@@ -597,12 +613,12 @@ public sealed class CompactionEngine(
         prompt.AppendLine(
             "请维护一份小说写作的 5W1H 检查点。它是压缩历史后唯一保留的上下文，必须让下一轮写作能直接继续。"
         );
-        prompt.AppendLine("输出必须且只能使用以下 9 个标题（顺序固定，不得嵌套其它标题）：");
+        prompt.AppendLine("输出必须且只能使用以下 10 个标题（顺序固定，不得嵌套其它标题）：");
         prompt.AppendLine(string.Join('\n', CheckpointHeadings));
         prompt.AppendLine();
         prompt.AppendLine("要求：");
         prompt.AppendLine(
-            "- Scope 与 Progress 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
+            "- Scope、Progress 与 Todos 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
         );
         prompt.AppendLine(
             "- Progress 只记录工具事实：已实际编辑、已读/诊断、当前、下一章、范围外活动；不要把“读过”写成“已完成”。"
@@ -681,6 +697,10 @@ public sealed class CompactionEngine(
             prompt.AppendLine(progress.FormatBody());
         prompt.AppendLine();
 
+        prompt.AppendLine("## 当前任务清单（工具事实，不得改写）");
+        prompt.AppendLine(todoItems is null ? "- 未记录" : FormatTodoBody(todoItems));
+        prompt.AppendLine();
+
         prompt.AppendLine("## 当前小说状态（全局写作前沿；Scope 冲突时以 Scope 为准）");
         if (string.IsNullOrWhiteSpace(novelSnapshot))
             prompt.AppendLine("（本会话未关联小说结构；按对话推断，不要编造章节）");
@@ -708,10 +728,10 @@ public sealed class CompactionEngine(
         var request = BuildSummaryRequest(modelName, maxSummaryTokens);
         var conversation = api.Chat.CreateConversation(request);
         conversation.AddSystemMessage(
-            "你是小说写作的上下文检查点编辑器。只输出 9 个检查点标题，保留可执行的下一步。使用中文。"
+            "你是小说写作的上下文检查点编辑器。只输出 10 个检查点标题，保留可执行的下一步。使用中文。"
                 + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
-                + "任务范围（Scope）是硬约束；Progress 是工具事实，不得改写；Next 必须落在 Scope 内且具体到章，"
-                + "不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
+                + "任务范围（Scope）、任务进度（Progress）与任务清单（Todos）是硬约束/工具事实，不得改写；"
+                + "Next 必须落在 Scope 内且具体到章，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
         );
         conversation.AddUserMessage(prompt.ToString());
 
@@ -1559,6 +1579,65 @@ public sealed class CompactionEngine(
             return markdown;
         return ReplaceSection(markdown, ProgressHeading, progress.FormatBody());
     }
+
+    /// <summary>
+    /// Todos 是宿主内存中的权威任务状态；摘要无论由 AI 还是确定性回退生成，
+    /// 都必须用压缩开始时的快照覆盖，避免压缩掉 todo_write 调用后模型失忆。
+    /// </summary>
+    private static string EnsureTodoSection(string markdown, IReadOnlyList<TodoItem> todos) =>
+        ReplaceSection(markdown, TodosHeading, FormatTodoBody(todos));
+
+    private static string FormatTodoBody(IReadOnlyList<TodoItem> todos)
+    {
+        var visible = todos
+            .Where(item => item.Status != TodoStatus.Deleted)
+            .OrderBy(item => item.Id)
+            .ToList();
+        if (visible.Count == 0)
+            return "- 当前没有任务";
+
+        var sb = new StringBuilder();
+        sb.AppendLine(
+            "- 维护：完成/推进任务后立即用 todo_write 更新对应 #id；收尾时逐项标记 completed。"
+        );
+        foreach (var item in visible)
+        {
+            var subject = string.IsNullOrWhiteSpace(item.Subject)
+                ? "(untitled)"
+                : item.Subject.Trim();
+            sb.Append("- #")
+                .Append(item.Id)
+                .Append(" [")
+                .Append(TodoStatusText(item.Status))
+                .Append("] ")
+                .Append(Truncate(subject.ReplaceLineEndings(" "), 200));
+
+            if (item.Status == TodoStatus.InProgress && !string.IsNullOrWhiteSpace(item.ActiveForm))
+                sb.Append("（")
+                    .Append(Truncate(item.ActiveForm.ReplaceLineEndings(" ").Trim(), 80))
+                    .Append('）');
+
+            if (item.BlockedBy is { Length: > 0 } blockedBy)
+                sb.Append("（blocked by: ")
+                    .Append(string.Join(", ", blockedBy.Select(id => $"#{id}")))
+                    .Append('）');
+
+            if (!string.IsNullOrWhiteSpace(item.Description))
+                sb.Append(" — ")
+                    .Append(Truncate(item.Description.ReplaceLineEndings(" ").Trim(), 120));
+            sb.AppendLine();
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string TodoStatusText(TodoStatus status) =>
+        status switch
+        {
+            TodoStatus.InProgress => "in_progress",
+            TodoStatus.Completed => "completed",
+            TodoStatus.Deleted => "deleted",
+            _ => "pending",
+        };
 
     /// <summary>
     /// 摘要生成后的最后一道确定性闸门：Scope/Progress/Where 以本轮事实为准；

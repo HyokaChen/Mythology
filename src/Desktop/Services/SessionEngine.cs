@@ -67,7 +67,13 @@ public sealed class SessionEngine(
 )
 {
     private readonly Agent agent = bridge.Agent;
-    private readonly CompactionEngine _compactor = new(bridge.Agent, store, novelStore, log);
+    private readonly CompactionEngine _compactor = new(
+        bridge.Agent,
+        store,
+        novelStore,
+        log,
+        todoStore
+    );
     private string? _lastCompactSummary;
     private string? _lastCompactError;
 

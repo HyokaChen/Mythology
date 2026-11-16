@@ -44,6 +44,7 @@ public sealed class CompactionCheckpointTests
             {
                 "## Scope / 任务边界",
                 "## Progress / 进度",
+                "## Todos / 任务清单",
                 "## Where / 写到哪里",
                 "## Who / 谁出场",
                 "## What / 发生了什么",

@@ -260,7 +260,7 @@ public sealed partial class TuiApp : IDisposable
         _logger = logger ?? NullLogger<TuiApp>.Instance;
         _store = store;
         _sessionStore = sessionStore;
-        _compactor = new CompactionEngine(_agent, _sessionStore, _store, _logger);
+        _compactor = new CompactionEngine(_agent, _sessionStore, _store, _logger, todoStore);
         _registry = registry;
         _contextModeSwitcher = contextModeSwitcher; // 设置页「上下文」标签页热切换（null = 只写配置）
         _cloudHarness = cloudHarness; // CHANGE_10 §4.3 设定检查反馈上报
