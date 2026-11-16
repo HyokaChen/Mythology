@@ -1,0 +1,15 @@
+# 仓库级 MSBuild 参数：命令行 dotnet build 会自动读取，IDE 内构建不读取
+# （见 MSBuild Response Files 文档）。
+# 注意：dotnet test 实测不读取本文件；测试请用 scripts/test-desktop.sh。
+#
+# 背景：nodeReuse:true 的 MSBuild worker 与 Roslyn VBCSCompiler 会在构建结束后常驻。
+# 在本机多次 build/test 后累计 3–4GB（VBCSCompiler 1–2GB + 5–8 个 150–760MB 的
+# MSBuild node），是 macOS 内存从 1GB 涨到 5GB、系统卡顿的主因。
+#
+# -nodeReuse:false：每次构建结束后 worker 退出，不再跨 build/test 常驻。
+# -p:UseSharedCompilation=false：关闭 Roslyn 共享编译服务器，避免 VBCSCompiler 常驻。
+# -m:4：限制并行节点数，降低构建峰值内存；本项目项目图不大，4 个节点足够。
+# 代价是增量编译略慢，但构建结束内存立即回落。
+-nodeReuse:false
+-p:UseSharedCompilation=false
+-m:4

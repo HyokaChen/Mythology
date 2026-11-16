@@ -91,35 +91,26 @@
        RemoveProperties 剥掉 dotnet publish -r/-p:Version 传来的全局属性：不剥则插件输出多一层
        <rid>/ 子目录（运行时只扫 plugins/<name>/*.dll，会一个插件都加载不到），且 plugin.json
        版本被应用版本覆盖。 -->
+  <!-- 六个插件合并为一个 MSBuild 调用，且 BuildInParallel=false：
+       之前是 6 个独立 <MSBuild> task，会按 CPU 核数一次拉起 6 个以上
+       nodeReuse:true 的 MSBuild worker（10 核机器上常驻 8–10 个，累计 1–2GB），
+       每次 build/test 都留下，机器内存从 1GB 涨到 5GB 的主因。
+       保留 Restore 以支持只 build Desktop.csproj 的独立场景；插件子构建串行，
+       避免 6 路 fan-out（总节点数由 Directory.Build.rsp 的 -m:4 限制）。 -->
+  <ItemGroup>
+    <_PluginProject Include="..\Plugins\FileSystem\Plugins.FileSystem.csproj" />
+    <_PluginProject Include="..\Plugins\NovelTools\Plugins.NovelTools.csproj" />
+    <_PluginProject Include="..\Plugins\SemanticRetrievalTool\Plugins.SemanticRetrievalTool.csproj" />
+    <_PluginProject Include="..\Plugins\WebSearchTools\Plugins.WebSearchTools.csproj" />
+    <_PluginProject Include="..\Plugins\ContextContinuation\Plugins.ContextContinuation.csproj" />
+    <_PluginProject Include="..\Plugins\WritingTools\Plugins.WritingTools.csproj" />
+  </ItemGroup>
+
   <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
     <MSBuild
-      Projects="..\Plugins\FileSystem\Plugins.FileSystem.csproj"
+      Projects="@(_PluginProject)"
       Targets="Restore;Build"
-      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
-    />
-    <MSBuild
-      Projects="..\Plugins\NovelTools\Plugins.NovelTools.csproj"
-      Targets="Restore;Build"
-      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
-    />
-    <MSBuild
-      Projects="..\Plugins\SemanticRetrievalTool\Plugins.SemanticRetrievalTool.csproj"
-      Targets="Restore;Build"
-      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
-    />
-    <MSBuild
-      Projects="..\Plugins\WebSearchTools\Plugins.WebSearchTools.csproj"
-      Targets="Restore;Build"
-      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
-    />
-    <MSBuild
-      Projects="..\Plugins\ContextContinuation\Plugins.ContextContinuation.csproj"
-      Targets="Restore;Build"
-      RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
-    />
-    <MSBuild
-      Projects="..\Plugins\WritingTools\Plugins.WritingTools.csproj"
-      Targets="Restore;Build"
+      BuildInParallel="false"
       RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;Version"
     />
   </Target>

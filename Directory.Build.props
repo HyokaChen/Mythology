@@ -15,4 +15,9 @@
          EF1002/EF1003: ALTER TABLE DDL with string-concatenated column defs are safe
          (column names are hardcoded string literals, not user input). -->
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- dotnet test 不读取 Directory.Build.rsp；这里兜底关闭 Roslyn
+         共享编译服务器，避免 VBCSCompiler 在测试构建后常驻。 -->
+    <UseSharedCompilation>false</UseSharedCompilation>
+  </PropertyGroup>
 </Project>

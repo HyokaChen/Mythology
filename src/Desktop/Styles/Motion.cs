@@ -141,12 +141,24 @@ public class Motion
         AvaloniaProperty.RegisterAttached<Motion, Window, bool>("WindowMotionAttached");
 
     /// <summary>
+    /// 窗口级入场 / 退场动效总开关。生产环境恒为 true；headless 测试也保持 true，
+    /// 让窗口退场测试看到真实行为。测试宿主在 <c>HeadlessUiHost.Run</c> 结束时
+    /// 临时置 false，只用于强制关闭本次 Run 泄漏的窗口：Avalonia headless 没有
+    /// 常驻 Dispatcher 循环，Closing 里 <c>e.Cancel = true</c> 后等待 150–400ms
+    /// 动画会把窗口永久留在共享 Application 里，污染后续测试。
+    /// 为 false 时 <see cref="Window.Close"/> 同步完成，窗口生命周期可预测。
+    /// </summary>
+    internal static bool WindowMotionEnabled { get; set; } = true;
+
+    /// <summary>
     /// 窗口级动效接线（App 的 WindowOpened 类处理器统一调用；测试可直接调用，幂等）：
     /// 入场（内容未自挂 Enter 时，延后到首次 Opened 播放）+ 退场
     /// （首次 Closing 取消 → 淡出下沉 → 真正关闭）。
     /// </summary>
     public static void AttachWindowMotion(Window window)
     {
+        if (!WindowMotionEnabled)
+            return;
         if (window.GetValue(WindowMotionAttachedProperty))
             return;
         window.SetValue(WindowMotionAttachedProperty, true);
@@ -170,9 +182,12 @@ public class Motion
         var exiting = false;
         window.Closing += async (_, e) =>
         {
-            // 关机 / 退应用 / 随宿主关闭不播退场：取消会让父窗关不掉或拖慢退出
+            // 关机 / 退应用 / 随宿主关闭不播退场：取消会让父窗关不掉或拖慢退出。
+            // WindowMotionEnabled=false 只由 headless 清理泄漏窗口时临时设置：
+            // 此时必须放行 Close，不能再 Cancel。
             if (
-                exiting
+                !WindowMotionEnabled
+                || exiting
                 || e.CloseReason
                     is WindowCloseReason.ApplicationShutdown
                         or WindowCloseReason.OSShutdown

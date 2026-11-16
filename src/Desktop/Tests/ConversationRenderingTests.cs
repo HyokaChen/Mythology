@@ -1001,6 +1001,22 @@ public class ConversationRenderingTests
         return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
     }
 
+    /// <summary>
+    /// 等 UI 条件成立：每轮都跑 Dispatcher 并推进 headless 渲染时钟。
+    /// 固定次数的 Pump() 只跑 Dispatcher，摘要行重建/layout 没完成时会在
+    /// “旧行头已可见、详情行还没生成”的中间态断言失败。
+    /// </summary>
+    private static void PumpUntil(Func<bool> condition, string what)
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            if (condition())
+                return;
+            PumpOnce();
+        }
+        Assert.Fail($"等待超时：{what}");
+    }
+
     private static void PumpUntilRows(Desktop.Controls.AutoScrollItemsControl list, int count)
     {
         for (var i = 0; i < 100 && list.Items.Count < count; i++)
@@ -1099,19 +1115,29 @@ public class ConversationRenderingTests
             window.Show();
             try
             {
-                Pump();
-                Assert.Contains("查看摘要", RenderedText(view));
+                PumpUntil(
+                    () => RenderedText(view).Contains("查看摘要", StringComparison.Ordinal),
+                    "摘要入口渲染"
+                );
                 Assert.DoesNotContain("第 12 章，第 3 段", RenderedText(view));
 
                 view.ToggleSystemSummary(message);
-                Pump();
+                PumpUntil(
+                    () =>
+                        RenderedText(view).Contains("第 12 章，第 3 段", StringComparison.Ordinal),
+                    "摘要详情展开"
+                );
                 Assert.True(message.IsSummaryExpanded);
                 Assert.Contains("写到哪里", RenderedText(view));
                 Assert.Contains("第 12 章，第 3 段", RenderedText(view));
                 Assert.Contains("收起摘要", RenderedText(view));
 
                 view.ToggleSystemSummary(message);
-                Pump();
+                PumpUntil(
+                    () =>
+                        !RenderedText(view).Contains("第 12 章，第 3 段", StringComparison.Ordinal),
+                    "摘要详情收起"
+                );
                 Assert.False(message.IsSummaryExpanded);
                 Assert.DoesNotContain("第 12 章，第 3 段", RenderedText(view));
             }

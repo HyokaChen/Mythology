@@ -22,4 +22,10 @@
   <ItemGroup>
     <ProjectReference Include="../Desktop.csproj" />
   </ItemGroup>
+  <!-- 本地 scratch 调试脚本不属于回归测试：含硬编码用户路径、无断言；
+       之前留在 Compile 里会让整个测试工程 Rebuild 失败（CS0246/CS0104），
+       导致 dotnet test 静默跑旧二进制。 -->
+  <ItemGroup>
+    <Compile Remove="Scratch*.cs" />
+  </ItemGroup>
 </Project>
