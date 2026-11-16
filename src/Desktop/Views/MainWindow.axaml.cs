@@ -163,6 +163,13 @@ public partial class MainWindow : Window
             vm.ToggleTheme();
     }
 
+    /// <summary>状态栏左侧临时提示：点击一次立即关闭并还原诗词。</summary>
+    private void StatusText_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is ViewModels.MainWindowViewModel vm)
+            vm.DismissStatusHint();
+    }
+
     /// <summary>状态栏模型区 → 快速切换模型（当前提供商模型列表）。</summary>
     private async void ModelButton_OnClick(object? sender, RoutedEventArgs e)
     {

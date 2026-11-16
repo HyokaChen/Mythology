@@ -38,6 +38,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly IConfiguration _configuration;
     private readonly CloudAuthService _cloudAuth;
 
+    private const string ModelSwitchBusyHint = "写作中…（先停止再切换模型）";
+    private static readonly TimeSpan ModelSwitchHintDuration = TimeSpan.FromSeconds(2);
+
     /// <summary>微信通道（Host 未接线时为 null，相关功能降级）。</summary>
     private readonly WeChatChannelService? _weChat;
 
@@ -73,6 +76,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private bool _isCompacting;
     private bool _isShutdown;
     private bool _modelQuickSwitchOpen;
+    private readonly TransientStatusHint _statusHint = new();
+    private DispatcherTimer? _statusHintTimer;
     private readonly ContextTokenCalibrator _calibrator;
     private readonly ILogger _log;
 
@@ -449,15 +454,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                 if (processing)
                 {
                     // 左下角状态栏恢复 loading + 诗词；对话内等待行只保留 spinner + 执行中。
-                    var poem = PickPoem();
-                    StatusText = poem;
-                    StatusTooltip = poem;
+                    ShowBusyStatus();
                     ActiveConversationVm?.SetProcessing(true);
                 }
                 else
                 {
-                    StatusText = IdleStatusText;
-                    StatusTooltip = null;
+                    // 压缩尚未结束时仍处于忙碌态：临时提示若有则还原诗词，否则保留现有状态。
+                    if (_isCompacting)
+                        DismissStatusHint();
+                    else
+                        ShowIdleStatus();
                     ActiveConversationVm?.SetProcessing(false);
                 }
 
@@ -561,7 +567,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (_isShutdown)
                 return;
 
-            StatusText = IdleStatusText;
+            ShowIdleStatus();
 
             await SetUpPanel.RefreshAsync();
             if (_isShutdown)
@@ -706,7 +712,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = $"加载小说失败: {ex.Message}";
+            SetStatus($"加载小说失败: {ex.Message}", null);
         }
     }
 
@@ -797,11 +803,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                     // 压缩预检可能发生在 Agent 回合开始之前：此时 OnProcessingChanged
                     // 还没到，左下角必须自己进入 loading + 诗词，否则整段压缩静默。
                     if (!IsProcessing)
-                    {
-                        var poem = PickPoem();
-                        StatusText = poem;
-                        StatusTooltip = poem;
-                    }
+                        ShowBusyStatus();
                 }
                 else
                 {
@@ -810,10 +812,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                     InvalidateContextMeasure();
                     _ = UpdateConversationTitleAsync(vm);
                     if (!IsProcessing)
-                    {
-                        StatusText = IdleStatusText;
-                        StatusTooltip = null;
-                    }
+                        ShowIdleStatus();
                 }
             });
 
@@ -1389,7 +1388,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         void Notice(string text)
         {
             ActiveConversationVm?.AddSystemNotice(text);
-            StatusText = text; // 状态栏同步简短态
+            SetStatus(text, null); // 状态栏同步简短态
         }
 
         switch (sub)
@@ -1711,8 +1710,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         if (IsProcessing)
         {
-            StatusText = "写作中…（先停止再切换模型）";
-            StatusTooltip = null;
+            ShowModelSwitchBusyHint();
             return;
         }
         var owner = GetMainWindow();
@@ -2106,9 +2104,99 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 状态栏正式文案写入：任何临时提示在正式状态面前立即失效，
+    /// 防止计时器晚到把旧诗词写回错误/空闲状态。
+    /// </summary>
+    private void SetStatus(string text, string? tooltip)
+    {
+        CancelStatusHint();
+        StatusText = text;
+        StatusTooltip = tooltip;
+    }
+
+    /// <summary>进入忙碌态：重置一次性提示并展示本回合诗词。</summary>
+    private void ShowBusyStatus()
+    {
+        ResetStatusHint();
+        var poem = PickPoem();
+        StatusText = poem;
+        StatusTooltip = poem;
+    }
+
     /// <summary>空闲态状态栏文案（未配置 LLM Key 时引导去设置）。</summary>
     private string IdleStatusText =>
         _agent.TornadoApi is null ? "未配置 LLM API Key，请点击右上角设置" : "idle";
+
+    private void ShowIdleStatus() => SetStatus(IdleStatusText, null);
+
+    /// <summary>
+    /// 写作中点击模型区：只提示一次；提示 2 秒后自动还原被覆盖的诗词。
+    /// 提示仍在显示时再次点击则立即收起，不必等计时器。
+    /// </summary>
+    private void ShowModelSwitchBusyHint()
+    {
+        if (!_statusHint.TryShow(StatusText, StatusTooltip, out var version))
+        {
+            if (_statusHint.IsVisible)
+                DismissStatusHint();
+            return;
+        }
+
+        StatusText = ModelSwitchBusyHint;
+        StatusTooltip = null;
+
+        _statusHintTimer?.Stop();
+        var timer = new DispatcherTimer { Interval = ModelSwitchHintDuration };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (ReferenceEquals(_statusHintTimer, timer))
+                _statusHintTimer = null;
+
+            // 版本不匹配说明期间已有正式状态写入（或进入新的忙碌周期），绝不能还原旧诗词。
+            if (_statusHint.TryRestore(version, out var text, out var tooltip))
+            {
+                StatusText = text;
+                StatusTooltip = tooltip;
+            }
+        };
+        _statusHintTimer = timer;
+        timer.Start();
+    }
+
+    /// <summary>点击状态栏临时提示：立即关闭并还原被覆盖的诗词。</summary>
+    public void DismissStatusHint()
+    {
+        if (!_statusHint.IsVisible)
+        {
+            _statusHintTimer?.Stop();
+            _statusHintTimer = null;
+            return;
+        }
+
+        _statusHintTimer?.Stop();
+        _statusHintTimer = null;
+        if (_statusHint.Dismiss(out var text, out var tooltip))
+        {
+            StatusText = text;
+            StatusTooltip = tooltip;
+        }
+    }
+
+    private void CancelStatusHint()
+    {
+        _statusHintTimer?.Stop();
+        _statusHintTimer = null;
+        _statusHint.Cancel();
+    }
+
+    private void ResetStatusHint()
+    {
+        _statusHintTimer?.Stop();
+        _statusHintTimer = null;
+        _statusHint.Reset();
+    }
 
     /// <summary>随机取一句古诗词（运行期状态栏展示；诗词库与 TUI 共享 Core.Data.PoetryStore）。</summary>
     private static string PickPoem()
@@ -2159,6 +2247,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             _interactionPresenter.Dispose();
             _cloudAuth.Dispose();
             TodoPanel.Dispose();
+            CancelStatusHint();
             _agent.Abort();
 
             // 微信桥接：停长轮询 + 释放通道独占锁（不阻塞退出，锁由 OS 兜底释放）

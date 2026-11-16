@@ -243,6 +243,7 @@ public sealed class TuiInteractionParityTests
         Assert.Equal("{Binding StatusTooltip}", Attr(statusText, "ToolTip.Tip"));
         Assert.Equal("CharacterEllipsis", Attr(statusText, "TextTrimming"));
         Assert.Equal("440", Attr(statusText, "MaxWidth"));
+        Assert.Equal("StatusText_OnPointerPressed", Attr(statusText, "PointerPressed"));
     }
 
     [Fact]
@@ -265,6 +266,8 @@ public sealed class TuiInteractionParityTests
 
         Assert.Contains("private void StatusContext_OnClick", src, StringComparison.Ordinal);
         Assert.Contains("private void StatusTools_OnClick", src, StringComparison.Ordinal);
+        Assert.Contains("private void StatusText_OnPointerPressed", src, StringComparison.Ordinal);
+        Assert.Contains("DismissStatusHint()", src, StringComparison.Ordinal);
         Assert.Contains("TryExecuteCommand(\"/state\")", src, StringComparison.Ordinal);
         Assert.Contains("OpenSettings(initialTab: 4)", src, StringComparison.Ordinal);
     }
@@ -281,6 +284,28 @@ public sealed class TuiInteractionParityTests
         Assert.Contains("Core.Data.PoetryStore.Lines", src, StringComparison.Ordinal);
         Assert.Contains("StatusText = poem;", src, StringComparison.Ordinal);
         Assert.Contains("vm.CompactStateChanged +=", src, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindowViewModel_ModelSwitchBusyHint_IsTransientAndOneShot()
+    {
+        var src = File.ReadAllText(Find("src", "Desktop", "ViewModels", "MainWindowViewModel.cs"));
+        var start = src.IndexOf(
+            "public async Task ShowModelQuickSwitchAsync",
+            StringComparison.Ordinal
+        );
+        var end = src.IndexOf("var owner = GetMainWindow", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+
+        var guard = src[start..end];
+        Assert.Contains("ShowModelSwitchBusyHint();", guard, StringComparison.Ordinal);
+        Assert.DoesNotContain("StatusText = \"写作中", guard, StringComparison.Ordinal);
+
+        Assert.Contains("private void ShowModelSwitchBusyHint()", src, StringComparison.Ordinal);
+        Assert.Contains("_statusHint.TryShow", src, StringComparison.Ordinal);
+        Assert.Contains("_statusHint.TryRestore", src, StringComparison.Ordinal);
+        Assert.Contains("private void SetStatus(", src, StringComparison.Ordinal);
+        Assert.Contains("CancelStatusHint();", src, StringComparison.Ordinal);
     }
 
     [Fact]

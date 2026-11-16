@@ -306,10 +306,12 @@
             FontFamily="{StaticResource FontMono}"
             FontSize="11"
             Foreground="{DynamicResource BrushSageGray}"
+            Background="Transparent"
             Text="{Binding StatusText}"
             MaxWidth="440"
             TextTrimming="CharacterEllipsis"
             ToolTip.Tip="{Binding StatusTooltip}"
+            PointerPressed="StatusText_OnPointerPressed"
             VerticalAlignment="Center"
           />
           <TextBlock
