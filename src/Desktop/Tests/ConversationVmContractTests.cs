@@ -145,11 +145,11 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
-    /// 压缩预检发生在用户气泡与 Agent 占位之后，但逻辑顺序在它们之前；
-    /// 状态行必须插入本轮起点，不能追加到对话末尾。
+    /// 压缩预检发生在用户气泡与 Agent 占位之后；用户气泡已经先上屏，
+    /// 状态行应紧跟用户气泡之后、Agent 占位之前，不能跑到用户消息上方。
     /// </summary>
     [Fact]
-    public void CompactStart_WithPendingTurn_InsertsBeforeUserAndAgent()
+    public void CompactStart_WithPendingTurn_InsertsAfterUserBeforeAgent()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
@@ -170,19 +170,19 @@ public sealed class ConversationVmContractTests
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(3, vm.Messages.Count);
-            var compact = vm.Messages[0];
+            Assert.Same(user, vm.Messages[0]);
+            var compact = vm.Messages[1];
             Assert.Equal(MessageSender.System, compact.Sender);
             Assert.True(compact.IsSpinnerVisible);
-            Assert.Same(user, vm.Messages[1]);
             Assert.Same(agent, vm.Messages[2]);
 
             end("上下文压缩完成：132 → 20 条", "## Where / 写到哪里\n- 继续");
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
-            Assert.Same(compact, vm.Messages[0]);
+            Assert.Same(user, vm.Messages[0]);
+            Assert.Same(compact, vm.Messages[1]);
             Assert.False(compact.IsSpinnerVisible);
             Assert.StartsWith("上下文压缩完成", compact.Content.ToString());
-            Assert.Same(user, vm.Messages[1]);
             Assert.Same(agent, vm.Messages[2]);
         });
     }
@@ -221,10 +221,11 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
-    /// 上一次压缩留下的「压缩中…」行若还在末尾，新的压缩开始时应移动到本轮起点。
+    /// 上一次压缩留下的「压缩中…」行若还在末尾，新的压缩开始时应移动到
+    /// 用户气泡之后、Agent 占位之前。
     /// </summary>
     [Fact]
-    public void CompactStart_WithReusedStatusRow_MovesBeforePendingTurn()
+    public void CompactStart_WithReusedStatusRow_MovesAfterUserBeforeAgent()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
@@ -246,15 +247,15 @@ public sealed class ConversationVmContractTests
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(3, vm.Messages.Count);
-            Assert.Same(stale, vm.Messages[0]);
-            Assert.Same(user, vm.Messages[1]);
+            Assert.Same(user, vm.Messages[0]);
+            Assert.Same(stale, vm.Messages[1]);
             Assert.Same(agent, vm.Messages[2]);
             Assert.True(stale.IsSpinnerVisible);
 
             end("上下文压缩完成：64 → 8 条", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
-            Assert.Same(stale, vm.Messages[0]);
+            Assert.Same(stale, vm.Messages[1]);
             Assert.False(stale.IsSpinnerVisible);
             Assert.StartsWith("上下文压缩完成", stale.Content.ToString());
         });
@@ -301,11 +302,11 @@ public sealed class ConversationVmContractTests
     }
 
     /// <summary>
-    /// 复用的活动状态行若在本轮锚点之前，必须移动到锚点前一位；
-    /// 只处理“在锚点之后”会把它留在对话中段，破坏压缩行与回合的对应关系。
+    /// 复用的活动状态行若在用户气泡之前，必须移动到用户气泡之后、Agent 占位之前；
+    /// 只处理“在锚点之后”会把它留在对话顶部，破坏压缩行与回合的对应关系。
     /// </summary>
     [Fact]
-    public void CompactStart_WithStaleStatusRowBeforeAnchor_MovesToTurnStart()
+    public void CompactStart_WithStaleStatusRowBeforeUser_MovesAfterUser()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
@@ -333,25 +334,25 @@ public sealed class ConversationVmContractTests
 
             Assert.Equal(4, vm.Messages.Count);
             Assert.Same(filler, vm.Messages[0]);
-            Assert.Same(stale, vm.Messages[1]);
-            Assert.Same(user, vm.Messages[2]);
+            Assert.Same(user, vm.Messages[1]);
+            Assert.Same(stale, vm.Messages[2]);
             Assert.Same(agent, vm.Messages[3]);
             Assert.True(stale.IsSpinnerVisible);
 
             end("上下文压缩完成：72 → 10 条", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
-            Assert.Same(stale, vm.Messages[1]);
+            Assert.Same(stale, vm.Messages[2]);
             Assert.False(stale.IsSpinnerVisible);
         });
     }
 
     /// <summary>
     /// 两次 Start 可能因事件重放或快速重连连续到达；同一轮只允许一条状态行，
-    /// 第二次必须复用已在锚点前的行，而不是再插入一条。
+    /// 第二次必须复用已在用户气泡之后、Agent 占位之前的行，而不是再插入一条。
     /// </summary>
     [Fact]
-    public void CompactStart_Twice_KeepsSingleRowBeforeTurn()
+    public void CompactStart_Twice_KeepsSingleRowAfterUser()
     {
         using var h = new Harness();
         var vm = h.CreateVm();
@@ -370,17 +371,17 @@ public sealed class ConversationVmContractTests
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(3, vm.Messages.Count);
-            var compact = vm.Messages[0];
+            Assert.Same(user, vm.Messages[0]);
+            var compact = vm.Messages[1];
             Assert.Equal(MessageSender.System, compact.Sender);
             Assert.True(compact.IsSpinnerVisible);
-            Assert.Same(user, vm.Messages[1]);
             Assert.Same(agent, vm.Messages[2]);
 
             end("上下文压缩完成：96 → 12 条", null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
             Assert.Equal(3, vm.Messages.Count);
-            Assert.Same(compact, vm.Messages[0]);
+            Assert.Same(compact, vm.Messages[1]);
             Assert.False(compact.IsSpinnerVisible);
         });
     }

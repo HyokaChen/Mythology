@@ -46,10 +46,10 @@ public sealed class ConversationViewModel : ViewModelBase
     /// <summary>本轮已先行插入的用户消息文本（抑制 Loop 对同一条消息的回显）。</summary>
     private string? _pendingEchoText;
 
-    /// <summary>本轮先行插入的用户气泡；压缩预检的状态行必须插在它之前，保证与 JSONL 顺序一致。</summary>
+    /// <summary>本轮先行插入的用户气泡；压缩预检的状态行应落在它之后、Agent 占位之前。</summary>
     private ChatMessageModel? _pendingTurnUserMessage;
 
-    /// <summary>发送/重试已开始、AgentStart 尚未到达；只有此阶段的压缩状态行才允许前插。</summary>
+    /// <summary>发送/重试已开始、AgentStart 尚未到达；只有此阶段的压缩状态行才允许插入本轮锚点。</summary>
     private bool _isPreflightTurn;
 
     private int _suggestionVersion;
@@ -1358,6 +1358,7 @@ public sealed class ConversationViewModel : ViewModelBase
             // 只靠排版后的状态会误判成「没有开始事件」并补出重复提示。
             _compactStartObserved = true;
             // 预压缩发生在用户气泡/Agent 占位之后、AgentStart 之前；
+            // 状态行最终落在用户气泡之后、Agent 占位之前。
             // 在调用线程一次性捕获本轮锚点，避免 UI 队列延迟后丢失插入点。
             // AgentStart 之后 _isPreflightTurn 为 false，回合中段压缩只能追加。
             var isPreflight = _isPreflightTurn;
@@ -1473,8 +1474,8 @@ public sealed class ConversationViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// 压缩状态行的插入点：优先用户气泡，纯重试没有本地用户时退回空 Agent 占位。
-    /// 发送/编辑重发先插用户再插占位，因此用户索引就是本轮起点；二者都找不到则追加。
+    /// 压缩状态行的插入点：有用户气泡时放在它之后、空 Agent 占位之前；
+    /// 纯重试没有本地用户时退回占位之前。二者都找不到则追加。
     /// </summary>
     private int FindCompactStatusInsertIndex(
         ChatMessageModel? pendingUser,
@@ -1485,7 +1486,15 @@ public sealed class ConversationViewModel : ViewModelBase
         {
             var userIndex = Messages.IndexOf(pendingUser);
             if (userIndex >= 0)
-                return userIndex;
+            {
+                if (pendingAgent is not null)
+                {
+                    var agentIndex = Messages.IndexOf(pendingAgent);
+                    if (agentIndex > userIndex)
+                        return agentIndex;
+                }
+                return userIndex + 1;
+            }
         }
         if (pendingAgent is not null)
         {
@@ -1764,7 +1773,7 @@ public sealed class ConversationViewModel : ViewModelBase
 
             // 创建空白 Agent 消息占位（流式内容落点）；首个正文/步骤到达前显示等待行。
             CreateAgentPlaceholder();
-            // 用户气泡与占位都已入列，预压缩状态行应插到二者之前；AgentStart 会结束该阶段。
+            // 用户气泡与占位都已入列，预压缩状态行应插到用户之后、占位之前；AgentStart 会结束该阶段。
             _pendingTurnUserMessage = userMsg;
             _isPreflightTurn = true;
             ContextStatsChanged?.Invoke();
@@ -1945,7 +1954,7 @@ public sealed class ConversationViewModel : ViewModelBase
             }
 
             localAgent = CreateAgentPlaceholder();
-            // 纯重试也要在占位前插入预压缩行；有编辑气泡时以用户气泡为锚。
+            // 纯重试在占位前插入预压缩行；编辑重发插到用户气泡之后、占位之前。
             _pendingTurnUserMessage = localUser;
             _isPreflightTurn = true;
             ContextStatsChanged?.Invoke();
