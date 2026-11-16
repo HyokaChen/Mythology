@@ -974,6 +974,58 @@ public class ConversationRenderingTests
         });
     }
 
+    [Fact]
+    public void CollapsedProcess_ShowsErrorSummaryInAmber()
+    {
+        Ui.Value.Run(() =>
+        {
+            var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
+            message.AgentSteps.Add(
+                new AgentStep
+                {
+                    Kind = StepKind.ToolCall,
+                    Title = "编辑文本",
+                    Status = AgentStepStatus.Completed,
+                }
+            );
+            message.AgentSteps.Add(
+                AgentStep.CreateSystemEvent(
+                    "⚠️ 调用出错：HTTP 502 · Function 'x': Not found for account demo",
+                    isError: true
+                )
+            );
+
+            var view = new Desktop.Views.ConversationView();
+            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
+            list.Rows = new Desktop.Models.ConversationRowCollection(message);
+            list.IsVisible = true;
+
+            var window = new Window
+            {
+                Width = 900,
+                Height = 300,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                Pump();
+                var summary = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), text =>
+                    text.Classes.Contains("ProcessSummary")
+                    && text.Text?.Contains("HTTP 502") == true
+                );
+                Assert.True(summary.IsEffectivelyVisible);
+                Assert.Contains("Error", summary.Classes);
+                var foreground = Assert.IsType<SolidColorBrush>(summary.Foreground);
+                Assert.Equal(Color.Parse("#80581C"), foreground.Color);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static Color Blend(Color foreground, Color background)
     {
         var a = foreground.A / 255.0;

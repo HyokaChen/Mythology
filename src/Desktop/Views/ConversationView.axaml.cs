@@ -1404,6 +1404,9 @@ public partial class ConversationView : UserControl
                     or nameof(ChatMessage.HasVisibleContent)
                     or nameof(ChatMessage.IsInterrupted)
                     or nameof(ChatMessage.IsProcessExpanded)
+                    or nameof(ChatMessage.ProcessSummary)
+                    or nameof(ChatMessage.HasProcessError)
+                    or nameof(ChatMessage.ProcessErrorSummary)
                     or nameof(ChatMessage.IsCompleted)
                     or nameof(ChatMessage.HasSummaryDetail)
                     or nameof(ChatMessage.IsSummaryExpanded)
@@ -1470,12 +1473,13 @@ public partial class ConversationView : UserControl
                 nameof(AgentStep.Status)
                 or nameof(AgentStep.IsProcessing)
                 or nameof(AgentStep.IsDetailsExpanded)
+                or nameof(AgentStep.IsError)
             )
         )
             return;
 
-        // 失败/审批需要决定：自动展开过程，不再自动收。
-        if (step.Status == AgentStepStatus.Failed)
+        // 失败/错误需要决定：自动展开过程，不再自动收。
+        if (step.IsError || step.Status == AgentStepStatus.Failed)
         {
             message.IsProcessExpanded = true;
             CancelProcessFold();
@@ -1485,6 +1489,9 @@ public partial class ConversationView : UserControl
 
         TryScheduleProcessFold(message);
     }
+
+    private static bool ProcessStepNeedsAttention(AgentStep step) =>
+        step.IsProcessing || step.Status == AgentStepStatus.Failed || step.IsError;
 
     /// <summary>ToolCallGroup 语义：全部步骤结束后 450ms 自动折叠过程，除非用户手动展开过。</summary>
     private void TryScheduleProcessFold(ChatMessage message)
@@ -1496,9 +1503,7 @@ public partial class ConversationView : UserControl
             || !message.IsProcessExpanded
             || message.IsWaiting
             || message.AgentSteps.Count == 0
-            || message.AgentSteps.Any(step =>
-                step.IsProcessing || step.Status == AgentStepStatus.Failed
-            )
+            || message.AgentSteps.Any(ProcessStepNeedsAttention)
         )
             return;
 
@@ -1521,9 +1526,7 @@ public partial class ConversationView : UserControl
             || message.ProcessTouchedByUser
             || !message.IsProcessExpanded
             || message.IsWaiting
-            || message.AgentSteps.Any(step =>
-                step.IsProcessing || step.Status == AgentStepStatus.Failed
-            )
+            || message.AgentSteps.Any(ProcessStepNeedsAttention)
         )
             return;
         // 自动折叠会让步骤详情一起消失；不能留下一个已无目标的延迟 reveal。

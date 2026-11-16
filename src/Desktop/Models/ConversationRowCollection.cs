@@ -45,6 +45,7 @@ public sealed class ConversationRowCollection : ObservableCollection<Conversatio
             is nameof(AgentStep.IsDetailsExpanded)
                 or nameof(AgentStep.IsProcessing)
                 or nameof(AgentStep.Status)
+                or nameof(AgentStep.IsError)
         )
             Rebuild();
     }
@@ -76,6 +77,9 @@ public sealed class ConversationRowCollection : ObservableCollection<Conversatio
                 or nameof(ChatMessage.HasVisibleContent)
                 or nameof(ChatMessage.IsInterrupted)
                 or nameof(ChatMessage.IsProcessExpanded)
+                or nameof(ChatMessage.ProcessSummary)
+                or nameof(ChatMessage.HasProcessError)
+                or nameof(ChatMessage.ProcessErrorSummary)
                 or nameof(ChatMessage.IsCompleted)
                 or nameof(ChatMessage.IsEditing)
                 or nameof(ChatMessage.HasSummaryDetail)

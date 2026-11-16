@@ -489,13 +489,25 @@
         Click="ProcessRow_OnClick"
       >
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-          <TextBlock Classes="Eyebrow" Text="过程" VerticalAlignment="Center" />
+          <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <TextBlock Classes="Eyebrow" Text="过程" VerticalAlignment="Center" />
+            <lucide:LucideIcon
+              Kind="OctagonX"
+              Size="11"
+              StrokeWidth="1.6"
+              Foreground="{DynamicResource BrushAmberPin}"
+              IsVisible="{Binding Message.HasProcessError}"
+              VerticalAlignment="Center"
+            />
+          </StackPanel>
           <TextBlock
             Grid.Column="1"
+            Classes="ProcessSummary"
+            Classes.Error="{Binding Message.HasProcessError}"
             Text="{Binding Message.ProcessSummary}"
             FontSize="11"
-            Foreground="{DynamicResource BrushSageMist}"
-            TextWrapping="Wrap"
+            TextWrapping="NoWrap"
+            TextTrimming="CharacterEllipsis"
             VerticalAlignment="Center"
           />
           <lucide:LucideIcon
@@ -661,6 +673,12 @@
       <Setter Property="LineHeight" Value="20" />
       <Setter Property="Foreground" Value="{DynamicResource BrushSageGray}" />
       <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.ProcessSummary">
+      <Setter Property="Foreground" Value="{DynamicResource BrushSageMist}" />
+    </Style>
+    <Style Selector="TextBlock.ProcessSummary.Error">
+      <Setter Property="Foreground" Value="{DynamicResource BrushAmberPin}" />
     </Style>
     <Style Selector="SelectableTextBlock.SystemNoticeText">
       <Setter Property="FontFamily" Value="{StaticResource FontSans}" />

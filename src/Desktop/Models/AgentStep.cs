@@ -290,8 +290,20 @@ public sealed class AgentStep : INotifyPropertyChanged
     /// </summary>
     public AgentStep? DetailsView => IsDetailsExpanded ? this : null;
 
+    private bool _isError;
+
     /// <summary>是否错误。</summary>
-    public bool IsError { get; set; }
+    public bool IsError
+    {
+        get => _isError;
+        set
+        {
+            if (_isError == value)
+                return;
+            _isError = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsError)));
+        }
+    }
 
     /// <summary>思考内容（Thinking 步骤的流式文本）。</summary>
     public System.Text.StringBuilder ThinkingBuilder { get; } = new();

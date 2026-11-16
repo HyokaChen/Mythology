@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using Core.Data;
 using LiveMarkdown.Avalonia;
@@ -9,7 +10,7 @@ namespace Desktop.Models;
 /// 对话消息。流式内容使用 ObservableStringBuilder（LiveMarkdown 增量渲染），
 /// 必须在 UI 线程上追加。
 /// </summary>
-public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
+public sealed class ChatMessage : INotifyPropertyChanged
 {
     private bool _isWaiting;
     private bool _hasVisibleContent;
@@ -19,10 +20,17 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     private bool _isSpinnerVisible;
     private bool _hasSummaryDetail;
     private bool _isSummaryExpanded;
-    private bool _isCompleted = sender != MessageSender.Agent;
+    private bool _isCompleted;
     private bool _isEditing;
     private string _editDraft = "";
     private bool _isPointerOverMessage;
+
+    public ChatMessage(MessageSender sender)
+    {
+        Sender = sender;
+        _isCompleted = sender != MessageSender.Agent;
+        AgentSteps.CollectionChanged += OnAgentStepsChanged;
+    }
 
     /// <summary>消息 ID（Ulid）。</summary>
     public string Id { get; } = Ulid.NewUlid().ToString();
@@ -166,13 +174,15 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
     /// <summary>用户手动展开/收起过程后，禁止自动折叠（对齐 ToolCallGroup 的 touched 语义）。</summary>
     public bool ProcessTouchedByUser { get; set; }
 
-    /// <summary>折叠过程行的摘要。</summary>
+    /// <summary>折叠过程行的摘要；存在异常时优先展示异常。</summary>
     public string ProcessSummary
     {
         get
         {
             if (AgentSteps.Count == 0)
                 return "";
+            if (ProcessErrorSummary is { Length: > 0 } error)
+                return $"{error} · {AgentSteps.Count} 步";
             var titles = AgentSteps.Take(3).Select(step => step.Title).Where(t => t.Length > 0);
             var head = string.Join(" · ", titles);
             var suffix =
@@ -181,8 +191,47 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
         }
     }
 
+    /// <summary>过程内是否存在需要用户注意的异常。</summary>
+    public bool HasProcessError => AgentSteps.Any(IsProcessFailure);
+
+    /// <summary>折叠行展示的最新异常文本；没有异常时为 null。</summary>
+    public string? ProcessErrorSummary
+    {
+        get
+        {
+            for (var i = AgentSteps.Count - 1; i >= 0; i--)
+            {
+                var step = AgentSteps[i];
+                if (!IsProcessFailure(step))
+                    continue;
+                var text =
+                    step.Kind == StepKind.SystemEvent ? step.ContentText : step.ResultSummary;
+                if (string.IsNullOrWhiteSpace(text))
+                    text = step.ResultSummary;
+                if (string.IsNullOrWhiteSpace(text))
+                    text = step.ContentText;
+                if (string.IsNullOrWhiteSpace(text))
+                    text = "调用失败";
+                if (
+                    step.Kind is StepKind.ToolCall or StepKind.SubStep
+                    && !string.IsNullOrWhiteSpace(step.Title)
+                )
+                    text = $"{step.Title}：{text}";
+                var normalized = CollapseWhitespace(text).TrimStart('⚠', '️', '✗', ' ');
+                return normalized.Length > 0 ? normalized : "调用失败";
+            }
+            return null;
+        }
+    }
+
+    private static bool IsProcessFailure(AgentStep step) =>
+        step.IsError || step.Status == AgentStepStatus.Failed;
+
+    private static string CollapseWhitespace(string text) =>
+        string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
     /// <summary>发送者。</summary>
-    public MessageSender Sender { get; init; } = sender;
+    public MessageSender Sender { get; init; }
 
     /// <summary>消息内容（可增量追加，LiveMarkdown 流式渲染）。</summary>
     public ObservableStringBuilder Content { get; } = new();
@@ -296,6 +345,39 @@ public sealed class ChatMessage(MessageSender sender) : INotifyPropertyChanged
 
     /// <summary>Agent 步骤（思考/工具调用）。</summary>
     public ObservableCollection<AgentStep> AgentSteps { get; } = [];
+
+    private void OnAgentStepsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (AgentStep step in e.OldItems)
+                step.PropertyChanged -= OnAgentStepPropertyChanged;
+        }
+        if (e.NewItems is not null)
+        {
+            foreach (AgentStep step in e.NewItems)
+                step.PropertyChanged += OnAgentStepPropertyChanged;
+        }
+        NotifyProcessSummaryChanged();
+    }
+
+    private void OnAgentStepPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (
+            e.PropertyName
+            is nameof(AgentStep.Status)
+                or nameof(AgentStep.IsError)
+                or nameof(AgentStep.ResultSummary)
+        )
+            NotifyProcessSummaryChanged();
+    }
+
+    private void NotifyProcessSummaryChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProcessSummary)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasProcessError)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProcessErrorSummary)));
+    }
 
     /// <summary>信息来源（结束时提交显示）。</summary>
     public ObservableCollection<SourceInfo> Sources { get; } = [];

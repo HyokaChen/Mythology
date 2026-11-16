@@ -56,4 +56,101 @@ public sealed class ConversationRowTests
         Assert.Equal(ConversationRowKind.Waiting, rows[1].Kind);
         Assert.True(rows[1].IsLastInMessage);
     }
+
+    [Fact]
+    public void CollapsedProcessSummary_ShowsSystemError()
+    {
+        var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
+        message.AgentSteps.Add(
+            new AgentStep
+            {
+                Kind = StepKind.ToolCall,
+                Title = "编辑文本",
+                Status = AgentStepStatus.Completed,
+            }
+        );
+        message.AgentSteps.Add(
+            AgentStep.CreateSystemEvent(
+                "⚠️ 调用出错：HTTP 502 · Function 'x': Not found for account demo",
+                isError: true
+            )
+        );
+
+        var process = Assert.Single(ConversationRow.FromMessage(message));
+
+        Assert.Equal(ConversationRowKind.Process, process.Kind);
+        Assert.True(process.Message.HasProcessError);
+        Assert.Contains("HTTP 502", process.Message.ProcessSummary);
+        Assert.Contains("调用出错", process.Message.ProcessSummary);
+        Assert.DoesNotContain("⚠", process.Message.ProcessSummary);
+    }
+
+    [Fact]
+    public void CollapsedProcessSummary_ShowsFailedToolResult()
+    {
+        var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
+        message.AgentSteps.Add(
+            new AgentStep
+            {
+                Kind = StepKind.ToolCall,
+                Title = "编辑文本",
+                Status = AgentStepStatus.Failed,
+                IsError = true,
+                ResultSummary = "未找到匹配的旧文本",
+            }
+        );
+
+        Assert.True(message.HasProcessError);
+        Assert.Contains("编辑文本：未找到匹配的旧文本", message.ProcessSummary);
+        Assert.Equal("编辑文本：未找到匹配的旧文本", message.ProcessErrorSummary);
+    }
+
+    [Fact]
+    public void CollapsedProcessSummary_NotifiesWhenLateErrorStepArrives()
+    {
+        var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
+        message.AgentSteps.Add(
+            new AgentStep
+            {
+                Kind = StepKind.ToolCall,
+                Title = "编辑文本",
+                Status = AgentStepStatus.Completed,
+            }
+        );
+        var changed = new List<string?>();
+        message.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        message.AgentSteps.Add(
+            AgentStep.CreateSystemEvent(
+                "⚠️ 调用出错：HTTP 502 · Not found for account demo",
+                isError: true
+            )
+        );
+
+        Assert.Contains(nameof(ChatMessage.ProcessSummary), changed);
+        Assert.Contains(nameof(ChatMessage.HasProcessError), changed);
+        Assert.Contains(nameof(ChatMessage.ProcessErrorSummary), changed);
+        Assert.Contains("HTTP 502", message.ProcessSummary);
+    }
+
+    [Fact]
+    public void CollapsedProcessSummary_NotifiesWhenToolStepFails()
+    {
+        var step = new AgentStep
+        {
+            Kind = StepKind.ToolCall,
+            Title = "编辑文本",
+            Status = AgentStepStatus.Processing,
+            ResultSummary = "连接超时",
+        };
+        var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
+        message.AgentSteps.Add(step);
+        var changed = new List<string?>();
+        message.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        step.Status = AgentStepStatus.Failed;
+
+        Assert.Contains(nameof(ChatMessage.ProcessSummary), changed);
+        Assert.Contains("编辑文本：连接超时", message.ProcessSummary);
+    }
 }

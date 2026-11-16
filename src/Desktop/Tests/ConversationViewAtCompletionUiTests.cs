@@ -3124,6 +3124,64 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
     }
 
     [Fact]
+    public void SystemEventError_PreventsAutoFold()
+    {
+        Ui.Run(() =>
+        {
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
+                message.AppendContent("最终答复");
+                _vm.Messages.Add(message);
+                _vm.HasMessages = true;
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
+                    "MessageList"
+                )!;
+                PumpUntil(() => list.Items.Count > 0, "新消息行挂载");
+
+                _vm.IsProcessing = true;
+                message.AgentSteps.Add(
+                    new Desktop.Models.AgentStep
+                    {
+                        Kind = Desktop.Models.StepKind.ToolCall,
+                        Title = "编辑文本",
+                        Status = Desktop.Models.AgentStepStatus.Completed,
+                    }
+                );
+                _vm.IsProcessing = false;
+                message.AgentSteps.Add(
+                    Desktop.Models.AgentStep.CreateSystemEvent(
+                        "⚠️ 调用出错：HTTP 502 · Function 'x': Not found for account demo",
+                        isError: true
+                    )
+                );
+
+                for (var i = 0; i < 80; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(10);
+                }
+
+                Assert.True(message.HasProcessError);
+                Assert.True(message.IsProcessExpanded, "错误系统事件不得被自动折叠");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void DetailsToggle_WhileSettled_CancelsAutoFold()
     {
         Ui.Run(() =>
