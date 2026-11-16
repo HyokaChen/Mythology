@@ -150,7 +150,7 @@ public partial class ConversationView : UserControl
     /// <summary>记住程序化高度变化前的阅读位置；用户下一次手势会清掉。</summary>
     private void RememberReadingAnchor()
     {
-        if (!MessageList.IsFollowing)
+        if (!MessageList.IsFollowing && !MessageList.IsUserInputPending)
             _readingAnchor ??= CaptureAnchor(MessageScroll.Offset.Y);
     }
 
@@ -165,6 +165,10 @@ public partial class ConversationView : UserControl
             return;
 
         // 真正的用户手势：程序化展开/高度回写的临时锚点到此结束。
+        // 已经在队列里的 anchor 也必须作废；否则它会在 Loaded 时机把视口
+        // 拉回到手势前的中心行（看起来像跳到中间的 user message）。
+        _userScrollVersion++;
+        _pendingAnchor = null;
         _readingAnchor = null;
         _resumeFollowAfterDetails = false;
         _detailsFollowPauseDepth = 0;
@@ -209,8 +213,16 @@ public partial class ConversationView : UserControl
 
     private void OnFollowChanged(object? sender, EventArgs e)
     {
-        if (_syncingWindow || !MessageList.IsFollowing)
+        if (_syncingWindow)
             return;
+        if (!MessageList.IsFollowing)
+        {
+            // 用户/内容操作退出跟随时，任何排队中的阅读锚点都失去了语义。
+            // 特别是流式步骤更新刚捕获的「视口中心」不能在手势后再次应用。
+            _userScrollVersion++;
+            _pendingAnchor = null;
+            return;
+        }
         _resumeFollowAfterDetails = false;
         _detailsFollowPauseDepth = 0;
         SyncWindowToTail();
@@ -278,6 +290,12 @@ public partial class ConversationView : UserControl
     private bool _resumeFollowAfterDetails;
     private int _detailsFollowPauseDepth;
     private int _stepAnchorVersion;
+
+    /// <summary>
+    /// 用户滚动代次。任何真实手势都会递增，使此前排队的阅读锚点恢复失效；
+    /// 防止流式步骤更新捕获的锚点在用户上滚后把视口拽回中间 user 消息。
+    /// </summary>
+    private int _userScrollVersion;
 
     /// <summary>DataContext 换 VM：重挂 Messages.CollectionChanged 并重建全部行。</summary>
     private void AttachMessageSource()
@@ -1005,7 +1023,7 @@ public partial class ConversationView : UserControl
 
         var following = MessageList.IsFollowing;
         var anchor =
-            following || !_hostWindowActive
+            following || !_hostWindowActive || MessageList.IsUserInputPending
                 ? null
                 : _readingAnchor ?? CaptureAnchor(MessageScroll.Offset.Y);
         var changed = false;
@@ -1140,6 +1158,7 @@ public partial class ConversationView : UserControl
     /// </summary>
     private void RestoreAnchor(ScrollAnchor anchor)
     {
+        var version = _userScrollVersion;
         _pendingAnchor = anchor;
         if (_anchorRestoreScheduled)
             return;
@@ -1150,7 +1169,12 @@ public partial class ConversationView : UserControl
                 _anchorRestoreScheduled = false;
                 var pending = _pendingAnchor;
                 _pendingAnchor = null;
-                if (pending is { } value && !MessageList.IsFollowing)
+                if (
+                    version == _userScrollVersion
+                    && pending is { } value
+                    && !MessageList.IsFollowing
+                    && !MessageList.IsUserInputPending
+                )
                     ApplyAnchor(value);
             },
             DispatcherPriority.Loaded
@@ -1272,6 +1296,11 @@ public partial class ConversationView : UserControl
             return;
 
         var oldRows = _rowsByMessage.TryGetValue(message, out var existing) ? existing : [];
+        // 行状态变化后，旧实测高度可能属于展开态（例如过程/详情刚折叠）。
+        // 重建索引前先作废本消息的实测值，按当前绑定状态重新估算；
+        // 下一次布局会再写回真实高度。
+        foreach (var oldRow in oldRows)
+            _measuredHeights.Remove(oldRow);
         var start =
             messageIndex == messages.Count - 1
                 ? _rows.Count - oldRows.Count
@@ -1315,6 +1344,9 @@ public partial class ConversationView : UserControl
             selected[i].IsLastInMessage = i == selected.Count - 1;
         _rowsByMessage[message] = selected;
         RebuildHeightIndex();
+        // 行高/行数已经变了，spacer 必须立即跟进；否则从 rebuild 到下一轮
+        // Normal 同步之间，ScrollViewer 仍按旧展开高度计算 offset。
+        UpdateWindowSpacers();
         _forceWindowSync = true;
         RequestWindowSync();
     }
@@ -1495,7 +1527,7 @@ public partial class ConversationView : UserControl
         )
             return;
         // 自动折叠会让步骤详情一起消失；不能留下一个已无目标的延迟 reveal。
-        if (!MessageList.IsFollowing)
+        if (!MessageList.IsFollowing && !MessageList.IsUserInputPending)
             RememberReadingAnchor();
         message.IsProcessExpanded = false;
     }

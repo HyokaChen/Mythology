@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -1281,6 +1282,69 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                 Assert.True(
                     sv.Offset.Y < max - 0.01,
                     $"慢速上滚被吸附回底部：offset={sv.Offset.Y:0.00} max={max:0.00}"
+                );
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>
+    /// 流式更新可能排队一个“恢复视口中心”的锚点；用户随后上滚时，
+    /// 旧锚点不能在手势结束后把视口拉回中间的 user message。
+    /// </summary>
+    [Fact]
+    public void PendingReadingAnchor_DoesNotOverrideUserWheel()
+    {
+        Ui.Run(() =>
+        {
+            SeedHistory(150);
+            var (window, view, list, sv) = ShowConversation();
+            try
+            {
+                PumpUntil(() => AtBottom(sv) && list.IsFollowing, "初始底部跟随");
+                var rowsField = typeof(Desktop.Views.ConversationView).GetField(
+                    "_rows",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic
+                )!;
+                var rows =
+                    (ObservableCollection<Desktop.Models.ConversationRow>)rowsField.GetValue(view)!;
+                var target = rows.Last(row => row.Kind == Desktop.Models.ConversationRowKind.User);
+
+                var anchorType = typeof(Desktop.Views.ConversationView).GetNestedType(
+                    "ScrollAnchor",
+                    System.Reflection.BindingFlags.NonPublic
+                )!;
+                var anchor = Activator.CreateInstance(
+                    anchorType,
+                    [target, 0.0, sv.Viewport.Height]
+                )!;
+
+                var pointer = new Point(450, 350);
+                window.MouseMove(pointer);
+                typeof(Desktop.Views.ConversationView)
+                    .GetMethod(
+                        "RestoreAnchor",
+                        System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.NonPublic
+                    )!
+                    .Invoke(view, [anchor]);
+                window.MouseWheel(pointer, new Vector(0, 1));
+                for (var i = 0; i < 40; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(5);
+                }
+
+                var max = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                Assert.False(list.IsFollowing);
+                Assert.True(
+                    sv.Offset.Y >= max - 160,
+                    $"旧 reading anchor 把手势后的视口拉回上方：offset={sv.Offset.Y:0.0}, max={max:0.0}"
                 );
             }
             finally

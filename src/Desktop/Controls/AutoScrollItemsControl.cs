@@ -73,6 +73,12 @@ public class AutoScrollItemsControl : ItemsControl
     /// </summary>
     public bool IsFollowing => _followMode == FollowMode.Following && !_wheelInputPending;
 
+    /// <summary>
+    /// 用户滚轮/滚动条手势尚未落地。上层不应在此期间捕获/恢复阅读锚点：
+    /// 手势期间的布局更新仍会改 offset，但视口应由用户手势掌控。
+    /// </summary>
+    public bool IsUserInputPending => _wheelInputPending || _scrollbarDragging;
+
     /// <summary>跟随状态变化；上层据此切换尾部窗口/阅读窗口。</summary>
     public event EventHandler? FollowChanged;
 
