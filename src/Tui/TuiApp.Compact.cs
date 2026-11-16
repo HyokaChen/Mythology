@@ -178,7 +178,7 @@ public sealed partial class TuiApp
     }
 
     /// <summary>自动压缩：由 token 阈值触发；切点/摘要/落盘统一在 Core。</summary>
-    private async Task AutoCompactAsync(int keepRecentTokens)
+    private async Task AutoCompactAsync(int keepRecentTokens, string? pendingAuthorMessage = null)
     {
         try
         {
@@ -192,7 +192,8 @@ public sealed partial class TuiApp
                 keepRecent: 0,
                 "threshold",
                 willRetry: false,
-                keepRecentTokens: keepRecentTokens
+                keepRecentTokens: keepRecentTokens,
+                pendingAuthorMessage: pendingAuthorMessage
             );
         }
         catch (Exception ex)
@@ -337,7 +338,8 @@ public sealed partial class TuiApp
         string reason,
         bool willRetry,
         int keepRecentTokens = 0,
-        bool smart = false
+        bool smart = false,
+        string? pendingAuthorMessage = null
     )
     {
         var execution = await _compactor.CompactAsync(
@@ -350,7 +352,8 @@ public sealed partial class TuiApp
                 KeepRecentTokens: keepRecentTokens,
                 Smart: smart,
                 WillRetry: willRetry,
-                ParentEntryId: _lastParentEntryId
+                ParentEntryId: _lastParentEntryId,
+                PendingAuthorMessage: pendingAuthorMessage
             )
         );
 

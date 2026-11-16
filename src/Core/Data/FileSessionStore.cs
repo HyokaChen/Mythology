@@ -280,36 +280,39 @@ public sealed class FileSessionStore
     }
 
     /// <summary>
-    /// 取会话历史上最后一条真正作者消息（跨全部分片，从新到旧）。
-    /// compact 后活跃分片可能只剩注入消息；摘要提取 Scope 必须能看到旧分片里的作者原话。
+    /// 取会话历史上最近的若干条真正作者消息（跨全部分片，从新到旧）。
+    /// compact 后活跃分片可能只剩注入消息；Scope 提取必须能看到旧分片里的作者原话。
     /// </summary>
-    public async Task<string?> GetLastAuthorMessageAsync(
+    public async Task<List<string>> GetRecentAuthorMessagesAsync(
         string sessionId,
+        int limit,
         CancellationToken ct = default
     )
     {
+        var result = new List<string>();
+        if (limit <= 0)
+            return result;
+
         var mgr = GetSegmentManager(sessionId);
         if (mgr is null)
-            return null;
+            return result;
 
         // 先沿 active path 找，避免把已切走分支的作者消息当成当前任务。
+        var seenContents = new HashSet<string>(StringComparer.Ordinal);
         foreach (var message in Enumerable.Reverse(await GetActiveMessages(sessionId, ct)))
         {
-            var content = message.Content ?? "";
-            if (
-                message.Role != MessageRole.User
-                || string.IsNullOrWhiteSpace(content)
-                || SessionInternalMessages.IsCompactSummary(content)
-                || (
-                    SessionInternalMessages.IsInjectedUserMessage(content)
-                    && !SessionInternalMessages.IsAskUserReply(content)
-                )
-            )
+            ct.ThrowIfCancellationRequested();
+            var content = (message.Content ?? "").Trim();
+            if (message.Role != MessageRole.User || !IsAuthorText(content))
                 continue;
-            return content.Trim();
+            if (seenContents.Add(content))
+                result.Add(content);
+            if (result.Count >= limit)
+                return result;
         }
 
         // 活跃分片可能已被 compact/换页封住；再从全部分片补扫旧作者原话。
+        var seenEntryIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var path in Enumerable.Reverse(mgr.AllSegmentPaths))
         {
             ct.ThrowIfCancellationRequested();
@@ -321,21 +324,31 @@ public sealed class FileSessionStore
                 var entry = entries[i];
                 if (entry.Type != JsonlEntryType.Message || entry.Message?.Role != MessageRole.User)
                     continue;
-                var content = entry.Message.Content ?? "";
-                if (
-                    string.IsNullOrWhiteSpace(content)
-                    || SessionInternalMessages.IsCompactSummary(content)
-                    || (
-                        SessionInternalMessages.IsInjectedUserMessage(content)
-                        && !SessionInternalMessages.IsAskUserReply(content)
-                    )
-                )
+                var content = (entry.Message.Content ?? "").Trim();
+                if (!IsAuthorText(content))
                     continue;
-                return content.Trim();
+                if (!string.IsNullOrEmpty(entry.EntryId) && !seenEntryIds.Add(entry.EntryId))
+                    continue;
+                if (!seenContents.Add(content))
+                    continue;
+                result.Add(content);
+                if (result.Count >= limit)
+                    return result;
             }
         }
 
-        return null;
+        return result;
+    }
+
+    private static bool IsAuthorText(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+        return !SessionInternalMessages.IsCompactSummary(content)
+            && (
+                !SessionInternalMessages.IsInjectedUserMessage(content)
+                || SessionInternalMessages.IsAskUserReply(content)
+            );
     }
 
     public async Task<List<AgentSession>> GetSessions(

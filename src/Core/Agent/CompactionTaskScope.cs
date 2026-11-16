@@ -85,11 +85,11 @@ internal sealed class CompactionTaskScope
     public int MaxChapterOrder => Chapters.Count == 0 ? 0 : Chapters.Max(c => c.Order);
 
     /// <summary>
-    /// 离线兜底：从作者指令或上一份摘要的 Scope 中提取范围。优先作者指令；
+    /// 离线兜底：从最近作者消息或上一份摘要的 Scope 中提取范围。优先作者指令；
     /// 作者只说“继续”时继承 previousScopeText。正常路径由 LLM 提取，不依赖本方法。
     /// </summary>
     public static CompactionTaskScope? TryCreate(
-        string? instruction,
+        IReadOnlyList<string> instructions,
         NovelStructure? structure,
         string? previousScopeText = null
     )
@@ -97,7 +97,31 @@ internal sealed class CompactionTaskScope
         if (structure is null || structure.Chapters.Count == 0)
             return null;
 
-        return TryParse(instruction, structure) ?? TryParse(previousScopeText, structure);
+        foreach (var instruction in instructions)
+        {
+            if (TryParse(instruction, structure) is { } scope)
+                return scope;
+        }
+        return TryParse(previousScopeText, structure);
+    }
+
+    /// <summary>
+    /// 取最近一条携带实际任务信息的作者消息；“继续/好/可以”这类确认不构成新任务。
+    /// 全部都是确认时返回最新一条，供提示词展示，但不会因此覆盖旧 Scope。
+    /// </summary>
+    internal static string? SelectTaskInstruction(IReadOnlyList<string> messages)
+    {
+        if (messages.Count == 0)
+            return null;
+        foreach (var message in messages)
+        {
+            if (
+                !string.IsNullOrWhiteSpace(message)
+                && !SessionInternalMessages.IsContinuationOnlyAuthorMessage(message)
+            )
+                return message;
+        }
+        return messages[0];
     }
 
     /// <summary>

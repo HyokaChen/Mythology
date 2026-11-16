@@ -143,6 +143,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
                     CancellationToken.None,
                     0,
                     false,
+                    null,
                 ]
             )!;
         await task;
@@ -164,6 +165,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
                         CancellationToken.None,
                         0,
                         false,
+                        null,
                     ]
                 )!;
         return await task;
@@ -266,7 +268,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         _engine.OnCompactEnd += (message, summary) => ended.Add((message, summary));
 
         var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
-        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None])!;
+        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None, null])!;
 
         var end = Assert.Single(ended);
         Assert.Contains("自动压缩完成", end.Message);
@@ -650,7 +652,7 @@ public sealed class ContextContinuationEngineTests : IDisposable
         _engine.OnCompactEnd += (message, _) => ended.Add(message);
 
         var method = typeof(SessionEngine).GetMethod("AutoCompactAsync", Flags)!;
-        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None])!;
+        await (Task)method.Invoke(_engine, [2_000, CancellationToken.None, null])!;
 
         Assert.Contains("自动压缩完成", Assert.Single(ended));
         var compact = Assert.Single(ReadSessionEntries("compact"));

@@ -551,7 +551,7 @@ public sealed class SessionEngine(
                     if (_contextManagement is { Mode: ContextMode.Continuation })
                         await RollContextWindowAsync("threshold");
                     else
-                        await AutoCompactAsync(keepRecentTokens, ct);
+                        await AutoCompactAsync(keepRecentTokens, ct, text);
                 }
 
                 // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）
@@ -1194,7 +1194,11 @@ public sealed class SessionEngine(
     }
 
     /// <summary>自动压缩：token 阈值触发，按 token 预算切尾，静默执行。</summary>
-    private async Task AutoCompactAsync(int keepRecentTokens, CancellationToken ct)
+    private async Task AutoCompactAsync(
+        int keepRecentTokens,
+        CancellationToken ct,
+        string? pendingAuthorMessage = null
+    )
     {
         var messages = agent.State.Messages;
         var novelId = agent.CurrentNovelId;
@@ -1219,6 +1223,7 @@ public sealed class SessionEngine(
                 "threshold",
                 willRetry: false,
                 keepRecentTokens: keepRecentTokens,
+                pendingAuthorMessage: pendingAuthorMessage,
                 ct: ct
             );
             endMessage = DescribeAutoCompact(r, messages.Count);
@@ -1373,7 +1378,8 @@ public sealed class SessionEngine(
         bool willRetry,
         CancellationToken ct = default,
         int keepRecentTokens = 0,
-        bool smart = false
+        bool smart = false,
+        string? pendingAuthorMessage = null
     )
     {
         var execution = await _compactor.CompactAsync(
@@ -1386,7 +1392,8 @@ public sealed class SessionEngine(
                 KeepRecentTokens: keepRecentTokens,
                 Smart: smart,
                 WillRetry: willRetry,
-                ParentEntryId: _lastParentEntryId
+                ParentEntryId: _lastParentEntryId,
+                PendingAuthorMessage: pendingAuthorMessage
             ),
             ct
         );

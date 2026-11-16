@@ -45,6 +45,58 @@ public static class SessionInternalMessages
     /// <summary>ask_user 回复：新 OMP 风格块或历史 <c>**用户回复:**</c> 块。</summary>
     public static bool IsAskUserReply(string? content) => AskUserReplyFormatter.IsReply(content);
 
+    private static readonly HashSet<string> ContinuationOnlyMessages = new(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "继续",
+        "接着",
+        "继续吧",
+        "接着来",
+        "继续写",
+        "继续改",
+        "继续优化",
+        "好",
+        "好的",
+        "可以",
+        "行",
+        "嗯",
+        "ok",
+        "按这个来",
+        "就这样",
+    };
+
+    private static readonly char[] ContinuationTrailingChars =
+    [
+        '。',
+        '！',
+        '!',
+        '，',
+        ',',
+        '～',
+        '~',
+        '.',
+        '…',
+        '、',
+        '；',
+        ';',
+        '：',
+        ':',
+        ' ',
+        '\t',
+        '\r',
+        '\n',
+    ];
+
+    /// <summary>整条消息只是“继续/好/可以”这类确认，没有携带新的任务范围。</summary>
+    public static bool IsContinuationOnlyAuthorMessage(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+        var normalized = content.Trim().TrimEnd(ContinuationTrailingChars).TrimEnd();
+        return ContinuationOnlyMessages.Contains(normalized);
+    }
+
     /// <summary>该 assistant 文本是否为系统提示（稳定性/漂移提醒），应渲染为系统行。</summary>
     public static bool IsSystemAssistantMessage(string? content)
     {

@@ -286,7 +286,28 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetLastAuthorMessage_SurvivesCompact()
+    public async Task GetRecentAuthorMessages_ReturnsNewestFirst_AndFiltersInjected()
+    {
+        await CreateTestNovelAsync();
+        await _store.SaveSessionMessages(
+            TestSessionId,
+            TestNovelId,
+            [
+                new LlmChatMessage(ChatMessageRoles.User, "原始作者任务：修正优化第二卷"),
+                new LlmChatMessage(ChatMessageRoles.Assistant, "回复"),
+                new LlmChatMessage(ChatMessageRoles.User, "[本体 harness] 注入"),
+                new LlmChatMessage(ChatMessageRoles.User, "继续"),
+            ],
+            startOrder: 0
+        );
+
+        var recent = await _store.GetRecentAuthorMessagesAsync(TestSessionId, 3);
+
+        Assert.Equal(["继续", "原始作者任务：修正优化第二卷"], recent);
+    }
+
+    [Fact]
+    public async Task GetRecentAuthorMessages_SurvivesCompact()
     {
         await CreateTestNovelAsync();
         var messages = CreateSimpleConversation("原始作者任务：修正优化第二卷", "回复");
@@ -313,9 +334,9 @@ public sealed class FileNovelStoreSessionTests : IAsyncLifetime
             startOrder: 3
         );
 
-        var lastAuthor = await _store.GetLastAuthorMessageAsync(TestSessionId);
+        var recent = await _store.GetRecentAuthorMessagesAsync(TestSessionId, 3);
 
-        Assert.Equal("原始作者任务：修正优化第二卷", lastAuthor);
+        Assert.Equal(["原始作者任务：修正优化第二卷"], recent);
     }
 
     [Fact]

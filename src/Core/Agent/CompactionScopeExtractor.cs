@@ -18,7 +18,7 @@ internal static class CompactionScopeExtractor
     public static async Task<CompactionScopeExtraction> TryExtractAsync(
         Agent agent,
         NovelStructure structure,
-        string? latestAuthorMessage,
+        IReadOnlyList<string> authorMessages,
         string? previousSummary,
         CancellationToken ct
     )
@@ -40,7 +40,7 @@ internal static class CompactionScopeExtractor
                 + "你必须从最近作者消息判断任务范围；上一份摘要只用于继承旧任务。"
                 + "全局写作前沿不是任务范围。"
         );
-        conversation.AddUserMessage(BuildPrompt(latestAuthorMessage, previousSummary, structure));
+        conversation.AddUserMessage(BuildPrompt(authorMessages, previousSummary, structure));
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(Timeout);
@@ -59,7 +59,11 @@ internal static class CompactionScopeExtractor
             return new CompactionScopeExtraction(false, null);
         }
 
-        return ParseSelection(builder.ToString(), structure, latestAuthorMessage);
+        return ParseSelection(
+            builder.ToString(),
+            structure,
+            CompactionTaskScope.SelectTaskInstruction(authorMessages)
+        );
     }
 
     internal static CompactionScopeExtraction ParseSelection(
@@ -93,10 +97,10 @@ internal static class CompactionScopeExtractor
                 chapterOrders,
                 structure
             );
-            // write/revise 却选不出任何卷/章 = 半成品回答，与解析失败同构：
-            // 返回未完成，让上游走 TryCreate 兜底。不能把“有任务却无范围”当成
-            // “无任务”——那会关闭 EnforceTaskScope 并丢掉 Progress，
-            // 让全局写作前沿再次渗进 Next。mode=none 仍表示作者真的取消了任务。
+            // write/revise 却选不出任何卷/章 = 半成品回答，与解析失败同构。
+            // Completed 只表示模型是否给出可用选择；上游不再据此跳过 TryCreate 兜底，
+            // 否则一次 mode=none/半成品回答就会清空 Scope 和 Progress。
+            // mode=none 只表示模型无法确定范围，不等于作者取消任务。
             return new CompactionScopeExtraction(scope is not null, scope);
         }
         catch (JsonException)
@@ -106,18 +110,27 @@ internal static class CompactionScopeExtractor
     }
 
     private static string BuildPrompt(
-        string? latestAuthorMessage,
+        IReadOnlyList<string> authorMessages,
         string? previousSummary,
         NovelStructure structure
     )
     {
         var sb = new StringBuilder();
-        sb.AppendLine("## 最近作者消息（Scope 的唯一新来源）");
-        sb.AppendLine(
-            string.IsNullOrWhiteSpace(latestAuthorMessage)
-                ? "- （本轮没有新的作者消息；只能继承上一份摘要里的作者指令/Scope）"
-                : $"- {Truncate(latestAuthorMessage.ReplaceLineEndings(" "), 2_000)}"
-        );
+        sb.AppendLine("## 最近作者消息（从新到旧，Scope 的唯一新来源）");
+        if (authorMessages.Count == 0)
+        {
+            sb.AppendLine("- （本轮没有新的作者消息；只能继承上一份摘要里的作者指令/Scope）");
+        }
+        else
+        {
+            for (var i = 0; i < authorMessages.Count; i++)
+            {
+                var label = i == 0 ? "最新" : "更早";
+                sb.AppendLine(
+                    $"- [{label}] {Truncate(authorMessages[i].ReplaceLineEndings(" "), 2_000)}"
+                );
+            }
+        }
         sb.AppendLine();
         sb.AppendLine("## 上一份摘要（只用于继承旧任务，不得从全局前沿推导）");
         sb.AppendLine(
@@ -134,7 +147,7 @@ internal static class CompactionScopeExtractor
             "1. 最近作者消息明确说“整个/全部/这一卷/第X-Y章/接下来只写…”才建立新 Scope。"
         );
         sb.AppendLine(
-            "2. 最近作者消息只是“继续/好/可以/按这个来”，继承上一份摘要的作者指令/Scope。"
+            "2. 最新消息只是“继续/好/可以/按这个来”这类确认时，不要判定任务结束：先看更早的作者消息；上一份摘要已有 Scope 就继承，没有就用更早消息里的明确范围建立 Scope。"
         );
         sb.AppendLine(
             "3. 最近作者消息只是单章/单段修改（如“把第54章第三段改一下”），且上一份摘要已有长期 Scope：保持原 Scope，不要扩大到第54章。"

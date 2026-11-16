@@ -120,7 +120,7 @@ public sealed partial class TuiApp
                 if (_contextManagement is { Mode: ContextMode.Continuation })
                     await RollContextWindowAsync("threshold");
                 else
-                    await AutoCompactAsync(keepRecentTokens);
+                    await AutoCompactAsync(keepRecentTokens, text);
             }
 
             // ★ 新用户消息 = 新的接续预算（自动接续次数清零，上一轮的换页原因作废）

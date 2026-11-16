@@ -40,7 +40,7 @@ public sealed class CompactionProgressTests
     public void Extract_UsesSuccessfulToolCallsAndKeepsPreviousProgress()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var previous = CompactionTaskProgress.Create([30], [], 30, 23, []);
         var messages = new List<LlmChatMessage>();
 
@@ -72,7 +72,7 @@ public sealed class CompactionProgressTests
     public void Extract_OutOfScopeWriteOnly_RecordsDeviation()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var messages = new List<LlmChatMessage>();
         AddCall(messages, "write-54", "write_chapter", """{"chapter-id":"c54"}""", true);
 
@@ -94,7 +94,7 @@ public sealed class CompactionProgressTests
     public void BuildCompactSummaryWithScope_EnforcesProgressAndNext()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var progress = CompactionTaskProgress.Create(
             [21, 22, 24, 30],
             [25],
@@ -124,7 +124,15 @@ public sealed class CompactionProgressTests
         var summary = (string)
             method.Invoke(
                 null,
-                [messages, messages.Count, previous, snapshot, scope, progress, RevisionInstruction]
+                [
+                    messages,
+                    messages.Count,
+                    previous,
+                    snapshot,
+                    scope,
+                    progress,
+                    new[] { RevisionInstruction },
+                ]
             )!;
 
         Assert.StartsWith("> 作者指令（逐字，最高优先级）：", summary);
@@ -153,7 +161,7 @@ public sealed class CompactionProgressTests
     public void EnforceTaskScope_ContradictingInScopeNext_AlignedWithProgress()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var progress = CompactionTaskProgress.Create(
             [21, 22, 24, 30],
             [],
@@ -180,7 +188,7 @@ public sealed class CompactionProgressTests
     public void EnforceTaskScope_NextMatchingProgress_Kept()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var progress = CompactionTaskProgress.Create([21], [], 21, 22, []);
         const string summary = "## Next / 下一步\n- 优先优化第22章《萤火22》开头五百字";
 
@@ -212,7 +220,10 @@ public sealed class CompactionProgressTests
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic
         )!;
         var summary = (string)
-            method.Invoke(null, [messages, messages.Count, previous, "", null, null, null])!;
+            method.Invoke(
+                null,
+                [messages, messages.Count, previous, "", null, null, new[] { "继续" }]
+            )!;
 
         Assert.Contains("## Scope / 任务边界", summary);
         Assert.Contains("已实际编辑：21、22", summary);
@@ -223,7 +234,7 @@ public sealed class CompactionProgressTests
     public void Extract_WriteChapterNewChapterWithOrder_CountsAsEdited()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var messages = new List<LlmChatMessage>();
         AddCall(
             messages,
@@ -249,7 +260,7 @@ public sealed class CompactionProgressTests
     public void Extract_ChapterRefForms_ResolveLikeTools()
     {
         var structure = BuildStructure();
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, structure)!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], structure)!;
         var messages = new List<LlmChatMessage>();
         AddCall(messages, "edit-cn", "edit_text", """{"chapter-id":"第23章"}""", true);
         AddCall(messages, "edit-title", "edit_text", """{"chapter-id":"萤火25"}""", true);

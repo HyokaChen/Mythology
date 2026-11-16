@@ -63,7 +63,7 @@ public sealed class ContextContinuationTests : IAsyncDisposable
         var task = (Task)
             method.Invoke(
                 _harness.App,
-                [_harness.Agent.State.Messages, keepRecent, "manual", false, 0, false]
+                [_harness.Agent.State.Messages, keepRecent, "manual", false, 0, false, null]
             )!;
         await task;
     }

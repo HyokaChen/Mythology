@@ -14,7 +14,7 @@ public sealed class CompactionTaskScopeTests
     [Fact]
     public void TryCreate_RevisionVolume_RejectsGlobalNext()
     {
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure());
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure());
 
         Assert.NotNull(scope);
         Assert.Equal(CompactionTaskMode.Revise, scope!.Mode);
@@ -37,7 +37,7 @@ public sealed class CompactionTaskScopeTests
     [Fact]
     public void TryCreate_WriteChapter_AllowsOnlyThatChapter()
     {
-        var scope = CompactionTaskScope.TryCreate("写第54章", BuildStructure());
+        var scope = CompactionTaskScope.TryCreate(["写第54章"], BuildStructure());
 
         Assert.NotNull(scope);
         Assert.Equal(CompactionTaskMode.Write, scope!.Mode);
@@ -50,12 +50,12 @@ public sealed class CompactionTaskScopeTests
     [Fact]
     public void TryCreate_ContinuesPreviousRevisionScope()
     {
-        var first = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure());
+        var first = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure());
         Assert.NotNull(first);
         var firstScope = first!;
 
         var second = CompactionTaskScope.TryCreate(
-            "继续",
+            ["继续"],
             BuildStructure(),
             firstScope.FormatBody()
         );
@@ -69,9 +69,20 @@ public sealed class CompactionTaskScopeTests
     }
 
     [Fact]
+    public void TryCreate_SkipsContinuationOnlyMessage()
+    {
+        var scope = CompactionTaskScope.TryCreate(["继续", RevisionInstruction], BuildStructure());
+
+        Assert.NotNull(scope);
+        Assert.Contains(21, scope!.ChapterOrders);
+        Assert.Contains(40, scope.ChapterOrders);
+        Assert.DoesNotContain(54, scope.ChapterOrders);
+    }
+
+    [Fact]
     public void EnforceTaskScope_RepairsOutOfScopeNext()
     {
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure())!;
         const string summary =
             "## Scope / 任务边界\n"
             + "- 未记录\n\n"
@@ -89,7 +100,7 @@ public sealed class CompactionTaskScopeTests
     [Fact]
     public void EnforceTaskScope_ReplacesWhereProgressAndNext()
     {
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure())!;
         var progress = CompactionTaskProgress.Create(
             [21, 22, 24, 30],
             [25],
@@ -129,7 +140,7 @@ public sealed class CompactionTaskScopeTests
     [Fact]
     public void EnforceTaskScope_PrefersPreviousInScopeNext()
     {
-        var scope = CompactionTaskScope.TryCreate(RevisionInstruction, BuildStructure())!;
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure())!;
         const string summary =
             "## Scope / 任务边界\n"
             + "- 未记录\n\n"

@@ -21,6 +21,8 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         $"myth-compact-snapshot-{Guid.NewGuid():N}"
     );
     private readonly FileNovelStore _novelStore;
+    private readonly FileSessionStore _sessionStore;
+    private readonly AgentModel _agent;
     private readonly CompactionEngine _engine;
 
     public CompactNovelStateSnapshotTests()
@@ -31,13 +33,9 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         Directory.CreateDirectory(storeDir);
 
         _novelStore = new FileNovelStore(novelsRoot, storeDir);
-        var agent = new AgentModel(new ToolRegistry(), null) { CurrentNovelId = NovelId };
-        _engine = new CompactionEngine(
-            agent,
-            new FileSessionStore(storeDir, novelsRoot),
-            _novelStore,
-            NullLogger.Instance
-        );
+        _sessionStore = new FileSessionStore(storeDir, novelsRoot);
+        _agent = new AgentModel(new ToolRegistry(), null) { CurrentNovelId = NovelId };
+        _engine = new CompactionEngine(_agent, _sessionStore, _novelStore, NullLogger.Instance);
     }
 
     public void Dispose()
@@ -139,6 +137,142 @@ public sealed class CompactNovelStateSnapshotTests : IDisposable
         Assert.Contains("本任务下一步（必须在 Scope 内）", nextSection);
         Assert.Contains("第23章", nextSection);
         Assert.DoesNotContain("第54章", nextSection);
+    }
+
+    [Fact]
+    public async Task BuildNovelStateSnapshot_ContinuationAfterTask_KeepsScope()
+    {
+        await SeedRevisionNovelAsync();
+        const string sessionId = "sess-scope-continues";
+        var messages = new List<LlmChatMessage>
+        {
+            new(
+                ChatMessageRoles.User,
+                "修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！"
+            ),
+            new(ChatMessageRoles.Assistant, "开始处理第二卷。"),
+        };
+        var lastEntryId = await _sessionStore.SaveSessionMessages(
+            sessionId,
+            RevisionNovelId,
+            messages,
+            startOrder: 0
+        );
+        var (compactEntryId, _) = await _sessionStore.CompactSession(
+            sessionId,
+            RevisionNovelId,
+            summary: "## Where / 写到哪里\n- 第二卷修订进行中",
+            firstKeptEntryId: lastEntryId!,
+            messagesBefore: messages.Count,
+            parentEntryId: null,
+            order: 2
+        );
+        await _sessionStore.SaveSessionMessages(
+            sessionId,
+            RevisionNovelId,
+            [new LlmChatMessage(ChatMessageRoles.User, "继续")],
+            lastParentEntryId: compactEntryId,
+            startOrder: 3
+        );
+        _agent.SessionId = sessionId;
+
+        var snapshot = await BuildSnapshotAsync(
+            RevisionNovelId,
+            [new LlmChatMessage(ChatMessageRoles.User, "继续")]
+        );
+
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("允许范围：第2卷《夏夜的萤火》（ID:v2），第21-40章", snapshot);
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        var nextSection = snapshot[nextIndex..];
+        Assert.Contains("第23章", nextSection);
+        Assert.DoesNotContain("第54章", nextSection);
+    }
+
+    [Fact]
+    public async Task BuildNovelStateSnapshot_PendingNewTaskOverridesPreviousScope()
+    {
+        await SeedRevisionNovelAsync();
+        const string sessionId = "sess-pending-new-task";
+        await _sessionStore.SaveSessionMessages(
+            sessionId,
+            RevisionNovelId,
+            [
+                new LlmChatMessage(
+                    ChatMessageRoles.User,
+                    "修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！"
+                ),
+                new LlmChatMessage(ChatMessageRoles.Assistant, "开始处理第二卷。"),
+            ],
+            startOrder: 0
+        );
+        _agent.SessionId = sessionId;
+        var method = typeof(CompactionEngine).GetMethod(
+            "BuildNovelStateAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var task = (Task)
+            method.Invoke(
+                _engine,
+                [
+                    RevisionNovelId,
+                    new List<LlmChatMessage>(),
+                    null,
+                    "现在修正第54章，改成新的版本",
+                    CancellationToken.None,
+                ]
+            )!;
+        await task;
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var snapshot = (string)result.GetType().GetProperty("Snapshot")!.GetValue(result)!;
+
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("第3卷", snapshot);
+        Assert.Contains("第54章", snapshot);
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        Assert.Contains("第54章", snapshot[nextIndex..]);
+    }
+
+    [Fact]
+    public async Task BuildNovelStateSnapshot_PendingContinuationKeepsPreviousTask()
+    {
+        await SeedRevisionNovelAsync();
+        const string sessionId = "sess-pending-continues";
+        await _sessionStore.SaveSessionMessages(
+            sessionId,
+            RevisionNovelId,
+            [
+                new LlmChatMessage(
+                    ChatMessageRoles.User,
+                    "修正优化整个第二卷 分卷[ID:v2]:夏夜的萤火 的所有章节内容！！"
+                ),
+                new LlmChatMessage(ChatMessageRoles.Assistant, "开始处理第二卷。"),
+            ],
+            startOrder: 0
+        );
+        _agent.SessionId = sessionId;
+
+        var method = typeof(CompactionEngine).GetMethod(
+            "BuildNovelStateAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var task = (Task)
+            method.Invoke(
+                _engine,
+                [RevisionNovelId, new List<LlmChatMessage>(), null, "继续", CancellationToken.None]
+            )!;
+        await task;
+        var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
+        var snapshot = (string)result.GetType().GetProperty("Snapshot")!.GetValue(result)!;
+
+        Assert.Contains("## Scope / 任务边界", snapshot);
+        Assert.Contains("允许范围：第2卷《夏夜的萤火》（ID:v2），第21-40章", snapshot);
+        var nextIndex = snapshot.IndexOf("## Next / 下一步", StringComparison.Ordinal);
+        Assert.True(nextIndex >= 0);
+        Assert.Contains("第23章", snapshot[nextIndex..]);
+        Assert.DoesNotContain("第54章", snapshot[nextIndex..]);
     }
 
     [Fact]
