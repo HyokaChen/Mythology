@@ -565,10 +565,10 @@ public sealed class CompactionEngine(
                 if (aiSummary is not null)
                 {
                     var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint, hasTodos);
-                    var merged = MergeCheckpoint(normalized, previousSummary, hasTodos);
-                    if (hasTodos)
-                        merged = EnsureTodoSection(merged, todoItems!);
-                    merged = Truncate(merged, 8_000);
+                    var merged = Truncate(
+                        MergeCheckpoint(normalized, previousSummary, hasTodos),
+                        8_000
+                    );
                     var scoped = EnforceTaskScope(
                         PrependAuthorScope(merged, messages, cutIndex, authorMessages, scope),
                         scope,
@@ -576,6 +576,8 @@ public sealed class CompactionEngine(
                         progress,
                         baseCheckpoint
                     );
+                    if (hasTodos)
+                        scoped = EnsureTodoSection(scoped, todoItems!);
                     return ApplyTodoNext(scoped, hasTodos ? todoItems : null, scope);
                 }
             }
