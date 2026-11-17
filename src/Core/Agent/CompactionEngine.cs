@@ -1594,7 +1594,7 @@ public sealed class CompactionEngine(
             .OrderBy(item => item.Id)
             .ToList();
         if (visible.Count == 0)
-            return "- 当前没有任务";
+            return "- 当前没有任务（如 Progress/Next 仍有未完成工作，先用 todo_write 建立任务清单）";
 
         var sb = new StringBuilder();
         sb.AppendLine(
