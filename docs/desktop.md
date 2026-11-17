@@ -751,22 +751,20 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   列表、表格、代码块都由源码级布局模型估算，避免不可测的异步图形高度
 - 离屏超大 block（>12k 字符的代码块/正文）延迟创建；只有接近可见范围才挂
   `MarkdownRenderer`，其余仅保留 spacer 高度
-- 历史 Agent 过程默认折叠成「过程 · N 步」一行（`IsProcessExpanded=false`），点击展开；
-  尾部约 2 屏保持展开。对应 DSH Desktop 的 completed Turn folding
+- Agent 步骤始终作为独立行进入时间线，不再有「整个 Turn 过程折叠成一行」的状态；
+  历史与实时同构，长历史完全依赖外层行窗口虚拟化。行数不会在折叠/展开之间切换，
+  高度索引因此保持稳定；只有单条步骤的「详情」按需展开
 - 流式思考只渲染固定 2 行尾部预览（`ReasoningPreview`，`Height=40`）；详情默认折叠，
   展开后的完整推理放在 `MaxHeight=320` 的内部 ScrollViewer，token 增长不改变对话总高度
   （借鉴 TKCode.Arc ReasoningBlock）
 - 点击「展开 / 详情」时先 `PauseFollow`，保持点击行在屏幕上的位置与当前 offset；
   详情从原位置向下展开，不把视口滚到详情顶部，也不追到消息尾部。
   回归：`ExpandingStepDetailsAtTail_KeepsCurrentOffset`
-- **整个 Turn 完成**（`ConversationViewModel.IsProcessing == false`）后才等 450ms 自动折叠过程；
-  回合进行中步骤结束不折叠，避免“先折起再展开”的抖动；失败自动展开；用户手动操作后不自动折；
-  参数/结果/diff 各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
+- 回合结束不自动折叠步骤；参数/结果/diff 各自限高滚动（借鉴 ToolCallGroup / ToolCallOutput）
 - 流式步骤/来源变化用**增量行拓扑同步**，不重建 Content 行；LiveMarkdown 的
   DocumentNode/TextLayout 缓存因此能跨步骤保留。最终正文不做固定高度（未知长度只能隐藏或内滚）
-- 点击历史「过程」行时先 `PauseFollow`：展开步骤会改变行高，但不能把视口拉回最后一条；
-  展开后的第一张步骤卡必须原地可见，不依赖滚动换窗。用户滚轮下滚/PageDown/End
-  回到底部后才恢复跟随。回归：`ProcessRows_ExpandClickedMessage_NotBottomMessage`
+- 点击步骤「展开 / 详情」时先 `PauseFollow`：详情展开会改变行高，但不能把视口拉回最后一条；
+  用户滚轮下滚/PageDown/End 回到底部后才恢复跟随。回归：`ExpandingStepDetailsAtTail_KeepsCurrentOffset`
 - 跟随只认用户输入：滚轮上滚 / Up·PageUp·Home / 滚动条上拖立即停跟随；回到跟随
   必须是「正向 offset + extent 稳定 + 真正到底部」，窗口换页和高度校正不能误判。
   `BeginLayoutUpdate` 在 spacer/锚点修正期间屏蔽该判定；每次布局/extent 增长后仍
@@ -777,9 +775,8 @@ stock VSP 的 extent 只按当前 realized 窗口估算，可变高度对话行�
   `VirtualizedScroll_WheelDownMidHistory_DoesNotJumpToTail`
 - 阅读窗口带滞回：焦点仍在当前窗口安全区时不 Remove/Insert，避免每一像素滚动都
   触发 spacer + anchor 重算。Step 行不再是固定 54px：正文、思考详情、工具参数/
-  结果/diff 都按内容估算，展开过程后不再用固定值把总高度估错。回归：
-  `ExpandedProcess_ScrollDown_DoesNotGetPulledUp`、
-  `ProcessExpand_ThenScrollDown_DoesNotGetPulledUp`
+  结果/diff 都按内容估算，展开详情后不再用固定值把总高度估错。回归：
+  `ExpandedProcess_ScrollDown_DoesNotGetPulledUp`
 - 窗口失焦/激活：失焦期间忽略 ScrollChanged 的跟随判定；离开时在底部（或正在跟随）
   则激活后 `ResetFollow` 回到底部，阅读中段则保持原位置。回归：
   `WindowDeactivateReactivate_AtBottom_StaysAtBottom`

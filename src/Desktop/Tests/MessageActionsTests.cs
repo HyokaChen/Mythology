@@ -86,11 +86,7 @@ public sealed class MessageActionsTests
     [Fact]
     public void CompletedContentlessAgent_GetsActionsRow_ForRetry()
     {
-        var message = new ChatMessage(MessageSender.Agent)
-        {
-            IsCompleted = true,
-            IsProcessExpanded = false,
-        };
+        var message = new ChatMessage(MessageSender.Agent) { IsCompleted = true };
         message.AgentSteps.Add(
             new AgentStep
             {
@@ -102,7 +98,7 @@ public sealed class MessageActionsTests
 
         var rows = ConversationRow.FromMessage(message);
 
-        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Process);
+        Assert.Contains(rows, row => row.Kind == ConversationRowKind.Step);
         Assert.Equal(ConversationRowKind.Actions, rows[^1].Kind);
         Assert.True(rows[^1].IsLastInMessage);
     }

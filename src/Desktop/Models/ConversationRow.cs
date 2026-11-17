@@ -12,7 +12,6 @@ public enum ConversationRowKind
     Content,
     Interrupted,
     Sources,
-    Process,
     Actions,
 }
 
@@ -50,28 +49,15 @@ public sealed class ConversationRow
                 );
                 break;
             case MessageSender.Agent:
-                if (message.IsProcessExpanded)
-                {
-                    foreach (var step in message.AgentSteps)
-                        rows.Add(
-                            new ConversationRow
-                            {
-                                Kind = ConversationRowKind.Step,
-                                Message = message,
-                                Step = step,
-                            }
-                        );
-                }
-                else if (message.AgentSteps.Count > 0)
-                {
+                foreach (var step in message.AgentSteps)
                     rows.Add(
                         new ConversationRow
                         {
-                            Kind = ConversationRowKind.Process,
+                            Kind = ConversationRowKind.Step,
                             Message = message,
+                            Step = step,
                         }
                     );
-                }
                 if (message.HasVisibleContent)
                     rows.Add(
                         new ConversationRow

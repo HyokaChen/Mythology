@@ -710,196 +710,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
-    [Fact]
-    public void ProcessExpand_ThenScrollDown_DoesNotGetPulledUp()
-    {
-        Ui.Run(() =>
-        {
-            for (var m = 0; m < 60; m++)
-            {
-                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-                for (var s = 0; s < 8; s++)
-                {
-                    if (s % 2 == 0)
-                    {
-                        var step = new Desktop.Models.AgentStep
-                        {
-                            Kind = Desktop.Models.StepKind.Thinking,
-                            Status = Desktop.Models.AgentStepStatus.Completed,
-                            Title = $"思考 {m}-{s}",
-                        };
-                        step.ThinkingBuilder.Append(
-                            string.Join(" ", Enumerable.Repeat("展开后的详细过程正文。", 30))
-                        );
-                        step.NotifyThinkingChanged();
-                        message.AgentSteps.Add(step);
-                    }
-                    else
-                    {
-                        message.AgentSteps.Add(
-                            new Desktop.Models.AgentStep
-                            {
-                                Kind = Desktop.Models.StepKind.ToolCall,
-                                Title = $"工具 {m}-{s}",
-                                Status = Desktop.Models.AgentStepStatus.Completed,
-                                ArgumentsSummary = $"参数 {m}-{s}",
-                                ResultSummary = $"结果 {m}-{s}",
-                            }
-                        );
-                    }
-                }
-                message.IsProcessExpanded = false;
-                _vm.Messages.Add(message);
-            }
-            _vm.HasMessages = true;
-
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 1000,
-                Height = 760,
-                Content = view,
-            };
-            window.Show();
-            try
-            {
-                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                    "MessageList"
-                )!;
-                var sv = FindMessageScroll(view);
-                PumpUntil(() => AtBottom(sv) && list.Items.Count > 0, "初始过程折叠");
-
-                var pointer = new Point(500, 380);
-                window.MouseMove(pointer);
-                window.MouseWheel(pointer, new Vector(0, 5));
-                PumpUntil(() => !AtBottom(sv), "停止跟随");
-                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.45));
-                for (var i = 0; i < 30; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(5);
-                }
-
-                var button = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext
-                            is Desktop.Models.ConversationRow
-                            {
-                                Kind: Desktop.Models.ConversationRowKind.Process
-                            }
-                    )
-                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
-                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
-                    .OrderBy(x => x.Point!.Value.Y)
-                    .FirstOrDefault();
-                Assert.NotNull(button);
-                var processRow = (Desktop.Models.ConversationRow)button!.Button.DataContext!;
-                var processMessage = processRow.Message;
-                var click = button.Button.TranslatePoint(
-                    new Point(button.Button.Bounds.Width / 2, button.Button.Bounds.Height / 2),
-                    window
-                );
-                Assert.NotNull(click);
-                window.MouseMove(click!.Value);
-                window.MouseDown(click.Value, MouseButton.Left);
-                window.MouseUp(click.Value, MouseButton.Left);
-                for (var i = 0; i < 40; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(5);
-                }
-                Assert.True(processMessage.IsProcessExpanded);
-                Assert.False(list.IsFollowing);
-
-                // 再展开当前可见的思考详情：详情内部是 320px 限高滚动区，
-                // 外层行高变化最容易把 anchor 拉回上方。
-                var detailsButton = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext
-                            is Desktop.Models.ConversationRow
-                            {
-                                Step: { Kind: Desktop.Models.StepKind.Thinking },
-                            }
-                        && Equals(b.Content, "展开")
-                    )
-                    .Select(b => new { Button = b, Point = b.TranslatePoint(new Point(0, 0), sv) })
-                    .Where(x => x.Point is { } p && p.Y >= 0 && p.Y < sv.Viewport.Height)
-                    .FirstOrDefault();
-                if (detailsButton is not null)
-                {
-                    var detailsClick = detailsButton.Button.TranslatePoint(
-                        new Point(
-                            detailsButton.Button.Bounds.Width / 2,
-                            detailsButton.Button.Bounds.Height / 2
-                        ),
-                        window
-                    );
-                    Assert.NotNull(detailsClick);
-                    window.MouseMove(detailsClick!.Value);
-                    window.MouseDown(detailsClick.Value, MouseButton.Left);
-                    window.MouseUp(detailsClick.Value, MouseButton.Left);
-                    for (var i = 0; i < 40; i++)
-                    {
-                        Dispatcher.UIThread.RunJobs();
-                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                        Thread.Sleep(5);
-                    }
-                    Assert.True(
-                        ((Desktop.Models.ConversationRow)detailsButton.Button.DataContext!)
-                            .Step!
-                            .IsDetailsExpanded
-                    );
-                    Assert.False(list.IsFollowing);
-                }
-
-                window.MouseMove(pointer);
-                var before = sv.Offset.Y;
-                for (var i = 0; i < 20; i++)
-                {
-                    if (AtBottom(sv))
-                        break;
-                    window.MouseWheel(pointer, new Vector(0, -2));
-                    for (var j = 0; j < 12; j++)
-                    {
-                        Dispatcher.UIThread.RunJobs();
-                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                        Thread.Sleep(5);
-                    }
-                    Assert.False(
-                        list.IsFollowing && !AtBottom(sv),
-                        $"展开后第 {i} 次下滚在未到底时恢复跟随：offset={sv.Offset.Y}, extent={sv.Extent.Height}"
-                    );
-                    Assert.True(
-                        sv.Offset.Y >= before - 3,
-                        $"展开后下滚被拉回上方：before={before}, now={sv.Offset.Y}, extent={sv.Extent.Height}"
-                    );
-                    before = sv.Offset.Y;
-                }
-                Assert.True(AtBottom(sv), "展开过程后无法滚到底部");
-
-                // 再次到中段，做一次大跨度快速滚轮：先在估算底部停住，
-                // 随后的实测高度增长必须继续贴底，不能留下底部空隙。
-                sv.Offset = sv.Offset.WithY(Math.Max(1000, sv.Extent.Height * 0.45));
-                for (var i = 0; i < 30; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(5);
-                }
-                window.MouseWheel(pointer, new Vector(0, -60));
-                PumpUntil(() => AtBottom(sv), "快速滚到底后不应留底部空隙");
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
-
     /// <summary>
     /// compact 系统行位于历史中段时，阅读到该边界再向下滚，窗口换页必须
     /// 以已实现行顶部为锚点；否则估算高度会把视口拉回 compact 上方。
@@ -946,7 +756,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                             ResultSummary = "结果",
                         }
                     );
-                agent.IsProcessExpanded = false;
                 _vm.Messages.Add(agent);
             }
             _vm.HasMessages = true;
@@ -1061,7 +870,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     step.NotifyThinkingChanged();
                     message.AgentSteps.Add(step);
                 }
-                message.IsProcessExpanded = true;
                 _vm.Messages.Add(message);
             }
             _vm.HasMessages = true;
@@ -1136,7 +944,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     step.IsDetailsExpanded = true;
                     message.AgentSteps.Add(step);
                 }
-                message.IsProcessExpanded = true;
                 _vm.Messages.Add(message);
             }
             _vm.HasMessages = true;
@@ -1169,7 +976,13 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     Thread.Sleep(5);
                 }
 
-                window.MouseWheel(pointer, new Vector(0, -60));
+                // 过程不再整体折叠后，30×12 个展开详情行让总高度远大于旧测试；
+                // 连续快速滚轮直到估算底部，再等实测高度增长贴底。
+                for (var i = 0; i < 200 && !AtBottom(sv); i++)
+                {
+                    window.MouseWheel(pointer, new Vector(0, -60));
+                    Dispatcher.UIThread.RunJobs();
+                }
                 PumpUntil(() => AtBottom(sv), "快速滚到底后应贴住真实底部");
                 Assert.True(list.IsFollowing || AtBottom(sv));
             }
@@ -1635,7 +1448,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             );
             step.NotifyThinkingChanged();
             target.AgentSteps.Add(step);
-            target.IsProcessExpanded = true;
             target.AppendContent("正在生成中的回答");
             _vm.Messages.Add(target);
             _vm.HasMessages = true;
@@ -1739,7 +1551,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                         );
                     }
                 }
-                message.IsProcessExpanded = true;
                 _vm.Messages.Add(message);
             }
             _vm.HasMessages = true;
@@ -2618,115 +2429,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
         });
     }
 
-    [Fact]
-    public void ProcessRows_ExpandClickedMessage_NotBottomMessage()
-    {
-        Ui.Run(() =>
-        {
-            var messages = new List<Desktop.Models.ChatMessage>();
-            for (var i = 0; i < 10; i++)
-            {
-                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-                message.AppendContent($"第 {i} 条回答");
-                message.AgentSteps.Add(
-                    new Desktop.Models.AgentStep
-                    {
-                        Kind = Desktop.Models.StepKind.ToolCall,
-                        Title = $"工具 {i}",
-                        Status = Desktop.Models.AgentStepStatus.Completed,
-                    }
-                );
-                message.IsProcessExpanded = false;
-                messages.Add(message);
-                _vm.Messages.Add(message);
-            }
-            _vm.HasMessages = true;
-
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 900,
-                Height = 700,
-                Content = view,
-            };
-            window.Show();
-            try
-            {
-                PumpUntil(
-                    () =>
-                        view.GetVisualDescendants()
-                            .OfType<Button>()
-                            .Any(b =>
-                                b.DataContext
-                                    is Desktop.Models.ConversationRow
-                                    {
-                                        Kind: Desktop.Models.ConversationRowKind.Process
-                                    }
-                            ),
-                    "过程行挂载"
-                );
-                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                    "MessageList"
-                )!;
-                var scroll = FindMessageScroll(view);
-                // 回到顶部，保证点击的是当前视口里真实可见的过程行。
-                scroll.Offset = scroll.Offset.WithY(0);
-                PumpUntil(() => scroll.Offset.Y <= 0.5, "回到顶部");
-
-                var processButton = view.GetVisualDescendants()
-                    .OfType<Button>()
-                    .Where(b =>
-                        b.DataContext
-                            is Desktop.Models.ConversationRow
-                            {
-                                Kind: Desktop.Models.ConversationRowKind.Process,
-                                Message: var message,
-                            }
-                        && ReferenceEquals(message, messages[0])
-                    )
-                    .FirstOrDefault(b =>
-                        b.TranslatePoint(new Point(0, 0), scroll) is { } point
-                        && point.Y >= 0
-                        && point.Y < scroll.Viewport.Height
-                    );
-                Assert.NotNull(processButton);
-                processButton!.RaiseEvent(
-                    new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)
-                );
-                for (var i = 0; i < 10; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(5);
-                }
-                Assert.True(messages[0].IsProcessExpanded);
-                Assert.False(messages[1].IsProcessExpanded);
-                Assert.False(list.IsFollowing);
-                var stepRow = list
-                    .Items.OfType<Desktop.Models.ConversationRow>()
-                    .FirstOrDefault(row =>
-                        ReferenceEquals(row.Message, messages[0])
-                        && row.Kind == Desktop.Models.ConversationRowKind.Step
-                    );
-                Assert.NotNull(stepRow);
-                var title = view.GetVisualDescendants()
-                    .OfType<TextBlock>()
-                    .FirstOrDefault(text =>
-                        ReferenceEquals(text.DataContext, stepRow)
-                        && text.Text?.Contains("工具 0", StringComparison.Ordinal) == true
-                    );
-                Assert.NotNull(title);
-                var titlePoint = title!.TranslatePoint(new Point(0, 0), scroll);
-                Assert.NotNull(titlePoint);
-                Assert.InRange(titlePoint.Value.Y, 0, scroll.Viewport.Height);
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
-
     /// <summary>
     /// 动作条/标签/行距都是固定高度，必须进入虚拟化估算；否则未实测行
     /// 会让 extent、锚点和“接近底部”判断整体偏移。
@@ -2744,17 +2446,11 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             content.AppendContent("agent-probe");
             _vm.Messages.Add(content);
 
-            var stepContent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
-            {
-                IsProcessExpanded = true,
-            };
+            var stepContent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
             stepContent.AgentSteps.Add(Desktop.Models.AgentStep.CreateContent("step-probe"));
             _vm.Messages.Add(stepContent);
 
-            var stepHeader = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
-            {
-                IsProcessExpanded = true,
-            };
+            var stepHeader = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
             stepHeader.AgentSteps.Add(
                 new Desktop.Models.AgentStep
                 {
@@ -2780,10 +2476,7 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             interrupted.IsInterrupted = true;
             _vm.Messages.Add(interrupted);
 
-            var process = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
-            {
-                IsProcessExpanded = false,
-            };
+            var process = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
             process.AgentSteps.Add(
                 new Desktop.Models.AgentStep
                 {
@@ -2804,10 +2497,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             var (window, view, list, _) = ShowConversation(height: 1600);
             try
             {
-                // RebuildRows 默认展开最后 4 条消息；显式还原本用例要覆盖的行状态。
-                stepContent.IsProcessExpanded = true;
-                stepHeader.IsProcessExpanded = true;
-                process.IsProcessExpanded = false;
                 PumpUntil(
                     () =>
                         list.Items.Count >= 9
@@ -2889,9 +2578,9 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
                     "interrupted"
                 );
                 AssertRow(
-                    FindRow(process, Desktop.Models.ConversationRowKind.Process),
-                    32,
-                    "process"
+                    FindRow(process, Desktop.Models.ConversationRowKind.Step),
+                    29,
+                    "step-only"
                 );
                 AssertRow(
                     FindRow(waiting, Desktop.Models.ConversationRowKind.Waiting),
@@ -3051,207 +2740,6 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
 
     private static bool AtBottom(ScrollViewer scroll) =>
         scroll.Offset.Y >= scroll.Extent.Height - scroll.Viewport.Height - 1;
-
-    [Fact]
-    public void LiveProcess_AutoCollapsesAfterSettled_UnlessTouched()
-    {
-        Ui.Run(() =>
-        {
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 900,
-                Height = 700,
-                Content = view,
-            };
-            window.Show();
-            try
-            {
-                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-                message.AppendContent("最终答复");
-                _vm.Messages.Add(message);
-                _vm.HasMessages = true;
-                PumpUntil(
-                    () =>
-                        view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                            "MessageList"
-                        )!.Items.Count > 0,
-                    "新消息行挂载"
-                );
-
-                _vm.IsProcessing = true;
-                message.AgentSteps.Add(
-                    new Desktop.Models.AgentStep
-                    {
-                        Kind = Desktop.Models.StepKind.ToolCall,
-                        Title = "编辑",
-                        Status = Desktop.Models.AgentStepStatus.Completed,
-                    }
-                );
-                for (var i = 0; i < 60; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(10);
-                }
-                Assert.True(message.IsProcessExpanded, "回合未结束不得自动折叠过程");
-
-                _vm.IsProcessing = false;
-                PumpUntil(() => !message.IsProcessExpanded, "Turn 完成后 450ms 自动折叠过程");
-
-                message.ProcessTouchedByUser = true;
-                message.AgentSteps.Add(
-                    new Desktop.Models.AgentStep
-                    {
-                        Kind = Desktop.Models.StepKind.ToolCall,
-                        Title = "搜索",
-                        Status = Desktop.Models.AgentStepStatus.Completed,
-                    }
-                );
-                for (var i = 0; i < 60; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(10);
-                }
-                Assert.False(message.IsProcessExpanded, "用户手动操作后不得自动折叠");
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
-
-    [Fact]
-    public void SystemEventError_PreventsAutoFold()
-    {
-        Ui.Run(() =>
-        {
-            var view = new Desktop.Views.ConversationView { DataContext = _vm };
-            var window = new Window
-            {
-                Width = 900,
-                Height = 700,
-                Content = view,
-            };
-            window.Show();
-            try
-            {
-                var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-                message.AppendContent("最终答复");
-                _vm.Messages.Add(message);
-                _vm.HasMessages = true;
-                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>(
-                    "MessageList"
-                )!;
-                PumpUntil(() => list.Items.Count > 0, "新消息行挂载");
-
-                _vm.IsProcessing = true;
-                message.AgentSteps.Add(
-                    new Desktop.Models.AgentStep
-                    {
-                        Kind = Desktop.Models.StepKind.ToolCall,
-                        Title = "编辑文本",
-                        Status = Desktop.Models.AgentStepStatus.Completed,
-                    }
-                );
-                _vm.IsProcessing = false;
-                message.AgentSteps.Add(
-                    Desktop.Models.AgentStep.CreateSystemEvent(
-                        "⚠️ 调用出错：HTTP 502 · Function 'x': Not found for account demo",
-                        isError: true
-                    )
-                );
-
-                for (var i = 0; i < 80; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(10);
-                }
-
-                Assert.True(message.HasProcessError);
-                Assert.True(message.IsProcessExpanded, "错误系统事件不得被自动折叠");
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
-
-    [Fact]
-    public void DetailsToggle_WhileSettled_CancelsAutoFold()
-    {
-        Ui.Run(() =>
-        {
-            var message = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent);
-            var step = new Desktop.Models.AgentStep
-            {
-                Kind = Desktop.Models.StepKind.ToolCall,
-                Title = "编辑文件",
-                Status = Desktop.Models.AgentStepStatus.Completed,
-                ArgumentsSummary = "chapter.md",
-                FullArguments = """{"path":"chapter.md"}""",
-                ResultSummary = "已更新 chapter.md",
-                FullResult = "已更新 chapter.md",
-            };
-            message.AgentSteps.Add(step);
-            _vm.IsProcessing = true;
-            _vm.Messages.Add(message);
-            _vm.HasMessages = true;
-
-            var (window, view, list, sv) = ShowConversation();
-            try
-            {
-                PumpUntil(
-                    () =>
-                        list
-                            .Items.OfType<Desktop.Models.ConversationRow>()
-                            .Any(row => ReferenceEquals(row.Step, step)),
-                    "步骤行挂载"
-                );
-
-                var row = list
-                    .Items.OfType<Desktop.Models.ConversationRow>()
-                    .Single(item => ReferenceEquals(item.Step, step));
-                view.ToggleStepDetails(row, step);
-                Assert.True(step.IsDetailsExpanded, "详情开关应立即展开");
-
-                // 回合结束后自动折叠不得再移除用户刚打开的详情。
-                _vm.IsProcessing = false;
-                for (var i = 0; i < 80; i++)
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    Thread.Sleep(10);
-                }
-
-                Assert.True(step.IsDetailsExpanded, "点击详情后不能又被自动折叠");
-                Assert.True(message.IsProcessExpanded, "用户点击详情后过程行必须保留");
-                Assert.True(message.ProcessTouchedByUser);
-
-                // 收起详情后恢复之前被打断的尾部跟随，不需要用户再滚到底部。
-                view.ToggleStepDetails(row, step);
-                PumpUntil(() => list.IsFollowing && AtBottom(sv), "收起详情后恢复自动跟随");
-                Assert.False(step.IsDetailsExpanded);
-
-                // 再打开，然后整树重挂：不得把用户手动展开的过程折叠掉。
-                view.ToggleStepDetails(row, step);
-                view.DataContext = null;
-                PumpUntil(() => list.Items.Count == 0, "清空视图");
-                view.DataContext = _vm;
-                PumpUntil(() => list.Items.Count > 0, "重挂视图");
-                Assert.True(message.IsProcessExpanded, "重建行不得回退用户展开状态");
-                Assert.True(step.IsDetailsExpanded, "重建行不得收起用户详情");
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
 
     [Fact]
     public void LiveStream_PreservesMarkdownRenderer_WhenStepsArrive()

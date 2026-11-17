@@ -19,7 +19,6 @@ public sealed class ConversationRowTemplateConverter : IValueConverter, IDataTem
     public IDataTemplate? ContentTemplate { get; set; }
     public IDataTemplate? InterruptedTemplate { get; set; }
     public IDataTemplate? SourcesTemplate { get; set; }
-    public IDataTemplate? ProcessTemplate { get; set; }
     public IDataTemplate? ActionsTemplate { get; set; }
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -58,7 +57,6 @@ public sealed class ConversationRowTemplateConverter : IValueConverter, IDataTem
             ConversationRowKind.Content => ContentTemplate,
             ConversationRowKind.Interrupted => InterruptedTemplate,
             ConversationRowKind.Sources => SourcesTemplate,
-            ConversationRowKind.Process => ProcessTemplate,
             ConversationRowKind.Actions => ActionsTemplate,
             _ => null,
         };

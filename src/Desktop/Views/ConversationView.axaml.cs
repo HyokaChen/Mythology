@@ -228,11 +228,10 @@ public partial class ConversationView : UserControl
         SyncWindowToTail();
     }
 
-    /// <summary>窗口关闭/切走时停掉后台折叠定时器，并让未执行的行顶补偿失效。</summary>
+    /// <summary>窗口关闭/切走时让未执行的行顶补偿失效。</summary>
     private void StopBackgroundWork()
     {
         _stepAnchorVersion++;
-        CancelProcessFold();
         SetHoveredMessage(null);
     }
 
@@ -246,7 +245,6 @@ public partial class ConversationView : UserControl
     private readonly Dictionary<ChatMessage, List<ConversationRow>> _rowsByMessage = [];
     private readonly HashSet<ChatMessage> _subscribedMessages = [];
     private readonly HashSet<ChatMessage> _dirtyRowMessages = [];
-    private readonly Dictionary<AgentStep, ChatMessage> _stepOwners = [];
     private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
     private ConversationViewModel? _messagesVm;
     private bool _windowSyncScheduled;
@@ -283,8 +281,6 @@ public partial class ConversationView : UserControl
     private bool _bulkRestore;
     private bool _refreshScheduled;
     private bool _rowRefreshScheduled;
-    private System.Threading.Timer? _processFoldTimer;
-    private ChatMessage? _processFoldCandidate;
     private ChatMessage? _hoveredMessage;
     private bool _editWasFollowing;
     private bool _resumeFollowAfterDetails;
@@ -307,7 +303,6 @@ public partial class ConversationView : UserControl
         if (_messagesVm is not null)
         {
             _messagesVm.Messages.CollectionChanged -= OnMessagesChanged;
-            _messagesVm.PropertyChanged -= OnMessagesVmPropertyChanged;
             _messagesVm.CompactStateChanged -= OnCompactStateChanged;
         }
 
@@ -315,11 +310,9 @@ public partial class ConversationView : UserControl
         _bulkRestore = false;
         _dirtyRowMessages.Clear();
         ClearRows();
-        CancelProcessFold();
         if (_messagesVm is not null)
         {
             _messagesVm.Messages.CollectionChanged += OnMessagesChanged;
-            _messagesVm.PropertyChanged += OnMessagesVmPropertyChanged;
             _messagesVm.CompactStateChanged += OnCompactStateChanged;
         }
 
@@ -376,28 +369,6 @@ public partial class ConversationView : UserControl
             default:
                 ScheduleRowsRefresh();
                 break;
-        }
-    }
-
-    private void OnMessagesVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(ConversationViewModel.IsProcessing) || _messagesVm is null)
-            return;
-
-        if (_messagesVm.IsProcessing)
-        {
-            CancelProcessFold();
-            return;
-        }
-
-        for (var i = _rows.Count - 1; i >= 0; i--)
-        {
-            var message = _rows[i].Message;
-            if (message.Sender == MessageSender.Agent && message.AgentSteps.Count > 0)
-            {
-                TryScheduleProcessFold(message);
-                break;
-            }
         }
     }
 
@@ -716,10 +687,6 @@ public partial class ConversationView : UserControl
         for (var i = 0; i < total; i++)
         {
             var message = _messagesVm.Messages[i];
-            // 历史过程默认折叠；最后 4 条消息保留过程展开，当前回合随流式展开。
-            // 用户手动展开/折叠过的消息保留其选择，重建行时不得回退。
-            if (!message.ProcessTouchedByUser)
-                message.IsProcessExpanded = i >= total - 4;
             AppendRowsForMessage(message);
         }
         RebuildHeightIndex();
@@ -790,7 +757,6 @@ public partial class ConversationView : UserControl
 
         return row.Kind switch
         {
-            ConversationRowKind.Process => 20 + row.Margin.Bottom,
             ConversationRowKind.Waiting => LabelLineHeight + row.Margin.Bottom,
             ConversationRowKind.Interrupted => NoticeChrome + NoticeLineHeight + row.Margin.Bottom,
             ConversationRowKind.Sources => row.Message.Sources.Count * LabelLineHeight
@@ -996,7 +962,7 @@ public partial class ConversationView : UserControl
         if (_heightIndex.Count == 0)
             return MinLiveRows;
         var average = Math.Max(24, _heightIndex.Total / _heightIndex.Count);
-        // 窗口保持约两屏 + 缓冲，而不是三屏：过程行控件重，缩小窗口能显著
+        // 窗口保持约两屏 + 缓冲，而不是三屏：步骤行控件重，缩小窗口能显著
         // 降低每次换窗的测量成本；缓冲仍保证滚动时不会看到空白。
         var target = (int)Math.Ceiling(ViewportHeight() * 2 / average);
         return Math.Clamp(target, MinLiveRows, MaxLiveRows);
@@ -1270,7 +1236,6 @@ public partial class ConversationView : UserControl
         _heightIndex.Rebuild([], RowHeight);
         _rowsByMessage.Clear();
         _dirtyRowMessages.Clear();
-        _stepOwners.Clear();
         MessageList.TopSpacerHeight = 0;
         MessageList.BottomSpacerHeight = 0;
         _lastObservedOffset = double.NaN;
@@ -1278,12 +1243,11 @@ public partial class ConversationView : UserControl
         _resumeFollowAfterDetails = false;
         _detailsFollowPauseDepth = 0;
         _stepAnchorVersion++;
-        CancelProcessFold();
     }
 
     /// <summary>
     /// 增量同步行拓扑：只插入/移除变化的行，保留 Content 行与其中的 MarkdownRenderer 实例。
-    /// 步骤追加、状态变化、过程折叠都不再重建整条消息的行树（对齐 TKCode.Arc 的原地 step view）。
+    /// 步骤追加/移除只重建本消息的行树（对齐 TKCode.Arc 的原地 step view）。
     /// </summary>
     private void ReplaceRowsForMessage(ChatMessage message)
     {
@@ -1296,7 +1260,7 @@ public partial class ConversationView : UserControl
             return;
 
         var oldRows = _rowsByMessage.TryGetValue(message, out var existing) ? existing : [];
-        // 行状态变化后，旧实测高度可能属于展开态（例如过程/详情刚折叠）。
+        // 行状态变化后，旧实测高度可能属于展开态（例如等待行消失/详情收起）。
         // 重建索引前先作废本消息的实测值，按当前绑定状态重新估算；
         // 下一次布局会再写回真实高度。
         foreach (var oldRow in oldRows)
@@ -1378,8 +1342,6 @@ public partial class ConversationView : UserControl
         message.Sources.CollectionChanged += OnMessageSourcesChanged;
         _collectionOwners[message.AgentSteps] = message;
         _collectionOwners[message.Sources] = message;
-        foreach (var step in message.AgentSteps)
-            SubscribeStep(step, message);
     }
 
     private void UnsubscribeMessage(ChatMessage message)
@@ -1391,8 +1353,6 @@ public partial class ConversationView : UserControl
         message.Sources.CollectionChanged -= OnMessageSourcesChanged;
         _collectionOwners.Remove(message.AgentSteps);
         _collectionOwners.Remove(message.Sources);
-        foreach (var pair in _stepOwners.Where(pair => pair.Value == message).ToArray())
-            UnsubscribeStep(pair.Key);
     }
 
     private void OnMessagePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1403,10 +1363,6 @@ public partial class ConversationView : UserControl
                 is nameof(ChatMessage.IsWaiting)
                     or nameof(ChatMessage.HasVisibleContent)
                     or nameof(ChatMessage.IsInterrupted)
-                    or nameof(ChatMessage.IsProcessExpanded)
-                    or nameof(ChatMessage.ProcessSummary)
-                    or nameof(ChatMessage.HasProcessError)
-                    or nameof(ChatMessage.ProcessErrorSummary)
                     or nameof(ChatMessage.IsCompleted)
                     or nameof(ChatMessage.HasSummaryDetail)
                     or nameof(ChatMessage.IsSummaryExpanded)
@@ -1415,131 +1371,13 @@ public partial class ConversationView : UserControl
             if (e.PropertyName == nameof(ChatMessage.IsSummaryExpanded))
                 _rowHeightCache.Remove(message);
             MarkRowsDirty(message);
-            if (e.PropertyName == nameof(ChatMessage.IsWaiting))
-                TryScheduleProcessFold(message);
         }
     }
 
     private void OnMessageStepsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (sender is null || !_collectionOwners.TryGetValue(sender, out var message))
-            return;
-
-        if (e.OldItems is not null)
-        {
-            foreach (var item in e.OldItems)
-                if (item is AgentStep removed)
-                    UnsubscribeStep(removed);
-        }
-        if (e.NewItems is not null)
-        {
-            foreach (var item in e.NewItems)
-                if (item is AgentStep added)
-                    SubscribeStep(added, message);
-        }
-
-        // 新一轮/新工具步骤出现：重新展开过程；用户手动操作过的保持用户意图。
-        if (e.Action == NotifyCollectionChangedAction.Add && !message.ProcessTouchedByUser)
-        {
-            message.IsProcessExpanded = true;
-            CancelProcessFold();
-        }
-
-        MarkRowsDirty(message);
-        TryScheduleProcessFold(message);
-    }
-
-    private void SubscribeStep(AgentStep step, ChatMessage message)
-    {
-        if (!_stepOwners.TryAdd(step, message))
-            return;
-        step.PropertyChanged += OnStepPropertyChanged;
-    }
-
-    private void UnsubscribeStep(AgentStep step)
-    {
-        if (!_stepOwners.Remove(step))
-            return;
-        step.PropertyChanged -= OnStepPropertyChanged;
-    }
-
-    private void OnStepPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (sender is not AgentStep step || !_stepOwners.TryGetValue(step, out var message))
-            return;
-        if (
-            e.PropertyName
-            is not (
-                nameof(AgentStep.Status)
-                or nameof(AgentStep.IsProcessing)
-                or nameof(AgentStep.IsDetailsExpanded)
-                or nameof(AgentStep.IsError)
-            )
-        )
-            return;
-
-        // 失败/错误需要决定：自动展开过程，不再自动收。
-        if (step.IsError || step.Status == AgentStepStatus.Failed)
-        {
-            message.IsProcessExpanded = true;
-            CancelProcessFold();
+        if (sender is not null && _collectionOwners.TryGetValue(sender, out var message))
             MarkRowsDirty(message);
-            return;
-        }
-
-        TryScheduleProcessFold(message);
-    }
-
-    private static bool ProcessStepNeedsAttention(AgentStep step) =>
-        step.IsProcessing || step.Status == AgentStepStatus.Failed || step.IsError;
-
-    /// <summary>ToolCallGroup 语义：全部步骤结束后 450ms 自动折叠过程，除非用户手动展开过。</summary>
-    private void TryScheduleProcessFold(ChatMessage message)
-    {
-        if (
-            _messagesVm?.IsProcessing == true
-            || !_subscribedMessages.Contains(message)
-            || message.ProcessTouchedByUser
-            || !message.IsProcessExpanded
-            || message.IsWaiting
-            || message.AgentSteps.Count == 0
-            || message.AgentSteps.Any(ProcessStepNeedsAttention)
-        )
-            return;
-
-        CancelProcessFold();
-        _processFoldCandidate = message;
-        _processFoldTimer = new System.Threading.Timer(
-            _ => Dispatcher.UIThread.Post(OnProcessFoldTick, DispatcherPriority.Background),
-            null,
-            TimeSpan.FromMilliseconds(450),
-            Timeout.InfiniteTimeSpan
-        );
-    }
-
-    private void OnProcessFoldTick()
-    {
-        var message = _processFoldCandidate;
-        CancelProcessFold();
-        if (
-            message is null
-            || message.ProcessTouchedByUser
-            || !message.IsProcessExpanded
-            || message.IsWaiting
-            || message.AgentSteps.Any(ProcessStepNeedsAttention)
-        )
-            return;
-        // 自动折叠会让步骤详情一起消失；不能留下一个已无目标的延迟 reveal。
-        if (!MessageList.IsFollowing && !MessageList.IsUserInputPending)
-            RememberReadingAnchor();
-        message.IsProcessExpanded = false;
-    }
-
-    private void CancelProcessFold()
-    {
-        _processFoldTimer?.Dispose();
-        _processFoldTimer = null;
-        _processFoldCandidate = null;
     }
 
     private void OnMessageSourcesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -1708,21 +1546,6 @@ public partial class ConversationView : UserControl
         editor.BringIntoView();
     }
 
-    /// <summary>展开历史过程的折叠行。</summary>
-    private void ProcessRow_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: ConversationRow { Message: var message } })
-        {
-            // 展开历史过程会改变行高；先退出尾部跟随，避免把视口拉回最后一条。
-            MessageList.PauseFollow();
-            RememberReadingAnchor();
-            message.ProcessTouchedByUser = true;
-            CancelProcessFold();
-            message.IsProcessExpanded = true;
-        }
-        e.Handled = true;
-    }
-
     private void StepDetails_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: ConversationRow { Step: { } step } row })
@@ -1756,16 +1579,11 @@ public partial class ConversationView : UserControl
             MessageList.ResetFollow();
     }
 
-    /// <summary>步骤头点击的纯 UI 逻辑；测试可直接验证自动折叠交互，不依赖指针命中。</summary>
+    /// <summary>步骤头点击的纯 UI 逻辑；测试可直接验证详情开合，不依赖指针命中。</summary>
     internal void ToggleStepDetails(ConversationRow row, AgentStep step)
     {
         if (!step.HasDetails)
             return;
-
-        // 手动操作过步骤详情后，本轮不再自动折叠过程；否则 450ms 自动折叠
-        // 会把刚展开的详情连同行一起移除，看起来像“点了没反应”。
-        row.Message.ProcessTouchedByUser = true;
-        CancelProcessFold();
 
         // 展开步骤详情会让当前行长高。若仍在尾部跟随，AutoScroll 会把视口
         // 追到新的底部；先退出跟随并记住当前阅读锚点，让详情从原 offset 原位

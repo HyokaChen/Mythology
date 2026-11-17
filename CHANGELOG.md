@@ -39,6 +39,11 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **Desktop 对话不再整体折叠过程**：历史 Agent 步骤始终进入时间线，只用外层行窗口
+  虚拟化；删掉 `IsProcessExpanded`、`Process` 摘要行、450ms 自动折叠与错误自动展开。
+  行数不再在折叠/展开间切换，避免上滚时高度索引和阅读锚点按错误状态跳回中间
+  user message；单条步骤的「展开 / 详情」仍手动控制。回归：
+  `ConversationRowTests.HistoryProcess_AlwaysEmitsStepRows`、Desktop 794/794。
 - **compact 增加工具事实 Progress，修订任务不再按字数猜焦点**：
   摘要新增 `## Progress / 进度`（已实际编辑 / 已读诊断 / 当前 / 下一章 / 范围外活动），
   由 `CompactionProgressExtractor` 从成功的 `edit_text` / `write_chapter` /

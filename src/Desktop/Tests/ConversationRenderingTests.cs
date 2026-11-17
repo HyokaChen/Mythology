@@ -417,7 +417,6 @@ public class ConversationRenderingTests
                     step.NotifyThinkingChanged();
                     message.AgentSteps.Add(step);
                 }
-                message.IsProcessExpanded = true;
                 messages.Add(message);
             }
 
@@ -934,7 +933,7 @@ public class ConversationRenderingTests
     {
         Ui.Value.Run(() =>
         {
-            var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = true };
+            var message = new ChatMessage(MessageSender.Agent);
             message.AgentSteps.Add(
                 AgentStep.CreateSystemEvent(
                     "⚠️ 调用出错：HTTP 429 · rate limit reached",
@@ -966,58 +965,6 @@ public class ConversationRenderingTests
                 Assert.Equal(new Thickness(1), card.BorderThickness);
                 Assert.Equal(new CornerRadius(10), card.CornerRadius);
                 Assert.True(card.Bounds.Width > 600, $"card width={card.Bounds.Width:0.0}");
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-    }
-
-    [Fact]
-    public void CollapsedProcess_ShowsErrorSummaryInAmber()
-    {
-        Ui.Value.Run(() =>
-        {
-            var message = new ChatMessage(MessageSender.Agent) { IsProcessExpanded = false };
-            message.AgentSteps.Add(
-                new AgentStep
-                {
-                    Kind = StepKind.ToolCall,
-                    Title = "编辑文本",
-                    Status = AgentStepStatus.Completed,
-                }
-            );
-            message.AgentSteps.Add(
-                AgentStep.CreateSystemEvent(
-                    "⚠️ 调用出错：HTTP 502 · Function 'x': Not found for account demo",
-                    isError: true
-                )
-            );
-
-            var view = new Desktop.Views.ConversationView();
-            var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList")!;
-            list.Rows = new Desktop.Models.ConversationRowCollection(message);
-            list.IsVisible = true;
-
-            var window = new Window
-            {
-                Width = 900,
-                Height = 300,
-                Content = view,
-            };
-            window.Show();
-            try
-            {
-                Pump();
-                var summary = Assert.Single(view.GetVisualDescendants().OfType<TextBlock>(), text =>
-                    text.Classes.Contains("ProcessSummary")
-                    && text.Text?.Contains("HTTP 502") == true
-                );
-                Assert.True(summary.IsEffectivelyVisible);
-                Assert.Contains("Error", summary.Classes);
-                var foreground = Assert.IsType<SolidColorBrush>(summary.Foreground);
-                Assert.Equal(Color.Parse("#80581C"), foreground.Color);
             }
             finally
             {
@@ -1911,7 +1858,6 @@ public class ConversationRenderingTests
                     }
                 );
             }
-            message.IsProcessExpanded = true;
 
             var view = new ConversationView();
             var list = view.FindControl<AutoScrollItemsControl>("MessageList")!;
