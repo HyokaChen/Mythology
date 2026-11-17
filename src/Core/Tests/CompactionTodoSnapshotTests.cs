@@ -170,9 +170,21 @@ public sealed class CompactionTodoSnapshotTests : IDisposable
 
         var summary = await GenerateSummaryAsync(todos, previous);
 
-        Assert.Contains("- 当前没有任务", summary);
+        Assert.DoesNotContain("## Todos / 任务清单", summary);
+        Assert.DoesNotContain("- 当前没有任务", summary);
+        Assert.DoesNotContain("todo_write", summary);
         Assert.DoesNotContain("#99", summary);
         Assert.DoesNotContain("旧任务", summary);
+    }
+
+    [Fact]
+    public async Task GenerateCompactSummary_NoTodoStore_DoesNotMentionTodos()
+    {
+        var summary = await GenerateSummaryAsync(todos: null, previousSummary: null);
+
+        Assert.DoesNotContain("## Todos / 任务清单", summary);
+        Assert.DoesNotContain("todo_write", summary);
+        Assert.DoesNotContain("- 当前没有任务", summary);
     }
 
     private static string NextSection(string summary)
@@ -185,7 +197,7 @@ public sealed class CompactionTodoSnapshotTests : IDisposable
         return (next > start ? summary[start..next] : summary[start..]).Trim();
     }
 
-    private async Task<string> GenerateSummaryAsync(TodoStore todos, string? previousSummary)
+    private async Task<string> GenerateSummaryAsync(TodoStore? todos, string? previousSummary)
     {
         var engine = new CompactionEngine(
             _agent,

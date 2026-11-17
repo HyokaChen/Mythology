@@ -44,7 +44,6 @@ public sealed class CompactionCheckpointTests
             {
                 "## Scope / 任务边界",
                 "## Progress / 进度",
-                "## Todos / 任务清单",
                 "## Where / 写到哪里",
                 "## Who / 谁出场",
                 "## What / 发生了什么",
@@ -61,6 +60,8 @@ public sealed class CompactionCheckpointTests
         Assert.DoesNotContain("## 之前的摘要", second);
         Assert.DoesNotContain("## 文件操作", second);
         Assert.DoesNotContain("## 目标", second);
+        Assert.DoesNotContain("## Todos / 任务清单", second);
+        Assert.DoesNotContain("todo_write", second);
 
         const string legacy =
             "## 压缩概览\n压缩前 31 条，保留 30 条\n"
@@ -86,7 +87,7 @@ public sealed class CompactionCheckpointTests
         const string previous =
             "## Next / 下一步\n- 写第54章《恶意的瞥见》\n\n" + "## Why / 为什么\n- 旧任务";
 
-        var merged = (string)method.Invoke(null, [current, previous])!;
+        var merged = (string)method.Invoke(null, [current, previous, false])!;
 
         Assert.Contains("- 优化第23章", merged);
         Assert.DoesNotContain("- 写第54章", merged);

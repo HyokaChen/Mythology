@@ -77,11 +77,10 @@ public sealed class CompactionEngine(
     private const string HowHeading = "## How / 怎么写";
     private const string NextHeading = "## Next / 下一步";
 
-    private static readonly string[] CheckpointHeadings =
+    private static readonly string[] BaseCheckpointHeadings =
     [
         ScopeHeading,
         ProgressHeading,
-        TodosHeading,
         WhereHeading,
         WhoHeading,
         WhatHeading,
@@ -90,6 +89,19 @@ public sealed class CompactionEngine(
         HowHeading,
         NextHeading,
     ];
+
+    // Todos 只在 LLM 真正建立过任务清单时才是检查点的一部分；
+    // 空清单/从未使用 todo_write 的会话必须保持 9 段，不能让模型凭空补任务。
+    private static readonly string[] TodosCheckpointHeadings =
+    [
+        ScopeHeading,
+        ProgressHeading,
+        TodosHeading,
+        .. BaseCheckpointHeadings[2..],
+    ];
+
+    private static string[] BuildCheckpointHeadings(bool includeTodos) =>
+        includeTodos ? TodosCheckpointHeadings : BaseCheckpointHeadings;
 
     private sealed record NovelStateBuildResult(
         string Snapshot,
@@ -520,7 +532,8 @@ public sealed class CompactionEngine(
     {
         const int aiSummaryMinCompressedTokens = 2_000;
         var compressedTokens = EstimateContextTokens(messages.Take(cutIndex).ToList());
-        var todoItems = todoStore?.List();
+        var todoItems = todoStore?.List().Where(item => item.Status != TodoStatus.Deleted).ToList();
+        var hasTodos = todoItems is { Count: > 0 };
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
@@ -531,8 +544,8 @@ public sealed class CompactionEngine(
             baseCheckpoint = EnsureScopeSection(baseCheckpoint, scope);
         if (progress is not null)
             baseCheckpoint = EnsureProgressSection(baseCheckpoint, progress);
-        if (todoItems is not null)
-            baseCheckpoint = EnsureTodoSection(baseCheckpoint, todoItems);
+        if (hasTodos)
+            baseCheckpoint = EnsureTodoSection(baseCheckpoint, todoItems!);
 
         if (compressedTokens >= aiSummaryMinCompressedTokens)
         {
@@ -546,15 +559,15 @@ public sealed class CompactionEngine(
                     scope,
                     progress,
                     authorMessages,
-                    todoItems,
+                    hasTodos ? todoItems : null,
                     ct
                 );
                 if (aiSummary is not null)
                 {
-                    var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint);
-                    var merged = MergeCheckpoint(normalized, previousSummary);
-                    if (todoItems is not null)
-                        merged = EnsureTodoSection(merged, todoItems);
+                    var normalized = NormalizeCheckpoint(aiSummary, baseCheckpoint, hasTodos);
+                    var merged = MergeCheckpoint(normalized, previousSummary, hasTodos);
+                    if (hasTodos)
+                        merged = EnsureTodoSection(merged, todoItems!);
                     merged = Truncate(merged, 8_000);
                     var scoped = EnforceTaskScope(
                         PrependAuthorScope(merged, messages, cutIndex, authorMessages, scope),
@@ -563,7 +576,7 @@ public sealed class CompactionEngine(
                         progress,
                         baseCheckpoint
                     );
-                    return ApplyTodoNext(scoped, todoItems, scope);
+                    return ApplyTodoNext(scoped, hasTodos ? todoItems : null, scope);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -583,10 +596,11 @@ public sealed class CompactionEngine(
             baseCheckpoint,
             scope,
             progress,
-            authorMessages
+            authorMessages,
+            hasTodos
         );
-        var withTodos = todoItems is null ? fallback : EnsureTodoSection(fallback, todoItems);
-        return ApplyTodoNext(withTodos, todoItems, scope);
+        var withTodos = hasTodos ? EnsureTodoSection(fallback, todoItems!) : fallback;
+        return ApplyTodoNext(withTodos, hasTodos ? todoItems : null, scope);
     }
 
     private async Task<string?> TryGenerateAiSummaryAsync(
@@ -610,22 +624,31 @@ public sealed class CompactionEngine(
         if (dialogue.Length == 0)
             return null;
         var authorInstructions = CollectAuthorInstructions(messages, cutIndex);
+        var hasTodos = todoItems is { Count: > 0 };
+        var headings = BuildCheckpointHeadings(hasTodos);
 
         var prompt = new StringBuilder();
         prompt.AppendLine(
             "请维护一份小说写作的 5W1H 检查点。它是压缩历史后唯一保留的上下文，必须让下一轮写作能直接继续。"
         );
-        prompt.AppendLine("输出必须且只能使用以下 10 个标题（顺序固定，不得嵌套其它标题）：");
-        prompt.AppendLine(string.Join('\n', CheckpointHeadings));
+        prompt.AppendLine(
+            $"输出必须且只能使用以下 {headings.Length} 个标题（顺序固定，不得嵌套其它标题）："
+        );
+        prompt.AppendLine(string.Join('\n', headings));
         prompt.AppendLine();
         prompt.AppendLine("要求：");
         prompt.AppendLine(
-            "- Scope、Progress 与 Todos 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
+            hasTodos
+                ? "- Scope、Progress 与 Todos 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
+                : "- Scope 与 Progress 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
         );
-        prompt.AppendLine(
-            "- Next 必须读取“当前任务清单”：优先继续 in_progress 项；没有 in_progress 时取第一个未被未完成任务阻塞的 pending；"
-                + "不得跳过未完成任务；完成后用 todo_write 更新对应 #id。"
-        );
+        if (hasTodos)
+        {
+            prompt.AppendLine(
+                "- Next 必须读取“当前任务清单”：优先继续 in_progress 项；没有 in_progress 时取第一个未被未完成任务阻塞的 pending；"
+                    + "不得跳过未完成任务；完成后用 todo_write 更新对应 #id。"
+            );
+        }
         prompt.AppendLine(
             "- Progress 只记录工具事实：已实际编辑、已读/诊断、当前、下一章、范围外活动；不要把“读过”写成“已完成”。"
         );
@@ -703,9 +726,12 @@ public sealed class CompactionEngine(
             prompt.AppendLine(progress.FormatBody());
         prompt.AppendLine();
 
-        prompt.AppendLine("## 当前任务清单（工具事实，不得改写）");
-        prompt.AppendLine(todoItems is null ? "- 未记录" : FormatTodoBody(todoItems));
-        prompt.AppendLine();
+        if (hasTodos)
+        {
+            prompt.AppendLine("## 当前任务清单（工具事实，不得改写）");
+            prompt.AppendLine(FormatTodoBody(todoItems!));
+            prompt.AppendLine();
+        }
 
         prompt.AppendLine("## 当前小说状态（全局写作前沿；Scope 冲突时以 Scope 为准）");
         if (string.IsNullOrWhiteSpace(novelSnapshot))
@@ -733,12 +759,17 @@ public sealed class CompactionEngine(
         );
         var request = BuildSummaryRequest(modelName, maxSummaryTokens);
         var conversation = api.Chat.CreateConversation(request);
-        conversation.AddSystemMessage(
-            "你是小说写作的上下文检查点编辑器。只输出 10 个检查点标题，保留可执行的下一步。使用中文。"
-                + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
-                + "任务范围（Scope）、任务进度（Progress）与任务清单（Todos）是硬约束/工具事实，不得改写；"
-                + "Next 必须落在 Scope 内、由任务清单中的未完成项决定，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
-        );
+        var systemPrompt =
+            $"你是小说写作的上下文检查点编辑器。只输出 {headings.Length} 个检查点标题，保留可执行的下一步。使用中文。"
+            + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
+            + (
+                hasTodos
+                    ? "任务范围（Scope）、任务进度（Progress）与任务清单（Todos）是硬约束/工具事实，不得改写；"
+                        + "Next 必须落在 Scope 内、由任务清单中的未完成项决定，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
+                    : "任务范围（Scope）与任务进度（Progress）是硬约束/工具事实，不得改写；"
+                        + "Next 必须落在 Scope 内且具体到章，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
+            );
+        conversation.AddSystemMessage(systemPrompt);
         conversation.AddUserMessage(prompt.ToString());
 
         using var summaryCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -821,7 +852,7 @@ public sealed class CompactionEngine(
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
             ? BuildConversationCheckpoint(messages, cutIndex)
             : novelSnapshot;
-        var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
+        var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary, false), 8_000);
         return PrependAuthorScope(summary, messages, cutIndex, [], null);
     }
 
@@ -832,7 +863,8 @@ public sealed class CompactionEngine(
         string novelSnapshot,
         CompactionTaskScope? scope,
         CompactionTaskProgress? progress,
-        IReadOnlyList<string> authorMessages
+        IReadOnlyList<string> authorMessages,
+        bool includeTodos
     )
     {
         var baseCheckpoint = string.IsNullOrWhiteSpace(novelSnapshot)
@@ -843,7 +875,10 @@ public sealed class CompactionEngine(
         if (progress is not null)
             baseCheckpoint = EnsureProgressSection(baseCheckpoint, progress);
 
-        var summary = Truncate(MergeCheckpoint(baseCheckpoint, previousSummary), 8_000);
+        var summary = Truncate(
+            MergeCheckpoint(baseCheckpoint, previousSummary, includeTodos),
+            8_000
+        );
         summary = PrependAuthorScope(summary, messages, cutIndex, authorMessages, scope);
         return EnforceTaskScope(summary, scope, previousSummary, progress, baseCheckpoint);
     }
@@ -886,13 +921,15 @@ public sealed class CompactionEngine(
         return sb.ToString();
     }
 
-    private static string MergeCheckpoint(string baseCheckpoint, string? previousSummary)
+    private static string MergeCheckpoint(
+        string baseCheckpoint,
+        string? previousSummary,
+        bool includeTodos
+    )
     {
-        var sections = new Dictionary<string, string>(
-            CheckpointHeadings.Length,
-            StringComparer.Ordinal
-        );
-        foreach (var heading in CheckpointHeadings)
+        var headings = BuildCheckpointHeadings(includeTodos);
+        var sections = new Dictionary<string, string>(headings.Length, StringComparer.Ordinal);
+        foreach (var heading in headings)
             sections[heading] = ExtractSection(baseCheckpoint, heading)?.Trim() ?? "";
 
         if (!string.IsNullOrWhiteSpace(previousSummary))
@@ -949,7 +986,7 @@ public sealed class CompactionEngine(
         }
 
         var sb = new StringBuilder();
-        foreach (var heading in CheckpointHeadings)
+        foreach (var heading in headings)
         {
             sb.AppendLine(heading);
             var content = sections[heading];
@@ -959,10 +996,15 @@ public sealed class CompactionEngine(
         return sb.ToString().TrimEnd();
     }
 
-    private static string NormalizeCheckpoint(string aiSummary, string baseCheckpoint)
+    private static string NormalizeCheckpoint(
+        string aiSummary,
+        string baseCheckpoint,
+        bool includeTodos
+    )
     {
+        var headings = BuildCheckpointHeadings(includeTodos);
         var sb = new StringBuilder();
-        foreach (var heading in CheckpointHeadings)
+        foreach (var heading in headings)
         {
             var content = ExtractSection(aiSummary, heading);
             if (string.IsNullOrWhiteSpace(content))
@@ -1590,8 +1632,11 @@ public sealed class CompactionEngine(
     /// Todos 是宿主内存中的权威任务状态；摘要无论由 AI 还是确定性回退生成，
     /// 都必须用压缩开始时的快照覆盖，避免压缩掉 todo_write 调用后模型失忆。
     /// </summary>
-    private static string EnsureTodoSection(string markdown, IReadOnlyList<TodoItem> todos) =>
-        ReplaceSection(markdown, TodosHeading, FormatTodoBody(todos));
+    private static string EnsureTodoSection(string markdown, IReadOnlyList<TodoItem> todos)
+    {
+        var body = FormatTodoBody(todos);
+        return body.Length == 0 ? markdown : ReplaceSection(markdown, TodosHeading, body);
+    }
 
     private static string FormatTodoBody(IReadOnlyList<TodoItem> todos)
     {
@@ -1600,7 +1645,7 @@ public sealed class CompactionEngine(
             .OrderBy(item => item.Id)
             .ToList();
         if (visible.Count == 0)
-            return "- 当前没有任务（如 Progress/Next 仍有未完成工作，先用 todo_write 建立任务清单）";
+            return "";
 
         var sb = new StringBuilder();
         sb.AppendLine(

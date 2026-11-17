@@ -132,6 +132,7 @@ public sealed class CompactionProgressTests
                     scope,
                     progress,
                     new[] { RevisionInstruction },
+                    false,
                 ]
             )!;
 
@@ -222,7 +223,7 @@ public sealed class CompactionProgressTests
         var summary = (string)
             method.Invoke(
                 null,
-                [messages, messages.Count, previous, "", null, null, new[] { "继续" }]
+                [messages, messages.Count, previous, "", null, null, new[] { "继续" }, false]
             )!;
 
         Assert.Contains("## Scope / 任务边界", summary);
