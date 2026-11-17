@@ -935,6 +935,9 @@ public sealed partial class TuiApp : IDisposable
             cancellationToken: ct
         );
 
+        // Host 不调用 TuiApp.Dispose（Program 只 await RunAsync），所以退出路径必须
+        // 在这里显式保存任务快照，否则正常退出也会丢掉本轮 todo_write 的结果。
+        SaveCurrentSessionTodos();
         ResetTerminalDefaultColors(Terminal.Instance);
 
         // 微信桥接：取消后台循环（与 _appCts 同生共死）

@@ -439,6 +439,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                 if (evt is TurnStart or AgentEnd or AgentInterrupted)
                     UpdateContextGauge();
 
+                // todo_write 只在 turn 内发生；结束时立刻落盘，保证重启后
+                // TodoStore 能恢复，compact 摘要不会退化成“当前没有任务”。
+                if (evt is AgentEnd or AgentInterrupted)
+                    SaveActiveTodos();
+
                 // 微信回合的事件由通道自己处理（发到手机）；桌面 UI 只渲染本地对话
                 if (_weChatBridge?.IsTurnActive == true)
                     return;
@@ -2239,6 +2244,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         try
         {
+            SaveActiveTodos();
             // 宿主退出结算（§16.5 方案 C）：同步调用 SettleSession（同步方法，Shutdown 同步上下文合法）
             var settleNovelId = _agent.CurrentNovelId;
             if (Program.CloudScheduler is not null && !string.IsNullOrEmpty(settleNovelId))

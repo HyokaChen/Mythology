@@ -57,6 +57,9 @@ public sealed partial class TuiApp
         }
         // ★ 轮末刷新显示：State.Messages 已包含完整一轮，重新计算会话上下文
         UpdateTokenDisplay();
+        // 任务清单是跨进程恢复的唯一来源：轮末立即落盘，避免异常退出/重启后
+        // TodoStore 为空，下一次 compact 只能写出“当前没有任务”。
+        SaveCurrentSessionTodos();
         _ = RefreshOutline();
     }
 
