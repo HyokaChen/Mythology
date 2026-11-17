@@ -1,6 +1,7 @@
 using Core.Agent;
 using Core.Data;
 using Core.Novels;
+using Core.Shared;
 using Xunit;
 
 namespace Core.Tests;
@@ -77,6 +78,34 @@ public sealed class CompactionTaskScopeTests
         Assert.Contains(21, scope!.ChapterOrders);
         Assert.Contains(40, scope.ChapterOrders);
         Assert.DoesNotContain(54, scope.ChapterOrders);
+    }
+
+    [Fact]
+    public void IsTextWithinScope_ChecksChaptersWithoutWriteWording()
+    {
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure())!;
+
+        Assert.True(scope.IsTextWithinScope("补写第30章《萤火30》"));
+        Assert.False(scope.IsTextWithinScope("补写第54章《皮皮龙的灵觉与恶意的瞥见》"));
+    }
+
+    [Fact]
+    public void BuildTodoNext_SkipsOutOfScopeInProgressTodo()
+    {
+        var scope = CompactionTaskScope.TryCreate([RevisionInstruction], BuildStructure())!;
+        var todos = new TodoStore();
+        var outOfScope = todos.Create(
+            "补写第54章《皮皮龙的灵觉与恶意的瞥见》",
+            status: TodoStatus.InProgress
+        );
+        var inScope = todos.Create("补写第30章《萤火30》", status: TodoStatus.Pending);
+
+        var next = CompactionEngine.BuildTodoNext(todos.List(), scope);
+
+        Assert.NotNull(next);
+        Assert.Contains($"#{inScope.Id}", next);
+        Assert.Contains("第30章", next);
+        Assert.DoesNotContain($"#{outOfScope.Id}", next);
     }
 
     [Fact]

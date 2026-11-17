@@ -80,6 +80,67 @@ public sealed class CompactionTodoSnapshotTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateCompactSummary_NextFollowsInProgressTodo()
+    {
+        var todos = new TodoStore();
+        var completed = todos.Create("补写并打磨第31章", status: TodoStatus.Completed);
+        var active = todos.Create(
+            "第33章《善意的第二次微笑》按细纲补足",
+            description: "补足善我第二次现身与纸鸢钩子",
+            activeForm: "补写第33章",
+            status: TodoStatus.InProgress
+        );
+        var pending = todos.Create(
+            "第39章《深夜的第二次蓝光》补足",
+            blockedBy: [active.Id.ToString()],
+            status: TodoStatus.Pending
+        );
+
+        var summary = await GenerateSummaryAsync(todos, previousSummary: null);
+        var next = NextSection(summary);
+
+        Assert.Contains($"#{active.Id}", next);
+        Assert.Contains("第33章", next);
+        Assert.Contains("补写第33章", next);
+        Assert.Contains("todo_write", next);
+        Assert.DoesNotContain($"#{completed.Id}", next);
+        Assert.DoesNotContain($"#{pending.Id}", next);
+        Assert.Contains($"#{active.Id} [in_progress]", summary);
+        Assert.Contains($"#{pending.Id} [pending]", summary);
+        Assert.Contains($"blocked by: #{active.Id}", summary);
+    }
+
+    [Fact]
+    public async Task GenerateCompactSummary_NextUsesFirstUnblockedPending()
+    {
+        var todos = new TodoStore();
+        var blocked = todos.Create("第40章《卷末：暗涌》补足", status: TodoStatus.Pending);
+        var blocker = todos.Create("第33章《善意的第二次微笑》补足", status: TodoStatus.Pending);
+        todos.Update(blocked.Id, addBlockedBy: [blocker.Id.ToString()]);
+
+        var summary = await GenerateSummaryAsync(todos, previousSummary: null);
+        var next = NextSection(summary);
+
+        Assert.Contains($"#{blocker.Id}", next);
+        Assert.Contains("第33章", next);
+        Assert.DoesNotContain($"#{blocked.Id}", next);
+    }
+
+    [Fact]
+    public async Task GenerateCompactSummary_NextSkipsCompletedTodo()
+    {
+        var todos = new TodoStore();
+        var completed = todos.Create("补写并打磨第31章", status: TodoStatus.Completed);
+        var pending = todos.Create("第33章《善意的第二次微笑》补足", status: TodoStatus.Pending);
+
+        var summary = await GenerateSummaryAsync(todos, previousSummary: null);
+        var next = NextSection(summary);
+
+        Assert.Contains($"#{pending.Id}", next);
+        Assert.DoesNotContain($"#{completed.Id}", next);
+    }
+
+    [Fact]
     public async Task GenerateCompactSummary_ReplacesStalePreviousTodoSection()
     {
         var todos = new TodoStore();
@@ -112,6 +173,16 @@ public sealed class CompactionTodoSnapshotTests : IDisposable
         Assert.Contains("- 当前没有任务", summary);
         Assert.DoesNotContain("#99", summary);
         Assert.DoesNotContain("旧任务", summary);
+    }
+
+    private static string NextSection(string summary)
+    {
+        const string heading = "## Next / 下一步";
+        var idx = summary.IndexOf(heading, StringComparison.Ordinal);
+        Assert.True(idx >= 0, "摘要缺少 Next 段");
+        var start = idx + heading.Length;
+        var next = summary.IndexOf("\n## ", start, StringComparison.Ordinal);
+        return (next > start ? summary[start..next] : summary[start..]).Trim();
     }
 
     private async Task<string> GenerateSummaryAsync(TodoStore todos, string? previousSummary)

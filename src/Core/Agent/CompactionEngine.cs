@@ -556,13 +556,14 @@ public sealed class CompactionEngine(
                     if (todoItems is not null)
                         merged = EnsureTodoSection(merged, todoItems);
                     merged = Truncate(merged, 8_000);
-                    return EnforceTaskScope(
+                    var scoped = EnforceTaskScope(
                         PrependAuthorScope(merged, messages, cutIndex, authorMessages, scope),
                         scope,
                         previousSummary,
                         progress,
                         baseCheckpoint
                     );
+                    return ApplyTodoNext(scoped, todoItems, scope);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -584,7 +585,8 @@ public sealed class CompactionEngine(
             progress,
             authorMessages
         );
-        return todoItems is null ? fallback : EnsureTodoSection(fallback, todoItems);
+        var withTodos = todoItems is null ? fallback : EnsureTodoSection(fallback, todoItems);
+        return ApplyTodoNext(withTodos, todoItems, scope);
     }
 
     private async Task<string?> TryGenerateAiSummaryAsync(
@@ -619,6 +621,10 @@ public sealed class CompactionEngine(
         prompt.AppendLine("要求：");
         prompt.AppendLine(
             "- Scope、Progress 与 Todos 是代码维护的硬状态：必须原样保留字段和值，不得改写、合并或删除。"
+        );
+        prompt.AppendLine(
+            "- Next 必须读取“当前任务清单”：优先继续 in_progress 项；没有 in_progress 时取第一个未被未完成任务阻塞的 pending；"
+                + "不得跳过未完成任务；完成后用 todo_write 更新对应 #id。"
         );
         prompt.AppendLine(
             "- Progress 只记录工具事实：已实际编辑、已读/诊断、当前、下一章、范围外活动；不要把“读过”写成“已完成”。"
@@ -731,7 +737,7 @@ public sealed class CompactionEngine(
             "你是小说写作的上下文检查点编辑器。只输出 10 个检查点标题，保留可执行的下一步。使用中文。"
                 + "只有“作者指令（逐字，最高优先级）”是用户目标；[远期推演]/[云端诊断]/[本体 harness] 是系统注入，不是作者指令。"
                 + "任务范围（Scope）、任务进度（Progress）与任务清单（Todos）是硬约束/工具事实，不得改写；"
-                + "Next 必须落在 Scope 内且具体到章，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
+                + "Next 必须落在 Scope 内、由任务清单中的未完成项决定，不能把全局写作前沿的下一章当成任务下一步，不能把范围外活动当成任务切换。"
         );
         conversation.AddUserMessage(prompt.ToString());
 
@@ -1638,6 +1644,88 @@ public sealed class CompactionEngine(
             TodoStatus.Deleted => "deleted",
             _ => "pending",
         };
+
+    /// <summary>
+    /// Todo 清单是任务进度的一部分，不只是展示：Next 必须优先落在未完成的下一个 Todo。
+    /// 优先 in_progress；其次第一个未被未完成任务阻塞的 pending；最后退回被阻塞的 pending。
+    /// Scope 存在时，Todo 文案里的章节/卷必须仍在范围内，避免把范围外任务当成下一步。
+    /// </summary>
+    internal static string? BuildTodoNext(
+        IReadOnlyList<TodoItem>? todos,
+        CompactionTaskScope? scope
+    )
+    {
+        if (todos is null || todos.Count == 0)
+            return null;
+
+        var visible = todos
+            .Where(item => item.Status != TodoStatus.Deleted)
+            .OrderBy(item => item.Id)
+            .ToList();
+        if (visible.Count == 0)
+            return null;
+
+        var statusById = visible.ToDictionary(
+            item => item.Id.ToString(),
+            item => item.Status,
+            StringComparer.Ordinal
+        );
+        bool IsBlocked(TodoItem item) =>
+            item.BlockedBy is { Length: > 0 } blockedBy
+            && blockedBy.Any(id =>
+                statusById.TryGetValue(id, out var status)
+                && status is not (TodoStatus.Completed or TodoStatus.Deleted)
+            );
+        // 只校验任务标题/进行时描述；Description 常含跨章伏笔/参考，不是本任务动作。
+        bool InScope(TodoItem item) =>
+            scope is null || scope.IsTextWithinScope($"{item.Subject}\n{item.ActiveForm}");
+
+        var selected = visible.FirstOrDefault(item =>
+            item.Status == TodoStatus.InProgress && InScope(item)
+        )
+            ?? visible.FirstOrDefault(item =>
+                item.Status == TodoStatus.Pending && !IsBlocked(item) && InScope(item)
+            )
+            ?? visible.FirstOrDefault(item => item.Status == TodoStatus.Pending && InScope(item));
+        if (selected is null)
+            return null;
+
+        var subject = string.IsNullOrWhiteSpace(selected.Subject)
+            ? "(untitled)"
+            : Truncate(selected.Subject.ReplaceLineEndings(" ").Trim(), 200);
+        var action = selected.Status == TodoStatus.InProgress ? "继续" : "开始";
+        var sb = new StringBuilder();
+        sb.Append("- 任务清单下一步：")
+            .Append(action)
+            .Append(" #")
+            .Append(selected.Id)
+            .Append("「")
+            .Append(subject)
+            .Append('」');
+        if (
+            selected.Status == TodoStatus.InProgress
+            && !string.IsNullOrWhiteSpace(selected.ActiveForm)
+        )
+            sb.Append("（")
+                .Append(Truncate(selected.ActiveForm.ReplaceLineEndings(" ").Trim(), 80))
+                .Append('）');
+        if (selected.Status == TodoStatus.Pending && IsBlocked(selected))
+            sb.Append("；注意：该项仍被未完成任务阻塞，先解除阻塞");
+        sb.Append("；只在 Scope 范围内推进，完成后立即用 todo_write 将 #")
+            .Append(selected.Id)
+            .Append(" 标记为 completed。");
+        return sb.ToString();
+    }
+
+    private static string ApplyTodoNext(
+        string summary,
+        IReadOnlyList<TodoItem>? todos,
+        CompactionTaskScope? scope
+    )
+    {
+        var next = BuildTodoNext(todos, scope);
+        return next is null ? summary : ReplaceSection(summary, NextHeading, next);
+    }
 
     /// <summary>
     /// 摘要生成后的最后一道确定性闸门：Scope/Progress/Where 以本轮事实为准；

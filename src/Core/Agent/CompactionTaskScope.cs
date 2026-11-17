@@ -363,6 +363,34 @@ internal sealed class CompactionTaskScope
     }
 
     /// <summary>
+    /// 只检查文本引用的章节/卷是否都在 Scope 内，不检查“写/修订”措辞。
+    /// 用于从 Todo 清单选择下一步：Todo 的文案可能写“补写”，但不代表越界。
+    /// </summary>
+    public bool IsTextWithinScope(string? text)
+    {
+        var normalized = (text ?? "").ReplaceLineEndings(" ");
+        foreach (Match match in ChapterRefPattern.Matches(normalized))
+        {
+            if (ParseNumber(match.Groups["n"].Value) is { } order && !ChapterOrders.Contains(order))
+                return false;
+        }
+
+        foreach (Match match in VolumeOrderPattern.Matches(normalized))
+        {
+            if (ParseNumber(match.Groups["n"].Value) is { } order && !VolumeOrders.Contains(order))
+                return false;
+        }
+
+        foreach (Match match in VolumeIdPattern.Matches(normalized))
+        {
+            if (!VolumeIds.Contains(match.Groups["id"].Value))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// 检查摘要的 Next 是否仍在 Scope 内。明确出现范围外章节/卷直接拒绝；
     /// 修订任务里只出现“写/推进”而没有“优化/修订”也拒绝，防止把续写当前沿。
     /// </summary>
