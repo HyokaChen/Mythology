@@ -36,12 +36,22 @@ public sealed class ContextWindowAdaptationTests
     }
 
     [Fact]
-    public void ReduceToObserved_IgnoresOverflowAtOrAboveConfiguredWindow()
+    public void ReduceToObserved_StepsDownWhenOverflowRepeatsAtTheSameCeiling()
+    {
+        var profile = new ModelContextProfile { ContextWindowTokens = 128_048 };
+
+        var adapted = ContextWindowAdaptation.ReduceToObserved(profile, 126_000);
+
+        Assert.NotNull(adapted);
+        Assert.Equal(94_500, adapted!.ContextWindowTokens);
+        Assert.Equal(16_384, adapted.OutputTokenBudget);
+    }
+
+    [Fact]
+    public void ReduceToObserved_IgnoresTinyObservedValues()
     {
         var profile = new ModelContextProfile { ContextWindowTokens = 128_000 };
 
-        Assert.Null(ContextWindowAdaptation.ReduceToObserved(profile, 128_000));
-        Assert.Null(ContextWindowAdaptation.ReduceToObserved(profile, 200_000));
         Assert.Null(ContextWindowAdaptation.ReduceToObserved(profile, 1_000));
     }
 

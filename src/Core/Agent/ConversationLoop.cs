@@ -787,7 +787,7 @@ public sealed class ConversationLoop(
         // 循环无迭代次数上限：唯一退出路径为显式 break（自然停止 / 空回合 /
         // 工具未继续 / 稳定性触发）与取消（上方 ThrowIfCancellationRequested）。
         // 失控由稳定性监控、断路器、pre-flight 预算检查（compact + retry，
-        // TuiApp maxOverflowRetries=3）与用户中断兜底。
+        // 成功压缩后重置恢复计数）与用户中断兜底。
         while (true)
         {
             ct.ThrowIfCancellationRequested();

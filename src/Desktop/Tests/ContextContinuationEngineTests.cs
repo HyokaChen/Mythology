@@ -218,10 +218,9 @@ public sealed class ContextContinuationEngineTests : IDisposable
                             throw new ContextOverflowException("send overflow");
                         }
                     ),
-                    (Func<int, CancellationToken, Task>)((_, _) => Task.CompletedTask),
+                    (Func<CancellationToken, Task>)(_ => Task.CompletedTask),
                     false,
                     cts.Token,
-                    0,
                 ]
             )!;
 

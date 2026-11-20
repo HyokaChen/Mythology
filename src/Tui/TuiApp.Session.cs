@@ -77,8 +77,7 @@ public sealed partial class TuiApp
     /// </summary>
     /// <param name="text">用户输入文本（已内联引用替换后）。</param>
     /// <param name="ct">取消令牌。</param>
-    /// <param name="overflowRetryCount">上下文溢出重试计数，防止 compact 死循环。</param>
-    private async Task RunPromptAsync(string text, CancellationToken ct, int overflowRetryCount = 0)
+    private async Task RunPromptAsync(string text, CancellationToken ct)
     {
         if (_sessionPersistenceFaulted)
         {
@@ -182,29 +181,15 @@ public sealed partial class TuiApp
             // 先按最近一次成功请求的 token 锚点收紧 profile，否则压缩后仍会在同一上限溢出。
             AdaptContextWindowToObservedLimit();
 
-            // 上下文溢出自动恢复：按模式走各自唯一路径（最多 3 次，防止无效重试死循环）
-            // - compact：分片压缩 + retry（与改动前一致）
-            // - 接续：换页 + retry（无摘要、无信息损失）；换页失败直接报错，**不回落压缩**（模式互斥）
-            const int maxOverflowRetries = 3;
-
+            // 上下文溢出自动恢复：按模式走各自唯一路径。
+            // 一次成功压缩本身就是有效的恢复，重置重试计数；若压缩未显著降低 token，
+            // CompactForOverflowAsync 会返回 false，不会进入无界重试。
             if (!await TryPersistNewMessagesAsync())
                 return;
 
             if (_sessionPersistenceFaulted)
             {
                 _todoStore.RevertInProgressToPending();
-                return;
-            }
-
-            if (overflowRetryCount >= maxOverflowRetries)
-            {
-                _todoStore.RevertInProgressToPending();
-                _isPromptPending = false; // 溢出重试耗尽：清理
-                ToastService.Error(
-                    _contextManagement is { Mode: ContextMode.Continuation }
-                        ? $"上下文溢出，已重试 {maxOverflowRetries} 次仍无法恢复。请开启新会话。"
-                        : $"上下文溢出，已重试 {maxOverflowRetries} 次仍无法恢复。请使用 /compact 手动压缩或开启新会话。"
-                );
                 return;
             }
 
@@ -218,11 +203,7 @@ public sealed partial class TuiApp
                         : "上下文溢出，已压缩并重试..."
                 );
                 _isPromptPending = false; // 重试前清理（递归会重设/自己管理）
-                _ = RunPromptAsync(
-                    text,
-                    _appCts?.Token ?? CancellationToken.None,
-                    overflowRetryCount + 1
-                );
+                _ = RunPromptAsync(text, _appCts?.Token ?? CancellationToken.None);
                 return;
             }
             _todoStore.RevertInProgressToPending();

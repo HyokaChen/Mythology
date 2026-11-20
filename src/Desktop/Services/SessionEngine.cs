@@ -529,7 +529,7 @@ public sealed class SessionEngine(
         );
     }
 
-    public async Task RunPromptAsync(string text, CancellationToken ct, int overflowRetryCount = 0)
+    public async Task RunPromptAsync(string text, CancellationToken ct)
     {
         if (_sessionPersistenceFaulted)
         {
@@ -567,10 +567,9 @@ public sealed class SessionEngine(
             send: token => bridge.SendAsync(text, token),
             // 溢出发生在已提交的 turn 内：用户消息/工具结果已在上下文里。
             // 压缩后必须“继续”同一上下文，绝不能重新 Prompt(text) 再追加一次用户消息。
-            retryAfterOverflow: (count, token) => RunContinuationAsync(token, count),
+            retryAfterOverflow: token => RunContinuationAsync(token),
             captureNotes: true,
-            ct: ct,
-            overflowRetryCount: overflowRetryCount
+            ct: ct
         );
     }
 
@@ -729,14 +728,13 @@ public sealed class SessionEngine(
     }
 
     /// <summary>继续当前回合（不追加用户消息），供重试与自动接续共用。</summary>
-    private Task RunContinuationAsync(CancellationToken ct, int overflowRetryCount = 0) =>
+    private Task RunContinuationAsync(CancellationToken ct) =>
         RunTurnAsync(
             prepare: InjectNovelContextAsync,
             send: token => bridge.ContinueAsync(token),
-            retryAfterOverflow: (count, token) => RunContinuationAsync(token, count),
+            retryAfterOverflow: token => RunContinuationAsync(token),
             captureNotes: false,
-            ct: ct,
-            overflowRetryCount: overflowRetryCount
+            ct: ct
         );
 
     /// <summary>
@@ -746,10 +744,9 @@ public sealed class SessionEngine(
     private async Task RunTurnAsync(
         Func<Task> prepare,
         Func<CancellationToken, Task> send,
-        Func<int, CancellationToken, Task> retryAfterOverflow,
+        Func<CancellationToken, Task> retryAfterOverflow,
         bool captureNotes,
-        CancellationToken ct,
-        int overflowRetryCount
+        CancellationToken ct
     )
     {
         // ★ 取消的唯一出口：prepare / send / 溢出恢复（包括 catch 块里再发起的压缩）都可能抛
@@ -758,14 +755,7 @@ public sealed class SessionEngine(
         // C# 的 catch 块内抛出的异常不会被同级的后续 catch 捕获，所以必须在这层兜住。
         try
         {
-            await RunTurnCoreAsync(
-                prepare,
-                send,
-                retryAfterOverflow,
-                captureNotes,
-                ct,
-                overflowRetryCount
-            );
+            await RunTurnCoreAsync(prepare, send, retryAfterOverflow, captureNotes, ct);
         }
         catch (OperationCanceledException)
         {
@@ -810,10 +800,9 @@ public sealed class SessionEngine(
     private async Task RunTurnCoreAsync(
         Func<Task> prepare,
         Func<CancellationToken, Task> send,
-        Func<int, CancellationToken, Task> retryAfterOverflow,
+        Func<CancellationToken, Task> retryAfterOverflow,
         bool captureNotes,
-        CancellationToken ct,
-        int overflowRetryCount
+        CancellationToken ct
     )
     {
         try
@@ -853,27 +842,15 @@ public sealed class SessionEngine(
             // 先按最近一次成功请求的 token 锚点收紧 profile，否则压缩后仍会在同一上限溢出。
             AdaptContextWindowToObservedLimit();
 
-            // 上下文溢出自动恢复：按模式走各自唯一路径（最多 3 次，防止无效重试死循环）
-            // - compact：分片压缩 + retry（与改动前一致）
-            // - 接续：换页 + retry；换页失败直接报错，**不回落压缩**（模式互斥）
-            const int maxOverflowRetries = 3;
+            // 上下文溢出自动恢复：按模式走各自唯一路径。
+            // 一次成功压缩本身就是有效的恢复，重置重试计数；若压缩未显著降低
+            // token，CompactForOverflowAsync 会返回 false，不会进入无界重试。
             if (!await TryPersistNewMessagesAsync())
                 return;
 
             if (_sessionPersistenceFaulted)
             {
                 todoStore.RevertInProgressToPending();
-                return;
-            }
-
-            if (overflowRetryCount >= maxOverflowRetries)
-            {
-                todoStore.RevertInProgressToPending();
-                OnSystemNotice?.Invoke(
-                    _contextManagement is { Mode: ContextMode.Continuation }
-                        ? $"上下文溢出，已重试 {maxOverflowRetries} 次仍无法恢复。请开启新会话。"
-                        : $"上下文溢出，已重试 {maxOverflowRetries} 次仍无法恢复。请使用 /compact 手动压缩或开启新会话。"
-                );
                 return;
             }
 
@@ -885,7 +862,7 @@ public sealed class SessionEngine(
                 // “已压缩，正在继续…”；接续模式没有摘要行，仍保留换页提示。
                 if (_contextManagement is { Mode: ContextMode.Continuation })
                     OnSystemNotice?.Invoke("上下文过长，已开启新的上下文页，正在继续...");
-                await retryAfterOverflow(overflowRetryCount + 1, ct);
+                await retryAfterOverflow(ct);
                 return;
             }
             todoStore.RevertInProgressToPending();
@@ -1792,10 +1769,13 @@ public sealed class SessionEngine(
     {
         if (agent.ModelProfile is not { } profile)
             return;
-        var observed = Math.Max(
-            ContextWindowAdaptation.LastObservedContextTokens(agent.State.Messages),
-            calibrator.Project(CompactionEngine.EstimateContextTokens(agent.State.Messages))
-        );
+        // API 锚点是真实 prompt+completion；没有锚点才退回本地校准估算，
+        // 避免把估算出的固定开销再叠加一次、把窗口抬得过高。
+        var observed = ContextWindowAdaptation.LastObservedContextTokens(agent.State.Messages);
+        if (observed <= 0)
+            observed = calibrator.Project(
+                CompactionEngine.EstimateContextTokens(agent.State.Messages)
+            );
         if (ContextWindowAdaptation.ReduceToObserved(profile, observed) is not { } adapted)
             return;
 

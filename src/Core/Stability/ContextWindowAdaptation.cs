@@ -44,10 +44,18 @@ public static class ContextWindowAdaptation
         long observedTokens
     )
     {
-        if (observedTokens < MinObservedTokens || observedTokens >= profile.ContextWindowTokens)
+        if (observedTokens < MinObservedTokens)
             return null;
 
-        var ceiling = Math.Min(profile.ContextWindowTokens, observedTokens + HeadroomTokens);
+        // 首次校正给实测值留 2K 余量；若实测值已经贴近/超过当前 profile，
+        // 说明上一轮校正后仍然溢出，直接退到 3/4，避免同一上限反复重试。
+        var ceiling =
+            observedTokens + HeadroomTokens < profile.ContextWindowTokens
+                ? observedTokens + HeadroomTokens
+                : Math.Max(MinObservedTokens, observedTokens * 3 / 4);
+        if (ceiling >= profile.ContextWindowTokens)
+            return null;
+
         return profile with
         {
             ContextWindowTokens = ceiling,

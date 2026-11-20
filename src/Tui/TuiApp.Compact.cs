@@ -297,10 +297,13 @@ public sealed partial class TuiApp
     {
         if (_agent.ModelProfile is not { } profile)
             return;
-        var observed = Math.Max(
-            ContextWindowAdaptation.LastObservedContextTokens(_agent.State.Messages),
-            _tokenCalibrator.Project(CompactionEngine.EstimateContextTokens(_agent.State.Messages))
-        );
+        // API 锚点是真实 prompt+completion；没有锚点才退回本地校准估算，
+        // 避免把估算出的固定开销再叠加一次、把窗口抬得过高。
+        var observed = ContextWindowAdaptation.LastObservedContextTokens(_agent.State.Messages);
+        if (observed <= 0)
+            observed = _tokenCalibrator.Project(
+                CompactionEngine.EstimateContextTokens(_agent.State.Messages)
+            );
         if (ContextWindowAdaptation.ReduceToObserved(profile, observed) is not { } adapted)
             return;
 
