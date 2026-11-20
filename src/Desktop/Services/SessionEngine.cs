@@ -849,6 +849,10 @@ public sealed class SessionEngine(
         }
         catch (ContextOverflowException)
         {
+            // 自定义网关的实际窗口可能远小于模型元数据（例如元数据 1M、实际 128K）。
+            // 先按最近一次成功请求的 token 锚点收紧 profile，否则压缩后仍会在同一上限溢出。
+            AdaptContextWindowToObservedLimit();
+
             // 上下文溢出自动恢复：按模式走各自唯一路径（最多 3 次，防止无效重试死循环）
             // - compact：分片压缩 + retry（与改动前一致）
             // - 接续：换页 + retry；换页失败直接报错，**不回落压缩**（模式互斥）
@@ -1291,7 +1295,7 @@ public sealed class SessionEngine(
             return false;
         }
 
-        var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
+        var tokensBefore = calibrator.Project(CompactionEngine.EstimateContextTokens(messages));
         _lastCompactSummary = null;
         var endMessage = "上下文溢出压缩失败";
         try
@@ -1327,7 +1331,9 @@ public sealed class SessionEngine(
                 return false;
             }
 
-            var tokensAfter = CompactionEngine.EstimateContextTokens(agent.State.Messages);
+            var tokensAfter = calibrator.Project(
+                CompactionEngine.EstimateContextTokens(agent.State.Messages)
+            );
             var requiredDrop = Math.Max(1_024L, tokensBefore / 10);
             if (tokensAfter >= tokensBefore - requiredDrop)
             {
@@ -1338,6 +1344,21 @@ public sealed class SessionEngine(
                     requiredDrop
                 );
                 endMessage = "上下文溢出压缩未显著降低 token，请开启新会话";
+                return false;
+            }
+
+            // 压缩后仍高于 pre-flight 阈值：再重试只会重复溢出，直接失败并保留 UI 提示。
+            if (
+                agent.ModelProfile is { ContextWindowTokens: > 0 } profile
+                && tokensAfter >= profile.ContextWindowTokens * profile.PreflightThresholdPercent
+            )
+            {
+                log.LogWarning(
+                    "compact after context overflow: still above preflight threshold (after={After}, threshold={Threshold})",
+                    tokensAfter,
+                    profile.ContextWindowTokens * profile.PreflightThresholdPercent
+                );
+                endMessage = "上下文溢出压缩后仍在安全阈值以上，请开启新会话";
                 return false;
             }
             endMessage =
@@ -1761,6 +1782,31 @@ public sealed class SessionEngine(
         monitor.Reset();
         if (estimatedTokens > 0)
             monitor.SeedTokenCount(estimatedTokens);
+    }
+
+    /// <summary>
+    /// 连续溢出说明 provider 实际窗口小于模型元数据：用最近一次 API 实测的
+    /// context-tokens 收紧 profile，让本轮重试和后续 round 的 pre-flight 生效。
+    /// </summary>
+    private void AdaptContextWindowToObservedLimit()
+    {
+        if (agent.ModelProfile is not { } profile)
+            return;
+        var observed = Math.Max(
+            ContextWindowAdaptation.LastObservedContextTokens(agent.State.Messages),
+            calibrator.Project(CompactionEngine.EstimateContextTokens(agent.State.Messages))
+        );
+        if (ContextWindowAdaptation.ReduceToObserved(profile, observed) is not { } adapted)
+            return;
+
+        agent.ApplyModelProfile(adapted);
+        log.LogWarning(
+            "context overflow: reduced effective context window from {OldWindow} to {NewWindow} (observed={Observed}, outputBudget={OutputBudget})",
+            profile.ContextWindowTokens,
+            adapted.ContextWindowTokens,
+            observed,
+            adapted.OutputTokenBudget
+        );
     }
 
     /// <summary>

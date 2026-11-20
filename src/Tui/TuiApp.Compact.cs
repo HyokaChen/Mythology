@@ -4,6 +4,7 @@ using Core.Data;
 using Core.Stability;
 using LlmTornado.Chat;
 using LlmTornado.Code;
+using Microsoft.Extensions.Logging;
 using XenoAtom.Terminal.UI.Controls;
 using LlmChatMessage = LlmTornado.Chat.ChatMessage;
 
@@ -226,7 +227,9 @@ public sealed partial class TuiApp
                 return false;
             }
 
-            var tokensBefore = CompactionEngine.EstimateContextTokens(messages);
+            var tokensBefore = _tokenCalibrator.Project(
+                CompactionEngine.EstimateContextTokens(messages)
+            );
             var result = await PrepareAndCompactAsync(
                 messages,
                 keepRecent: 0,
@@ -247,7 +250,9 @@ public sealed partial class TuiApp
             if (result is CompactResult.TooSmall or CompactResult.Failed)
                 return false;
 
-            var tokensAfter = CompactionEngine.EstimateContextTokens(_agent.State.Messages);
+            var tokensAfter = _tokenCalibrator.Project(
+                CompactionEngine.EstimateContextTokens(_agent.State.Messages)
+            );
             var requiredDrop = Math.Max(1_024L, tokensBefore / 10);
 
             // compact 后没有显著降低 → 视为无效压缩，不重试
@@ -261,6 +266,20 @@ public sealed partial class TuiApp
                 return false;
             }
 
+            // 压缩后仍高于 pre-flight 阈值：再重试只会重复溢出，直接失败并保留 UI 提示。
+            if (
+                _agent.ModelProfile is { ContextWindowTokens: > 0 } profile
+                && tokensAfter >= profile.ContextWindowTokens * profile.PreflightThresholdPercent
+            )
+            {
+                _logger.LogWarning(
+                    "compact after context overflow: still above preflight threshold (after={After}, threshold={Threshold})",
+                    tokensAfter,
+                    profile.ContextWindowTokens * profile.PreflightThresholdPercent
+                );
+                return false;
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -268,6 +287,31 @@ public sealed partial class TuiApp
             Services.TuiLogger.OperationFailed(_logger, ex, "compact after context overflow");
             return false;
         }
+    }
+
+    /// <summary>
+    /// 连续溢出说明 provider 实际窗口小于模型元数据：用最近一次 API 实测的
+    /// context-tokens 收紧 profile，让重试和后续 round 的 pre-flight 生效。
+    /// </summary>
+    private void AdaptContextWindowToObservedLimit()
+    {
+        if (_agent.ModelProfile is not { } profile)
+            return;
+        var observed = Math.Max(
+            ContextWindowAdaptation.LastObservedContextTokens(_agent.State.Messages),
+            _tokenCalibrator.Project(CompactionEngine.EstimateContextTokens(_agent.State.Messages))
+        );
+        if (ContextWindowAdaptation.ReduceToObserved(profile, observed) is not { } adapted)
+            return;
+
+        _agent.ApplyModelProfile(adapted);
+        _logger.LogWarning(
+            "context overflow: reduced effective context window from {OldWindow} to {NewWindow} (observed={Observed}, outputBudget={OutputBudget})",
+            profile.ContextWindowTokens,
+            adapted.ContextWindowTokens,
+            observed,
+            adapted.OutputTokenBudget
+        );
     }
 
     /// <summary>

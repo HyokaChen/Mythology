@@ -50,7 +50,8 @@ public static class ModelCapabilityResolver
 
     /// <summary>
     /// 解析模型的有效上下文窗口大小。
-    /// 优先使用模型声明（ChatModel.ContextTokens），兜底使用用户配置的值。
+    /// 取模型声明与用户配置的较小值：用户显式设置的窗口是上限，
+    /// 不能被 LlmTornado 的乐观元数据（自定义网关常见 1M）覆盖。
     /// </summary>
     /// <param name="modelName">模型名称。</param>
     /// <param name="userConfiguredSize">用户在 TUI 中选择的上下文窗口大小。</param>
@@ -58,6 +59,6 @@ public static class ModelCapabilityResolver
     public static int ResolveEffectiveContextSize(string? modelName, int userConfiguredSize)
     {
         var declared = ResolveContextTokens(modelName);
-        return declared ?? userConfiguredSize;
+        return declared is null ? userConfiguredSize : Math.Min(declared.Value, userConfiguredSize);
     }
 }
