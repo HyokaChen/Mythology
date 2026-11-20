@@ -62,7 +62,7 @@ public sealed class ModelContextProfileTests
             var profile = new ModelContextProfile { ContextWindowTokens = window };
             Assert.InRange(profile.RollAdvicePercent, 0.25, 0.85);
             Assert.InRange(profile.AutoRollPercent, 0.40, 0.95);
-            // 一开页不会立刻触发（64K output 下小窗口的阈值已相应下移）
+            // 一开页不会立刻触发（32K output 下小窗口的阈值已相应下移）
             Assert.True(profile.RollAdvicePercent >= 0.25);
         }
     }
@@ -70,7 +70,7 @@ public sealed class ModelContextProfileTests
     [Fact]
     public void NudgeCritical_AlwaysReachableBeforePreflight_SmallWindow()
     {
-        // 8K 模型 + 64K output：preflight≈52%，critical 必须仍低于它
+        // 8K 模型 + 32K output：preflight≈52%，critical 必须仍低于它
         var small = new ModelContextProfile { ContextWindowTokens = 8_000 };
         Assert.True(small.NudgeCriticalPercent < 0.85);
         Assert.True(small.NudgeInfoPercent >= 0.30, "info 不低于下限 0.30");
@@ -81,9 +81,9 @@ public sealed class ModelContextProfileTests
     [Theory]
     [InlineData(8_000, 2_666)]
     [InlineData(32_000, 10_666)]
-    [InlineData(128_000, 42_666)]
-    [InlineData(200_000, 65_536)]
-    [InlineData(1_000_000, 65_536)]
+    [InlineData(128_000, 32_768)]
+    [InlineData(200_000, 32_768)]
+    [InlineData(1_000_000, 32_768)]
     public void OutputTokenBudget_IsReservedFromTotalWindow(long contextWindow, int expected)
     {
         var profile = new ModelContextProfile { ContextWindowTokens = contextWindow };
@@ -92,9 +92,9 @@ public sealed class ModelContextProfileTests
     }
 
     [Fact]
-    public void MaxOutputTokens_DefaultsTo64K()
+    public void MaxOutputTokens_DefaultsTo32K()
     {
-        Assert.Equal(65_536, new ModelContextProfile().MaxOutputTokens);
+        Assert.Equal(32_768, new ModelContextProfile().MaxOutputTokens);
     }
 
     [Fact]

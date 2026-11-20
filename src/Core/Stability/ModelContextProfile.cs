@@ -27,14 +27,15 @@ public sealed record ModelContextProfile
     /// <summary>
     /// 单次请求允许的 completion 上限。上下文窗口是 input + output 的总预算，
     /// 这个值必须从总窗口里扣掉，否则会在“输入看似没满”时被 provider 拒绝。
-    /// 默认 64K：现代模型普遍支持 64K 输出，足够完整章节 + 高 thinking；
+    /// 默认 32K：中文单章约 5-6K token，200K 窗口 high thinking 预算约 8K，
+    /// 32K 足够章节 + 推理 + 工具参数；64K 会把 200K 窗口的可输入空间压得过小。
     /// 小窗口模型仍由 <see cref="OutputTokenBudget"/> 按窗口比例收紧。
     /// </summary>
-    public int MaxOutputTokens { get; init; } = 65_536;
+    public int MaxOutputTokens { get; init; } = 32_768;
 
     /// <summary>
     /// 真正从总窗口中预留的 output token 数（同时用于 ChatRequest.MaxTokens）。
-    /// 上限为窗口的 1/3：既允许 200K 窗口用满 64K 输出，又避免 8K/32K
+    /// 上限为窗口的 1/3：既允许大窗口使用 32K 输出，又避免 8K/32K
     /// 窗口被过大的 output 预算挤空输入。pre-flight 会再按该值计算可用输入。
     /// </summary>
     public int OutputTokenBudget =>
@@ -229,7 +230,7 @@ public sealed record ModelContextProfile
     /// <summary>
     /// Compact 阈值：上下文 token 使用达到总窗口的多少百分比时触发主动压缩。
     /// 复用 Pre-flight 阈值的计算逻辑，确保 compact 和 pre-flight 使用一致的百分比。
-    /// 64K output 下约：200K → 64%, 128K → 63%, 1M → 93%, 8K → 52%。
+    /// 32K output 下约：200K → 81%, 128K → 71%, 1M → 96%, 8K → 52%。
     /// 余量 = 预留 output（provider 会按 max_tokens 扣总窗口）+ 1.5 × TypicalTurnTokens。
     /// </summary>
     public double CompactThresholdPercent => PreflightThresholdPercent;
@@ -238,7 +239,7 @@ public sealed record ModelContextProfile
     /// Pre-flight 阈值：token 使用达到总窗口的多少百分比时提前触发 compact。
     /// 关键：provider 的上下文窗口是 input + output 的总额；
     /// 必须先扣掉本次请求的 max_tokens（OutputTokenBudget），再给当轮估算误差留
-    /// 1.5 × TypicalTurnTokens。否则 input 134K + output 65536 会在 200K 窗口上直接 400。
+    /// 1.5 × TypicalTurnTokens。否则 input 167K + output 32K 会在 200K 窗口上直接 400。
     /// </summary>
     public double PreflightThresholdPercent =>
         ContextWindowTokens > 0
@@ -252,7 +253,7 @@ public sealed record ModelContextProfile
     /// <summary>
     /// 接续模式的分级换页提醒阈值（P0）：从 PreflightThresholdPercent 向下推导，
     /// 确保提醒先于 pre-flight 拦截触发。compact 模式不注入 nudge，由宿主自动压缩。
-    /// 64K output 会把 preflight 拉低到 ~52%–64%（小窗口/200K），旧的固定
+    /// 32K output 会把 preflight 拉低到 ~52%–81%（小窗口/200K），旧的固定
     /// 50/60/70% 下限会让 critical/warn 落到 preflight 之后；这里用动态下限，
     /// 保证任何窗口下都仍有 info &lt; warn &lt; critical &lt; preflight。
     /// </summary>
@@ -280,7 +281,7 @@ public sealed record ModelContextProfile
     /// <summary>
     /// 接续换页的「建议换页」阈值（usage 比例）：到这一档就提醒模型「可以开新页」。
     /// 同样从 PreflightThresholdPercent 向下推导；动态下限保证小窗口在
-    /// 64K output 下仍能先建议、再自动、最后 preflight。
+    /// 32K output 下仍能先建议、再自动、最后 preflight。
     /// 不变量：RollAdvicePercent &lt; AutoRollPercent &lt; PreflightThresholdPercent。
     /// </summary>
     public double RollAdvicePercent =>

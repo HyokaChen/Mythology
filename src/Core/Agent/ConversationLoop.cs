@@ -3089,9 +3089,9 @@ public sealed class ConversationLoop(
             ReasoningFormat = ChatReasoningFormats.Parsed,
             // 上下文窗口是 input + output 的总额。显式发送一个受控的 max_tokens，
             // 让 provider 预留的 output 与 ModelContextProfile 的扣减一致；
-            // 默认 64K，但按窗口 1/3 收紧；pre-flight 已把 output 计入可用输入阈值。
-            // 不能省略：部分网关会默认按模型最大 output（如 65536）预扣；
-            // 显式发送受控值，并让 pre-flight 把它计入输入阈值，避免 input 134K + output 64K 超窗。
+            // 默认 32K，但按窗口 1/3 收紧；pre-flight 已把 output 计入可用输入阈值。
+            // 不能省略：部分网关会默认按模型最大 output 预扣；
+            // 显式发送受控值，并让 pre-flight 把它计入输入阈值，避免 input 167K + output 32K 超窗。
             MaxTokens = _modelProfile.OutputTokenBudget,
         };
 
