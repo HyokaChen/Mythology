@@ -177,10 +177,6 @@ public sealed partial class TuiApp
         }
         catch (ContextOverflowException)
         {
-            // 自定义网关的实际窗口可能远小于模型元数据（例如元数据 1M、实际 128K）。
-            // 先按最近一次成功请求的 token 锚点收紧 profile，否则压缩后仍会在同一上限溢出。
-            AdaptContextWindowToObservedLimit();
-
             // 上下文溢出自动恢复：按模式走各自唯一路径。
             // 一次成功压缩本身就是有效的恢复，重置重试计数；若压缩未显著降低 token，
             // CompactForOverflowAsync 会返回 false，不会进入无界重试。

@@ -838,10 +838,6 @@ public sealed class SessionEngine(
         }
         catch (ContextOverflowException)
         {
-            // 自定义网关的实际窗口可能远小于模型元数据（例如元数据 1M、实际 128K）。
-            // 先按最近一次成功请求的 token 锚点收紧 profile，否则压缩后仍会在同一上限溢出。
-            AdaptContextWindowToObservedLimit();
-
             // 上下文溢出自动恢复：按模式走各自唯一路径。
             // 一次成功压缩本身就是有效的恢复，重置重试计数；若压缩未显著降低
             // token，CompactForOverflowAsync 会返回 false，不会进入无界重试。
@@ -1759,34 +1755,6 @@ public sealed class SessionEngine(
         monitor.Reset();
         if (estimatedTokens > 0)
             monitor.SeedTokenCount(estimatedTokens);
-    }
-
-    /// <summary>
-    /// 连续溢出说明 provider 实际窗口小于模型元数据：用最近一次 API 实测的
-    /// context-tokens 收紧 profile，让本轮重试和后续 round 的 pre-flight 生效。
-    /// </summary>
-    private void AdaptContextWindowToObservedLimit()
-    {
-        if (agent.ModelProfile is not { } profile)
-            return;
-        // API 锚点是真实 prompt+completion；没有锚点才退回本地校准估算，
-        // 避免把估算出的固定开销再叠加一次、把窗口抬得过高。
-        var observed = ContextWindowAdaptation.LastObservedContextTokens(agent.State.Messages);
-        if (observed <= 0)
-            observed = calibrator.Project(
-                CompactionEngine.EstimateContextTokens(agent.State.Messages)
-            );
-        if (ContextWindowAdaptation.ReduceToObserved(profile, observed) is not { } adapted)
-            return;
-
-        agent.ApplyModelProfile(adapted);
-        log.LogWarning(
-            "context overflow: reduced effective context window from {OldWindow} to {NewWindow} (observed={Observed}, outputBudget={OutputBudget})",
-            profile.ContextWindowTokens,
-            adapted.ContextWindowTokens,
-            observed,
-            adapted.OutputTokenBudget
-        );
     }
 
     /// <summary>
