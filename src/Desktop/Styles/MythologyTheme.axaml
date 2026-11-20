@@ -261,10 +261,7 @@
     <Setter Property="FontSize" Value="13" />
     <Setter Property="Template">
       <ControlTemplate>
-        <Border Name="PART_LayoutTransform" RenderTransformOrigin="0,0">
-          <Border.RenderTransform>
-            <ScaleTransform ScaleX="0.92" ScaleY="0.92" />
-          </Border.RenderTransform>
+        <Border Name="PART_LayoutRoot">
           <Border
             Background="{TemplateBinding Background}"
             BorderBrush="{TemplateBinding BorderBrush}"
@@ -284,20 +281,14 @@
         </Border>
       </ControlTemplate>
     </Setter>
-    <!-- 打开动画：极轻微缩放 + 渐显（0.92 的放大在 Adaline 的印刷基调里过重） -->
-    <Style Selector="^[IsOpen=True] /template/ Border#PART_LayoutTransform">
+    <!-- 打开动画：只淡入（缩放无法被 reduced-motion 开关拦住，且与零过冲/纸感冲突） -->
+    <Style Selector="^[IsOpen=True] /template/ Border#PART_LayoutRoot">
       <Style.Animations>
-        <Animation FillMode="Forward" Duration="0:0:0.14" Easing="CubicEaseOut">
-          <KeyFrame Cue="0%">
-            <Setter Property="ScaleTransform.ScaleY" Value="0.97" />
-            <Setter Property="ScaleTransform.ScaleX" Value="0.97" />
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="ScaleTransform.ScaleY" Value="1" />
-            <Setter Property="ScaleTransform.ScaleX" Value="1" />
-          </KeyFrame>
-        </Animation>
-        <Animation FillMode="Forward" Duration="0:0:0.11" Easing="CubicEaseOut">
+        <Animation
+          FillMode="Forward"
+          Duration="{x:Static motion:Motion.Micro}"
+          Easing="{x:Static motion:Motion.SoftEasing}"
+        >
           <KeyFrame Cue="0%">
             <Setter Property="Opacity" Value="0" />
           </KeyFrame>
@@ -336,7 +327,7 @@
               <BrushTransition
                 Property="Background"
                 Duration="{x:Static motion:Motion.Fast}"
-                Easing="SineEaseOut"
+                Easing="{x:Static motion:Motion.SoftEasing}"
               />
             </Transitions>
           </Border.Transitions>

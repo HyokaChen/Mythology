@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using Channels.WeChat;
+using ClientPlatform;
 using Core.Agent;
 using Core.Data;
 using Core.Infrastructure;
@@ -329,6 +330,99 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>云端账号门面（登录/登出/状态由 CloudAuthService 统一管理）。</summary>
     public CloudAuthService? CloudAuth { get; }
 
+    // ── 本月积分（GET /v1/agent/usage，零价查询）──
+
+    private readonly UsageRestClient? _usage;
+    private int _usageRequestVersion;
+
+    /// <summary>已登录且用量客户端可用时才展示积分卡。</summary>
+    public bool IsUsageVisible
+    {
+        get;
+        internal set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    public bool IsUsageLoading
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>已经拿到过一次用量快照（决定空态文案是否展示）。</summary>
+    public bool HasUsageSnapshot
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>本月剩余可用积分（大号数字）。</summary>
+    public string UsageRemaining
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "—";
+
+    public string UsageIncluded
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "—";
+
+    public string UsageUsed
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "—";
+
+    public string UsageReserved
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "—";
+
+    /// <summary>账期（yyyy-MM）。</summary>
+    public string UsagePeriod
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "";
+
+    /// <summary>已用 + 在途占套餐额度的百分比（0–100，长条只用这一个值）。</summary>
+    public double UsageUsedPercent
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>占用比例的展示文本（与长条同源，避免读者自己算）。</summary>
+    public string UsageUsedPercentText
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "—";
+
+    public string UsageStatus
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    } = "";
+
+    /// <summary>按能力拆分的已用积分（降序）。</summary>
+    public ObservableCollection<UsageBreakdownRow> UsageBreakdown { get; } = [];
+
+    public bool HasUsageBreakdown
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
+    /// <summary>已有快照但本月没有任何消耗时显示空态文案。</summary>
+    public bool IsUsageEmptyHintVisible
+    {
+        get;
+        private set => this.RaiseAndSetIfChanged(ref field, value);
+    }
+
     /// <summary>保存命令。</summary>
     public ReactiveCommand<RxVoid, RxVoid> SaveCommand { get; }
 
@@ -354,6 +448,19 @@ public sealed class SettingsViewModel : ViewModelBase
             if (ThemeService is not { } svc || svc.IsDark == value)
                 return;
             svc.SetDark(value);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    /// <summary>减少动态效果（关闭位移/缩放/错峰，仅保留淡入淡出；即时生效并持久化）。</summary>
+    public bool IsReducedMotion
+    {
+        get => ThemeService?.IsReducedMotion ?? false;
+        set
+        {
+            if (ThemeService is not { } svc || svc.IsReducedMotion == value)
+                return;
+            svc.SetReducedMotion(value);
             this.RaisePropertyChanged();
         }
     }
@@ -528,7 +635,8 @@ public sealed class SettingsViewModel : ViewModelBase
         RetrievalKernel? retrievalKernel = null,
         CloudAuthService? cloudAuth = null,
         WeChatChannelService? weChat = null,
-        UpdateState? updateState = null
+        UpdateState? updateState = null,
+        UsageRestClient? usage = null
     )
     {
         _configStore = configStore;
@@ -538,6 +646,7 @@ public sealed class SettingsViewModel : ViewModelBase
         CloudAuth = cloudAuth;
         _weChat = weChat;
         _updateState = updateState;
+        _usage = usage;
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
 
         ApiKeys.CollectionChanged += (_, _) => SyncProviderOptions();
@@ -684,6 +793,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
         // Cloud 账号状态
         LoadCloudSession();
+        _ = RefreshUsageAsync();
 
         return this;
     }
@@ -1179,15 +1289,19 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         LoadCloudSession();
         CloudStatus = "";
+        _ = RefreshUsageAsync();
     }
 
     /// <summary>从 CloudAuthService 读取当前状态（设置窗口打开时快照）。</summary>
     private void LoadCloudSession()
     {
         var session = CloudAuth?.Session;
-        var signedIn = CloudAuth?.IsSignedIn ?? false;
-        IsCloudLoggedIn = signedIn;
-        if (signedIn && session is not null)
+        // 凭据存在即视为已登录：Validating / Offline / RateLimited / QuotaExceeded
+        // 都仍持有账号，不能退回「未登录」卡片（配额用尽时更要看到 0 余量）。
+        var hasSession = session is not null;
+        IsCloudLoggedIn = hasSession;
+        IsUsageVisible = hasSession && _usage is not null;
+        if (session is not null)
         {
             CloudDisplayId = session.DisplayName is { Length: > 0 } dn ? dn : session.PublicId;
             CloudPlan = session.Plan.Length > 0 ? session.Plan : "free";
@@ -1199,6 +1313,8 @@ public sealed class SettingsViewModel : ViewModelBase
             CloudPlan = "";
             CloudSavedAt = "";
         }
+        if (!IsUsageVisible)
+            ClearUsage();
         CloudStatus = "";
     }
 
@@ -1206,9 +1322,114 @@ public sealed class SettingsViewModel : ViewModelBase
     public void Logout()
     {
         CloudAuth?.Logout();
+        _usageRequestVersion++;
+        IsUsageLoading = false;
         LoadCloudSession();
         CloudStatus = "已退出登录";
     }
+
+    /// <summary>
+    /// 拉取本月积分快照（零价查询）。版本号保证登出/重新登录后迟到的响应
+    /// 不会覆盖当前账号的界面状态。
+    /// </summary>
+    public async Task RefreshUsageAsync()
+    {
+        var version = ++_usageRequestVersion;
+        if (_usage is null || CloudAuth?.Session is null)
+        {
+            ClearUsage();
+            return;
+        }
+
+        IsUsageLoading = true;
+        UsageStatus = "";
+        try
+        {
+            var snapshot = await _usage.GetUsageAsync();
+            if (version != _usageRequestVersion)
+                return;
+            ApplyUsage(snapshot);
+        }
+        catch (Exception ex)
+        {
+            if (version != _usageRequestVersion)
+                return;
+            UsageStatus = $"积分读取失败：{ex.Message}";
+        }
+        finally
+        {
+            if (version == _usageRequestVersion)
+                IsUsageLoading = false;
+        }
+    }
+
+    /// <summary>把服务端快照投影到积分卡（测试可直接调用）。</summary>
+    internal void ApplyUsage(UsageSnapshot snapshot)
+    {
+        UsageRemaining = snapshot.RemainingUnits.ToString("N0");
+        UsageIncluded = snapshot.IncludedUnits.ToString("N0");
+        UsageUsed = snapshot.UsedUnits.ToString("N0");
+        UsageReserved = snapshot.ReservedUnits.ToString("N0");
+        UsagePeriod = snapshot.Period;
+
+        var occupied = snapshot.UsedUnits + snapshot.ReservedUnits;
+        UsageUsedPercent =
+            snapshot.IncludedUnits > 0
+                ? Math.Clamp(occupied * 100d / snapshot.IncludedUnits, 0, 100)
+                : 0;
+        UsageUsedPercentText = $"{UsageUsedPercent:F0}%";
+
+        UsageBreakdown.Clear();
+        var breakdown = snapshot.Breakdown ?? new Dictionary<string, int>();
+        foreach (
+            var (capability, units) in breakdown
+                .Where(p => p.Value > 0)
+                .OrderByDescending(p => p.Value)
+                .ThenBy(p => p.Key, StringComparer.Ordinal)
+        )
+            UsageBreakdown.Add(
+                new UsageBreakdownRow(CapabilityLabel(capability), capability, units)
+            );
+
+        HasUsageBreakdown = UsageBreakdown.Count > 0;
+        IsUsageEmptyHintVisible = !HasUsageBreakdown;
+        HasUsageSnapshot = true;
+        UsageStatus = "";
+    }
+
+    /// <summary>清空积分卡（未登录 / 客户端缺失 / 退出登录）。</summary>
+    private void ClearUsage()
+    {
+        IsUsageLoading = false;
+        HasUsageSnapshot = false;
+        UsageRemaining = "—";
+        UsageIncluded = "—";
+        UsageUsed = "—";
+        UsageReserved = "—";
+        UsagePeriod = "";
+        UsageUsedPercent = 0;
+        UsageUsedPercentText = "—";
+        UsageStatus = "";
+        UsageBreakdown.Clear();
+        HasUsageBreakdown = false;
+        IsUsageEmptyHintVisible = false;
+    }
+
+    /// <summary>能力 ID → 用户可读的消耗类别（未知能力保留原 ID，便于对账）。</summary>
+    private static string CapabilityLabel(string capability) =>
+        capability switch
+        {
+            "fiction.context.retrieve" => "上下文检索",
+            "fiction.story.check" => "正文审校",
+            "fiction.plotline.check" => "情节审校",
+            "fiction.setup.check" => "设定检查",
+            "fiction.hallucination.scan" => "幻觉扫描",
+            "fiction.associative.link" => "联想链接",
+            "fiction.scene.plan" => "场景规划",
+            "retrieval.crawl" => "资料抓取",
+            "retrieval.search" => "资料检索",
+            _ => capability,
+        };
 }
 
 /// <summary>两态卡片行（只读摘要 ↔ 编辑表单），设置页密钥卡 / MCP 卡共用。</summary>
@@ -1539,6 +1760,13 @@ public sealed class McpServerRow(
                 : $"鉴权  {AuthHeader} · {SecretMask.Format(AuthValue, "未填写值")}",
             _ => "鉴权  无",
         };
+}
+
+/// <summary>积分消耗明细行（能力类别 + 原始能力 ID + 已用单位）。</summary>
+public sealed record UsageBreakdownRow(string Label, string Capability, int Units)
+{
+    /// <summary>消耗单位（mono 数字，右对齐）。</summary>
+    public string UnitsText => Units.ToString("N0");
 }
 
 /// <summary>插件行（工具 Tab）。</summary>

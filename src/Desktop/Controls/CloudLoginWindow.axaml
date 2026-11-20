@@ -54,7 +54,14 @@
         </Grid>
 
         <!-- 设备流面板 -->
-        <Border x:Name="DevicePanel" Classes="Card" Padding="20" IsVisible="False">
+        <Border
+          x:Name="DevicePanel"
+          Classes="Card"
+          Padding="20"
+          IsVisible="False"
+          motion:Motion.Enter="True"
+          motion:Motion.EnterRise="4"
+        >
           <StackPanel Spacing="10">
             <TextBlock Classes="Tag" Text="设备流登录（扫码）" />
             <Image x:Name="QrImage" Width="176" Height="176" HorizontalAlignment="Center" />
@@ -105,7 +112,14 @@
     </Grid>
 
     <!-- ═══════ 登录成功面板（内容顶置 · 动作条钉在右下） ═══════ -->
-    <Grid x:Name="SuccessPanel" Margin="24,20,24,20" RowDefinitions="*,Auto" IsVisible="False">
+    <Grid
+      x:Name="SuccessPanel"
+      Margin="24,20,24,20"
+      RowDefinitions="*,Auto"
+      IsVisible="False"
+      motion:Motion.Enter="True"
+      motion:Motion.EnterRise="4"
+    >
       <StackPanel Grid.Row="0" Spacing="16">
         <lucide:LucideIcon
           Kind="CircleCheckBig"

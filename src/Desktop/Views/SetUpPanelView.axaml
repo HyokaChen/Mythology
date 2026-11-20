@@ -375,7 +375,7 @@
             </ScrollViewer>
 
             <!-- 通用实体空态（非大纲 Tab）：「还没有」与「未命中」是两种状态（TUI 同口径） -->
-            <Border Grid.Row="3" Classes="EmptyNote" Margin="12,8,12,0">
+            <Border Grid.Row="3" Classes="EmptyNote" Margin="12,8,12,0" motion:Motion.Fade="True">
               <Border.IsVisible>
                 <MultiBinding Converter="{StaticResource BoolAndVisibility}">
                   <Binding Path="HasNoProgress" />

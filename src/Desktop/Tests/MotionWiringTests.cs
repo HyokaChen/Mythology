@@ -31,6 +31,19 @@ public sealed class MotionWiringTests
         throw new FileNotFoundException($"未找到 src/Desktop/{relativePath}");
     }
 
+    private static string Source(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "Desktop", relativePath);
+            if (File.Exists(candidate))
+                return File.ReadAllText(candidate);
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException($"未找到 src/Desktop/{relativePath}");
+    }
+
     private static string Attr(XElement element, string localName) =>
         element
             .Attributes()
@@ -284,7 +297,7 @@ public sealed class MotionWiringTests
         foreach (
             var selector in new[]
             {
-                "ToggleButton, CheckBox, RadioButton",
+                "ToggleButton, CheckBox, RadioButton, ToggleSwitch",
                 "Slider",
                 "Expander /template/ ToggleButton",
             }
@@ -439,35 +452,221 @@ public sealed class MotionWiringTests
     }
 
     [Fact]
-    public void SettingsTabUnderline_GrowsOnSelection()
+    public void SettingsTabUnderline_FadesOnSelection_WithoutScale()
     {
         var root = Load("Views/SettingsView.axaml");
         var underline = Single(root, e =>
             e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "PART_Underline"
         );
-        Assert.True(
-            underline
-                .Descendants()
-                .Any(d =>
-                    d.Name.LocalName == "TransformOperationsTransition"
-                    && AttrPlain(d, "Property") == "RenderTransform"
-                ),
-            "PART_Underline 缺少 RenderTransform 过渡"
+        Assert.Contains(underline.Descendants(), d =>
+            d.Name.LocalName == "DoubleTransition" && AttrPlain(d, "Property") == "Opacity"
         );
+        Assert.DoesNotContain(underline.Descendants(), d =>
+            d.Name.LocalName == "TransformOperationsTransition"
+        );
+        Assert.DoesNotContain("scale(", underline.ToString(), StringComparison.Ordinal);
 
         var selected = Single(root, e =>
             e.Name.LocalName == "Style"
             && AttrPlain(e, "Selector") == "^:selected /template/ Border#PART_Underline"
         );
-        Assert.True(
-            selected
-                .Elements()
-                .Any(s =>
-                    AttrPlain(s, "Property") == "RenderTransform"
-                    && AttrPlain(s, "Value").Contains("scale(1,1)", StringComparison.Ordinal)
-                ),
-            "PART_Underline 选中态缺少 scale(1,1)"
+        Assert.Contains(selected.Elements(), s =>
+            AttrPlain(s, "Property") == "Opacity" && AttrPlain(s, "Value") == "1"
         );
+        Assert.DoesNotContain(selected.Elements(), s =>
+            AttrPlain(s, "Property") == "RenderTransform"
+        );
+    }
+
+    [Theory]
+    [InlineData("Button.Primary:focus-visible /template/ ContentPresenter")]
+    [InlineData("Button.Ghost:focus-visible")]
+    [InlineData("Button.Danger:focus-visible")]
+    [InlineData("Button.IconButton:focus-visible")]
+    [InlineData("Button.MoreButton:focus-visible")]
+    [InlineData("ListBoxItem:focus-visible")]
+    [InlineData("TreeViewItem:focus-visible /template/ Border#SelectionBorder")]
+    [InlineData("ComboBox:pointerover /template/ Border#BackgroundBorder")]
+    [InlineData("ComboBox:focus /template/ Border#BackgroundBorder")]
+    [InlineData("ToggleSwitch:focus-visible, CheckBox:focus-visible, RadioButton:focus-visible")]
+    [InlineData("ToggleSwitch:focus-visible /template/ Grid#SwitchAreaGrid")]
+    [InlineData("Button.Ghost:pressed")]
+    [InlineData("Button.IconButton:pressed")]
+    [InlineData("ListBoxItem:pressed")]
+    [InlineData("ScrollBar Thumb:pressed")]
+    [InlineData("Border.Card.Glow.Focused")]
+    public void GlobalStyles_DeclareKeyboardFocusAndPressedStates(string selector)
+    {
+        var styles = Load("Styles/MythologyStyles.axaml");
+        Assert.Contains(styles.Elements(), e =>
+            e.Name.LocalName == "Style" && AttrPlain(e, "Selector") == selector
+        );
+    }
+
+    [Fact]
+    public void ContextMenu_OpenAnimation_FadesOnlyWithMicroToken()
+    {
+        var theme = Single(Load("Styles/MythologyTheme.axaml"), e =>
+            e.Name.LocalName == "ControlTheme"
+            && e.Attributes().Any(a => a.Name.LocalName == "Key" && a.Value == "AdalineContextMenu")
+        );
+        var animations = theme.Descendants().Where(e => e.Name.LocalName == "Animation").ToList();
+        var animation = Assert.Single(animations);
+        Assert.Contains("Motion.Micro", AttrPlain(animation, "Duration"), StringComparison.Ordinal);
+        Assert.Contains(
+            "Motion.SoftEasing",
+            AttrPlain(animation, "Easing"),
+            StringComparison.Ordinal
+        );
+
+        var setters = animation
+            .Descendants()
+            .Where(e => e.Name.LocalName == "Setter")
+            .Select(e => AttrPlain(e, "Property"))
+            .ToList();
+        Assert.Equal(new[] { "Opacity", "Opacity" }, setters);
+        Assert.DoesNotContain("ScaleTransform", theme.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsTabHeader_UsesFastSoftTransition()
+    {
+        var presenter = Single(Load("Views/SettingsView.axaml"), e =>
+            e.Name.LocalName == "ContentPresenter" && AttrPlain(e, "Name") == "PART_HeaderPresenter"
+        );
+        var transition = Assert.Single(
+            presenter.Descendants().Where(e => e.Name.LocalName == "BrushTransition")
+        );
+        Assert.Contains("Motion.Fast", AttrPlain(transition, "Duration"), StringComparison.Ordinal);
+        Assert.Contains(
+            "Motion.SoftEasing",
+            AttrPlain(transition, "Easing"),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void ReducedMotionSetting_IsBoundInAppearanceTab()
+    {
+        var settings = Load("Views/SettingsView.axaml");
+        var toggle = Single(settings, e =>
+            e.Name.LocalName == "ToggleSwitch"
+            && AttrPlain(e, "IsChecked") == "{Binding IsReducedMotion}"
+        );
+        Assert.NotNull(toggle);
+
+        // 持久化本身不锁源码字符串（同义反复）：由偏好序列化/手动重启冒烟覆盖。
+        Assert.Contains(
+            "public bool IsReducedMotion",
+            Source("ViewModels/SettingsViewModel.cs"),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void ConversationInputCard_TracksFocusWithOliveBorder()
+    {
+        var root = Load("Views/ConversationView.axaml");
+        var card = Single(root, e =>
+            e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "InputCard"
+        );
+        Assert.Contains(card.Descendants(), d =>
+            d.Name.LocalName == "BrushTransition" && AttrPlain(d, "Property") == "BorderBrush"
+        );
+
+        var code = Source("Views/ConversationView.axaml.cs");
+        Assert.Contains("InputBox.GotFocus", code, StringComparison.Ordinal);
+        Assert.Contains("InputBox.LostFocus", code, StringComparison.Ordinal);
+        Assert.Contains("Classes.Set(\"Focused\"", code, StringComparison.Ordinal);
+        Assert.Contains(
+            "Border.Card.Glow.Focused",
+            Source("Styles/MythologyStyles.axaml"),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void ChapterReader_OutlineFadesOnce_WithoutXamlEnter()
+    {
+        var code = Source("Controls/ChapterReaderWindow.axaml.cs");
+        Assert.Contains("_outlineAnimated", code, StringComparison.Ordinal);
+        Assert.Contains("Motion.PlayEnter(OutlinePanel", code, StringComparison.Ordinal);
+        Assert.Contains("Motion.PlayPageEnter(ContentEditor", code, StringComparison.Ordinal);
+
+        var panel = Single(Load("Controls/ChapterReaderWindow.axaml"), e =>
+            e.Name.LocalName == "Border" && AttrPlain(e, "Name") == "OutlinePanel"
+        );
+        Assert.NotEqual("True", Attr(panel, "Motion.Enter"));
+    }
+
+    [Theory]
+    [InlineData("Controls/ProjectPickerWindow.axaml", "EmptyNote")]
+    [InlineData("Controls/SessionManagerWindow.axaml", "EmptyNote")]
+    [InlineData("Controls/NotesWindow.axaml", "EmptyNote")]
+    public void ListDialogEmptyStates_FadeIn(string relative, string name)
+    {
+        var note = Single(Load(relative), e =>
+            e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == name)
+        );
+        Assert.Equal("True", Attr(note, "Motion.Fade"));
+    }
+
+    [Fact]
+    public void SetUpAndTodoEmptyStates_FadeIn()
+    {
+        var setUp = Single(Load("Views/SetUpPanelView.axaml"), e =>
+            e.Name.LocalName == "Border"
+            && (AttrPlain(e, "Classes") ?? "").Contains("EmptyNote", StringComparison.Ordinal)
+        );
+        Assert.Equal("True", Attr(setUp, "Motion.Fade"));
+
+        var todo = Single(Load("Views/TodoPanelView.axaml"), e =>
+            e.Name.LocalName == "Border"
+            && AttrPlain(e, "IsVisible").Contains("IsEmpty", StringComparison.Ordinal)
+        );
+        Assert.Equal("True", Attr(todo, "Motion.Fade"));
+    }
+
+    [Fact]
+    public void AsyncPanels_PlayEnterWithSmallRise()
+    {
+        foreach (
+            var (relative, name) in new[]
+            {
+                ("Controls/CloudLoginWindow.axaml", "DevicePanel"),
+                ("Controls/CloudLoginWindow.axaml", "SuccessPanel"),
+                ("Controls/WorldRulePanel.axaml", "RuleFormScroll"),
+                ("Controls/WorldRulePanel.axaml", "SettingFormScroll"),
+                ("Controls/TreeWindow.axaml", "LabelPanel"),
+            }
+        )
+        {
+            var panel = Single(Load(relative), e =>
+                e.Attributes().Any(a => a.Name.LocalName == "Name" && a.Value == name)
+            );
+            Assert.Equal("True", Attr(panel, "Motion.Enter"));
+            Assert.Equal("4", Attr(panel, "Motion.EnterRise"));
+        }
+    }
+
+    [Fact]
+    public void PlayExit_ConsumesExitEasingInBothChannels()
+    {
+        var source = Source("Styles/Motion.cs");
+        var start = source.IndexOf("public static async Task PlayExit", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        var end = source.IndexOf(
+            "private static void ResetTranslation",
+            start,
+            StringComparison.Ordinal
+        );
+        Assert.True(end > start);
+        var body = source[start..end];
+        Assert.True(
+            body.Split("ExitEasing").Length - 1 >= 2,
+            "PlayExit 必须在合成器与 UI 线程两条退场路径都使用 ExitEasing"
+        );
+        Assert.Contains("var actual = Exit;", body, StringComparison.Ordinal);
     }
 
     [Fact]

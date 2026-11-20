@@ -9,7 +9,8 @@ namespace Desktop.Services;
 /// 浅色 = Adaline 纸感（默认，DESIGN.md 主基调）；深色 = Slate Hollow 夜空墨绿（DESIGN.md dark band 延伸）。
 /// 实现：运行时替换 Application.Resources 中的 Color/Brush token；
 /// 所有 XAML 使用 DynamicResource 引用，故替换后全局即时生效，无需重启。
-/// 持久化独立于 TUI 的 config.yaml theme 字段（终端 16 色主题语义不同），写入 ~/.mythology/desktop-ui.json。
+/// 持久化独立于 TUI 的 config.yaml theme 字段（终端 16 色主题语义不同），写入 ~/.mythology/desktop-ui.json；
+/// 同一份桌面 UI 状态同时承载「减少动态效果」偏好。
 /// </summary>
 public sealed class DesktopThemeService
 {
@@ -27,6 +28,9 @@ public sealed class DesktopThemeService
 
     /// <summary>当前是否深色。</summary>
     public bool IsDark { get; private set; }
+
+    /// <summary>是否减少动态效果（去掉位移 / 缩放 / 错峰，保留淡入淡出）。</summary>
+    public bool IsReducedMotion { get; private set; }
 
     /// <summary>主题变更事件（供 ViewModel 刷新按钮文案等）。</summary>
     public event Action? ThemeChanged;
@@ -98,17 +102,32 @@ public sealed class DesktopThemeService
                 return;
             var json = File.ReadAllText(StatePath);
             var state = JsonSerializer.Deserialize<UiState>(json);
+
+            // 动效偏好与主题相互独立：主题停在浅色时也必须恢复。
+            IsReducedMotion = state?.ReduceMotion ?? false;
+            Desktop.Styles.Motion.ReducedMotion = IsReducedMotion;
+
             if (state?.Theme == "dark")
                 SetDark(true);
         }
         catch
         {
-            // 状态文件损坏：静默回退浅色
+            // 状态文件损坏：静默回退浅色 / 完整动效
         }
     }
 
     /// <summary>在浅色/深色之间切换（Ctrl+T、/theme）。</summary>
     public void Toggle() => SetDark(!IsDark);
+
+    /// <summary>设置「减少动态效果」：即时生效并持久化。</summary>
+    public void SetReducedMotion(bool reduced)
+    {
+        if (IsReducedMotion == reduced)
+            return;
+        IsReducedMotion = reduced;
+        Desktop.Styles.Motion.ReducedMotion = reduced;
+        Persist();
+    }
 
     /// <summary>设置主题（即时生效并持久化）。</summary>
     public void SetDark(bool dark)
@@ -197,7 +216,9 @@ public sealed class DesktopThemeService
             var dir = Path.GetDirectoryName(StatePath);
             if (dir is not null)
                 Directory.CreateDirectory(dir);
-            var json = JsonSerializer.Serialize(new UiState { Theme = IsDark ? "dark" : "light" });
+            var json = JsonSerializer.Serialize(
+                new UiState { Theme = IsDark ? "dark" : "light", ReduceMotion = IsReducedMotion }
+            );
             File.WriteAllText(StatePath, json);
         }
         catch
@@ -209,5 +230,7 @@ public sealed class DesktopThemeService
     private sealed class UiState
     {
         public string Theme { get; set; } = "light";
+
+        public bool ReduceMotion { get; set; }
     }
 }

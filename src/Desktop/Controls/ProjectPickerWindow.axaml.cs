@@ -4,6 +4,7 @@ using Avalonia.Platform.Storage;
 using ClientPlatform;
 using Core.Data;
 using Desktop.Services;
+using Desktop.Styles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -117,6 +118,7 @@ public partial class ProjectPickerWindow : Window
         MainPanel.IsVisible = false;
         FormPanel.IsVisible = true;
         TitleBox.Focus();
+        _ = Motion.PlayEnter(FormPanel, 4, Motion.Fast);
     }
 
     /// <summary>切回列表层（重载项目列表；表单字段保留）。</summary>
@@ -124,6 +126,7 @@ public partial class ProjectPickerWindow : Window
     {
         FormPanel.IsVisible = false;
         MainPanel.IsVisible = true;
+        _ = Motion.PlayEnter(MainPanel, 4, Motion.Fast);
         _ = LoadNovelsAsync();
     }
 

@@ -55,6 +55,8 @@
             MaxHeight="380"
             HorizontalScrollBarVisibility="Disabled"
             IsVisible="False"
+            motion:Motion.Enter="True"
+            motion:Motion.EnterRise="4"
           >
             <StackPanel x:Name="RuleFormHost" Spacing="6" />
           </ScrollViewer>
@@ -87,6 +89,8 @@
             MaxHeight="380"
             HorizontalScrollBarVisibility="Disabled"
             IsVisible="False"
+            motion:Motion.Enter="True"
+            motion:Motion.EnterRise="4"
           >
             <StackPanel x:Name="SettingFormHost" Spacing="6" />
           </ScrollViewer>

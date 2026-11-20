@@ -25,6 +25,7 @@ public partial class ConversationView : UserControl
         AttachedToVisualTree += (_, _) => AttachHostWindow();
         DetachedFromVisualTree += (_, _) => DetachHostWindow();
         MessageList.ItemsSource = _windowRows;
+        MessageList.ContainerPrepared += OnRowContainerPrepared;
         MessageList.FollowChanged += OnFollowChanged;
         MessageScroll.ScrollChanged += OnMessageScrollChanged;
         MessageScroll.PointerMoved += OnMessageScrollPointerMoved;
@@ -61,6 +62,9 @@ public partial class ConversationView : UserControl
             if (e.Property == TextBox.CaretIndexProperty)
                 RefreshSuggestions();
         };
+        // 输入卡焦点描边：用 class 切到 DynamicResource，深色主题切换后仍跟随。
+        InputBox.GotFocus += (_, _) => InputCard.Classes.Set("Focused", true);
+        InputBox.LostFocus += (_, _) => InputCard.Classes.Set("Focused", false);
         // Avalonia 12：拖放事件通过附加事件路由注册
         AddHandler(DragDrop.DragOverEvent, InputBox_OnDragOver);
         AddHandler(DragDrop.DropEvent, InputBox_OnDrop);
@@ -246,6 +250,9 @@ public partial class ConversationView : UserControl
     private readonly HashSet<ChatMessage> _subscribedMessages = [];
     private readonly HashSet<ChatMessage> _dirtyRowMessages = [];
     private readonly Dictionary<object, ChatMessage> _collectionOwners = [];
+
+    /// <summary>已排队但尚未生成行容器的入场行（容器由可见窗口异步创建）。</summary>
+    private readonly HashSet<ConversationRow> _pendingRowEnter = [];
     private ConversationViewModel? _messagesVm;
     private bool _windowSyncScheduled;
     private bool _forceWindowSync;
@@ -334,7 +341,7 @@ public partial class ConversationView : UserControl
                 {
                     foreach (var item in e.NewItems)
                         if (item is ChatMessage message)
-                            AppendRowsForMessage(message);
+                            AppendRowsForMessage(message, animate: true);
                     RebuildHeightIndex();
 
                     // 跟随尾部时窗口滚到最新；阅读历史时只把新行计入底部 spacer，
@@ -586,6 +593,8 @@ public partial class ConversationView : UserControl
         try
         {
             ReconcileWindowRows(_windowRows, desired);
+            // 换出窗口的行永远不会再生成容器：清掉悬空入场队列。
+            _pendingRowEnter.RemoveWhere(row => !desired.Contains(row));
             MessageList.TopSpacerHeight = top;
             MessageList.BottomSpacerHeight = bottom;
         }
@@ -1197,14 +1206,61 @@ public partial class ConversationView : UserControl
     private static List<ConversationRow> BuildRows(ChatMessage message) =>
         ConversationRow.FromMessage(message);
 
-    private void AppendRowsForMessage(ChatMessage message)
+    private void AppendRowsForMessage(ChatMessage message, bool animate = false)
     {
         var rows = BuildRows(message);
         _rowsByMessage[message] = rows;
         foreach (var row in rows)
             _rows.Add(row);
+
+        // 行容器由可见窗口在 SetWindow 之后才创建，所以只能排队；
+        // 历史回填 / 会话切换不排队，避免整页重播。
+        if (animate && MessageList.IsFollowing)
+            _pendingRowEnter.UnionWith(rows);
+
         SubscribeMessage(message);
     }
+
+    /// <summary>
+    /// 新行容器就绪：只对「尾部追加且仍在跟随」的行播一次入场。
+    /// 延迟到 Loaded 再播，确保 presenter 已完成布局（ContainerPrepared 时高度可能还是 0）。
+    /// </summary>
+    private void OnRowContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+    {
+        if (
+            e.Container is not ContentPresenter presenter
+            || presenter.Content is not ConversationRow row
+            || !_pendingRowEnter.Remove(row)
+        )
+            return;
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (
+                    MessageList.IsFollowing
+                    && ReferenceEquals(presenter.Content, row)
+                    && presenter.IsAttachedToVisualTree()
+                    && presenter.Bounds.Height > 0.5
+                )
+                {
+                    AnimatedRowCount++;
+                    _ = Desktop.Styles.Motion.PlayEnter(
+                        presenter,
+                        Desktop.Styles.Motion.SmallRise,
+                        Desktop.Styles.Motion.Fast
+                    );
+                }
+            },
+            DispatcherPriority.Loaded
+        );
+    }
+
+    /// <summary>测试观测点：尚未被容器消费的入场队列。</summary>
+    internal int PendingEnterCount => _pendingRowEnter.Count;
+
+    /// <summary>测试观测点：真正播过入场动画的新行数。</summary>
+    internal int AnimatedRowCount { get; private set; }
 
     private void RemoveRowsForMessage(ChatMessage message)
     {
@@ -1214,7 +1270,10 @@ public partial class ConversationView : UserControl
         if (_rowsByMessage.Remove(message, out var rows))
         {
             foreach (var row in rows)
+            {
                 _rows.Remove(row);
+                _pendingRowEnter.Remove(row);
+            }
         }
         UnsubscribeMessage(message);
         _dirtyRowMessages.Remove(message);
@@ -1227,6 +1286,7 @@ public partial class ConversationView : UserControl
             UnsubscribeMessage(message);
         _rows.Clear();
         _windowRows.Clear();
+        _pendingRowEnter.Clear();
         _measuredHeights.Clear();
         _realizedRows.Clear();
         _rowPresenters.Clear();
@@ -1288,6 +1348,25 @@ public partial class ConversationView : UserControl
                     ? queue.Dequeue()
                     : template
             );
+        }
+
+        // 被替换掉的行可能还在等待容器：清掉悬空队列，避免永远等不到。
+        var selectedSet = new HashSet<ConversationRow>(selected);
+        foreach (var oldRow in oldRows)
+        {
+            if (!selectedSet.Contains(oldRow))
+                _pendingRowEnter.Remove(oldRow);
+        }
+
+        // 助手消息先出现 Waiting 行，首个正文行由本方法插入：不排队会让最终答复硬切。
+        // 已有 Content 行只复用/移动，不会重复入队。
+        if (MessageList.IsFollowing)
+        {
+            foreach (var row in selected)
+            {
+                if (row.Kind == ConversationRowKind.Content && !oldRows.Contains(row))
+                    _pendingRowEnter.Add(row);
+            }
         }
 
         // 只改这一条消息所在的连续区间。原先逐行 IndexOf/Move 会在大历史里
@@ -1613,6 +1692,25 @@ public partial class ConversationView : UserControl
         // 展开只改变当前行的高度：保留点击时的 offset / 阅读锚点，
         // 详情从原位置向下长，不把视口滚到详情顶部，也不追到消息尾部。
         step.IsDetailsExpanded = expand;
+        if (expand)
+        {
+            // 详情 ContentControl 的可见性/内容在布局后才落地；投递到 Loaded 再播，
+            // 避免在隐藏或零高度的视觉上跑掉 150ms 淡入。
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (!step.IsDetailsExpanded || FindStepPresenter(step) is not { } presenter)
+                        return;
+                    var details = presenter
+                        .GetVisualDescendants()
+                        .OfType<StackPanel>()
+                        .FirstOrDefault(panel => panel.Classes.Contains("StepDetails"));
+                    if (details is { IsVisible: true } && details.IsAttachedToVisualTree())
+                        _ = Desktop.Styles.Motion.PlayEnter(details, 4, Desktop.Styles.Motion.Fast);
+                },
+                DispatcherPriority.Loaded
+            );
+        }
         if (expand && rowTopBefore is { } before)
         {
             Dispatcher.UIThread.Post(

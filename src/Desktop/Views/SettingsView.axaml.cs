@@ -145,6 +145,13 @@ public partial class SettingsView : UserControl
         Vm?.Logout();
     }
 
+    /// <summary>「刷新」→ 重新拉取本月积分（零价查询）。</summary>
+    private async void UsageRefresh_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not null)
+            await Vm.RefreshUsageAsync();
+    }
+
     /// <summary>「扫码绑定 / 重新扫码」→ 触发微信握手（QR 由通道服务出，卡片展示）。</summary>
     private async void WeChatBind_OnClick(object? sender, RoutedEventArgs e)
     {

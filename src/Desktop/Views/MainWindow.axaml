@@ -132,7 +132,17 @@
                 Text="{Binding CloudStatusHeader}"
                 FontFamily="{StaticResource FontSans}"
                 VerticalAlignment="Center"
-              />
+              >
+                <TextBlock.Transitions>
+                  <Transitions>
+                    <BrushTransition
+                      Property="Foreground"
+                      Duration="{x:Static motion:Motion.Fast}"
+                      Easing="{x:Static motion:Motion.SoftEasing}"
+                    />
+                  </Transitions>
+                </TextBlock.Transitions>
+              </TextBlock>
             </StackPanel>
           </Button>
           <!-- 云端同步标识（cloud-novel-sync v3）：⇅ 同步中/已同步/冲突/离线；未登录或未接线隐藏 -->
@@ -144,7 +154,17 @@
             Foreground="{Binding SyncStatusForeground}"
             IsVisible="{Binding IsSyncVisible}"
             ToolTip.Tip="云端小说同步状态（cloud-conflicts/ 下有冲突副本时需手动合并）"
-          />
+          >
+            <TextBlock.Transitions>
+              <Transitions>
+                <BrushTransition
+                  Property="Foreground"
+                  Duration="{x:Static motion:Motion.Fast}"
+                  Easing="{x:Static motion:Motion.SoftEasing}"
+                />
+              </Transitions>
+            </TextBlock.Transitions>
+          </TextBlock>
           <!-- 主题切换 -->
           <Button
             x:Name="ThemeButton"
@@ -273,7 +293,7 @@
             <BrushTransition
               Property="Background"
               Duration="{x:Static motion:Motion.Fast}"
-              Easing="SineEaseOut"
+              Easing="{x:Static motion:Motion.SoftEasing}"
             />
           </Transitions>
         </GridSplitter.Transitions>
@@ -380,7 +400,17 @@
                 Foreground="{Binding ContextGaugeBrush}"
                 Text="{Binding ContextGaugeText}"
                 VerticalAlignment="Center"
-              />
+              >
+                <TextBlock.Transitions>
+                  <Transitions>
+                    <BrushTransition
+                      Property="Foreground"
+                      Duration="{x:Static motion:Motion.Fast}"
+                      Easing="{x:Static motion:Motion.SoftEasing}"
+                    />
+                  </Transitions>
+                </TextBlock.Transitions>
+              </TextBlock>
             </StackPanel>
           </Button>
           <Border

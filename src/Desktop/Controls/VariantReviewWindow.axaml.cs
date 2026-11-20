@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Core.Tools;
+using Desktop.Styles;
 using LiveMarkdown.Avalonia;
 
 namespace Desktop.Controls;
@@ -89,8 +90,16 @@ public partial class VariantReviewWindow : Window
     {
         if (index == _selectedIndex)
             return;
+        var forward = index >= _selectedIndex;
         _selectedIndex = ((index % _variants.Count) + _variants.Count) % _variants.Count;
         RefreshSelection();
+
+        // 只动正文：Tab 条与按钮不横向位移；方向与 ←/→ 语义一致。
+        _ = Motion.PlayPageEnter(
+            ContentMarkdown,
+            forward ? Motion.PageShift : -Motion.PageShift,
+            Motion.Fast
+        );
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

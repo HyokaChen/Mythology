@@ -39,7 +39,11 @@
               >
                 <ContentPresenter.Transitions>
                   <Transitions>
-                    <BrushTransition Property="Foreground" Duration="0:0:0.1" />
+                    <BrushTransition
+                      Property="Foreground"
+                      Duration="{x:Static motion:Motion.Fast}"
+                      Easing="{x:Static motion:Motion.SoftEasing}"
+                    />
                   </Transitions>
                 </ContentPresenter.Transitions>
               </ContentPresenter>
@@ -53,8 +57,6 @@
                 Background="{DynamicResource BrushSageLeaf}"
                 CornerRadius="55"
                 Opacity="0"
-                RenderTransform="scale(0.72,1)"
-                RenderTransformOrigin="50%,50%"
               >
                 <Border.Transitions>
                   <Transitions>
@@ -62,12 +64,7 @@
                     <DoubleTransition
                       Property="Opacity"
                       Duration="{x:Static motion:Motion.Fast}"
-                      Easing="SineEaseOut"
-                    />
-                    <TransformOperationsTransition
-                      Property="RenderTransform"
-                      Duration="{x:Static motion:Motion.Fast}"
-                      Easing="SineEaseOut"
+                      Easing="{x:Static motion:Motion.SoftEasing}"
                     />
                   </Transitions>
                 </Border.Transitions>
@@ -78,7 +75,6 @@
       </Setter>
       <Style Selector="^:selected /template/ Border#PART_Underline">
         <Setter Property="Opacity" Value="1" />
-        <Setter Property="RenderTransform" Value="scale(1,1)" />
       </Style>
     </ControlTheme>
   </UserControl.Resources>
@@ -990,6 +986,25 @@
               </Grid>
             </Border>
 
+            <Border Classes="Card" Padding="16,14">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Text="减少动态效果" FontSize="14" />
+                  <TextBlock
+                    Text="关闭位移、缩放与列表错峰；仅保留淡入淡出（无障碍 / 晕动症友好）"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageGray}"
+                    TextWrapping="Wrap"
+                  />
+                </StackPanel>
+                <ToggleSwitch
+                  Grid.Column="1"
+                  IsChecked="{Binding IsReducedMotion}"
+                  VerticalAlignment="Center"
+                />
+              </Grid>
+            </Border>
+
             <TextBlock
               Text="快捷键 Ctrl+T · /theme dark|light|toggle 亦可切换"
               FontSize="11"
@@ -1071,6 +1086,176 @@
                   Click="CloudLogout_OnClick"
                   Content="退出登录"
                 />
+              </StackPanel>
+            </Border>
+
+            <!-- 本月积分：余额做主数字，已用/在途/套餐量做等宽栏；明细按能力降序 -->
+            <Border
+              x:Name="UsageCard"
+              Classes="Card"
+              Padding="20"
+              Background="{DynamicResource BrushSurfaceGlow}"
+              IsVisible="{Binding IsUsageVisible}"
+            >
+              <StackPanel Spacing="14">
+                <!-- 余额做主数字；右侧接本月已用 / 在途 / 套餐量，横向吃掉卡片空白 -->
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                  <StackPanel Spacing="3">
+                    <TextBlock Classes="Tag" Text="本月积分" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                      <TextBlock
+                        Text="{Binding UsageRemaining}"
+                        FontSize="26"
+                        LineHeight="32"
+                        FontWeight="Regular"
+                        LetterSpacing="-0.6"
+                        Foreground="{DynamicResource BrushForestInk}"
+                      />
+                      <TextBlock
+                        Text="{Binding UsageIncluded, StringFormat=' / {0}'}"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="11"
+                        Foreground="{DynamicResource BrushSageMist}"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,0,6"
+                        IsVisible="{Binding HasUsageSnapshot}"
+                      />
+                    </StackPanel>
+                    <TextBlock
+                      Text="{Binding UsagePeriod, StringFormat='账期 {0}'}"
+                      FontFamily="{StaticResource FontMono}"
+                      FontSize="10"
+                      Foreground="{DynamicResource BrushSageMist}"
+                      IsVisible="{Binding HasUsageSnapshot}"
+                    />
+                  </StackPanel>
+
+                  <Grid Grid.Column="1" ColumnDefinitions="*,1,*,1,*" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Classes="Eyebrow" Text="本月已用" />
+                      <TextBlock
+                        Text="{Binding UsageUsed}"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="13"
+                        Foreground="{DynamicResource BrushForestInk}"
+                      />
+                    </StackPanel>
+                    <Border
+                      Grid.Column="1"
+                      Width="1"
+                      Margin="0,1"
+                      Background="{DynamicResource BrushMist}"
+                    />
+                    <StackPanel Grid.Column="2" Spacing="2" Margin="8,0">
+                      <TextBlock Classes="Eyebrow" Text="在途预留" />
+                      <TextBlock
+                        Text="{Binding UsageReserved}"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="13"
+                        Foreground="{DynamicResource BrushForestInk}"
+                      />
+                    </StackPanel>
+                    <Border
+                      Grid.Column="3"
+                      Width="1"
+                      Margin="0,1"
+                      Background="{DynamicResource BrushMist}"
+                    />
+                    <StackPanel Grid.Column="4" Spacing="2" Margin="8,0,0,0">
+                      <TextBlock Classes="Eyebrow" Text="占用比例" />
+                      <TextBlock
+                        Text="{Binding UsageUsedPercentText}"
+                        FontFamily="{StaticResource FontMono}"
+                        FontSize="13"
+                        Foreground="{DynamicResource BrushForestInk}"
+                      />
+                    </StackPanel>
+                  </Grid>
+
+                  <StackPanel
+                    Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Top"
+                  >
+                    <controls:BusySpinner
+                      IsActive="{Binding IsUsageLoading}"
+                      IsVisible="{Binding IsUsageLoading}"
+                      FontSize="12"
+                      Foreground="{DynamicResource BrushSageLeaf}"
+                    />
+                    <Button
+                      Classes="NavPill"
+                      Padding="10,4"
+                      Content="刷新"
+                      IsEnabled="{Binding !IsUsageLoading}"
+                      Click="UsageRefresh_OnClick"
+                    />
+                  </StackPanel>
+                </Grid>
+
+                <ProgressBar
+                  Value="{Binding UsageUsedPercent}"
+                  Maximum="100"
+                  Height="3"
+                  CornerRadius="1.5"
+                  Foreground="{DynamicResource BrushSageLeaf}"
+                  Background="{DynamicResource BrushMist}"
+                />
+
+                <Border Height="1" Background="{DynamicResource BrushMist}" />
+
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="Eyebrow" Text="消耗明细" />
+                  <ItemsControl
+                    ItemsSource="{Binding UsageBreakdown}"
+                    IsVisible="{Binding HasUsageBreakdown}"
+                  >
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:UsageBreakdownRow">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,3">
+                          <StackPanel Spacing="1">
+                            <TextBlock
+                              Text="{Binding Label}"
+                              FontSize="12"
+                              LineHeight="18"
+                              Foreground="{DynamicResource BrushForestInk}"
+                            />
+                            <TextBlock
+                              Text="{Binding Capability}"
+                              FontFamily="{StaticResource FontMono}"
+                              FontSize="9"
+                              Foreground="{DynamicResource BrushSageMist}"
+                            />
+                          </StackPanel>
+                          <TextBlock
+                            Grid.Column="1"
+                            Text="{Binding UnitsText}"
+                            FontFamily="{StaticResource FontMono}"
+                            FontSize="11"
+                            Foreground="{DynamicResource BrushSageGray}"
+                            VerticalAlignment="Center"
+                          />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock
+                    Text="本月还没有消耗记录"
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushSageMist}"
+                    IsVisible="{Binding IsUsageEmptyHintVisible}"
+                  />
+                  <TextBlock
+                    Text="{Binding UsageStatus}"
+                    FontFamily="{StaticResource FontMono}"
+                    FontSize="11"
+                    Foreground="{DynamicResource BrushCrimsonSpecimen}"
+                    TextWrapping="Wrap"
+                    IsVisible="{Binding UsageStatus, Converter={StaticResource StringNotEmpty}}"
+                  />
+                </StackPanel>
               </StackPanel>
             </Border>
 

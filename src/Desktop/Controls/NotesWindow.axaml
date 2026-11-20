@@ -79,6 +79,7 @@
             IsVisible="False"
             VerticalAlignment="Top"
             Margin="0,4,0,0"
+            motion:Motion.Fade="True"
           >
             <StackPanel Spacing="6">
               <TextBlock

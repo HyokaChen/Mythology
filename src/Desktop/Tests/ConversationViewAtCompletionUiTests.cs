@@ -2903,4 +2903,111 @@ public sealed class ConversationViewAtCompletionUiTests : IDisposable
             Assert.Equal(0, _vm.SelectedCommandIndex);
         });
     }
+
+    [Fact]
+    public void NewMessageRow_PlaysEnterOnce()
+    {
+        Ui.Run(() =>
+        {
+            var history = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User);
+            history.AppendContent("历史消息");
+            _vm.Messages.Add(history);
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                var list = view.FindControl<Desktop.Controls.AutoScrollItemsControl>("MessageList");
+                Assert.NotNull(list);
+                PumpUntil(
+                    () =>
+                        list!
+                            .GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p => p.Content is Desktop.Models.ConversationRow),
+                    "首屏行容器"
+                );
+                // 首屏历史行在 RebuildRows 中明确不播；先让排队中的布局/动画结算。
+                for (var i = 0; i < 3; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(20);
+                }
+                var before = view.AnimatedRowCount;
+                Assert.Equal(0, view.PendingEnterCount);
+
+                _vm.Messages.Add(new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.User));
+                PumpUntil(() => view.AnimatedRowCount > before, "新用户行入场");
+
+                Assert.Equal(0, view.PendingEnterCount);
+                Assert.Equal(before + 1, view.AnimatedRowCount);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void AssistantContentRow_PlaysEnterOnFirstContent()
+    {
+        Ui.Run(() =>
+        {
+            var agent = new Desktop.Models.ChatMessage(Desktop.Models.MessageSender.Agent)
+            {
+                IsWaiting = true,
+            };
+            _vm.Messages.Add(agent);
+            _vm.HasMessages = true;
+
+            var view = new Desktop.Views.ConversationView { DataContext = _vm };
+            var window = new Window
+            {
+                Width = 900,
+                Height = 700,
+                Content = view,
+            };
+            window.Show();
+            try
+            {
+                PumpUntil(
+                    () =>
+                        view.GetVisualDescendants()
+                            .OfType<ContentPresenter>()
+                            .Any(p => p.Content is Desktop.Models.ConversationRow),
+                    "等待行容器"
+                );
+                for (var i = 0; i < 3; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Thread.Sleep(20);
+                }
+                var before = view.AnimatedRowCount;
+
+                agent.IsWaiting = false;
+                agent.AppendContent("最终答复");
+                PumpUntil(() => view.AnimatedRowCount > before, "首个正文行入场");
+
+                Assert.True(
+                    view.AnimatedRowCount > before,
+                    "助手首个正文行由 ReplaceRowsForMessage 插入，必须触发一次入场"
+                );
+                Assert.Equal(0, view.PendingEnterCount);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
 }

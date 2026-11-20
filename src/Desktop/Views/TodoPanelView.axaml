@@ -38,7 +38,12 @@
       </Border>
 
       <!-- 空态 -->
-      <Border Grid.Row="1" Padding="14,10,14,14" IsVisible="{Binding IsEmpty}">
+      <Border
+        Grid.Row="1"
+        Padding="14,10,14,14"
+        IsVisible="{Binding IsEmpty}"
+        motion:Motion.Fade="True"
+      >
         <StackPanel Spacing="4">
           <TextBlock Classes="Tag" Text="暂无任务" />
         </StackPanel>

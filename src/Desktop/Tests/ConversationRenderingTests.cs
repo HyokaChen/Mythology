@@ -1719,6 +1719,10 @@ public class ConversationRenderingTests
                 Height = 700,
                 Content = view,
             };
+            // 本测试只验证「点击接线」；窗口入场淡入会把 view.Opacity 压到 0，
+            // 命中测试在淡入完成前拿不到任何元素。关闭窗口动效，避免测试依赖时序。
+            var previousWindowMotion = Desktop.Styles.Motion.WindowMotionEnabled;
+            Desktop.Styles.Motion.WindowMotionEnabled = false;
             window.Show();
             try
             {
@@ -1736,6 +1740,9 @@ public class ConversationRenderingTests
                         window
                     )!
                     .Value;
+                // 必须先把指针移到目标再按下：测试类并行/连续跑时，
+                // 鼠标位置可能停在上一个窗口，直接 MouseDown 会命中旧视觉树。
+                window.MouseMove(point);
                 window.MouseDown(point, MouseButton.Left);
                 window.MouseUp(point, MouseButton.Left);
                 Pump();
@@ -1748,6 +1755,7 @@ public class ConversationRenderingTests
             finally
             {
                 window.Close();
+                Desktop.Styles.Motion.WindowMotionEnabled = previousWindowMotion;
             }
         });
     }
@@ -2116,6 +2124,156 @@ public class ConversationRenderingTests
         }
 
         Assert.Null(renderTransform);
+    }
+
+    /// <summary>
+    /// reduced-motion：位移原语必须完全不创建 RenderTransform，只保留透明度淡入。
+    /// 断言中间帧（0 &lt; Opacity &lt; 1）是为了排除「直接 no-op / 抛异常」的恒真通过。
+    /// </summary>
+    [Fact]
+    public void ReducedMotion_PlayPageEnter_FadesWithoutTranslation()
+    {
+        var opacities = new List<double>();
+        var hasTranslate = false;
+
+        Ui.Value.Run(() =>
+        {
+            var previousReduced = Desktop.Styles.Motion.ReducedMotion;
+            var previousWindowMotion = Desktop.Styles.Motion.WindowMotionEnabled;
+            Desktop.Styles.Motion.ReducedMotion = true;
+            Desktop.Styles.Motion.CompositionMotionEnabled = false;
+            // 窗口入场也会对同一个 panel 播 PlayEnter，两个时钟会互相取消。
+            Desktop.Styles.Motion.WindowMotionEnabled = false;
+            try
+            {
+                var panel = new StackPanel { Children = { new TextBlock { Text = "page" } } };
+                var window = new Window
+                {
+                    Width = 240,
+                    Height = 140,
+                    Content = panel,
+                };
+                window.Show();
+                Pump();
+
+                _ = Desktop.Styles.Motion.PlayPageEnter(panel, 24);
+                for (var i = 0; i < MotionFrames; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    opacities.Add(panel.Opacity);
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(MotionFrameMs);
+                }
+                // 机器负载高时 14 帧不一定覆盖完整时钟；再泵到收敛，避免脆断言。
+                for (var i = 0; i < 40 && panel.Opacity < 0.999; i++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                    Thread.Sleep(MotionFrameMs);
+                    opacities.Add(panel.Opacity);
+                }
+                Dispatcher.UIThread.RunJobs();
+                opacities.Add(panel.Opacity);
+                hasTranslate = panel.RenderTransform is TranslateTransform;
+                window.Close();
+            }
+            finally
+            {
+                Desktop.Styles.Motion.ReducedMotion = previousReduced;
+                Desktop.Styles.Motion.WindowMotionEnabled = previousWindowMotion;
+                Desktop.Styles.Motion.CompositionMotionEnabled = true;
+            }
+        });
+
+        Assert.False(hasTranslate, "reduced-motion 下仍创建了位移 RenderTransform");
+        Assert.True(
+            opacities.Any(o => o is > 0 and < 1),
+            $"未观察到淡入中间帧（可能根本没播）：[{string.Join(",", opacities.Select(o => o.ToString("F2")))}]"
+        );
+        Assert.True(opacities[^1] > 0.99, "淡入未收敛到 1");
+    }
+
+    /// <summary>
+    /// 窗口根挂 Enter 时由窗口自己接管入场：AttachWindowMotion 不得再给内容播第二段，
+    /// 否则两层透明度会相乘、位移会叠加。
+    /// </summary>
+    [Fact]
+    public void AttachWindowMotion_WindowLevelEnter_DoesNotAnimateContent()
+    {
+        ITransform? windowTransform = null;
+        ITransform? contentTransform = null;
+
+        Ui.Value.Run(() =>
+        {
+            var previousEnabled = Desktop.Styles.Motion.WindowMotionEnabled;
+            Desktop.Styles.Motion.CompositionMotionEnabled = false;
+            try
+            {
+                var content = new StackPanel { Children = { new TextBlock { Text = "content" } } };
+                var window = new Window
+                {
+                    Width = 240,
+                    Height = 140,
+                    Content = content,
+                };
+                Desktop.Styles.Motion.SetEnter(window, true);
+                Desktop.Styles.Motion.AttachWindowMotion(window);
+                window.Show();
+                Pump();
+
+                windowTransform = window.RenderTransform;
+                contentTransform = content.RenderTransform;
+
+                Desktop.Styles.Motion.WindowMotionEnabled = false;
+                window.Close();
+            }
+            finally
+            {
+                Desktop.Styles.Motion.WindowMotionEnabled = previousEnabled;
+                Desktop.Styles.Motion.CompositionMotionEnabled = true;
+            }
+        });
+
+        Assert.IsType<TranslateTransform>(windowTransform);
+        Assert.Null(contentTransform);
+    }
+
+    /// <summary>对照：窗口未自挂 Enter 时，内容必须由 AttachWindowMotion 播一次。</summary>
+    [Fact]
+    public void AttachWindowMotion_WithoutWindowEnter_AnimatesContent()
+    {
+        ITransform? contentTransform = null;
+
+        Ui.Value.Run(() =>
+        {
+            var previousEnabled = Desktop.Styles.Motion.WindowMotionEnabled;
+            Desktop.Styles.Motion.CompositionMotionEnabled = false;
+            try
+            {
+                var content = new StackPanel { Children = { new TextBlock { Text = "content" } } };
+                var window = new Window
+                {
+                    Width = 240,
+                    Height = 140,
+                    Content = content,
+                };
+                Desktop.Styles.Motion.AttachWindowMotion(window);
+                window.Show();
+                Pump();
+
+                contentTransform = content.RenderTransform;
+
+                Desktop.Styles.Motion.WindowMotionEnabled = false;
+                window.Close();
+            }
+            finally
+            {
+                Desktop.Styles.Motion.WindowMotionEnabled = previousEnabled;
+                Desktop.Styles.Motion.CompositionMotionEnabled = true;
+            }
+        });
+
+        Assert.IsType<TranslateTransform>(contentTransform);
     }
 
     /// <summary>读 TabControl 选中内容的横向 RenderTransform（无则以 0 计）。</summary>

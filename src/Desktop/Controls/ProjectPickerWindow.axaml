@@ -108,7 +108,6 @@
                 Background="Transparent"
                 HorizontalAlignment="Stretch"
                 ItemContainerTheme="{StaticResource AdalineRowContainer}"
-                motion:Motion.Stagger="True"
               >
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="c:NovelItem">
@@ -153,7 +152,12 @@
               </ListBox>
 
               <!-- 空态：没有小说时列表区仍保留首行「新建小说」，文案不再让用户去别处找入口 -->
-              <Border x:Name="EmptyNote" IsVisible="False" Padding="16,12">
+              <Border
+                x:Name="EmptyNote"
+                IsVisible="False"
+                Padding="16,12"
+                motion:Motion.Fade="True"
+              >
                 <StackPanel Spacing="6">
                   <TextBlock
                     Text="还没有小说"

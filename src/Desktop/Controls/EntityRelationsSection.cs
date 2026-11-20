@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -444,7 +445,17 @@ public sealed class EntityRelationsSection
             HorizontalContentAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(8, 4),
             FontSize = 12,
+            // Opacity 必须在 Transitions 之前：顺序反了会让初始 1→0.45 在创建时自己动一次。
             Opacity = row.PendingRemove ? 0.45 : 1,
+            Transitions = new Transitions
+            {
+                new DoubleTransition
+                {
+                    Property = Visual.OpacityProperty,
+                    Duration = Desktop.Styles.Motion.Fast,
+                    Easing = Desktop.Styles.Motion.SoftEasing,
+                },
+            },
             Content = textBlock,
         };
         if (_openCounterpart is not null && section.Key.CounterpartType != EntityType.TimelineEvent)

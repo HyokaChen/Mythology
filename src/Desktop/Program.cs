@@ -652,7 +652,8 @@ public static class Program
             sp.GetService<Core.Vector.RetrievalKernel>(),
             sp.GetRequiredService<CloudAuthService>(),
             sp.GetRequiredService<Channels.WeChat.WeChatChannelService>(),
-            sp.GetService<UpdateState>()
+            sp.GetService<UpdateState>(),
+            sp.GetService<ClientPlatform.UsageRestClient>()
         ));
 
         // ── 自动更新（GitHub Releases 检测 + 静默下载 + 弹窗/设置页「关于」入口）──

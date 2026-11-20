@@ -525,7 +525,7 @@
           <DoubleTransition
             Property="Opacity"
             Duration="{x:Static motion:Motion.Fast}"
-            Easing="SineEaseOut"
+            Easing="{x:Static motion:Motion.SoftEasing}"
           />
         </Transitions>
       </Setter>
@@ -785,6 +785,15 @@
           Padding="11,8"
           MinHeight="60"
         >
+          <Border.Transitions>
+            <Transitions>
+              <BrushTransition
+                Property="BorderBrush"
+                Duration="{x:Static motion:Motion.Fast}"
+                Easing="{x:Static motion:Motion.SoftEasing}"
+              />
+            </Transitions>
+          </Border.Transitions>
           <Grid RowDefinitions="Auto,Auto">
             <!-- @ 文件路径 / # 实体引用补全弹窗（锚定输入卡片：上方 + 左右等宽） -->
             <Popup

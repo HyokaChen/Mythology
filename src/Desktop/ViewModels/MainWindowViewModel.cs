@@ -200,7 +200,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref field, value);
             this.RaisePropertyChanged(nameof(SessionPillTip));
         }
-    } = "新对话";
+    } = UntitledConversationTitle;
 
     /// <summary>Header 会话胶囊 tooltip：完整会话名（列表截断时补全）+ 动作提示。</summary>
     public string SessionPillTip => $"当前会话：{ConversationTitle} · 切换 / 管理（Ctrl+E）";
@@ -1943,15 +1943,35 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         if (string.IsNullOrEmpty(vm.CurrentConversationId))
         {
-            ConversationTitle = "新对话";
+            SetConversationTitle(null);
             return;
         }
         var session = await _sessionStore.GetSession(vm.CurrentConversationId);
-        // 切换/compact 的瞬间索引可能尚未归一化；读不到时保留旧标题。
-        if (session is null)
+        // await 期间可能已切到别的会话：迟到的标题不能覆盖当前会话。
+        if (!ReferenceEquals(ActiveConversationVm, vm))
             return;
-        ConversationTitle = string.IsNullOrEmpty(session.Title) ? "未命名会话" : session.Title;
+        if (ResolveConversationTitle(session, vm.HasMessages) is { } title)
+            SetConversationTitle(title);
     }
+
+    /// <summary>未落盘的新会话 / 空标题统一显示这个文案。</summary>
+    internal const string UntitledConversationTitle = "未命名对话";
+
+    /// <summary>
+    /// 查询后的头部标题：null = 保留当前标题（已有内容但会话索引暂时读不到，
+    /// 避免闪成未命名）；其余返回可直接展示的文案。
+    /// </summary>
+    internal static string? ResolveConversationTitle(AgentSession? session, bool hasMessages) =>
+        session is not null ? NormalizeConversationTitle(session.Title)
+        : hasMessages ? null
+        : UntitledConversationTitle;
+
+    /// <summary>头部会话标题：空标题统一显示「未命名对话」。</summary>
+    private void SetConversationTitle(string? title) =>
+        ConversationTitle = NormalizeConversationTitle(title);
+
+    private static string NormalizeConversationTitle(string? title) =>
+        string.IsNullOrWhiteSpace(title) ? UntitledConversationTitle : title;
 
     /// <summary>侧边栏/下拉点击对话。</summary>
     public async Task OpenConversationAsync(Core.Data.AgentSession session)
@@ -1959,6 +1979,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         await _bridge.StopAsync();
         SaveActiveTodos();
 
+        // 最近会话对象已经带着标题：先立即展示，避免等磁盘索引刷新时残留上一个标题。
+        SetConversationTitle(session.Title);
         if (_activeVms.TryGetValue(session.Id, out var existing))
         {
             await SwitchToConversationAsync(existing);
@@ -1984,6 +2006,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         var vm = CreateConversationVm();
         await vm.NewConversationAsync();
         _activeVms[vm.CurrentConversationId] = vm;
+        SetConversationTitle(null);
         await SwitchToConversationAsync(vm);
         RefreshRecentConversations();
     }

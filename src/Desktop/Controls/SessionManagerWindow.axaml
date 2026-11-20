@@ -113,7 +113,7 @@
             </ListBox>
 
             <!-- 空态：没有会话时列表区仍然保留「新建对话」这一行，空态文案不再指导用户去主界面 -->
-            <Border x:Name="EmptyNote" IsVisible="False" Padding="16,12">
+            <Border x:Name="EmptyNote" IsVisible="False" Padding="16,12" motion:Motion.Fade="True">
               <StackPanel Spacing="6">
                 <TextBlock
                   Text="还没有会话记录"

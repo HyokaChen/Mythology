@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Core.Data;
 using Core.Evolution;
+using Desktop.Styles;
 using Lucide.Avalonia;
 using Microsoft.Extensions.Logging;
 
@@ -40,6 +41,9 @@ public partial class ChapterReaderWindow : Window
     private Chapter? _chapter;
     private List<Chapter> _chapters = [];
     private bool _outlineExpanded;
+
+    /// <summary>细纲只在本窗口第一次出现时淡入一次；后续章节切换不重播。</summary>
+    private bool _outlineAnimated;
 
     /// <summary>本体关系索引（名称解析 + 计划关系胶囊）。</summary>
     private EntityRelationIndex? _relations;
@@ -242,7 +246,7 @@ public partial class ChapterReaderWindow : Window
         NextButton.IsEnabled = false;
     }
 
-    private async Task LoadChapterAsync(string chapterId)
+    private async Task LoadChapterAsync(string chapterId, double? pageFromX = null)
     {
         var chapter = await _store.GetChapter(_novelId, chapterId);
         if (chapter is null)
@@ -290,6 +294,10 @@ public partial class ChapterReaderWindow : Window
         );
 
         RenderOutlineInfo(chapter);
+
+        // 只让正文按翻页方向滑入：头部、按钮与细纲保持原位。
+        if (pageFromX is { } fromX)
+            _ = Motion.PlayPageEnter(ContentEditor, fromX, Motion.Fast);
     }
 
     /// <summary>范围名（位置指示 + 空态标题共用）。</summary>
@@ -402,6 +410,11 @@ public partial class ChapterReaderWindow : Window
 
         OutlinePanel.IsVisible =
             SummaryText.IsVisible || ChipsPanel.Children.Count > 0 || RecordsText.IsVisible;
+        if (OutlinePanel.IsVisible && !_outlineAnimated)
+        {
+            _outlineAnimated = true;
+            _ = Motion.PlayEnter(OutlinePanel, 4, Motion.Fast);
+        }
         UpdateOutlineExpansion();
     }
 
@@ -463,7 +476,10 @@ public partial class ChapterReaderWindow : Window
             return;
         if (!await ConfirmLeaveAsync("切换章节", "保存并切换"))
             return;
-        await LoadChapterAsync(_chapters[target].Id);
+        await LoadChapterAsync(
+            _chapters[target].Id,
+            direction > 0 ? Motion.PageShift : -Motion.PageShift
+        );
     }
 
     /// <summary>保存正文；返回 false 表示失败（调用方应阻止翻页 / 关闭 / 进入细纲）。</summary>

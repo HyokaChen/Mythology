@@ -90,7 +90,14 @@
     <!-- 底部操作区 -->
     <StackPanel Grid.Row="1" Spacing="8" Margin="0,12,0,0">
       <!-- 内嵌标签面板（默认收起） -->
-      <StackPanel x:Name="LabelPanel" Orientation="Horizontal" Spacing="8" IsVisible="False">
+      <StackPanel
+        x:Name="LabelPanel"
+        Orientation="Horizontal"
+        Spacing="8"
+        IsVisible="False"
+        motion:Motion.Enter="True"
+        motion:Motion.EnterRise="4"
+      >
         <TextBox
           x:Name="LabelInput"
           Classes="Adaline"

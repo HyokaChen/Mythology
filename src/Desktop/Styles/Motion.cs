@@ -44,11 +44,28 @@ public class Motion
     public static readonly TimeSpan Slow = TimeSpan.FromMilliseconds(350);
 
     /// <summary>
-    /// 入场 / 退场 / 翻页统一曲线：Fluent 的 Fast-Out（0.1, 0.9, 0.2, 1）。
+    /// 入场 / 翻页统一曲线：Fluent 的 Fast-Out（0.1, 0.9, 0.2, 1）。
     /// 起手快、尾段长——读起来「干脆而不生硬」，是 Office 质感的主要来源；
     /// 原来的 CubicEaseOut 中段太匀，短位移下几乎读不出加速/收尾。
+    /// 退场见 <see cref="ExitEasing"/>，不要复用本曲线。
     /// </summary>
     public static readonly Easing MotionEasing = new SplineEasing(new KeySpline(0.1, 0.9, 0.2, 1));
+
+    /// <summary>屏幕内状态（hover 薄雾 / 开关 / 焦点 / 提示）统一曲线：Sine ease-out；无位移、无回弹。</summary>
+    public static readonly Easing SoftEasing = new SineEaseOut();
+
+    /// <summary>退场曲线：加速离场（MD3 Accelerate 0.3,0,1,1），与入场的 Fast-Out 形成方向差。</summary>
+    public static readonly Easing ExitEasing = new SplineEasing(new KeySpline(0.3, 0, 1, 1));
+
+    /// <summary>窗口退场：入场 Normal 250ms 的约 70%（skill: exit = entrance 的 65–75%）。</summary>
+    public static readonly TimeSpan Exit = TimeSpan.FromMilliseconds(175);
+
+    /// <summary>
+    /// 系统「减少动态效果」：保留 ≤250ms 的淡入淡出，去掉位移 / 缩放 / 错峰。
+    /// 只由 <see cref="Desktop.Services.DesktopThemeService"/> 在恢复偏好时写入；
+    /// 动画中途切换不冻结已播放的动画（最坏 250ms 内自然结束），新触发的立即降级。
+    /// </summary>
+    public static bool ReducedMotion { get; set; }
 
     /// <summary>消息行 / 窗口内容默认上浮距离。</summary>
     public const double DefaultRise = 16;
@@ -152,7 +169,7 @@ public class Motion
 
     /// <summary>
     /// 窗口级动效接线（App 的 WindowOpened 类处理器统一调用；测试可直接调用，幂等）：
-    /// 入场（内容未自挂 Enter 时，延后到首次 Opened 播放）+ 退场
+    /// 入场（窗口或内容都未自挂 Enter 时，延后到首次 Opened 播放）+ 退场
     /// （首次 Closing 取消 → 淡出下沉 → 真正关闭）。
     /// </summary>
     public static void AttachWindowMotion(Window window)
@@ -163,7 +180,7 @@ public class Motion
             return;
         window.SetValue(WindowMotionAttachedProperty, true);
 
-        if (window.Content is Visual content && !GetEnter(content))
+        if (window.Content is Visual content && !GetEnter(window) && !GetEnter(content))
         {
             // 入场必须等 Content 真正入树：WindowOpened 事件早于 IsVisible=true 与挂载，
             // 那一刻合成器拿不到 CompositionVisual（位移只能退化成 UI 线程），
@@ -173,8 +190,13 @@ public class Motion
             else
                 window.Opened += (_, _) =>
                 {
-                    // 显示期间已自行接过动画（或已播过）就不再重播
-                    if (!GetEnter(content) && !Running.TryGetValue(content, out _))
+                    // 显示期间已自行接过动画（或已播过）就不再重播；
+                    // 窗口根挂 Enter 时由窗口自己播，内容不再叠加第二段。
+                    if (
+                        !GetEnter(window)
+                        && !GetEnter(content)
+                        && !Running.TryGetValue(content, out _)
+                    )
                         _ = PlayEnter(content);
                 };
         }
@@ -200,7 +222,7 @@ public class Motion
             {
                 if (window.Content is Visual c)
                 {
-                    // 退场动画（Fast=150ms）不应成为关闭的硬依赖：渲染时钟被挂起/窗口
+                    // 退场动画（Exit=175ms）不应成为关闭的硬依赖：渲染时钟被挂起/窗口
                     // 失焦时 RunAsync 可能永不完成。400ms 看门狗后强行进入 finally 关闭。
                     await Task.WhenAny(PlayExit(c), Task.Delay(400));
                 }
@@ -386,9 +408,9 @@ public class Motion
             if (Played.TryGetValue(child, out _))
                 continue;
 
-            // 前 N 项错峰；之后立即播（不再累计延迟）
+            // 前 N 项错峰；之后立即播（不再累计延迟）。reduced 下所有项同时淡入。
             var delay =
-                animated < MaxStaggerItems
+                !ReducedMotion && animated < MaxStaggerItems
                     ? TimeSpan.FromMilliseconds(animated * StaggerStepMs)
                     : TimeSpan.Zero;
             _ = PlayEnterDelayed(child, SmallRise, delay);
@@ -431,10 +453,12 @@ public class Motion
         Visual visual,
         Vector3D from,
         Vector3D to,
-        TimeSpan duration
+        TimeSpan duration,
+        Easing? easing = null
     )
     {
-        if (!CompositionMotionEnabled)
+        // reduced 下任何遗漏的调用方也不会走合成器位移。
+        if (ReducedMotion || !CompositionMotionEnabled)
             return false;
         try
         {
@@ -444,8 +468,8 @@ public class Motion
 
             var animation = cv.Compositor.CreateVector3DKeyFrameAnimation();
             animation.Duration = duration;
-            animation.InsertKeyFrame(0f, from, MotionEasing);
-            animation.InsertKeyFrame(1f, to, MotionEasing);
+            animation.InsertKeyFrame(0f, from, easing ?? MotionEasing);
+            animation.InsertKeyFrame(1f, to, easing ?? MotionEasing);
             cv.StartAnimation("Translation", animation);
             return true;
         }
@@ -467,7 +491,15 @@ public class Motion
         var actual = duration ?? Normal;
         try
         {
+            // 上一段被取消的 UI 线程位移可能停在半程：先归零，再决定本段起点。
+            ResetTranslation(visual);
             visual.Opacity = 0;
+
+            if (ReducedMotion)
+            {
+                await RunOpacity(visual, actual, cts.Token);
+                return;
+            }
 
             // 位移优先走渲染线程；只剩淡入在 UI 线程（合成器 Opacity 会被布局覆写）
             if (TryRunTranslation(visual, new Vector3D(0, rise, 0), default, actual))
@@ -486,6 +518,7 @@ public class Motion
 
             translate ??= new TranslateTransform();
             visual.RenderTransform = translate;
+            translate.X = 0;
             translate.Y = rise;
             await Task.WhenAll(
                 RunOpacity(visual, actual, cts.Token),
@@ -507,8 +540,7 @@ public class Motion
             if (IsCurrent(visual, cts))
             {
                 visual.Opacity = 1;
-                if (visual.RenderTransform is TranslateTransform translate)
-                    translate.Y = 0;
+                ResetTranslation(visual);
                 Running.Remove(visual);
             }
         }
@@ -521,7 +553,14 @@ public class Motion
         var actual = duration ?? Normal;
         try
         {
+            ResetTranslation(visual);
             visual.Opacity = 0;
+
+            if (ReducedMotion)
+            {
+                await RunOpacity(visual, actual, cts.Token);
+                return;
+            }
 
             if (TryRunTranslation(visual, new Vector3D(fromX, 0, 0), default, actual))
             {
@@ -558,8 +597,7 @@ public class Motion
             if (IsCurrent(visual, cts))
             {
                 visual.Opacity = 1;
-                if (visual.RenderTransform is TranslateTransform translate)
-                    translate.X = 0;
+                ResetTranslation(visual);
                 Running.Remove(visual);
             }
         }
@@ -601,6 +639,18 @@ public class Motion
         try
         {
             visual.Opacity = 0;
+
+            if (ReducedMotion)
+            {
+                // 上一段被取消的缩放可能停在半程：回到 1 再淡入，避免残影。
+                if (visual.RenderTransform is ScaleTransform current)
+                {
+                    current.ScaleX = 1;
+                    current.ScaleY = 1;
+                }
+                await RunOpacity(visual, actual, cts.Token);
+                return;
+            }
 
             var scale = visual.RenderTransform as ScaleTransform;
             if (scale is null && visual.RenderTransform is not null)
@@ -650,11 +700,35 @@ public class Motion
     public static async Task PlayExit(Visual visual, double sink = DefaultRise)
     {
         var cts = Begin(visual);
-        var actual = Fast;
+        var actual = Exit;
         try
         {
-            TryRunTranslation(visual, default, new Vector3D(0, sink, 0), actual);
-            await RunOpacity(visual, 1, 0, actual, cts.Token);
+            ResetTranslation(visual);
+
+            // 分支必须消费返回值：否则 Translation 与 RenderTransform 会同时动。
+            var composited =
+                !ReducedMotion
+                && TryRunTranslation(visual, default, new Vector3D(0, sink, 0), actual, ExitEasing);
+            if (!composited && !ReducedMotion)
+            {
+                var translate = visual.RenderTransform as TranslateTransform;
+                if (translate is null && visual.RenderTransform is not null)
+                {
+                    await RunOpacity(visual, 1, 0, actual, cts.Token, ExitEasing);
+                    return;
+                }
+
+                translate ??= new TranslateTransform();
+                visual.RenderTransform = translate;
+                translate.X = 0; // 取消的 PlayPageEnter 可能残留 X
+                translate.Y = 0;
+                await Task.WhenAll(
+                    RunOpacity(visual, 1, 0, actual, cts.Token, ExitEasing),
+                    RunSink(translate, sink, actual, cts.Token)
+                );
+                return;
+            }
+            await RunOpacity(visual, 1, 0, actual, cts.Token, ExitEasing);
         }
         catch (OperationCanceledException)
         {
@@ -667,7 +741,21 @@ public class Motion
         finally
         {
             if (IsCurrent(visual, cts))
+            {
+                // 复用浮层下次入场不能叠加残留位移（X 也可能来自取消的翻页）。
+                ResetTranslation(visual);
                 Running.Remove(visual);
+            }
+        }
+    }
+
+    /// <summary>把 UI 线程位移归零；不创建新 transform，也不覆盖非 Translate 的 RenderTransform。</summary>
+    private static void ResetTranslation(Visual visual)
+    {
+        if (visual.RenderTransform is TranslateTransform translate)
+        {
+            translate.X = 0;
+            translate.Y = 0;
         }
     }
 
@@ -703,8 +791,20 @@ public class Motion
         double from,
         double to,
         TimeSpan duration,
+        CancellationToken token,
+        Easing? easing = null
+    ) =>
+        BuildAnimation(() => Visual.OpacityProperty, from, to, duration, easing)
+            .RunAsync(visual, token);
+
+    private static Task RunSink(
+        TranslateTransform translate,
+        double sink,
+        TimeSpan duration,
         CancellationToken token
-    ) => BuildAnimation(() => Visual.OpacityProperty, from, to, duration).RunAsync(visual, token);
+    ) =>
+        BuildAnimation(() => TranslateTransform.YProperty, 0, sink, duration, ExitEasing)
+            .RunAsync(translate, token);
 
     private static Task RunRise(
         TranslateTransform translate,
@@ -742,12 +842,13 @@ public class Motion
         Func<AvaloniaProperty> property,
         double from,
         double to,
-        TimeSpan duration
+        TimeSpan duration,
+        Easing? easing = null
     ) =>
         new()
         {
             Duration = duration,
-            Easing = MotionEasing,
+            Easing = easing ?? MotionEasing,
             FillMode = FillMode.Forward,
             Children =
             {

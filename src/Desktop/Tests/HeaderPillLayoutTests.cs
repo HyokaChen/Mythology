@@ -29,7 +29,7 @@ public sealed class HeaderPillLayoutTests
     [Theory]
     [InlineData("SessionTitleText", LongSessionTitle, true)]
     [InlineData("NovelTitleText", LongNovelTitle, true)]
-    [InlineData("SessionTitleText", "新对话", false)]
+    [InlineData("SessionTitleText", "未命名对话", false)]
     public void Title_TrimsWithEllipsisOnlyWhenOverBudget(string name, string text, bool shouldTrim)
     {
         Ui.Run(() =>
