@@ -55,6 +55,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly VariantEffectExecutor _variantEffectExecutor;
     private readonly Dictionary<string, ConversationViewModel> _activeVms = [];
 
+    /// <summary>新建对话切换期间丢弃旧 turn 的迟到 UI 事件；等新 VM 初始化完成再恢复。</summary>
+    private bool _newConversationTransition;
+    private bool _newConversationReady;
+
     /// <summary>自动更新共享状态单例（弹窗与设置页「关于」同源）；设计时/容器缺失为 null。</summary>
     private readonly UpdateState? _updateState;
 
@@ -434,6 +438,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         _bridge.OnStreamEvent += (_, evt) =>
             Dispatcher.UIThread.Post(() =>
             {
+                // /new 已把新空 VM 绑到 UI，但旧 turn 可能还在收尾；旧事件不能画进新对话。
+                if (_newConversationTransition)
+                    return;
+
                 // 每轮开始/结束都刷新上下文仪表：消息在这两个时刻进入上下文，
                 // 等 TokenUsage 事件会让仪表整回合停在旧值（provider 不回 usage 时永远不动）。
                 if (evt is TurnStart or AgentEnd or AgentInterrupted)
@@ -470,6 +478,8 @@ public sealed class MainWindowViewModel : ViewModelBase
                     else
                         ShowIdleStatus();
                     ActiveConversationVm?.SetProcessing(false);
+                    if (_newConversationTransition && _newConversationReady)
+                        _newConversationTransition = false;
                 }
 
                 // 回合结束补弹（忙时只亮红点；无更新/已稍后提醒时自身 no-op）
@@ -1917,7 +1927,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// 切换到对话：取消旧会话交互 → 切换 UI → 重绑目标 Todo。
     /// 调用方负责先停旧 turn 并保存旧活动会话的 Todo；本方法不再 Stop，避免同一次 turn 重复等 5 秒。
     /// </summary>
-    private void SwitchToConversationAsync(ConversationViewModel vm)
+    private void SwitchToConversationAsync(ConversationViewModel vm, bool activate = true)
     {
         var previousVm = ActiveConversationVm;
         var oldSession = previousVm?.CurrentConversationId;
@@ -1930,10 +1940,14 @@ public sealed class MainWindowViewModel : ViewModelBase
             _interactionPresenter.OnSessionChanged();
         }
         ActiveConversationVm = vm;
-        vm.Activate();
-        vm.Engine.ReloadTodosForCurrentSession();
+        if (activate)
+        {
+            vm.Activate();
+            vm.Engine.ReloadTodosForCurrentSession();
+        }
         InvalidateContextMeasure();
-        _ = UpdateConversationTitleAsync(vm);
+        if (activate)
+            _ = UpdateConversationTitleAsync(vm);
     }
 
     private async Task UpdateConversationTitleAsync(ConversationViewModel vm)
@@ -1998,17 +2012,35 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task NewConversationAsync(bool savePreviousTodos = true)
     {
+        if (_newConversationTransition)
+            return;
         if (savePreviousTodos)
             SaveActiveTodos();
 
         var vm = CreateConversationVm();
-        // 新 VM 的 NewConversationAsync 是唯一次旧 turn 中止等待；
-        // SwitchToConversationAsync 不再重复 Stop，避免同一次 turn 等三遍。
-        await vm.NewConversationAsync();
-        _activeVms[vm.CurrentConversationId] = vm;
+        // 先把空 VM 绑到 UI，再等旧 turn 退出。旧 turn 收尾可能耗时数秒，
+        // 但它的事件在新会话就绪前被丢弃；成功后再 Activate 新引擎。
+        _newConversationTransition = true;
+        _newConversationReady = false;
         SetConversationTitle(null);
-        SwitchToConversationAsync(vm);
-        RefreshRecentConversations();
+        SwitchToConversationAsync(vm, activate: false);
+        try
+        {
+            await vm.NewConversationAsync();
+            _activeVms[vm.CurrentConversationId] = vm;
+            vm.Activate();
+            vm.Engine.ReloadTodosForCurrentSession();
+            _newConversationReady = true;
+            if (!_bridge.IsProcessing)
+                _newConversationTransition = false;
+            _ = UpdateConversationTitleAsync(vm);
+            RefreshRecentConversations();
+        }
+        finally
+        {
+            if (!_bridge.IsProcessing)
+                _newConversationTransition = false;
+        }
     }
 
     /// <summary>
