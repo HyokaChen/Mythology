@@ -514,9 +514,46 @@ public sealed class SessionEngine(
     // ══════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 发送用户消息：主动压缩预检 → 更新 token 显示 → bridge.SendAsync → 持久化。
-    /// 处理取消（interrupt 事件）、上下文溢出（compact + retry 最多 3 次）、通用异常。
+    /// 手工编辑 config.yaml 不会走设置页的 Reapply；发送前比较当前模型配置，
+    /// 只刷新 context window / thinking 预算。模型名不一致时留给设置页/重启处理，
+    /// 避免在 API 实例仍是旧模型时只改 profile 造成口径错配。
     /// </summary>
+    private void RefreshContextProfileFromConfig()
+    {
+        if (agent.State.ModelName is not { Length: > 0 } modelName)
+            return;
+
+        var config = configStore.Load();
+        if (
+            !string.Equals(
+                config.Providers.DefaultModel,
+                modelName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+            return;
+
+        var profile = AgentProfile.BuildProfile(
+            modelName,
+            config.Providers.ContextWindowSize,
+            config.Providers.ThinkingLevel
+        );
+        if (
+            agent.ModelProfile is { } current
+            && current.ContextWindowTokens == profile.ContextWindowTokens
+            && current.ThinkingBudgetTokens == profile.ThinkingBudgetTokens
+            && current.IsAdaptiveThinking == profile.IsAdaptiveThinking
+        )
+            return;
+
+        agent.ApplyModelProfile(profile);
+        log.LogInformation(
+            "context profile refreshed from config: window={Window} thinking={Thinking}",
+            profile.ContextWindowTokens,
+            profile.ThinkingBudgetTokens
+        );
+    }
+
     private void SetInteractionContext()
     {
         if (interactionHub is null)
@@ -529,6 +566,10 @@ public sealed class SessionEngine(
         );
     }
 
+    /// <summary>
+    /// 发送用户消息：主动压缩预检 → 更新 token 显示 → bridge.SendAsync → 持久化。
+    /// 处理取消（interrupt 事件）、上下文溢出（compact + 成功恢复后重试）、通用异常。
+    /// </summary>
     public async Task RunPromptAsync(string text, CancellationToken ct)
     {
         if (_sessionPersistenceFaulted)
@@ -536,6 +577,10 @@ public sealed class SessionEngine(
             OnSystemNotice?.Invoke("会话保存故障尚未恢复，已拒绝继续生成以防止历史记录缺失。");
             return;
         }
+
+        // 手工编辑 config.yaml 不会触发设置页保存路径；在发送前按当前配置重建
+        // profile，保证 context-window-size 这类手工修改下一轮生效。
+        RefreshContextProfileFromConfig();
 
         await RunTurnAsync(
             prepare: async () =>

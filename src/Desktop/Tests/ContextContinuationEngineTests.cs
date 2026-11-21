@@ -191,6 +191,24 @@ public sealed class ContextContinuationEngineTests : IDisposable
         Assert.False(_engine.IsCompacting);
     }
 
+    [Fact]
+    public async Task RefreshContextProfileFromConfig_AppliesManualConfigEdit()
+    {
+        var configStore = new ConfigStore(Path.Combine(_base, "store"));
+        var config = configStore.Load();
+        config.Providers.DefaultModel = "deepseek-v4.1-flash-eco";
+        config.Providers.ContextWindowSize = 1_048_576;
+        await configStore.SaveAsync(config);
+
+        _agent.SetModelName("deepseek-v4.1-flash-eco");
+        _agent.ApplyModelProfile(new ModelContextProfile { ContextWindowTokens = 200_000 });
+
+        var method = typeof(SessionEngine).GetMethod("RefreshContextProfileFromConfig", Flags)!;
+        method.Invoke(_engine, null);
+
+        Assert.Equal(1_048_576, _agent.ModelProfile!.ContextWindowTokens);
+    }
+
     /// <summary>
     /// 取消发生在溢出恢复的 catch 块内（压缩被中断）时，异常必须被 RunTurnAsync 的单一出口
     /// 收口；否则会逃进 ReactiveCommand，被 ReactiveUI 升级成 UnhandledErrorException 并崩溃。
