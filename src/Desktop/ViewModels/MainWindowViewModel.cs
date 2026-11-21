@@ -1914,12 +1914,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     private void SaveActiveTodos() => ActiveConversationVm?.Engine.SaveTodos();
 
     /// <summary>
-    /// 切换到对话：等待旧 turn 退出 → 取消旧会话交互 → 切换 UI → 重绑目标 Todo。
-    /// 调用方必须先保存旧活动会话的 Todo；本方法不再保存，避免目标快照已加载后误写回旧会话。
+    /// 切换到对话：取消旧会话交互 → 切换 UI → 重绑目标 Todo。
+    /// 调用方负责先停旧 turn 并保存旧活动会话的 Todo；本方法不再 Stop，避免同一次 turn 重复等 5 秒。
     /// </summary>
-    private async Task SwitchToConversationAsync(ConversationViewModel vm)
+    private void SwitchToConversationAsync(ConversationViewModel vm)
     {
-        await _bridge.StopAsync();
         var previousVm = ActiveConversationVm;
         var oldSession = previousVm?.CurrentConversationId;
         if (
@@ -1983,14 +1982,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         SetConversationTitle(session.Title);
         if (_activeVms.TryGetValue(session.Id, out var existing))
         {
-            await SwitchToConversationAsync(existing);
+            SwitchToConversationAsync(existing);
         }
         else
         {
             var vm = CreateConversationVm();
             await vm.LoadConversationAsync(session.Id);
             _activeVms[vm.CurrentConversationId] = vm;
-            await SwitchToConversationAsync(vm);
+            SwitchToConversationAsync(vm);
         }
     }
 
@@ -1999,15 +1998,16 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task NewConversationAsync(bool savePreviousTodos = true)
     {
-        await _bridge.StopAsync();
         if (savePreviousTodos)
             SaveActiveTodos();
 
         var vm = CreateConversationVm();
+        // 新 VM 的 NewConversationAsync 是唯一次旧 turn 中止等待；
+        // SwitchToConversationAsync 不再重复 Stop，避免同一次 turn 等三遍。
         await vm.NewConversationAsync();
         _activeVms[vm.CurrentConversationId] = vm;
         SetConversationTitle(null);
-        await SwitchToConversationAsync(vm);
+        SwitchToConversationAsync(vm);
         RefreshRecentConversations();
     }
 
@@ -2032,7 +2032,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 await vm.LoadConversationAsync(target.Id);
                 _activeVms[vm.CurrentConversationId] = vm;
             }
-            await SwitchToConversationAsync(vm);
+            SwitchToConversationAsync(vm);
         }
         else
         {

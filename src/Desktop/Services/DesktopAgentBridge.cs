@@ -120,14 +120,36 @@ public sealed class DesktopAgentBridge
         }
     }
 
+    private readonly object _stopGate = new();
+    private Task? _stopTask;
+
     /// <summary>
     /// 中断并等待当前 turn 退出（有超时兜底），避免旧会话的迟到工具调用写进新会话。
+    /// 同一时刻的多个调用共享同一次等待：/new 路径不会为同一次旧 turn 重复等 5 秒。
     /// </summary>
-    public async Task StopAsync(TimeSpan? timeout = null)
+    public Task StopAsync(TimeSpan? timeout = null)
     {
-        if (!IsProcessing)
-            return;
+        // IsProcessing 在 prompt 任务 finally 中才归 false；Agent 已经 Idle 时
+        // 旧 turn 已经不会写回任何会话，不能再为状态栏的收尾等满 5 秒。
+        if (!IsProcessing || !Agent.IsRunning)
+            return Task.CompletedTask;
 
+        lock (_stopGate)
+        {
+            if (_stopTask is { IsCompleted: false } active)
+                return active;
+
+            var completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _stopTask = completion.Task;
+            _ = StopCoreAsync(completion, timeout);
+            return completion.Task;
+        }
+    }
+
+    private async Task StopCoreAsync(TaskCompletionSource<bool> completion, TimeSpan? timeout)
+    {
         var stopped = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
@@ -146,6 +168,12 @@ public sealed class DesktopAgentBridge
         finally
         {
             OnProcessingChanged -= HandleProcessingChanged;
+            lock (_stopGate)
+            {
+                if (ReferenceEquals(_stopTask, completion.Task))
+                    _stopTask = null;
+            }
+            completion.TrySetResult(true);
         }
     }
 }

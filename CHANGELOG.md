@@ -39,6 +39,10 @@
   Desktop 687/687、Core 1616/1616。
 
 ### Fixed
+- **Desktop /new 不再重复等待旧回合**：新建对话原先在 MainWindow、ConversationViewModel、
+  SwitchToConversation 三处各等一次 `StopAsync`；旧 Agent 不响应取消时每次 5 秒，实测可到 15 秒。
+  `StopAsync` 现在同一时刻共享一次等待，Agent 已 Idle 时立即返回，只保留新 VM 内的一次中止。
+  回归：`DesktopAgentBridgeStopTests`。
 - **Desktop 对话不再整体折叠过程**：历史 Agent 步骤始终进入时间线，只用外层行窗口
   虚拟化；删掉 `IsProcessExpanded`、`Process` 摘要行、450ms 自动折叠与错误自动展开。
   行数不再在折叠/展开间切换，避免上滚时高度索引和阅读锚点按错误状态跳回中间
