@@ -8,6 +8,7 @@ using Core.Interactions;
 using Core.Notes;
 using Core.Prompts;
 using LlmTornado.ChatFunctions;
+using Microsoft.Extensions.Logging;
 using Tui.Controls;
 using XenoAtom.Terminal;
 using XenoAtom.Terminal.UI;
@@ -175,8 +176,23 @@ public sealed partial class TuiApp
                 HandleSessionPersistenceFailure(ex);
             }
         }
-        catch (ContextOverflowException)
+        catch (ContextOverflowException ex)
         {
+            // provider 的真实报错必须留痕：仅 compact 条目记录了 reason=overflow，
+            // 但 1M 配置下究竟是真溢出、max_tokens 拒绝还是网关限长，需要原文判断。
+            _logger.LogWarning(
+                ex,
+                "context overflow: message={Message} http={HttpStatus} window={Window} live={Live} projected={Projected} messages={Messages}",
+                ex.Message,
+                ex.HttpStatusCode,
+                _agent.ModelProfile?.ContextWindowTokens,
+                _agent.LiveContextTokens,
+                _tokenCalibrator.Project(
+                    CompactionEngine.EstimateContextTokens(_agent.State.Messages)
+                ),
+                _agent.State.Messages.Count
+            );
+
             // 上下文溢出自动恢复：按模式走各自唯一路径。
             // 一次成功压缩本身就是有效的恢复，重置重试计数；若压缩未显著降低 token，
             // CompactForOverflowAsync 会返回 false，不会进入无界重试。
